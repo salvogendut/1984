@@ -27,6 +27,12 @@ typedef struct {
     int  cpu_clk_hz;      /* 4 MHz */
     int  cycles_per_frame;
     int  cycle_debt;      /* leftover cycles from previous frame */
+
+    /* Raster position (in character-clock units; 16 output pixels each) */
+    int  raster_x;        /* 0 = first char after hsync end */
+    int  raster_y;        /* 0 = first scanline after vsync */
+    bool prev_hsync;
+    bool prev_vsync;
 } CPC;
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);

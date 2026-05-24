@@ -25,8 +25,10 @@ typedef struct {
     /* Interrupt / refresh */
     u8  i, r;
     bool iff1, iff2;
+    bool ei_delay;     /* EI blocks interrupt for one following instruction */
     u8   im;           /* interrupt mode 0/1/2 */
     bool halted;
+    bool pending_irq;
 
     int cycles;        /* T-states consumed this step */
 } Z80;

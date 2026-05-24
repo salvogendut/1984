@@ -3,10 +3,10 @@
 #include <stdbool.h>
 #include "cpc.h"
 
-#define ROM_OS_464    "../roms/cpc464.rom"
-#define ROM_BASIC_464 "../roms/cpc464_basic.rom"
-#define ROM_OS_6128   "../roms/cpc6128.rom"
-#define ROM_BASIC_6128 "../roms/cpc6128_basic.rom"
+#define ROM_OS_464     "roms/OS_464.ROM"
+#define ROM_BASIC_464  "roms/BASIC_1.0.ROM"
+#define ROM_OS_6128    "roms/OS_6128.ROM"
+#define ROM_BASIC_6128 "roms/BASIC_1.1.ROM"
 
 int main(int argc, char *argv[]) {
     CpcModel model = MODEL_6128;

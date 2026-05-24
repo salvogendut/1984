@@ -8,7 +8,7 @@ int display_init(Display *d, const char *title) {
     d->window = SDL_CreateWindow(
         title,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        CPC_SCREEN_W * WINDOW_SCALE, CPC_SCREEN_H * WINDOW_SCALE,
+        WINDOW_W, WINDOW_H,
         SDL_WINDOW_RESIZABLE
     );
     if (!d->window) {
@@ -23,7 +23,7 @@ int display_init(Display *d, const char *title) {
         return -1;
     }
 
-    SDL_RenderSetLogicalSize(d->renderer, CPC_SCREEN_W, CPC_SCREEN_H);
+    /* No logical size — we'll blit with explicit dest rect for 4:3 */
 
     d->texture = SDL_CreateTexture(d->renderer,
         SDL_PIXELFORMAT_XRGB8888,
@@ -61,8 +61,32 @@ void display_vsync(Display *d) {
 }
 
 void display_present(Display *d) {
+    int ww, wh;
+    SDL_GetWindowSize(d->window, &ww, &wh);
+    /* Fit 768×272 into the window maintaining 4:3 (WINDOW_W:WINDOW_H) ratio */
+    int dst_w = ww;
+    int dst_h = wh;
+    if (dst_w * WINDOW_H > dst_h * WINDOW_W)
+        dst_w = dst_h * WINDOW_W / WINDOW_H;
+    else
+        dst_h = dst_w * WINDOW_H / WINDOW_W;
+    SDL_Rect dst = { (ww - dst_w) / 2, (wh - dst_h) / 2, dst_w, dst_h };
+
     SDL_UpdateTexture(d->texture, NULL, d->pixels, CPC_SCREEN_W * sizeof(u32));
     SDL_RenderClear(d->renderer);
-    SDL_RenderCopy(d->renderer, d->texture, NULL, NULL);
+    SDL_RenderCopy(d->renderer, d->texture, NULL, &dst);
     SDL_RenderPresent(d->renderer);
+}
+
+void display_save_ppm(Display *d, const char *path) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", CPC_SCREEN_W, CPC_SCREEN_H);
+    for (int i = 0; i < CPC_SCREEN_W * CPC_SCREEN_H; i++) {
+        u32 px = d->pixels[i];
+        fputc((px >> 16) & 0xFF, f);
+        fputc((px >>  8) & 0xFF, f);
+        fputc( px        & 0xFF, f);
+    }
+    fclose(f);
 }

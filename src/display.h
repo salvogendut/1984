@@ -9,9 +9,10 @@
  * to the window.
  */
 
-#define CPC_SCREEN_W  768
-#define CPC_SCREEN_H  272
-#define WINDOW_SCALE    2
+#define CPC_SCREEN_W    768
+#define CPC_SCREEN_H    272
+#define WINDOW_W        768   /* 4:3 display width */
+#define WINDOW_H        576   /* 4:3 display height (768 × 3/4) */
 
 typedef struct {
     SDL_Window   *window;
@@ -24,7 +25,8 @@ typedef struct {
 
 int  display_init(Display *d, const char *title);
 void display_destroy(Display *d);
-void display_put_pixel(Display *d, u32 rgb);  /* called per Gate Array pixel */
+void display_put_pixel(Display *d, u32 rgb);
 void display_next_line(Display *d);
-void display_vsync(Display *d);               /* flip and reset raster position */
+void display_vsync(Display *d);
 void display_present(Display *d);
+void display_save_ppm(Display *d, const char *path);

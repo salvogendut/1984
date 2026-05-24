@@ -40,6 +40,13 @@ u8 mem_read(Mem *m, u16 addr) {
     return m->ram[addr & (RAM_SIZE - 1)];
 }
 
+u8 mem_read_video(Mem *m, u16 addr) {
+    /* 6128 extra RAM page at 0xC000 */
+    if (addr >= 0xC000 && m->ram_bank)
+        return m->ram[(u32)(m->ram_bank & 0x07) * 0x4000 + (addr - 0xC000)];
+    return m->ram[addr & (RAM_SIZE - 1)];
+}
+
 void mem_write(Mem *m, u16 addr, u8 val) {
     if (addr >= 0xC000 && m->ram_bank) {
         u32 page = m->ram_bank & 0x07;

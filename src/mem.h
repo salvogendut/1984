@@ -27,4 +27,5 @@ typedef struct {
 void mem_init(Mem *m);
 int  mem_load_rom(Mem *m, const char *os_path, const char *basic_path);
 u8   mem_read(Mem *m, u16 addr);
+u8   mem_read_video(Mem *m, u16 addr);   /* CRTC/GA always reads RAM, bypasses ROM */
 void mem_write(Mem *m, u16 addr, u8 val);
