@@ -1,5 +1,9 @@
 #include "gate_array.h"
 #include <string.h>
+#include <stdio.h>
+
+static int ga_debug_frames = 0;
+static int ga_debug_limit  = 3;
 
 /* Standard CPC hardware palette — 32 colours, RGB888.
  * Values from caprice32 colours_rgb[][3] × 255. */
@@ -31,10 +35,15 @@ void ga_write(GateArray *ga, u8 val) {
     switch (func) {
         case 0x00:   /* Select pen */
             ga->selected_pen = val & 0x1F;
+            if (ga_debug_frames < ga_debug_limit)
+                fprintf(stderr, "GA: pen_sel %d\n", ga->selected_pen);
             break;
         case 0x01:   /* Set ink colour */
-            if (ga->selected_pen < GA_NUM_INKS)
+            if (ga->selected_pen < GA_NUM_INKS) {
                 ga->ink[ga->selected_pen] = val & 0x1F;
+                if (ga_debug_frames < ga_debug_limit)
+                    fprintf(stderr, "GA: ink[%d] = %d\n", ga->selected_pen, ga->ink[ga->selected_pen]);
+            }
             break;
         case 0x02:   /* Screen mode + ROM control */
             ga->screen_mode = val & 0x03;
@@ -59,5 +68,6 @@ void ga_hsync(GateArray *ga) {
     if (ga->interrupt_counter >= 52) {
         ga->interrupt_counter = 0;
         ga->interrupt_pending = true;
+        ga_debug_frames++;
     }
 }
