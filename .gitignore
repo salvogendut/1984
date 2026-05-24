@@ -1,0 +1,7 @@
+bin/
+roms/
+disks/
+*.o
+*.rom
+*.dsk
+*.sna
