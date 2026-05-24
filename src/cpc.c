@@ -58,7 +58,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         if (psg_ctrl == 0x03) psg_select(&cpc->psg, cpc->ppi.port_a);
         else if (psg_ctrl == 0x02) psg_write(&cpc->psg, cpc->ppi.port_a);
         else if (psg_ctrl == 0x01) {
-            psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->psg.reg[14] & 0x0F));
+            psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
             cpc->ppi.port_a = psg_read(&cpc->psg);
         }
         return;

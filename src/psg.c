@@ -15,7 +15,7 @@ void psg_write(PSG *psg, u8 val) {
 }
 
 u8 psg_read(PSG *psg) {
-    if (psg->selected == 15)   /* I/O port B = keyboard columns */
+    if (psg->selected == 14)   /* I/O port A = keyboard columns */
         return psg->kbd_data;
     return psg->reg[psg->selected];
 }
