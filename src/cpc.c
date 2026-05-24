@@ -57,9 +57,10 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         u8 psg_ctrl = (cpc->ppi.port_c >> 6) & 0x03;
         if (psg_ctrl == 0x03) psg_select(&cpc->psg, cpc->ppi.port_a);
         else if (psg_ctrl == 0x02) psg_write(&cpc->psg, cpc->ppi.port_a);
-        else if (psg_ctrl == 0x01) cpc->ppi.port_a = psg_read(&cpc->psg);
-        /* Feed keyboard row into PSG port A */
-        psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
+        else if (psg_ctrl == 0x01) {
+            psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->psg.reg[14] & 0x0F));
+            cpc->ppi.port_a = psg_read(&cpc->psg);
+        }
         return;
     }
 }
@@ -176,7 +177,7 @@ static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
  */
 
 /* Left border offset in char clocks = H_total+1 - H_sync_pos - H_sync_width */
-#define RASTER_X_AFTER_HSYNC  0
+#define RASTER_X_AFTER_HSYNC  -1
 /* Scan lines from vsync rising edge to first displayed line:
  * 16 (vsync pulse) + 56 (7 top border char rows × 8) = 72 */
 #define VSYNC_TO_DISPLAY_LINES 40
