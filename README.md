@@ -18,7 +18,7 @@ Boots to Locomotive BASIC. The BASIC prompt, copyright banner, and keyboard inpu
 make
 ```
 
-Output binary: `bin/cpc1984`
+Output binary: `bin/1984`
 
 ## ROM files
 
@@ -57,18 +57,21 @@ fullscreen=false
 ## Usage
 
 ```bash
-# Run as CPC 6128 (default)
-./bin/cpc1984
-
-# Run as CPC 464
-./bin/cpc1984 4
+./bin/1984
 ```
 
-| Key | Action |
-|-----|--------|
-| F5  | Warm reset |
-| F9  | Open/close options overlay |
-| F12 | Quit |
+The model (464 or 6128) is selected via the options overlay — there are no command-line arguments.
+
+| Key    | Action |
+|--------|--------|
+| F5     | Warm reset |
+| F9     | Open/close options overlay |
+| F12    | Quit |
+| Ctrl+V | Paste clipboard text into the emulator |
+
+### Paste from host (Ctrl+V)
+
+Pressing Ctrl+V types the host clipboard contents into the emulator one character at a time, simulating keypresses through the CPC keyboard matrix. Useful for entering BASIC programs. Supports letters, digits, common punctuation, and newlines. Each pasted block ends with an automatic Return.
 
 ### Options overlay (F9)
 

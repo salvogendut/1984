@@ -4,7 +4,7 @@ LDFLAGS := $(shell pkg-config --libs sdl3) -lm
 
 SRCDIR  := src
 BINDIR  := bin
-TARGET  := $(BINDIR)/cpc1984
+TARGET  := $(BINDIR)/1984
 
 SRCS    := $(wildcard $(SRCDIR)/*.c)
 OBJS    := $(SRCS:$(SRCDIR)/%.c=$(BINDIR)/%.o)

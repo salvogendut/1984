@@ -11,9 +11,7 @@ int main(int argc, char *argv[]) {
     if (config_load(&cfg) < 0)
         return 1;
 
-    /* CLI arg '4' overrides model for quick testing */
-    if (argc > 1 && argv[1][0] == '4')
-        cfg.model = MODEL_464;
+    (void)argc; (void)argv;
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
