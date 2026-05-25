@@ -126,9 +126,11 @@ void paste_free(Paste *p) {
 void paste_text(Paste *p, const char *text) {
     free(p->buf);
     p->len = (int)strlen(text);
-    p->buf = malloc(p->len + 1);
+    p->buf = malloc(p->len + 2);  /* +1 for appended newline, +1 for NUL */
     if (!p->buf) { p->len = 0; return; }
-    memcpy(p->buf, text, p->len + 1);
+    memcpy(p->buf, text, p->len);
+    p->buf[p->len++] = '\n';
+    p->buf[p->len]   = '\0';
     p->pos   = 0;
     p->timer = 3;   /* wait 3 frames for Ctrl to clear from the CPC matrix */
     p->held  = false;
