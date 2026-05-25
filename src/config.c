@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 #define DEFAULT_ROM_OS    "roms/OS_6128.ROM"
 #define DEFAULT_ROM_BASIC "roms/BASIC_1.1.ROM"
@@ -51,6 +52,49 @@ static bool parse_bool(const char *val, bool *out) {
     return false;
 }
 
+static void config_create_default(const char *path, const char *home) {
+    char dir[CONFIG_PATH_MAX];
+    snprintf(dir, sizeof(dir), "%s/.config/1984", home);
+    mkdir(dir, 0755);   /* no-op if already exists */
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "1984: could not create config file %s\n", path);
+        return;
+    }
+
+    fprintf(f,
+        "# 1984 CPC Emulator — configuration file\n"
+        "# Edit and restart the emulator for changes to take effect.\n"
+        "\n"
+        "[machine]\n"
+        "# CPC model: 464 or 6128\n"
+        "model=6128\n"
+        "# RAM size in KB: 64 (CPC 464) or 128 (CPC 6128)\n"
+        "memory=128\n"
+        "\n"
+        "[roms]\n"
+        "# Paths to ROM images. ~ is expanded to your home directory.\n"
+        "os=~/.config/1984/roms/OS_6128.ROM\n"
+        "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
+        "\n"
+        "[hardware]\n"
+        "# Optional expansion hardware (not yet implemented)\n"
+        "m4=false\n"
+        "ulifac=false\n"
+        "net4cpc=false\n"
+        "\n"
+        "[display]\n"
+        "# Window scale factor: 1, 2, or 3\n"
+        "scale=2\n"
+        "# Start in fullscreen mode: true or false\n"
+        "fullscreen=false\n"
+    );
+
+    fclose(f);
+    fprintf(stderr, "1984: created default config at %s\n", path);
+}
+
 int config_load(Config *cfg) {
     config_defaults(cfg);
 
@@ -61,7 +105,10 @@ int config_load(Config *cfg) {
     snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
 
     FILE *f = fopen(path, "r");
-    if (!f) return 0;   /* missing config is fine */
+    if (!f) {
+        config_create_default(path, home);
+        return 0;
+    }
 
     char line[512];
     char section[64] = "";
