@@ -219,7 +219,7 @@ void cpc_frame(CPC *cpc) {
             /* VSYNC rising edge → start of new frame */
             if (new_vsync && !cpc->prev_vsync) {
                 cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
-                display_present(&cpc->display);
+                display_upload(&cpc->display);
             }
 
             cpc->prev_hsync = new_hsync;

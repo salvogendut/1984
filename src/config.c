@@ -178,3 +178,46 @@ int config_load(Config *cfg) {
     fclose(f);
     return rc;
 }
+
+int config_save(const Config *cfg) {
+    const char *home = getenv("HOME");
+    if (!home) return -1;
+
+    char path[CONFIG_PATH_MAX];
+    snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "1984: could not save config to %s\n", path);
+        return -1;
+    }
+
+    fprintf(f,
+        "# 1984 CPC Emulator — configuration file\n\n"
+        "[machine]\n"
+        "model=%s\n"
+        "memory=%d\n\n"
+        "[roms]\n"
+        "os=%s\n"
+        "basic=%s\n\n"
+        "[hardware]\n"
+        "m4=%s\n"
+        "ulifac=%s\n"
+        "net4cpc=%s\n\n"
+        "[display]\n"
+        "scale=%d\n"
+        "fullscreen=%s\n",
+        cfg->model == MODEL_464 ? "464" : "6128",
+        cfg->memory_kb,
+        cfg->rom_os,
+        cfg->rom_basic,
+        cfg->m4      ? "true" : "false",
+        cfg->ulifac  ? "true" : "false",
+        cfg->net4cpc ? "true" : "false",
+        cfg->scale,
+        cfg->fullscreen ? "true" : "false"
+    );
+
+    fclose(f);
+    return 0;
+}

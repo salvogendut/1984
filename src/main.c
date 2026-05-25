@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "config.h"
+#include "overlay.h"
 #include "cpc.h"
 
 int main(int argc, char *argv[]) {
@@ -25,27 +26,34 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    Overlay overlay;
+    overlay_init(&overlay, &cfg);
+
     bool running = true;
     while (running) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            switch (ev.type) {
-                case SDL_EVENT_QUIT:
+            if (ev.type == SDL_EVENT_QUIT) {
+                running = false;
+                continue;
+            }
+            /* Overlay gets first crack at every key event */
+            if (overlay_handle_event(&overlay, &ev))
+                continue;
+            /* Pass remaining key events to the CPC */
+            if (ev.type == SDL_EVENT_KEY_DOWN) {
+                if (ev.key.scancode == SDL_SCANCODE_F12)
                     running = false;
-                    break;
-                case SDL_EVENT_KEY_DOWN:
-                    if (ev.key.scancode == SDL_SCANCODE_F12)
-                        running = false;
-                    else
-                        cpc_key_event(&cpc, ev.key.scancode, true);
-                    break;
-                case SDL_EVENT_KEY_UP:
-                    cpc_key_event(&cpc, ev.key.scancode, false);
-                    break;
+                else
+                    cpc_key_event(&cpc, ev.key.scancode, true);
+            } else if (ev.type == SDL_EVENT_KEY_UP) {
+                cpc_key_event(&cpc, ev.key.scancode, false);
             }
         }
 
         cpc_frame(&cpc);
+        overlay_render(&overlay, cpc.display.renderer);
+        display_flip(&cpc.display);
     }
 
     cpc_destroy(&cpc);

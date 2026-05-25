@@ -55,7 +55,7 @@ void display_vsync(Display *d) {
     d->scan_y = 0;
 }
 
-void display_present(Display *d) {
+void display_upload(Display *d) {
     int ww, wh;
     SDL_GetWindowSize(d->window, &ww, &wh);
     /* Fit 768×272 into the window maintaining 4:3 (WINDOW_W:WINDOW_H) ratio */
@@ -70,6 +70,9 @@ void display_present(Display *d) {
     SDL_UpdateTexture(d->texture, NULL, d->pixels, CPC_SCREEN_W * sizeof(u32));
     SDL_RenderClear(d->renderer);
     SDL_RenderTexture(d->renderer, d->texture, NULL, &dst);
+}
+
+void display_flip(Display *d) {
     SDL_RenderPresent(d->renderer);
 }
 

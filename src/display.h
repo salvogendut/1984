@@ -28,5 +28,6 @@ void display_destroy(Display *d);
 void display_put_pixel(Display *d, u32 rgb);
 void display_next_line(Display *d);
 void display_vsync(Display *d);
-void display_present(Display *d);
+void display_upload(Display *d);   /* update texture + blit to renderer (no flip) */
+void display_flip(Display *d);     /* SDL_RenderPresent */
 void display_save_ppm(Display *d, const char *path);

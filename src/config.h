@@ -29,3 +29,6 @@ int config_load(Config *cfg);
 
 /* Fill cfg with compiled-in defaults. */
 void config_defaults(Config *cfg);
+
+/* Write current cfg back to ~/.config/1984/1984.conf. */
+int config_save(const Config *cfg);
