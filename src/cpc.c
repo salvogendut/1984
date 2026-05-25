@@ -185,8 +185,8 @@ static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
     case 0: /* 4 bpp, 2 pixels/byte, ×4 → 16 px */
         for (int b = 0; b < 2; b++) {
             u8 byte = b ? b1 : b0;
-            u8 pen0 = (u8)(((byte>>7)&1)<<3 | ((byte>>5)&1)<<2 | ((byte>>3)&1)<<1 | ((byte>>1)&1));
-            u8 pen1 = (u8)(((byte>>6)&1)<<3 | ((byte>>4)&1)<<2 | ((byte>>2)&1)<<1 | ((byte>>0)&1));
+            u8 pen0 = (u8)(((byte>>1)&1)<<3 | ((byte>>5)&1)<<2 | ((byte>>3)&1)<<1 | ((byte>>7)&1));
+            u8 pen1 = (u8)(((byte>>0)&1)<<3 | ((byte>>4)&1)<<2 | ((byte>>2)&1)<<1 | ((byte>>6)&1));
             u32 c0  = ink_rgb(ga, pen0);
             u32 c1  = ink_rgb(ga, pen1);
             for (int i = 0; i < 4; i++) {
