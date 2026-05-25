@@ -136,7 +136,7 @@ static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
         for (int b = 0; b < 2; b++) {
             u8 byte = b ? b1 : b0;
             for (int p = 0; p < 4; p++) {
-                u8 pen = (u8)(((byte >> (7 - p)) & 1) << 1 | ((byte >> (3 - p)) & 1));
+                u8 pen = (u8)(((byte >> (3 - p)) & 1) << 1 | ((byte >> (7 - p)) & 1));
                 u32 c  = ink_rgb(ga, pen);
                 int x  = px + b * 8 + p * 2;
                 if ((unsigned)x     < CPC_SCREEN_W) row[x]     = c;
