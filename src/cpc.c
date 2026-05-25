@@ -1,5 +1,4 @@
 #include "cpc.h"
-#include <stdio.h>
 #include <string.h>
 
 /* ---- Z80 bus callbacks ---- */
@@ -16,24 +15,31 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
 static u8 bus_io_read(void *ctx, u16 port) {
     CPC *cpc = ctx;
     u8 hi = port >> 8;
+    u8 result;
 
     /* CRTC read: A14=0 (hi & ~0x40 → 0xBF area) */
     if (!(hi & 0x40)) {
         u8 func = (port >> 8) & 0x03;
-        if (func == 0x03) return crtc_read(&cpc->crtc);
-        return 0xFF;
+        result = (func == 0x03) ? crtc_read(&cpc->crtc) : 0xFF;
     }
     /* PPI: A11=0 selects PPI (0xF4xx/0xF5xx/0xF6xx/0xF7xx) */
-    if (!(hi & 0x08)) {
-        return ppi_read(&cpc->ppi, (port >> 8) & 0x03);
+    else if (!(hi & 0x08)) {
+        result = ppi_read(&cpc->ppi, (port >> 8) & 0x03);
     }
     /* FDC: hi=0xFB → status (lo bit 0=0) or data (lo bit 0=1) */
-    if (hi == 0xFB) {
+    else if (hi == 0xFB) {
         u8 lo = port & 0xFF;
-        return (lo & 0x01) ? fdc_read_data(&cpc->fdc)
-                           : fdc_read_status(&cpc->fdc);
+        result = (lo & 0x01) ? fdc_read_data(&cpc->fdc)
+                             : fdc_read_status(&cpc->fdc);
     }
-    return 0xFF;
+    else if (hi == 0xFA) {
+        result = 0xFF;
+    }
+    else {
+        result = 0xFF;
+    }
+
+    return result;
 }
 
 static void bus_io_write(void *ctx, u16 port, u8 val) {
@@ -185,8 +191,8 @@ static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
     case 0: /* 4 bpp, 2 pixels/byte, ×4 → 16 px */
         for (int b = 0; b < 2; b++) {
             u8 byte = b ? b1 : b0;
-            u8 pen0 = (u8)(((byte>>7)&1)<<3 | ((byte>>5)&1)<<2 | ((byte>>3)&1)<<1 | ((byte>>1)&1));
-            u8 pen1 = (u8)(((byte>>6)&1)<<3 | ((byte>>4)&1)<<2 | ((byte>>2)&1)<<1 | ((byte>>0)&1));
+            u8 pen0 = (u8)(((byte>>1)&1)<<3 | ((byte>>5)&1)<<2 | ((byte>>3)&1)<<1 | ((byte>>7)&1));
+            u8 pen1 = (u8)(((byte>>0)&1)<<3 | ((byte>>4)&1)<<2 | ((byte>>2)&1)<<1 | ((byte>>6)&1));
             u32 c0  = ink_rgb(ga, pen0);
             u32 c1  = ink_rgb(ga, pen1);
             for (int i = 0; i < 4; i++) {
@@ -299,6 +305,19 @@ void cpc_frame(CPC *cpc) {
     }
 
     cpc->cycle_debt = done - target;
+
+    /* Fallback palette flush: if the firmware dirty flag (B7F7=0xFF) is set but
+     * the firmware's flush task has been deactivated (e.g. after game init),
+     * push B7D4–B7E4 palette RAM directly to the Gate Array.
+     * Layout: B7D4=border(pen16), B7D5=pen0, …, B7D4+16=B7E4=pen15. */
+    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
+        for (int p = 0; p < 17; p++) {
+            u8 hw  = mem_read(&cpc->mem, (u16)(0xB7D4 + p));
+            u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
+            ga_write(&cpc->ga, pen);
+            ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
+        }
+    }
 }
 
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed) {

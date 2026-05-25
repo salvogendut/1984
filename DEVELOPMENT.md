@@ -14,6 +14,8 @@ Each source file maps to one hardware component:
 | `src/psg.c` / `psg.h` | AY-3-8912 PSG register file (audio generation not yet wired to SDL audio) |
 | `src/kbd.c` / `kbd.h` | Keyboard matrix — SDL scancode → CPC row/column mapping |
 | `src/display.c` / `display.h` | SDL3 display — 768×272 pixel buffer, letterboxed into the window at 4:3 aspect |
+| `src/disk.c` / `disk.h` | DSK disk image parser — track/sector layout, AMSDOS directory, read |
+| `src/fdc.c` / `fdc.h` | µPD765 FDC — command/exec/result phases, READ DATA, SEEK, SENSE INTERRUPT STATUS |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -46,6 +48,12 @@ Two bytes are fetched per character clock and decoded according to the Gate Arra
 - **Mode 0** — 4 bpp, 2 pixels/byte, each pixel 4× wide (160×200)
 - **Mode 1** — 2 bpp, 4 pixels/byte, each pixel 2× wide (320×200)
 - **Mode 2** — 1 bpp, 8 pixels/byte, 1:1 (640×200)
+
+## Palette flush fallback
+
+The CPC firmware manages a cooperative interrupt handler that runs a "flush task" to push palette RAM (at 0xB7D4–0xB7E4) to the Gate Array after ink changes. Some games (e.g. Spindizzy) deactivate this task before writing their initial palette, relying on real-hardware interrupt timing to catch the update.
+
+`cpc_frame()` includes a fallback: if the firmware's dirty flag (0xB7F7 = 0xFF) is still set at end-of-frame, all 17 ink values are flushed directly from palette RAM to the Gate Array. This is a no-op when the firmware's flush task ran normally (it clears the flag), and only activates when the firmware path was bypassed.
 
 ## Reset
 
@@ -96,3 +104,5 @@ The 6128 has 128 KB RAM. Extra 16 KB pages are selected via Gate Array port 0x7F
 | A14=0, A8=0 | CRTC select | 0xBCxx |
 | A14=0, A8=1 | CRTC write/read | 0xBDxx / 0xBFxx |
 | A11=0 | PPI (8255) | 0xF4–0xF7xx |
+| hi=0xFA | FDC motor control | 0xFAxx |
+| hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |

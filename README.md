@@ -4,7 +4,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. The BASIC prompt, copyright banner, and keyboard input work. Audio (AY-3-8912 / PSG) and disk loading are not yet implemented.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), and AMSDOS file loading work. Audio (AY-3-8912 / PSG) is register-accurate but audio output is not yet wired to SDL audio.
 
 ## Requirements
 

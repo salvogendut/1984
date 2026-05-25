@@ -19,8 +19,11 @@ $(BINDIR):
 $(TARGET): $(OBJS)
 	$(CC) $^ $(LDFLAGS) -o $@
 
+DEPS := $(OBJS:.o=.d)
+-include $(DEPS)
+
 $(BINDIR)/%.o: $(SRCDIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 clean:
 	rm -rf $(BINDIR)

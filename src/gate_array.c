@@ -33,8 +33,9 @@ void ga_write(GateArray *ga, u8 val) {
             ga->selected_pen = val & 0x1F;
             break;
         case 0x01:   /* Set ink colour */
-            if (ga->selected_pen < GA_NUM_INKS)
+            if (ga->selected_pen < GA_NUM_INKS) {
                 ga->ink[ga->selected_pen] = val & 0x1F;
+            }
             break;
         case 0x02:   /* Screen mode + ROM control */
             ga->screen_mode = val & 0x03;
