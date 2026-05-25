@@ -5,10 +5,11 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
-#define DEFAULT_ROM_OS_464    "roms/OS_464.ROM"
-#define DEFAULT_ROM_BASIC_464 "roms/BASIC_1.0.ROM"
-#define DEFAULT_ROM_OS_6128   "roms/OS_6128.ROM"
+#define DEFAULT_ROM_OS_464     "roms/OS_464.ROM"
+#define DEFAULT_ROM_BASIC_464  "roms/BASIC_1.0.ROM"
+#define DEFAULT_ROM_OS_6128    "roms/OS_6128.ROM"
 #define DEFAULT_ROM_BASIC_6128 "roms/BASIC_1.1.ROM"
+#define DEFAULT_ROM_AMSDOS     "roms/AMSDOS.ROM"
 
 /* Keep backward-compat aliases used by the defaults/restore paths */
 #define DEFAULT_ROM_OS    DEFAULT_ROM_OS_6128
@@ -18,8 +19,9 @@ void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->model     = MODEL_6128;
     cfg->memory_kb = 128;
-    snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS);
-    snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC);
+    snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS);
+    snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC);
+    snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
     cfg->m4        = false;
     cfg->ulifac    = false;
     cfg->net4cpc   = false;
@@ -83,6 +85,7 @@ static void config_create_default(const char *path, const char *home) {
         "# Paths to ROM images. ~ is expanded to your home directory.\n"
         "os=~/.config/1984/roms/OS_6128.ROM\n"
         "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
+        "amsdos=~/.config/1984/roms/AMSDOS.ROM\n"
         "\n"
         "[storage]\n"
         "# Paths to .dsk floppy images (leave empty for no disk)\n"
@@ -161,6 +164,8 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->rom_os, sizeof(cfg->rom_os));
             else if (!strcmp(key, "basic"))
                 expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
+            else if (!strcmp(key, "amsdos"))
+                expand_path(val, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
         } else if (!strcmp(section, "storage")) {
             if (!strcmp(key, "drive_a"))
                 expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
@@ -224,7 +229,8 @@ int config_save(const Config *cfg) {
         "memory=%d\n\n"
         "[roms]\n"
         "os=%s\n"
-        "basic=%s\n\n"
+        "basic=%s\n"
+        "amsdos=%s\n\n"
         "[storage]\n"
         "drive_a=%s\n"
         "drive_b=%s\n\n"
@@ -239,6 +245,7 @@ int config_save(const Config *cfg) {
         cfg->memory_kb,
         cfg->rom_os,
         cfg->rom_basic,
+        cfg->rom_amsdos,
         cfg->disk_a,
         cfg->disk_b,
         cfg->m4      ? "true" : "false",
@@ -260,7 +267,8 @@ void config_set_model(Config *cfg, CpcModel model) {
         snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
     } else {
         cfg->memory_kb = 128;
-        snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_6128);
-        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_6128);
+        snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS_6128);
+        snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC_6128);
+        snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
     }
 }

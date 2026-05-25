@@ -56,6 +56,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         else               crtc_write(&cpc->crtc, val);
         return;
     }
+    /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
+    if ((hi & 0xE0) == 0xC0) { cpc->mem.upper_rom_select = val; return; }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
         ppi_write(&cpc->ppi, hi & 0x03, val);

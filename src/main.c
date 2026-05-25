@@ -4,6 +4,7 @@
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
+#include "mem.h"
 #include "paste.h"
 
 int main(int argc, char *argv[]) {
@@ -24,6 +25,10 @@ int main(int argc, char *argv[]) {
         SDL_Quit();
         return 1;
     }
+
+    /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
+    if (cfg.rom_amsdos[0])
+        mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
 
     /* Load floppy images from config */
     if (cfg.disk_a[0]) {
