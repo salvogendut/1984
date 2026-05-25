@@ -27,6 +27,12 @@ static u8 bus_io_read(void *ctx, u16 port) {
     if (!(hi & 0x08)) {
         return ppi_read(&cpc->ppi, (port >> 8) & 0x03);
     }
+    /* FDC: hi=0xFB → status (lo bit 0=0) or data (lo bit 0=1) */
+    if (hi == 0xFB) {
+        u8 lo = port & 0xFF;
+        return (lo & 0x01) ? fdc_read_data(&cpc->fdc)
+                           : fdc_read_status(&cpc->fdc);
+    }
     return 0xFF;
 }
 
@@ -63,6 +69,10 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
+    /* FDC motor: hi=0xFA, write */
+    if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
+    /* FDC data: hi=0xFB, write */
+    if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
 }
 
 /* ---- Init / destroy ---- */
@@ -86,6 +96,9 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
+    disk_init(&cpc->drive[0]);
+    disk_init(&cpc->drive[1]);
+    fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
 
     cpc->bus.mem_read  = bus_mem_read;
     cpc->bus.mem_write = bus_mem_write;
@@ -109,6 +122,7 @@ void cpc_reset(CPC *cpc) {
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
+    fdc_reset(&cpc->fdc);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -120,6 +134,8 @@ void cpc_reset(CPC *cpc) {
 }
 
 void cpc_destroy(CPC *cpc) {
+    disk_eject(&cpc->drive[0]);
+    disk_eject(&cpc->drive[1]);
     display_destroy(&cpc->display);
 }
 

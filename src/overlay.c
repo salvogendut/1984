@@ -1,6 +1,10 @@
 #include "overlay.h"
+#include "cpc.h"
+#include "disk.h"
 #include <string.h>
 #include <stdio.h>
+
+static void overlay_file_callback(void *userdata, const char * const *files, int filter);
 
 /* ---- Layout constants (logical pixels at 1.5× render scale) ---- */
 #define SCALE     1.5f
@@ -82,20 +86,27 @@ static void item_text(const Overlay *ov, int row,
         }
         break;
 
-    case OV_STORAGE:
+    case OV_STORAGE: {
+        Disk *da = ov->cpc ? &ov->cpc->drive[0] : NULL;
+        Disk *db = ov->cpc ? &ov->cpc->drive[1] : NULL;
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "Drive A");
-            snprintf(val, vsz, "[not implemented]");
-            *readonly = true;
+            if (da && da->inserted)
+                trunc_path(ov->cfg->disk_a, val, vsz);
+            else
+                snprintf(val, vsz, "[empty]  Enter=load");
             break;
         case 1:
-            snprintf(lbl, lsz, "Tape");
-            snprintf(val, vsz, "[not implemented]");
-            *readonly = true;
+            snprintf(lbl, lsz, "Drive B");
+            if (db && db->inserted)
+                trunc_path(ov->cfg->disk_b, val, vsz);
+            else
+                snprintf(val, vsz, "[empty]  Enter=load");
             break;
         }
         break;
+    }
 
     case OV_ADVANCED:
         switch (row) {
@@ -137,6 +148,17 @@ static void activate_item(Overlay *ov) {
         break;
 
     case OV_STORAGE:
+        if (ov->row == 0 || ov->row == 1) {
+            ov->dialog_drive = ov->row;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter filters[] = {
+                { "DSK images", "dsk;DSK" },
+                { "All files",  "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                filters, 2, NULL, false);
+        }
         break;
 
     case OV_ADVANCED:
@@ -174,9 +196,45 @@ static void try_close(Overlay *ov) {
 
 /* ---- Public API ---- */
 
-void overlay_init(Overlay *ov, Config *cfg) {
+/* File-dialog callback — called from SDL's thread on some platforms */
+static void overlay_file_callback(void *userdata, const char * const *files,
+                                  int filter) {
+    (void)filter;
+    Overlay *ov = userdata;
+    if (files && files[0]) {
+        snprintf(ov->dialog_path, sizeof(ov->dialog_path), "%s", files[0]);
+        ov->dialog_ready = true;
+    } else {
+        ov->dialog_drive = -1;
+    }
+}
+
+void overlay_init(Overlay *ov, Config *cfg, CPC *cpc) {
     memset(ov, 0, sizeof(*ov));
-    ov->cfg = cfg;
+    ov->cfg          = cfg;
+    ov->cpc          = cpc;
+    ov->dialog_drive = -1;
+}
+
+void overlay_tick(Overlay *ov) {
+    if (!ov->dialog_ready || ov->dialog_drive < 0) return;
+    ov->dialog_ready = false;
+
+    int drv = ov->dialog_drive;
+    ov->dialog_drive = -1;
+
+    char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+    snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+
+    if (ov->cpc) {
+        Disk *d = &ov->cpc->drive[drv];
+        disk_eject(d);
+        if (dest[0] && disk_load(d, dest) < 0) {
+            fprintf(stderr, "1984: failed to load %s\n", dest);
+            dest[0] = '\0';
+        }
+    }
+    ov->dirty = true;
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {

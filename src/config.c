@@ -84,6 +84,11 @@ static void config_create_default(const char *path, const char *home) {
         "os=~/.config/1984/roms/OS_6128.ROM\n"
         "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
         "\n"
+        "[storage]\n"
+        "# Paths to .dsk floppy images (leave empty for no disk)\n"
+        "drive_a=\n"
+        "drive_b=\n"
+        "\n"
         "[hardware]\n"
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
@@ -156,6 +161,11 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->rom_os, sizeof(cfg->rom_os));
             else if (!strcmp(key, "basic"))
                 expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
+        } else if (!strcmp(section, "storage")) {
+            if (!strcmp(key, "drive_a"))
+                expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
+            else if (!strcmp(key, "drive_b"))
+                expand_path(val, cfg->disk_b, sizeof(cfg->disk_b));
         } else if (!strcmp(section, "hardware")) {
             bool b;
             if (!strcmp(key, "m4")) {
@@ -215,6 +225,9 @@ int config_save(const Config *cfg) {
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n\n"
+        "[storage]\n"
+        "drive_a=%s\n"
+        "drive_b=%s\n\n"
         "[hardware]\n"
         "m4=%s\n"
         "ulifac=%s\n"
@@ -226,6 +239,8 @@ int config_save(const Config *cfg) {
         cfg->memory_kb,
         cfg->rom_os,
         cfg->rom_basic,
+        cfg->disk_a,
+        cfg->disk_b,
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc ? "true" : "false",
