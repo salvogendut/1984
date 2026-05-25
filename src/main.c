@@ -4,6 +4,7 @@
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
+#include "mem.h"
 #include "paste.h"
 
 int main(int argc, char *argv[]) {
@@ -25,8 +26,26 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
+    if (cfg.rom_amsdos[0])
+        mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
+
+    /* Load floppy images from config */
+    if (cfg.disk_a[0]) {
+        if (disk_load(&cpc.drive[0], cfg.disk_a) < 0) {
+            fprintf(stderr, "1984: failed to load drive A: %s\n", cfg.disk_a);
+            cfg.disk_a[0] = '\0';
+        }
+    }
+    if (cfg.disk_b[0]) {
+        if (disk_load(&cpc.drive[1], cfg.disk_b) < 0) {
+            fprintf(stderr, "1984: failed to load drive B: %s\n", cfg.disk_b);
+            cfg.disk_b[0] = '\0';
+        }
+    }
+
     Overlay overlay;
-    overlay_init(&overlay, &cfg);
+    overlay_init(&overlay, &cfg, &cpc);
 
     Paste paste;
     paste_init(&paste);
@@ -71,6 +90,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        overlay_tick(&overlay);
         paste_tick(&paste, &cpc.kbd);
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);

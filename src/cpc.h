@@ -8,6 +8,8 @@
 #include "psg.h"
 #include "kbd.h"
 #include "display.h"
+#include "fdc.h"
+#include "disk.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -22,6 +24,8 @@ typedef struct {
     PSG        psg;
     Keyboard   kbd;
     Display    display;
+    Disk       drive[2];    /* drive[0]=A, drive[1]=B */
+    FDC        fdc;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

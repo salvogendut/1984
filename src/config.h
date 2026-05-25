@@ -12,6 +12,11 @@ typedef struct {
     /* [roms] */
     char rom_os[CONFIG_PATH_MAX];
     char rom_basic[CONFIG_PATH_MAX];
+    char rom_amsdos[CONFIG_PATH_MAX];
+
+    /* [storage] */
+    char disk_a[CONFIG_PATH_MAX];
+    char disk_b[CONFIG_PATH_MAX];
 
     /* [hardware] */
     bool m4;
