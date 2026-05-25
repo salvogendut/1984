@@ -4,6 +4,7 @@
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
+#include "paste.h"
 
 int main(int argc, char *argv[]) {
     Config cfg;
@@ -29,6 +30,9 @@ int main(int argc, char *argv[]) {
     Overlay overlay;
     overlay_init(&overlay, &cfg);
 
+    Paste paste;
+    paste_init(&paste);
+
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -42,22 +46,29 @@ int main(int argc, char *argv[]) {
                 continue;
             /* Pass remaining key events to the CPC */
             if (ev.type == SDL_EVENT_KEY_DOWN) {
-                if (ev.key.scancode == SDL_SCANCODE_F12)
+                if (ev.key.scancode == SDL_SCANCODE_F12) {
                     running = false;
-                else if (ev.key.scancode == SDL_SCANCODE_F5)
+                } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
-                else
+                } else if (ev.key.scancode == SDL_SCANCODE_V &&
+                           (SDL_GetModState() & SDL_KMOD_CTRL)) {
+                    char *text = SDL_GetClipboardText();
+                    if (text) { paste_text(&paste, text); SDL_free(text); }
+                } else {
                     cpc_key_event(&cpc, ev.key.scancode, true);
+                }
             } else if (ev.type == SDL_EVENT_KEY_UP) {
                 cpc_key_event(&cpc, ev.key.scancode, false);
             }
         }
 
+        paste_tick(&paste, &cpc.kbd);
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
     }
 
+    paste_free(&paste);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;
