@@ -139,11 +139,11 @@ int config_load(Config *cfg) {
             if (!strcmp(key, "model")) {
                 if (!strcmp(val, "464"))       cfg->model = MODEL_464;
                 else if (!strcmp(val, "6128")) cfg->model = MODEL_6128;
-                else { fprintf(stderr, "1984.conf:%d: unknown model '%s'\n", lineno, val); rc = -1; }
+                else { fprintf(stderr, "1984.conf:%d: unknown model '%s', using default\n", lineno, val); }
             } else if (!strcmp(key, "memory")) {
                 int kb = atoi(val);
                 if (kb == 64 || kb == 128) cfg->memory_kb = kb;
-                else { fprintf(stderr, "1984.conf:%d: memory must be 64 or 128\n", lineno); rc = -1; }
+                else { fprintf(stderr, "1984.conf:%d: invalid memory '%s', using default (%d KB)\n", lineno, val, cfg->memory_kb); }
             }
         } else if (!strcmp(section, "roms")) {
             if (!strcmp(key, "os"))
@@ -176,6 +176,15 @@ int config_load(Config *cfg) {
     }
 
     fclose(f);
+
+    /* Restore defaults for any fields left invalid/empty by a corrupt config */
+    if (!cfg->rom_os[0])
+        snprintf(cfg->rom_os, sizeof(cfg->rom_os), "%s", DEFAULT_ROM_OS);
+    if (!cfg->rom_basic[0])
+        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC);
+    if (cfg->memory_kb == 0)
+        cfg->memory_kb = 128;
+
     return rc;
 }
 
