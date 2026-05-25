@@ -92,14 +92,14 @@ static void item_text(const Overlay *ov, int row,
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "Drive A");
-            if (da && da->inserted)
+            if (da && da->inserted && ov->cfg->disk_a[0])
                 trunc_path(ov->cfg->disk_a, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
             break;
         case 1:
             snprintf(lbl, lsz, "Drive B");
-            if (db && db->inserted)
+            if (db && db->inserted && ov->cfg->disk_b[0])
                 trunc_path(ov->cfg->disk_b, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");

@@ -32,12 +32,16 @@ int main(int argc, char *argv[]) {
 
     /* Load floppy images from config */
     if (cfg.disk_a[0]) {
-        if (disk_load(&cpc.drive[0], cfg.disk_a) < 0)
+        if (disk_load(&cpc.drive[0], cfg.disk_a) < 0) {
             fprintf(stderr, "1984: failed to load drive A: %s\n", cfg.disk_a);
+            cfg.disk_a[0] = '\0';
+        }
     }
     if (cfg.disk_b[0]) {
-        if (disk_load(&cpc.drive[1], cfg.disk_b) < 0)
+        if (disk_load(&cpc.drive[1], cfg.disk_b) < 0) {
             fprintf(stderr, "1984: failed to load drive B: %s\n", cfg.disk_b);
+            cfg.disk_b[0] = '\0';
+        }
     }
 
     Overlay overlay;
