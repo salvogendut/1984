@@ -10,11 +10,19 @@ typedef enum {
     OV_SEC_COUNT = 3
 } OvSection;
 
+typedef enum {
+    OV_STATE_MENU    = 0,   /* normal navigation */
+    OV_STATE_CONFIRM = 1    /* "save changes?" prompt */
+} OvState;
+
 typedef struct {
     bool      visible;
     OvSection section;
     int       row;
+    OvState   state;
+    bool      dirty;        /* any unsaved changes since overlay opened */
     Config   *cfg;
+    Config    saved;        /* snapshot taken when overlay opens */
 } Overlay;
 
 void overlay_init(Overlay *ov, Config *cfg);

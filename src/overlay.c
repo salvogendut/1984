@@ -2,21 +2,22 @@
 #include <string.h>
 #include <stdio.h>
 
-/* ---- Layout constants (logical pixels at 2× render scale) ---- */
-#define FONT_W   SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE   /* 8 */
-#define FONT_H   SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE   /* 8 */
-#define BAR_H    20    /* top bar height */
-#define ITEM_H   15    /* height of each dropdown row */
-#define DROP_PAD  6    /* left margin inside dropdown */
-#define VAL_X   140    /* x where values start inside dropdown */
+/* ---- Layout constants (logical pixels at 1.5× render scale) ---- */
+#define SCALE     1.5f
+#define FONT_W    SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE   /* 8 logical = 12 screen */
+#define FONT_H    SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE   /* 8 logical = 12 screen */
+#define BAR_H     27   /* logical ≈ 40 screen px */
+#define ITEM_H    20   /* logical = 30 screen px per dropdown row */
+#define DROP_PAD   6   /* left margin inside dropdown */
+#define VAL_X    140   /* x where values start */
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
-static const int sec_x[OV_SEC_COUNT] = { 8, 108, 208 };
+static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
 static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 4 };
 
-/* ---- Helpers ---- */
+/* ---- Drawing helpers ---- */
 
 static void fill_rect(SDL_Renderer *r, float x, float y, float w, float h,
                       Uint8 R, Uint8 G, Uint8 B, Uint8 A) {
@@ -26,12 +27,27 @@ static void fill_rect(SDL_Renderer *r, float x, float y, float w, float h,
     SDL_RenderFillRect(r, &rect);
 }
 
+static void draw_rect_outline(SDL_Renderer *r, float x, float y, float w, float h,
+                              Uint8 R, Uint8 G, Uint8 B) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(r, R, G, B, 255);
+    SDL_FRect rect = { x, y, w, h };
+    SDL_RenderRect(r, &rect);
+}
+
+static void draw_text(SDL_Renderer *r, float x, float y, const char *s,
+                      Uint8 R, Uint8 G, Uint8 B) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(r, R, G, B, 255);
+    SDL_RenderDebugText(r, x, y, s);
+}
+
 static void trunc_path(const char *path, char *out, size_t sz) {
     size_t len = strlen(path);
     if (len < sz) {
         snprintf(out, sz, "%s", path);
     } else {
-        size_t keep = sz - 4;   /* room for "..." + NUL */
+        size_t keep = sz - 4;
         snprintf(out, sz, "...%s", path + len - keep);
     }
 }
@@ -107,7 +123,7 @@ static void item_text(const Overlay *ov, int row,
     }
 }
 
-/* ---- Value cycling (Enter key) ---- */
+/* ---- Value cycling — marks dirty, does NOT save ---- */
 
 static void activate_item(Overlay *ov) {
     switch (ov->section) {
@@ -115,7 +131,7 @@ static void activate_item(Overlay *ov) {
     case OV_GENERAL:
         if (ov->row == 0) {
             ov->cfg->model = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
-            config_save(ov->cfg);
+            ov->dirty = true;
         }
         break;
 
@@ -126,19 +142,19 @@ static void activate_item(Overlay *ov) {
         switch (ov->row) {
         case 0:
             ov->cfg->memory_kb = (ov->cfg->memory_kb == 64) ? 128 : 64;
-            config_save(ov->cfg);
+            ov->dirty = true;
             break;
         case 1:
             ov->cfg->m4 = !ov->cfg->m4;
-            config_save(ov->cfg);
+            ov->dirty = true;
             break;
         case 2:
             ov->cfg->ulifac = !ov->cfg->ulifac;
-            config_save(ov->cfg);
+            ov->dirty = true;
             break;
         case 3:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
-            config_save(ov->cfg);
+            ov->dirty = true;
             break;
         }
         break;
@@ -146,6 +162,13 @@ static void activate_item(Overlay *ov) {
     default:
         break;
     }
+}
+
+static void try_close(Overlay *ov) {
+    if (ov->dirty)
+        ov->state = OV_STATE_CONFIRM;
+    else
+        ov->visible = false;
 }
 
 /* ---- Public API ---- */
@@ -160,16 +183,45 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
 
     SDL_Scancode sc = ev->key.scancode;
 
+    /* F9 always toggles */
     if (sc == SDL_SCANCODE_F9) {
-        ov->visible = !ov->visible;
+        if (!ov->visible) {
+            ov->visible = true;
+            ov->state   = OV_STATE_MENU;
+            ov->dirty   = false;
+            ov->saved   = *ov->cfg;   /* snapshot */
+        } else {
+            try_close(ov);
+        }
         return true;
     }
 
     if (!ov->visible) return false;
 
+    /* ---- Confirm dialog ---- */
+    if (ov->state == OV_STATE_CONFIRM) {
+        switch (sc) {
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+            config_save(ov->cfg);
+            ov->dirty   = false;
+            ov->visible = false;
+            break;
+        case SDL_SCANCODE_ESCAPE:
+            *ov->cfg    = ov->saved;  /* revert */
+            ov->dirty   = false;
+            ov->visible = false;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    /* ---- Normal menu navigation ---- */
     switch (sc) {
     case SDL_SCANCODE_ESCAPE:
-        ov->visible = false;
+        try_close(ov);
         break;
     case SDL_SCANCODE_LEFT:
         ov->section = (OvSection)((ov->section + OV_SEC_COUNT - 1) % OV_SEC_COUNT);
@@ -193,7 +245,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     default:
         break;
     }
-    return true;    /* consume all keys while overlay is open */
+    return true;
 }
 
 void overlay_render(const Overlay *ov, SDL_Renderer *r) {
@@ -201,14 +253,14 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
     int rw, rh;
     SDL_GetRenderOutputSize(r, &rw, &rh);
-    float lw = rw / 2.0f;   /* logical width at 2× scale */
+    float lw = rw / SCALE;
+    float lh = rh / SCALE;
 
-    SDL_SetRenderScale(r, 2.0f, 2.0f);
+    SDL_SetRenderScale(r, SCALE, SCALE);
 
-    /* ---- Top bar background ---- */
+    /* ---- Top bar ---- */
     fill_rect(r, 0, 0, lw, BAR_H, 20, 20, 50, 230);
 
-    /* ---- Section labels ---- */
     for (int i = 0; i < OV_SEC_COUNT; i++) {
         bool sel = (ov->section == (OvSection)i);
         float tx = sec_x[i];
@@ -217,25 +269,21 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         if (sel) {
             float hw = strlen(sec_labels[i]) * FONT_W + 4.0f;
             fill_rect(r, tx - 2, 1, hw, BAR_H - 2, 70, 90, 200, 255);
-            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            draw_text(r, tx, ty, sec_labels[i], 255, 255, 255);
         } else {
-            SDL_SetRenderDrawColor(r, 150, 150, 175, 255);
+            draw_text(r, tx, ty, sec_labels[i], 150, 150, 175);
         }
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-        SDL_RenderDebugText(r, tx, ty, sec_labels[i]);
     }
 
-    /* ---- Dropdown background ---- */
+    /* ---- Dropdown ---- */
     int nrows = sec_row_count[ov->section];
     float drop_h = nrows * ITEM_H + 4.0f;
     fill_rect(r, 0, BAR_H, lw, drop_h, 15, 15, 40, 245);
 
-    /* Bottom border */
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
     SDL_RenderLine(r, 0, BAR_H + drop_h, lw, BAR_H + drop_h);
 
-    /* ---- Dropdown items ---- */
     for (int i = 0; i < nrows; i++) {
         float iy = BAR_H + 2.0f + i * ITEM_H;
         bool sel = (i == ov->row);
@@ -248,18 +296,34 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         item_text(ov, i, lbl, sizeof(lbl), val, sizeof(val), &readonly);
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
-
-        /* Label — white */
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-        SDL_SetRenderDrawColor(r, 220, 220, 240, 255);
-        SDL_RenderDebugText(r, DROP_PAD, ty, lbl);
-
-        /* Value — amber if editable, dim if read-only */
+        draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
         if (readonly)
-            SDL_SetRenderDrawColor(r, 90, 90, 110, 255);
+            draw_text(r, VAL_X, ty, val, 90, 90, 110);
         else
-            SDL_SetRenderDrawColor(r, 255, 200, 50, 255);
-        SDL_RenderDebugText(r, VAL_X, ty, val);
+            draw_text(r, VAL_X, ty, val, 255, 200, 50);
+    }
+
+    /* ---- Confirm dialog ---- */
+    if (ov->state == OV_STATE_CONFIRM) {
+        /* Dim everything behind the dialog */
+        fill_rect(r, 0, 0, lw, lh, 0, 0, 0, 140);
+
+        const char *line1 = "Save changes?";
+        const char *line2 = "Enter = Save      Esc = Discard";
+        int l1w = strlen(line1) * FONT_W;
+        int l2w = strlen(line2) * FONT_W;
+        int box_w = l2w + 24;
+        int box_h = FONT_H * 2 + 24;
+        float bx = (lw - box_w) / 2.0f;
+        float by = (lh - box_h) / 2.0f;
+
+        fill_rect(r, bx, by, box_w, box_h, 25, 25, 60, 255);
+        draw_rect_outline(r, bx, by, box_w, box_h, 70, 90, 200);
+
+        draw_text(r, bx + (box_w - l1w) / 2.0f, by + 6,
+                  line1, 255, 255, 255);
+        draw_text(r, bx + (box_w - l2w) / 2.0f, by + 6 + FONT_H + 8,
+                  line2, 200, 200, 100);
     }
 
     SDL_SetRenderScale(r, 1.0f, 1.0f);
