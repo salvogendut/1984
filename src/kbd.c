@@ -21,53 +21,61 @@ u8 kbd_read_row(Keyboard *k, u8 row) {
 }
 
 /*
- * CPC keyboard matrix (row, col) for common keys.
- * Source: CPC Hardware Reference / CPCWiki keyboard map.
+ * CPC keyboard matrix mapping. row/col derived from Caprice32 hardware scancodes:
+ * row = scancode >> 4, col = physical_bit = scancode & 7.
  */
 typedef struct { SDL_Scancode sc; int row, col; } KeyMap;
 
 static const KeyMap keymap[] = {
-    /* col = 7 - CPCWiki_bit (bit 7 = MSB in byte, returned as bit 7 by PSG IOA) */
-
-    /* Row 0: bit7=CurUp bit6=CurRt bit5=Copy bit4=F9 bit3=F6 bit2=F3 bit1=KPEnter bit0=KP. */
+    /* Row 0: CurUp CurRight CurDown KP9 KP6 KP3 KPEnter KP. */
     { SDL_SCANCODE_UP,        0, 0 },
     { SDL_SCANCODE_RIGHT,     0, 1 },
-    { SDL_SCANCODE_LALT,      0, 2 }, /* COPY */
+    { SDL_SCANCODE_DOWN,      0, 2 },
+    { SDL_SCANCODE_KP_9,      0, 3 },
     { SDL_SCANCODE_F9,        0, 3 },
+    { SDL_SCANCODE_KP_6,      0, 4 },
     { SDL_SCANCODE_F6,        0, 4 },
+    { SDL_SCANCODE_KP_3,      0, 5 },
     { SDL_SCANCODE_F3,        0, 5 },
     { SDL_SCANCODE_KP_ENTER,  0, 6 },
     { SDL_SCANCODE_KP_PERIOD, 0, 7 },
-    /* Row 1: bit7=CurDn bit6=CurLt bit5=Shift bit4=CapsLk bit3=F7 bit2=F4 bit1=F1 bit0=Del */
-    { SDL_SCANCODE_DOWN,      1, 0 },
-    { SDL_SCANCODE_LEFT,      1, 1 },
-    { SDL_SCANCODE_LSHIFT,    1, 2 },
-    { SDL_SCANCODE_RSHIFT,    1, 2 },
-    { SDL_SCANCODE_CAPSLOCK,  1, 3 },
-    { SDL_SCANCODE_F7,        1, 4 },
-    { SDL_SCANCODE_F4,        1, 5 },
-    { SDL_SCANCODE_F1,        1, 6 },
-    { SDL_SCANCODE_BACKSPACE, 1, 7 },
-    /* Row 2: bit7=KP8 bit6=KP4 bit5=KP6 bit4=Ctrl bit3=^\ bit2=Return bit1=- bit0=Space */
-    { SDL_SCANCODE_KP_8,      2, 0 },
-    { SDL_SCANCODE_KP_4,      2, 1 },
-    { SDL_SCANCODE_KP_6,      2, 2 },
-    { SDL_SCANCODE_LCTRL,     2, 3 },
-    { SDL_SCANCODE_RCTRL,     2, 3 },
-    { SDL_SCANCODE_BACKSLASH, 2, 4 },
-    { SDL_SCANCODE_RETURN,    2, 5 },
-    { SDL_SCANCODE_MINUS,     2, 6 },
-    { SDL_SCANCODE_SPACE,     2, 7 },
-    /* Row 3: numpad and extra keys */
-    { SDL_SCANCODE_DELETE,    3, 0 },
-    { SDL_SCANCODE_KP_0,      3, 1 },
-    { SDL_SCANCODE_KP_DIVIDE, 3, 2 },
-    { SDL_SCANCODE_KP_7,      3, 3 },
-    { SDL_SCANCODE_KP_5,      3, 4 },
-    { SDL_SCANCODE_KP_2,      3, 5 },
-    { SDL_SCANCODE_KP_1,      3, 6 },
-    { SDL_SCANCODE_KP_3,      3, 7 },
-    /* Row 4: bit7=0 bit6=9 bit5=O bit4=I bit3=L bit2=K bit1=M bit0=, */
+    /* Row 1: CurLeft Copy KP7 KP8 KP5 KP1 KP2 KP0 */
+    { SDL_SCANCODE_LEFT,      1, 0 },
+    { SDL_SCANCODE_LALT,      1, 1 }, /* COPY */
+    { SDL_SCANCODE_KP_7,      1, 2 },
+    { SDL_SCANCODE_F7,        1, 2 },
+    { SDL_SCANCODE_KP_8,      1, 3 },
+    { SDL_SCANCODE_F8,        1, 3 },
+    { SDL_SCANCODE_KP_5,      1, 4 },
+    { SDL_SCANCODE_F5,        1, 4 },
+    { SDL_SCANCODE_KP_1,      1, 5 },
+    { SDL_SCANCODE_F1,        1, 5 },
+    { SDL_SCANCODE_KP_2,      1, 6 },
+    { SDL_SCANCODE_F2,        1, 6 },
+    { SDL_SCANCODE_KP_0,      1, 7 },
+    /* Row 2: CLR [ Return ] KP4 Shift \ Ctrl */
+    { SDL_SCANCODE_HOME,         2, 0 }, /* CLR */
+    { SDL_SCANCODE_DELETE,       2, 0 }, /* CLR (delete forward → clear line) */
+    { SDL_SCANCODE_LEFTBRACKET,  2, 1 },
+    { SDL_SCANCODE_RETURN,       2, 2 },
+    { SDL_SCANCODE_RIGHTBRACKET, 2, 3 },
+    { SDL_SCANCODE_KP_4,         2, 4 },
+    { SDL_SCANCODE_F4,           2, 4 },
+    { SDL_SCANCODE_LSHIFT,       2, 5 },
+    { SDL_SCANCODE_RSHIFT,       2, 5 },
+    { SDL_SCANCODE_BACKSLASH,    2, 6 },
+    { SDL_SCANCODE_LCTRL,        2, 7 },
+    { SDL_SCANCODE_RCTRL,        2, 7 },
+    /* Row 3: ^ - @ P ; : / . */
+    { SDL_SCANCODE_EQUALS,    3, 0 }, /* ^ on CPC */
+    { SDL_SCANCODE_MINUS,     3, 1 },
+    { SDL_SCANCODE_GRAVE,     3, 2 }, /* @ on CPC */
+    { SDL_SCANCODE_P,         3, 3 },
+    { SDL_SCANCODE_SEMICOLON, 3, 4 },
+    { SDL_SCANCODE_APOSTROPHE,3, 5 }, /* : on CPC */
+    { SDL_SCANCODE_SLASH,     3, 6 },
+    { SDL_SCANCODE_PERIOD,    3, 7 },
+    /* Row 4: 0 9 O I L K M , */
     { SDL_SCANCODE_0,      4, 0 },
     { SDL_SCANCODE_9,      4, 1 },
     { SDL_SCANCODE_O,      4, 2 },
@@ -76,7 +84,7 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_K,      4, 5 },
     { SDL_SCANCODE_M,      4, 6 },
     { SDL_SCANCODE_COMMA,  4, 7 },
-    /* Row 5: bit7=8 bit6=7 bit5=U bit4=Y bit3=H bit2=J bit1=N bit0=Space */
+    /* Row 5: 8 7 U Y H J N Space */
     { SDL_SCANCODE_8,      5, 0 },
     { SDL_SCANCODE_7,      5, 1 },
     { SDL_SCANCODE_U,      5, 2 },
@@ -85,7 +93,7 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_J,      5, 5 },
     { SDL_SCANCODE_N,      5, 6 },
     { SDL_SCANCODE_SPACE,  5, 7 },
-    /* Row 6: bit7=6 bit6=5 bit5=R bit4=T bit3=G bit2=F bit1=B bit0=V */
+    /* Row 6: 6 5 R T G F B V */
     { SDL_SCANCODE_6,      6, 0 },
     { SDL_SCANCODE_5,      6, 1 },
     { SDL_SCANCODE_R,      6, 2 },
@@ -94,7 +102,7 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_F,      6, 5 },
     { SDL_SCANCODE_B,      6, 6 },
     { SDL_SCANCODE_V,      6, 7 },
-    /* Row 7: bit7=4 bit6=3 bit5=E bit4=W bit3=S bit2=D bit1=C bit0=X */
+    /* Row 7: 4 3 E W S D C X */
     { SDL_SCANCODE_4,      7, 0 },
     { SDL_SCANCODE_3,      7, 1 },
     { SDL_SCANCODE_E,      7, 2 },
@@ -103,7 +111,7 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_D,      7, 5 },
     { SDL_SCANCODE_C,      7, 6 },
     { SDL_SCANCODE_X,      7, 7 },
-    /* Row 8: bit7=1 bit6=2 bit5=Esc bit4=Q bit3=Tab bit2=A bit1=CapsLk bit0=Z */
+    /* Row 8: 1 2 Esc Q Tab A CapsLk Z */
     { SDL_SCANCODE_1,        8, 0 },
     { SDL_SCANCODE_2,        8, 1 },
     { SDL_SCANCODE_ESCAPE,   8, 2 },
@@ -112,15 +120,8 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_A,        8, 5 },
     { SDL_SCANCODE_CAPSLOCK, 8, 6 },
     { SDL_SCANCODE_Z,        8, 7 },
-    /* Row 9: punctuation — bit7=@ bit6=[ bit5=] bit4=; bit3=: bit2=/ bit1=. bit0=, */
-    { SDL_SCANCODE_GRAVE,        9, 0 }, /* @ on CPC */
-    { SDL_SCANCODE_LEFTBRACKET,  9, 1 },
-    { SDL_SCANCODE_RIGHTBRACKET, 9, 2 },
-    { SDL_SCANCODE_SEMICOLON,    9, 3 },
-    { SDL_SCANCODE_APOSTROPHE,   9, 4 }, /* : on CPC */
-    { SDL_SCANCODE_SLASH,        9, 5 },
-    { SDL_SCANCODE_PERIOD,       9, 6 },
-    { SDL_SCANCODE_EQUALS,       9, 7 },
+    /* Row 9: DEL (backspace) — only real key here; joystick occupies bits 0-5 */
+    { SDL_SCANCODE_BACKSPACE, 9, 7 },
 };
 
 bool kbd_sdl_key(Keyboard *k, SDL_Scancode sc, bool pressed) {

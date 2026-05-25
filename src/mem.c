@@ -32,7 +32,6 @@ u8 mem_read(Mem *m, u16 addr) {
         return m->rom_os[addr];
     if (addr >= 0xC000 && m->upper_rom_enabled)
         return m->rom_basic[addr - 0xC000];
-    /* 6128 banking: bits 0-2 of ram_bank select 16 KB page at 0xC000 */
     if (addr >= 0xC000 && m->ram_bank) {
         u32 page = m->ram_bank & 0x07;
         return m->ram[(page * 0x4000) + (addr - 0xC000)];
