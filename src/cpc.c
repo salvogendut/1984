@@ -100,6 +100,23 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     return 0;
 }
 
+void cpc_reset(CPC *cpc) {
+    z80_reset(&cpc->cpu);
+    ga_init(&cpc->ga);
+    crtc_init(&cpc->crtc);
+    ppi_init(&cpc->ppi);
+    psg_init(&cpc->psg);
+    kbd_init(&cpc->kbd);
+    cpc->mem.lower_rom_enabled = true;
+    cpc->mem.upper_rom_enabled = true;
+    cpc->mem.ram_bank = 0;
+    cpc->raster_x  = 0;
+    cpc->raster_y  = 0;
+    cpc->prev_hsync = false;
+    cpc->prev_vsync = false;
+    cpc->cycle_debt = 0;
+}
+
 void cpc_destroy(CPC *cpc) {
     display_destroy(&cpc->display);
 }

@@ -36,6 +36,7 @@ typedef struct {
 } CPC;
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);
+void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_frame(CPC *cpc);        /* run one video frame (~20 ms) */
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed);

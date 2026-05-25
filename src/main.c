@@ -44,6 +44,8 @@ int main(int argc, char *argv[]) {
             if (ev.type == SDL_EVENT_KEY_DOWN) {
                 if (ev.key.scancode == SDL_SCANCODE_F12)
                     running = false;
+                else if (ev.key.scancode == SDL_SCANCODE_F5)
+                    cpc_reset(&cpc);
                 else
                     cpc_key_event(&cpc, ev.key.scancode, true);
             } else if (ev.type == SDL_EVENT_KEY_UP) {
