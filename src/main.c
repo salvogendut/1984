@@ -52,6 +52,10 @@ int main(int argc, char *argv[]) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
                            (SDL_GetModState() & SDL_KMOD_CTRL)) {
+                    /* Release Ctrl from the CPC matrix before injecting text;
+                     * otherwise the first character arrives as Ctrl+key. */
+                    cpc_key_event(&cpc, SDL_SCANCODE_LCTRL, false);
+                    cpc_key_event(&cpc, SDL_SCANCODE_RCTRL, false);
                     char *text = SDL_GetClipboardText();
                     if (text) { paste_text(&paste, text); SDL_free(text); }
                 } else {

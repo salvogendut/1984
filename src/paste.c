@@ -130,7 +130,7 @@ void paste_text(Paste *p, const char *text) {
     if (!p->buf) { p->len = 0; return; }
     memcpy(p->buf, text, p->len + 1);
     p->pos   = 0;
-    p->timer = 0;
+    p->timer = 3;   /* wait 3 frames for Ctrl to clear from the CPC matrix */
     p->held  = false;
 }
 
