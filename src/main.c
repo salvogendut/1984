@@ -31,6 +31,10 @@ int main(int argc, char *argv[]) {
     Paste paste;
     paste_init(&paste);
 
+    bool fullscreen = cfg.fullscreen;
+    if (fullscreen)
+        SDL_SetWindowFullscreen(cpc.display.window, true);
+
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -46,6 +50,9 @@ int main(int argc, char *argv[]) {
             if (ev.type == SDL_EVENT_KEY_DOWN) {
                 if (ev.key.scancode == SDL_SCANCODE_F12) {
                     running = false;
+                } else if (ev.key.scancode == SDL_SCANCODE_F11) {
+                    fullscreen = !fullscreen;
+                    SDL_SetWindowFullscreen(cpc.display.window, fullscreen);
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
