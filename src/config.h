@@ -32,3 +32,6 @@ void config_defaults(Config *cfg);
 
 /* Write current cfg back to ~/.config/1984/1984.conf. */
 int config_save(const Config *cfg);
+
+/* Switch model and apply matching RAM size and ROM path defaults. */
+void config_set_model(Config *cfg, CpcModel model);

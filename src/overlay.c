@@ -130,7 +130,8 @@ static void activate_item(Overlay *ov) {
 
     case OV_GENERAL:
         if (ov->row == 0) {
-            ov->cfg->model = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
+            CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
+            config_set_model(ov->cfg, next);
             ov->dirty = true;
         }
         break;

@@ -5,8 +5,14 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
-#define DEFAULT_ROM_OS    "roms/OS_6128.ROM"
-#define DEFAULT_ROM_BASIC "roms/BASIC_1.1.ROM"
+#define DEFAULT_ROM_OS_464    "roms/OS_464.ROM"
+#define DEFAULT_ROM_BASIC_464 "roms/BASIC_1.0.ROM"
+#define DEFAULT_ROM_OS_6128   "roms/OS_6128.ROM"
+#define DEFAULT_ROM_BASIC_6128 "roms/BASIC_1.1.ROM"
+
+/* Keep backward-compat aliases used by the defaults/restore paths */
+#define DEFAULT_ROM_OS    DEFAULT_ROM_OS_6128
+#define DEFAULT_ROM_BASIC DEFAULT_ROM_BASIC_6128
 
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
@@ -229,4 +235,17 @@ int config_save(const Config *cfg) {
 
     fclose(f);
     return 0;
+}
+
+void config_set_model(Config *cfg, CpcModel model) {
+    cfg->model = model;
+    if (model == MODEL_464) {
+        cfg->memory_kb = 64;
+        snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_464);
+        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
+    } else {
+        cfg->memory_kb = 128;
+        snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_6128);
+        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_6128);
+    }
 }
