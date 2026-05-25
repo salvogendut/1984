@@ -1,0 +1,133 @@
+#include "config.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define DEFAULT_ROM_OS    "roms/OS_6128.ROM"
+#define DEFAULT_ROM_BASIC "roms/BASIC_1.1.ROM"
+
+void config_defaults(Config *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->model     = MODEL_6128;
+    cfg->memory_kb = 128;
+    snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS);
+    snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC);
+    cfg->m4        = false;
+    cfg->ulifac    = false;
+    cfg->net4cpc   = false;
+    cfg->scale     = 2;
+    cfg->fullscreen= false;
+}
+
+/* Expand a leading ~ to the home directory. Result written into out[size]. */
+static void expand_path(const char *in, char *out, size_t size) {
+    if (in[0] == '~') {
+        const char *home = getenv("HOME");
+        if (home)
+            snprintf(out, size, "%s%s", home, in + 1);
+        else
+            snprintf(out, size, "%s", in);
+    } else {
+        snprintf(out, size, "%s", in);
+    }
+}
+
+static char *trim(char *s) {
+    while (isspace((unsigned char)*s)) s++;
+    char *end = s + strlen(s);
+    while (end > s && isspace((unsigned char)*(end - 1))) end--;
+    *end = '\0';
+    return s;
+}
+
+static bool parse_bool(const char *val, bool *out) {
+    if (!strcmp(val, "true") || !strcmp(val, "1") || !strcmp(val, "yes")) {
+        *out = true; return true;
+    }
+    if (!strcmp(val, "false") || !strcmp(val, "0") || !strcmp(val, "no")) {
+        *out = false; return true;
+    }
+    return false;
+}
+
+int config_load(Config *cfg) {
+    config_defaults(cfg);
+
+    const char *home = getenv("HOME");
+    if (!home) return 0;
+
+    char path[CONFIG_PATH_MAX];
+    snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;   /* missing config is fine */
+
+    char line[512];
+    char section[64] = "";
+    int  lineno = 0;
+    int  rc = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        lineno++;
+        char *s = trim(line);
+        if (!*s || *s == '#' || *s == ';') continue;
+
+        if (*s == '[') {
+            char *end = strchr(s, ']');
+            if (end) {
+                *end = '\0';
+                snprintf(section, sizeof(section), "%s", s + 1);
+            }
+            continue;
+        }
+
+        char *eq = strchr(s, '=');
+        if (!eq) continue;
+        *eq = '\0';
+        char *key = trim(s);
+        char *val = trim(eq + 1);
+
+        if (!strcmp(section, "machine")) {
+            if (!strcmp(key, "model")) {
+                if (!strcmp(val, "464"))       cfg->model = MODEL_464;
+                else if (!strcmp(val, "6128")) cfg->model = MODEL_6128;
+                else { fprintf(stderr, "1984.conf:%d: unknown model '%s'\n", lineno, val); rc = -1; }
+            } else if (!strcmp(key, "memory")) {
+                int kb = atoi(val);
+                if (kb == 64 || kb == 128) cfg->memory_kb = kb;
+                else { fprintf(stderr, "1984.conf:%d: memory must be 64 or 128\n", lineno); rc = -1; }
+            }
+        } else if (!strcmp(section, "roms")) {
+            if (!strcmp(key, "os"))
+                expand_path(val, cfg->rom_os, sizeof(cfg->rom_os));
+            else if (!strcmp(key, "basic"))
+                expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
+        } else if (!strcmp(section, "hardware")) {
+            bool b;
+            if (!strcmp(key, "m4")) {
+                if (parse_bool(val, &b)) cfg->m4 = b;
+                else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "ulifac")) {
+                if (parse_bool(val, &b)) cfg->ulifac = b;
+                else { fprintf(stderr, "1984.conf:%d: ulifac must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "net4cpc")) {
+                if (parse_bool(val, &b)) cfg->net4cpc = b;
+                else { fprintf(stderr, "1984.conf:%d: net4cpc must be true/false\n", lineno); rc = -1; }
+            }
+        } else if (!strcmp(section, "display")) {
+            if (!strcmp(key, "scale")) {
+                int sc = atoi(val);
+                if (sc >= 1 && sc <= 3) cfg->scale = sc;
+                else { fprintf(stderr, "1984.conf:%d: scale must be 1, 2, or 3\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "fullscreen")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->fullscreen = b;
+                else { fprintf(stderr, "1984.conf:%d: fullscreen must be true/false\n", lineno); rc = -1; }
+            }
+        }
+    }
+
+    fclose(f);
+    return rc;
+}

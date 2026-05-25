@@ -1,0 +1,26 @@
+# 1984 CPC Emulator — configuration file
+# Copy to ~/.config/1984/1984.conf and edit as needed.
+# All settings are optional; omitted keys use the defaults shown here.
+
+[machine]
+# CPC model: 464 or 6128
+model=6128
+# RAM size in KB: 64 (CPC 464) or 128 (CPC 6128)
+memory=128
+
+[roms]
+# Paths to ROM images. ~ is expanded to your home directory.
+os=~/.config/1984/roms/OS_6128.ROM
+basic=~/.config/1984/roms/BASIC_1.1.ROM
+
+[hardware]
+# Optional expansion hardware (not yet implemented — reserved for future use)
+m4=false
+ulifac=false
+net4cpc=false
+
+[display]
+# Window scale factor: 1, 2, or 3
+scale=2
+# Start in fullscreen mode: true or false
+fullscreen=false
