@@ -20,5 +20,5 @@ void kbd_key_up(Keyboard *k, int row, int col);
 u8   kbd_read_row(Keyboard *k, u8 row);
 
 /* Map an SDL scancode to (row, col); returns false if unmapped */
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 bool kbd_sdl_key(Keyboard *k, SDL_Scancode sc, bool pressed);

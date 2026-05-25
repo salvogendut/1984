@@ -1,4 +1,4 @@
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include "cpc.h"
@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
     const char *rom_os    = (model == MODEL_464) ? ROM_OS_464    : ROM_OS_6128;
     const char *rom_basic = (model == MODEL_464) ? ROM_BASIC_464 : ROM_BASIC_6128;
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
@@ -33,17 +33,17 @@ int main(int argc, char *argv[]) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             switch (ev.type) {
-                case SDL_QUIT:
+                case SDL_EVENT_QUIT:
                     running = false;
                     break;
-                case SDL_KEYDOWN:
-                    if (ev.key.keysym.scancode == SDL_SCANCODE_F12)
+                case SDL_EVENT_KEY_DOWN:
+                    if (ev.key.scancode == SDL_SCANCODE_F12)
                         running = false;
                     else
-                        cpc_key_event(&cpc, ev.key.keysym.scancode, true);
+                        cpc_key_event(&cpc, ev.key.scancode, true);
                     break;
-                case SDL_KEYUP:
-                    cpc_key_event(&cpc, ev.key.keysym.scancode, false);
+                case SDL_EVENT_KEY_UP:
+                    cpc_key_event(&cpc, ev.key.scancode, false);
                     break;
             }
         }

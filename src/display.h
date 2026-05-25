@@ -1,9 +1,9 @@
 #pragma once
 #include "types.h"
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 /*
- * SDL2 display layer.
+ * SDL3 display layer.
  * The CPC screen is rendered into a 768x272 pixel texture (mode 2 native
  * resolution doubled horizontally for modes 0/1 visibility) and scaled
  * to the window.

@@ -1,6 +1,6 @@
 CC      := gcc
-CFLAGS  := -std=c11 -Wall -Wextra -O2 -g $(shell sdl2-config --cflags)
-LDFLAGS := $(shell sdl2-config --libs) -lm
+CFLAGS  := -std=c11 -Wall -Wextra -O2 -g $(shell pkg-config --cflags sdl3)
+LDFLAGS := $(shell pkg-config --libs sdl3) -lm
 
 SRCDIR  := src
 BINDIR  := bin

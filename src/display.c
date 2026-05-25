@@ -5,23 +5,18 @@
 int display_init(Display *d, const char *title) {
     memset(d, 0, sizeof(*d));
 
-    d->window = SDL_CreateWindow(
-        title,
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_W, WINDOW_H,
-        SDL_WINDOW_RESIZABLE
-    );
+    d->window = SDL_CreateWindow(title, WINDOW_W, WINDOW_H, SDL_WINDOW_RESIZABLE);
     if (!d->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         return -1;
     }
 
-    d->renderer = SDL_CreateRenderer(d->window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    d->renderer = SDL_CreateRenderer(d->window, NULL);
     if (!d->renderer) {
         fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError());
         return -1;
     }
+    SDL_SetRenderVSync(d->renderer, 1);
 
     /* No logical size — we'll blit with explicit dest rect for 4:3 */
 
@@ -70,11 +65,11 @@ void display_present(Display *d) {
         dst_w = dst_h * WINDOW_W / WINDOW_H;
     else
         dst_h = dst_w * WINDOW_H / WINDOW_W;
-    SDL_Rect dst = { (ww - dst_w) / 2, (wh - dst_h) / 2, dst_w, dst_h };
+    SDL_FRect dst = { (float)(ww - dst_w) / 2, (float)(wh - dst_h) / 2, (float)dst_w, (float)dst_h };
 
     SDL_UpdateTexture(d->texture, NULL, d->pixels, CPC_SCREEN_W * sizeof(u32));
     SDL_RenderClear(d->renderer);
-    SDL_RenderCopy(d->renderer, d->texture, NULL, &dst);
+    SDL_RenderTexture(d->renderer, d->texture, NULL, &dst);
     SDL_RenderPresent(d->renderer);
 }
 
