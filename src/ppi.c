@@ -34,7 +34,8 @@ u8 ppi_read(PPI *p, u8 port) {
     switch (port & 0x03) {
         case 0: return p->port_a;
         case 1: {
-            u8 b = 0xFE; /* open-collector pull-up, all bits high when not driven */
+            /* bit 6: printer not busy; bits 4-1: jumpers (0x1E = 50Hz PAL, no expansion); bit 0: VSYNC */
+            u8 b = 0x1E | 0x40;
             if (p->vsync_signal) b |= 0x01;
             return b;
         }

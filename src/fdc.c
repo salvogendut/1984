@@ -1,6 +1,5 @@
 #include "fdc.h"
 #include <string.h>
-#include <stdio.h>
 
 /* Command byte counts (total bytes including the command byte itself).
  * Index = command code & 0x1F. 0 = unknown/invalid. */
@@ -144,7 +143,6 @@ static void exec_cmd(FDC *fdc) {
         uint8_t  N    = fdc->cmd[5];
         uint8_t  EOT  = fdc->cmd[6];
         Disk    *d    = fdc->drive[drv];
-
         if (!d || !d->inserted) {
             set_result(fdc, FDC_ST0_IC_AT | FDC_ST0_NR | (uint8_t)drv,
                        0, 0, C, H, R, N);

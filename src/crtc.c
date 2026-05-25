@@ -28,9 +28,7 @@ void crtc_write(CRTC *c, u8 val) {
 }
 
 u8 crtc_read(CRTC *c) {
-    if (c->selected >= 12 && c->selected <= 17)
-        return c->reg[c->selected];
-    return 0;
+    return (c->selected >= 12 && c->selected <= 17) ? c->reg[c->selected] : 0;
 }
 
 void crtc_tick(CRTC *c) {
