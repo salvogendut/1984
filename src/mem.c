@@ -73,27 +73,78 @@ void mem_unload_rom_ext(Mem *m, int slot) {
     m->rom_ext_present[slot] = false;
 }
 
-/* Compute the RAM offset for the banked 0xC000-0xFFFF region.
- * Bits[5:0] of ram_bank form a 6-bit 16KB-page index (0-63):
- *   page 0-7   = standard 128 KB (6128 built-in)
- *   page 8-63  = DK'tronics-style expansion (up to 1 MB total)
- * Returns RAM_SIZE if the page exceeds ram_size (treat as uninstalled). */
-static inline u32 banked_offset(const Mem *m, u16 addr) {
-    u32 page = (u32)(m->ram_bank & 0x3F);
-    u32 off  = page * 0x4000u + (u32)(addr - 0xC000u);
-    return (off < (u32)m->ram_size) ? off : RAM_SIZE;
+/* Translate a Z80 address to its physical RAM offset under the current
+ * Gate Array banking configuration.  Only called when ram_bank != 0.
+ *
+ * The CPC 6128 Gate Array banking byte (bits[7:6] = 11) encodes:
+ *   bits[2:0]  banking mode 0-7 — selects which of 8 page layouts to use
+ *   bits[5:3]  expansion bank   — DK'tronics: which 64 KB block maps to
+ *                                 romb4-romb7 (0 = standard 6128 extra 64 KB)
+ *
+ * Page layout per mode (from Caprice32 ga_init_banking):
+ *   base pages:   romb0=0x00000  romb1=0x04000  romb2=0x08000  romb3=0x0C000
+ *   extra pages:  romb4=X+0x0    romb5=X+0x4000 romb6=X+0x8000 romb7=X+0xC000
+ *                 where X = (expansion_bank + 1) * 0x10000
+ *
+ *   mode | 0x0000  0x4000  0x8000  0xC000
+ *   -----+------------------------------------
+ *     0  | rb0     rb1     rb2     rb3
+ *     1  | rb0     rb1     rb2     rb7   ← most common: extra 0xC000 page
+ *     2  | rb4     rb5     rb6     rb7
+ *     3  | rb0     rb3     rb2     rb7
+ *     4  | rb0     rb4     rb2     rb3
+ *     5  | rb0     rb5     rb2     rb3
+ *     6  | rb0     rb6     rb2     rb3
+ *     7  | rb0     rb7     rb2     rb3
+ *
+ * Read vs. write asymmetry: upper ROM always overlays the 0xC000 read path
+ * (handled in mem_read); writes always go to the banked RAM page (here).
+ * Video reads (mem_read_video) bypass ROM and use this function directly. */
+static u32 banked_ram_offset(const Mem *m, u16 addr) {
+    u8  mode  = m->ram_bank & 0x07;
+    u8  group = (m->ram_bank >> 3) & 0x07;
+    u32 extra = (u32)(group + 1) * 0x10000u;   /* start of romb4-romb7 */
+
+    if (addr < 0x4000) {
+        return (mode == 2) ? extra + (u32)addr : (u32)addr;
+    }
+    if (addr < 0x8000) {
+        u32 rel = (u32)(addr - 0x4000u);
+        switch (mode) {
+        case 2: return extra + 0x4000u + rel;
+        case 3: return 0x0C000u + rel;
+        case 4: return extra + 0x0000u + rel;
+        case 5: return extra + 0x4000u + rel;
+        case 6: return extra + 0x8000u + rel;
+        case 7: return extra + 0xC000u + rel;
+        default: return (u32)addr;
+        }
+    }
+    if (addr < 0xC000) {
+        u32 rel = (u32)(addr - 0x8000u);
+        return (mode == 2) ? extra + 0x8000u + rel : (u32)addr;
+    }
+    /* 0xC000-0xFFFF: romb7 in modes 1/2/3, else romb3 (standard) */
+    {
+        u32 rel = (u32)(addr - 0xC000u);
+        return (mode == 1 || mode == 2 || mode == 3)
+               ? extra + 0xC000u + rel
+               : (u32)addr;
+    }
+}
+
+static inline u8 read_ram(const Mem *m, u32 off) {
+    return (off < (u32)m->ram_size) ? m->ram[off] : 0xFF;
 }
 
 u8 mem_read(Mem *m, u16 addr) {
+    /* Lower ROM overlay */
     if (addr < 0x4000 && m->lower_rom_enabled)
         return m->rom_os[addr];
+
+    /* Upper ROM overlay — always wins on reads at 0xC000 when enabled,
+     * even when banking is active (writes still go to banked RAM). */
     if (addr >= 0xC000 && m->upper_rom_enabled) {
-        /* RAM bank takes priority over ROM when banking is active */
-        if (m->ram_bank) {
-            u32 off = banked_offset(m, addr);
-            return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
-        }
-        /* Expansion ROM overrides take priority; fall back to BASIC/AMSDOS defaults */
         u8 slot = m->upper_rom_select;
         if (slot < ROM_EXT_COUNT && m->rom_ext_present[slot])
             return m->rom_ext[slot][addr - 0xC000];
@@ -103,26 +154,23 @@ u8 mem_read(Mem *m, u16 addr) {
             return m->rom_amsdos[addr - 0xC000];
         return 0xFF;
     }
-    if (addr >= 0xC000 && m->ram_bank) {
-        u32 off = banked_offset(m, addr);
-        return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
-    }
+
+    /* RAM read — apply banking for all regions when active */
+    if (m->ram_bank)
+        return read_ram(m, banked_ram_offset(m, addr));
     return m->ram[addr];
 }
 
 u8 mem_read_video(Mem *m, u16 addr) {
-    if (addr >= 0xC000 && m->ram_bank) {
-        u32 off = banked_offset(m, addr);
-        return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
-    }
+    /* CRTC reads RAM only (no ROM overlay), applying current banking */
+    if (m->ram_bank)
+        return read_ram(m, banked_ram_offset(m, addr));
     return m->ram[addr];
 }
 
 void mem_write(Mem *m, u16 addr, u8 val) {
-    if (addr >= 0xC000 && m->ram_bank) {
-        u32 off = banked_offset(m, addr);
-        if (off < RAM_SIZE) m->ram[off] = val;
-        return;
-    }
-    m->ram[addr] = val;
+    /* Writes always go to RAM at the banked page; ROM overlay never intercepts writes */
+    u32 off = m->ram_bank ? banked_ram_offset(m, addr) : (u32)addr;
+    if (off < (u32)m->ram_size)
+        m->ram[off] = val;
 }
