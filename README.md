@@ -58,26 +58,27 @@ fullscreen=false
 ## Usage
 
 ```bash
-./bin/1984 [OPTIONS] [disk.dsk]
+./bin/1984 [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `disk.dsk` | DSK image to mount in drive A on startup |
+| `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
+| `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 
 Examples:
 
 ```bash
-# Boot to BASIC with a disk mounted
-./bin/1984 game.dsk
+# Boot with a disk mounted in drive A
+./bin/1984 --disk-a=game.dsk
 
 # Autostart a specific file from the disk
-./bin/1984 --autostart=game game.dsk
+./bin/1984 --disk-a=game.dsk --autostart=game
 
 # Run a disk-based game that needs its own loader command
-./bin/1984 --paste='|disc\nrun"disc' game.dsk
+./bin/1984 --disk-a=game.dsk --paste='|disc\nrun"disc'
 ```
 
 The machine model (464 or 6128) is selected via the options overlay (F9).

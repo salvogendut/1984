@@ -68,6 +68,22 @@ The CPC firmware manages a cooperative interrupt handler that runs a "flush task
 
 `cpc_frame()` includes a fallback: if the firmware's dirty flag (0xB7F7 = 0xFF) is still set at end-of-frame, all 17 ink values are flushed directly from palette RAM to the Gate Array. This is a no-op when the firmware's flush task ran normally (it clears the flag), and only activates when the firmware path was bypassed.
 
+## PSG / audio
+
+The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called once per frame and generates 882 mono samples (44 100 Hz ÷ 50 Hz) which are pushed to an SDL3 audio stream.
+
+**Oversampling.** `psg_tick()` advances all three generators by one AY clock. `psg_render()` calls it ~22–23 times per output sample (the exact count varies with the fractional accumulator `clock_rem`) and averages the results. This acts as a box-filter anti-alias on the square waves.
+
+**Fractional clock accumulator.** `clk_per_sample = 1 000 000 / 44 100 = 22.676…`. A `float clock_rem` carries the fraction across samples so pitch is exact rather than drifting ~3% from integer truncation.
+
+**AY ÷8 prescaler.** The real AY chip has an internal ÷8 prescaler before its tone, noise, and envelope counters. All counter thresholds are therefore multiplied by 8 in `psg_tick()`, so that register values from real CPC software work without adjustment (e.g. `SOUND 1,142,…` plays A4 at 440 Hz, not 3 octaves too high). The formula for tone frequency is: `f = 1 MHz / (16 × N)`.
+
+**Envelope.** 32 steps per cycle; each step advances every `ep × 8` AY clocks (where `ep = (R12 << 8) | R11`). Shape bits CONT/ALT/HOLD (R13 bits 3/1/0) select between single-shot, sawtooth, and triangle modes. Writing R13 resets the envelope. `env_counter` is `u32` because `ep × 8` can reach 524 280.
+
+**Low-pass filter.** A one-pole IIR (`lp = (x + lp) >> 1`) is applied after oversampling. This gives a ~7 kHz cutoff at 44 100 Hz, removing the high-frequency aliasing that makes CPC square waves sound metallic.
+
+**Frame pacing.** VSync is disabled (`SDL_SetRenderVSync(renderer, 0)`). The main loop uses `SDL_GetTicksNS()` / `SDL_DelayNS()` to sleep for whatever is left of each 20 ms budget. This prevents the display refresh rate (typically 60 Hz) from overdriving the audio queue and causing growing latency.
+
 ## Reset
 
 `cpc_reset()` performs a warm reset: all chips are reinitialised (Z80, Gate Array, CRTC, PPI, PSG, keyboard) and raster counters are cleared, but ROM and RAM contents are preserved — matching real CPC hardware reset behaviour.
