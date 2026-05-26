@@ -5,3 +5,16 @@ disks/
 *.rom
 *.dsk
 *.sna
+
+# autotools build artefacts
+/Makefile
+/config.status
+/config.log
+/configure
+/aclocal.m4
+/src/.deps/
+/1984
+build-aux/compile
+build-aux/depcomp
+build-aux/install-sh
+build-aux/missing
