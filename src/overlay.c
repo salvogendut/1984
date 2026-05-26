@@ -196,7 +196,7 @@ static void activate_item(Overlay *ov) {
     case OV_ADVANCED:
         switch (ov->row) {
         case 0: {
-            static const int sizes[] = { 64, 128, 256, 512, 1024 };
+            static const int sizes[] = { 64, 128, 256, 512, 576 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
             int cur = 0;
             for (int i = 0; i < n; i++)
