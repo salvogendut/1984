@@ -35,6 +35,7 @@ typedef struct {
 void mem_init(Mem *m);
 int  mem_load_rom(Mem *m, const char *os_path, const char *basic_path);
 int  mem_load_amsdos(Mem *m, const char *path);        /* slot 7 default; non-fatal */
+void mem_unload_amsdos(Mem *m);                        /* clear slot 7 default */
 int  mem_load_rom_ext(Mem *m, int slot, const char *path);  /* expansion slot 0-31 */
 void mem_unload_rom_ext(Mem *m, int slot);
 u8   mem_read(Mem *m, u16 addr);

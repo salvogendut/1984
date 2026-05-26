@@ -22,6 +22,7 @@ typedef struct {
     char disk_b[CONFIG_PATH_MAX];
 
     /* [hardware] */
+    bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
     bool ulifac;
     bool net4cpc;
@@ -43,3 +44,6 @@ int config_save(const Config *cfg);
 
 /* Switch model and apply matching RAM size and ROM path defaults. */
 void config_set_model(Config *cfg, CpcModel model);
+
+/* Enable or disable the DDI-1 on a CPC 464 (sets/clears rom_amsdos). */
+void config_apply_dd1(Config *cfg, bool enabled);

@@ -21,7 +21,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 5 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 6 };
 
 /* ---- Drawing helpers ---- */
 
@@ -58,6 +58,11 @@ static void trunc_path(const char *path, char *out, size_t sz) {
     }
 }
 
+/* True when floppy drives are accessible (6128 always; 464 only with DD1) */
+static bool floppy_accessible(const Overlay *ov) {
+    return ov->cfg->model == MODEL_6128 || ov->cfg->dd1;
+}
+
 /* ---- Menu item text ---- */
 
 static void item_text(const Overlay *ov, int row,
@@ -89,19 +94,26 @@ static void item_text(const Overlay *ov, int row,
         break;
 
     case OV_STORAGE: {
+        bool accessible = floppy_accessible(ov);
         Disk *da = ov->cpc ? &ov->cpc->drive[0] : NULL;
         Disk *db = ov->cpc ? &ov->cpc->drive[1] : NULL;
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "Drive A");
-            if (da && da->inserted && ov->cfg->disk_a[0])
+            if (!accessible) {
+                snprintf(val, vsz, "[enable DD1 in Advanced]");
+                *readonly = true;
+            } else if (da && da->inserted && ov->cfg->disk_a[0])
                 trunc_path(ov->cfg->disk_a, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
             break;
         case 1:
             snprintf(lbl, lsz, "Drive B");
-            if (db && db->inserted && ov->cfg->disk_b[0])
+            if (!accessible) {
+                snprintf(val, vsz, "[enable DD1 in Advanced]");
+                *readonly = true;
+            } else if (db && db->inserted && ov->cfg->disk_b[0])
                 trunc_path(ov->cfg->disk_b, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
@@ -129,6 +141,15 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "%s", ov->cfg->net4cpc ? "enabled" : "disabled");
             break;
         case 4:
+            snprintf(lbl, lsz, "DD1");
+            if (ov->cfg->model == MODEL_6128) {
+                snprintf(val, vsz, "N/A (6128 has built-in FDC)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->dd1 ? "enabled" : "disabled");
+            }
+            break;
+        case 5:
             snprintf(lbl, lsz, "ROM Slots");
             snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
@@ -155,7 +176,7 @@ static void activate_item(Overlay *ov) {
         break;
 
     case OV_STORAGE:
-        if (ov->row == 0 || ov->row == 1) {
+        if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
             ov->dialog_kind  = DIALOG_DISK;
             ov->dialog_drive = ov->row;
             ov->dialog_ready = false;
@@ -188,6 +209,18 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         case 4:
+            if (ov->cfg->model == MODEL_464) {
+                config_apply_dd1(ov->cfg, !ov->cfg->dd1);
+                if (ov->cpc) {
+                    if (ov->cfg->dd1)
+                        mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
+                    else
+                        mem_unload_amsdos(&ov->cpc->mem);
+                }
+                ov->dirty = true;
+            }
+            break;
+        case 5:
             ov->state = OV_STATE_ROMSLOTS;
             break;
         }

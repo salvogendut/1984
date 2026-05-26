@@ -92,6 +92,8 @@ static void config_create_default(const char *path, const char *home) {
         "drive_b=\n"
         "\n"
         "[hardware]\n"
+        "# dd1: CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS)\n"
+        "dd1=false\n"
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
         "ulifac=false\n"
@@ -178,7 +180,10 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->disk_b, sizeof(cfg->disk_b));
         } else if (!strcmp(section, "hardware")) {
             bool b;
-            if (!strcmp(key, "m4")) {
+            if (!strcmp(key, "dd1")) {
+                if (parse_bool(val, &b)) cfg->dd1 = b;
+                else { fprintf(stderr, "1984.conf:%d: dd1 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "m4")) {
                 if (parse_bool(val, &b)) cfg->m4 = b;
                 else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "ulifac")) {
@@ -253,6 +258,7 @@ int config_save(const Config *cfg) {
         "drive_a=%s\n"
         "drive_b=%s\n\n"
         "[hardware]\n"
+        "dd1=%s\n"
         "m4=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n\n"
@@ -261,6 +267,7 @@ int config_save(const Config *cfg) {
         "fullscreen=%s\n",
         cfg->disk_a,
         cfg->disk_b,
+        cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc ? "true" : "false",
@@ -276,13 +283,23 @@ void config_set_model(Config *cfg, CpcModel model) {
     cfg->model = model;
     if (model == MODEL_464) {
         cfg->memory_kb = 64;
+        cfg->dd1       = false;
         snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_464);
         snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
-        cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS */
+        cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS; DD1 adds it */
     } else {
         cfg->memory_kb = 128;
+        cfg->dd1       = false;      /* 6128 has built-in FDC; DD1 not applicable */
         snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS_6128);
         snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC_6128);
         snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
     }
+}
+
+void config_apply_dd1(Config *cfg, bool enabled) {
+    cfg->dd1 = enabled;
+    if (enabled)
+        snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
+    else
+        cfg->rom_amsdos[0] = '\0';
 }

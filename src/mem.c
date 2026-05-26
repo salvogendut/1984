@@ -42,6 +42,11 @@ int mem_load_amsdos(Mem *m, const char *path) {
     return 0;
 }
 
+void mem_unload_amsdos(Mem *m) {
+    memset(m->rom_amsdos, 0xFF, sizeof(m->rom_amsdos));
+    m->amsdos_present = false;
+}
+
 int mem_load_rom_ext(Mem *m, int slot, const char *path) {
     if (slot < 0 || slot >= ROM_EXT_COUNT) return -1;
     if (!path || !path[0]) return -1;
