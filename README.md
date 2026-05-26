@@ -1,5 +1,3 @@
-![Example Image](1984.png)
-
 # 1984 — Amstrad CPC Emulator
 
 ![1984](1984.png)
