@@ -98,6 +98,7 @@ fullscreen=false
 |--------|-------------|
 | `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
+| `--rom-slot=N:PATH` | Load a ROM image into upper ROM slot N (0-31); may be repeated |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 | `-h`, `--help` | Print this option summary and exit |

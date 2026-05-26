@@ -20,6 +20,8 @@ static void usage(const char *prog, int code) {
         "Options:\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
+        "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
+        "                      May be specified multiple times\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  -h, --help          Show this help and exit\n"
@@ -43,6 +45,11 @@ int main(int argc, char *argv[]) {
     const char *paste_arg  = NULL;
     const char *disk_a_arg = NULL;
     const char *disk_b_arg = NULL;
+
+    /* --rom-slot=N:PATH pairs collected from CLI */
+    struct { int slot; const char *path; } rom_slots[ROM_EXT_COUNT];
+    int rom_slot_count = 0;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
             usage(argv[0], 0);
@@ -54,7 +61,25 @@ int main(int argc, char *argv[]) {
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
             disk_b_arg = argv[i] + 9;
-        else if (argv[i][0] == '-') {
+        else if (strncmp(argv[i], "--rom-slot=", 11) == 0 && argv[i][11] != '\0') {
+            const char *arg = argv[i] + 11;
+            char *colon = strchr(arg, ':');
+            if (!colon || colon == arg || colon[1] == '\0') {
+                fprintf(stderr, "%s: --rom-slot requires N:PATH format\n", argv[0]);
+                usage(argv[0], 1);
+            }
+            int slot = atoi(arg);
+            if (slot < 0 || slot >= ROM_EXT_COUNT) {
+                fprintf(stderr, "%s: --rom-slot slot number must be 0-%d\n",
+                        argv[0], ROM_EXT_COUNT - 1);
+                usage(argv[0], 1);
+            }
+            if (rom_slot_count < ROM_EXT_COUNT) {
+                rom_slots[rom_slot_count].slot = slot;
+                rom_slots[rom_slot_count].path = colon + 1;
+                rom_slot_count++;
+            }
+        } else if (argv[i][0] == '-') {
             fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
             usage(argv[0], 1);
         }
@@ -83,10 +108,17 @@ int main(int argc, char *argv[]) {
     if (cfg.rom_amsdos[0])
         mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
 
-    /* Load expansion ROMs into slots 0-31 */
+    /* Load expansion ROMs into slots 0-31 (from config) */
     for (int s = 0; s < ROM_EXT_COUNT; s++) {
         if (cfg.rom_ext[s][0])
             mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+    }
+
+    /* Apply --rom-slot=N:PATH overrides from CLI */
+    for (int i = 0; i < rom_slot_count; i++) {
+        if (mem_load_rom_ext(&cpc.mem, rom_slots[i].slot, rom_slots[i].path) < 0)
+            fprintf(stderr, "1984: failed to load ROM slot %d: %s\n",
+                    rom_slots[i].slot, rom_slots[i].path);
     }
 
     /* Load floppy images from config */
