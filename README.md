@@ -83,8 +83,10 @@ The machine model (464 or 6128) is selected via the options overlay (F9).
 
 | Key    | Action |
 |--------|--------|
+| F4     | Save screenshot (`<binary>_<timestamp>.ppm`) |
 | F5     | Warm reset |
 | F9     | Open/close options overlay |
+| F11    | Toggle fullscreen |
 | F12    | Quit |
 | Ctrl+V | Paste clipboard text into the emulator |
 
