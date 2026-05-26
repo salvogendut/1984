@@ -6,7 +6,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), and joystick/gamepad (USB, Bluetooth, hot-plug) work. Commercial games and standard software run well. Software that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), and joystick/gamepad (USB, Bluetooth, hot-plug) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
 
 ## Requirements
 
