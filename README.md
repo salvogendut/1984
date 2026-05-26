@@ -36,6 +36,14 @@ autoreconf -fiv
 ```
 This requires `autoconf` and `automake`. On most systems they are available as packages (`autoconf`, `automake`).
 
+**RPM package (Fedora / RHEL / CentOS):**
+
+A `1984.spec` file is included. Build an RPM with:
+```bash
+rpmbuild -ba 1984.spec
+```
+The spec file handles `autoreconf`, `./configure`, and `make install` automatically.
+
 ## ROM files
 
 Place ROM images in the `roms/` directory with these exact names:
