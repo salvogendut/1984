@@ -116,7 +116,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
-The **Memory** row (Advanced tab, row 0) cycles through 64 → 128 → 256 → 512 → 576 KB on Enter. The 6128 minimum is 128 KB (64 KB is skipped). A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
+The **Memory** row (Advanced tab, row 0) cycles through 64 → 128 → 256 → 512 → 576 KB on Enter for both the 464 and 6128. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
 **ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Advanced → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
 
@@ -134,19 +134,14 @@ The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0�
 0x0000–0x3FFF   OS ROM (lower) or RAM
 0x4000–0x7FFF   RAM
 0x8000–0xBFFF   RAM
-0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank (6128)
+0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank
 ```
 
 RAM is configurable from 64 KB (464 minimum) up to 576 KB (DK'tronics ceiling) via the options overlay. The physical array in `Mem` is always 576 KB; `Mem.ram_size` (set from `config.memory_kb * 1024`) controls how much of it is accessible. Accesses beyond `ram_size` return 0xFF and writes are silently dropped.
 
-**Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command and is only honoured on the 6128 model. `Mem.ram_bank` stores bits[5:0] of that byte. The page mapped to 0xC000–0xFFFF is computed as:
+**Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command. `Mem.ram_bank` stores bits[5:0] of that byte. Both the 464 and 6128 honour this command; on real hardware only the 6128 supports it, but the emulator enables banking on the 464 as well when RAM is expanded beyond 64 KB.
 
-```
-page   = ram_bank & 0x3F          (6-bit index, 0–63)
-offset = page × 16 KB + (addr − 0xC000)
-```
-
-Pages 0–7 cover the standard 128 KB (the 6128's built-in extra banks, bits[2:0]). Pages 8–63 cover expansion RAM via a DK'tronics-compatible scheme (bits[5:3] select a 64 KB expansion bank). The standard DK'tronics hardware supports up to 576 KB: 64 KB base (romb0–3) + 8 expansion banks × 64 KB (RAM_bank 0–7, where bank 0 is the standard 6128 extra 64 KB). The 464 never enters this branch.
+The 8 banking modes (bits[2:0]) use a fixed page-to-region lookup table (not a raw page index). Bits[5:3] select a 64 KB expansion bank for DK'tronics-compatible expansion. The standard DK'tronics hardware supports up to 576 KB: 64 KB base (romb0–3) + 8 expansion banks × 64 KB (RAM_bank 0–7, where bank 0 is the standard 6128 extra 64 KB).
 
 **Upper ROM slots.** `mem_read()` resolves the upper ROM in priority order:
 
