@@ -65,7 +65,7 @@ On first run a configuration file is created at `~/.config/1984/1984.conf`. You 
 ```ini
 [machine]
 model=6128        # 464 or 6128
-memory=128        # 64 (CPC 464) or 128 (CPC 6128)
+memory=128        # 64, 128, 256, 512, or 1024 (KB); default 64 for 464, 128 for 6128
 
 [roms]
 os=~/.config/1984/roms/OS_6128.ROM
@@ -155,6 +155,8 @@ The overlay lets you change the machine model, RAM size, ROM paths, and hardware
 
 Switching the model automatically sets the matching ROM paths and RAM size.
 
+**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, and 1024 KB. The CPC 6128 minimum is 128 KB. Extra RAM beyond 128 KB is accessible via DK'tronics-compatible banking (Gate Array port 0x7Fxx). Changing RAM size triggers a cold boot on save.
+
 **CPC 464 and DD1:** on the 464, the Storage tab drives are greyed out by default. Enable **DD1** in the Advanced tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 
 **ROM Slots** (Advanced → ROM Slots) opens a sub-panel listing the lower ROM and all 32 upper ROM slots (0–31):
@@ -166,7 +168,7 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 | Slot 7 | AMSDOS ROM | Load expansion override | Clear override / restore default AMSDOS |
 | Slots 1–6, 8–31 | empty | Load ROM into slot | Clear slot |
 
-Changes to any ROM slot or the lower ROM trigger an automatic cold boot so the new ROM takes effect immediately. The machine re-boots without needing to quit and restart.
+Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ## Development
 

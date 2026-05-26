@@ -7,7 +7,7 @@ Each source file maps to one hardware component:
 | File | Component |
 |------|-----------|
 | `src/z80.c` / `z80.h` | Z80 CPU — full documented instruction set plus undocumented IX/IY half-register ops, all prefixes (CB/DD/ED/FD), interrupts IM0/1/2 |
-| `src/mem.c` / `mem.h` | Memory map — lower/upper ROM overlay, 32 expansion ROM slots, 6128 RAM banking via Gate Array |
+| `src/mem.c` / `mem.h` | Memory map — lower/upper ROM overlay, 32 expansion ROM slots, 6128 RAM banking via Gate Array, configurable RAM 64–1024 KB |
 | `src/crtc.c` / `crtc.h` | MC6845 CRTC — horizontal/vertical timing, MA/RA address generation, display enable |
 | `src/gate_array.c` / `gate_array.h` | Gate Array — screen mode, ink palette (32 hardware colours), ROM enables, interrupt counter |
 | `src/ppi.c` / `ppi.h` | 8255 PPI — keyboard row selection, vsync feedback, PSG control routing |
@@ -88,7 +88,7 @@ The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called onc
 
 `cpc_reset()` performs a warm reset: all chips are reinitialised (Z80, Gate Array, CRTC, PPI, PSG, keyboard) and raster counters are cleared, but ROM and RAM contents are preserved — matching real CPC hardware reset behaviour.
 
-The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically when any of the following are saved: model change, DD1 toggle, lower ROM replacement, or any expansion ROM slot change. ROM data is updated in-place before the reset so the machine immediately boots from the new ROM without restarting the emulator.
+The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically when any of the following are saved: model change, RAM size change, DD1 toggle, lower ROM replacement, or any expansion ROM slot change. ROM data and `Mem.ram_size` are updated in-place before the reset so the machine immediately boots with the new configuration without restarting the emulator.
 
 ## Configuration
 
@@ -99,6 +99,8 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 `config_default_os/basic/amsdos()` return the compiled-in default ROM path for a given model, used by the overlay's Delete action to restore individual ROM slots to their factory defaults without touching the rest of the config.
 
 `config_apply_dd1()` sets or clears the AMSDOS ROM path and the `dd1` flag together, keeping them consistent. Called by the overlay when DD1 is toggled and by `config_set_model()` when switching to 464.
+
+**`memory_kb`** accepts 64, 128, 256, 512, or 1024. The 464 default is 64; the 6128 default is 128. Values outside this set are rejected and the previous value is kept. The field is written directly to `Mem.ram_size` (in bytes) at startup and on every cold boot.
 
 **CLI ROM slot overrides.** `--rom-slot=N:PATH` (repeatable) loads a ROM into slot N after the config-based expansion ROMs are applied. This lets you test or launch with a specific ROM without modifying `1984.conf`. CLI overrides win over config-file assignments for the same slot.
 
@@ -113,6 +115,8 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 | Advanced | Memory, M4, UliFAC, Net4CPC, DD1, ROM Slots → |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
+
+The **Memory** row (Advanced tab, row 0) cycles through 64 → 128 → 256 → 512 → 1024 KB on Enter. The 6128 minimum is 128 KB (64 KB is skipped). A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
 **ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Advanced → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
 
@@ -133,9 +137,16 @@ The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0�
 0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank (6128)
 ```
 
-The 6128 has 128 KB RAM by default. RAM is configurable from 64 KB (464 minimum) up to 1024 KB via the options overlay. Extra 16 KB pages are selected via Gate Array port 0x7Fxx (function bits 11xxxxxx).
+RAM is configurable from 64 KB (464 minimum) up to 1024 KB via the options overlay. The physical array in `Mem` is always 1 MB; `Mem.ram_size` (set from `config.memory_kb * 1024`) controls how much of it is accessible. Accesses beyond `ram_size` return 0xFF and writes are silently dropped.
 
-**Banking scheme.** `Mem.ram_bank` stores bits [5:0] of the Gate Array banking byte. Bits [2:0] are the standard 6128 banking mode; bits [5:3] select an expansion 64KB bank (DK'tronics-compatible for the standard 3-bit range; extended by the emulator beyond 576 KB). The mapped page for 0xC000–0xFFFF is: `page = ram_bank & 0x3F`, giving offset `page × 16 KB`. Accesses beyond `Mem.ram_size` return 0xFF (uninstalled RAM). The 464 model never sets `ram_bank` (banking disabled in the Gate Array write handler).
+**Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command and is only honoured on the 6128 model. `Mem.ram_bank` stores bits[5:0] of that byte. The page mapped to 0xC000–0xFFFF is computed as:
+
+```
+page   = ram_bank & 0x3F          (6-bit index, 0–63)
+offset = page × 16 KB + (addr − 0xC000)
+```
+
+Pages 0–7 cover the standard 128 KB (the 6128's built-in extra banks, bits[2:0]). Pages 8–63 cover expansion RAM via a DK'tronics-compatible scheme (bits[5:3] select a 64 KB expansion bank). The standard DK'tronics hardware supports up to 576 KB (8 expansion banks × 64 KB + 64 KB base); the emulator extends this to 1 MB using all 6 bits. The 464 never enters this branch.
 
 **Upper ROM slots.** `mem_read()` resolves the upper ROM in priority order:
 
