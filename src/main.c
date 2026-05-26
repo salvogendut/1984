@@ -13,19 +13,29 @@
 int main(int argc, char *argv[]) {
 
     /* Parse --autostart=<name>: queues `run"<name>` after boot delay
-       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter) */
-    const char *autostart = NULL;
-    const char *paste_arg = NULL;
+       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter)
+       Parse --disk-a=PATH / --disk-b=PATH: override drive images from config */
+    const char *autostart  = NULL;
+    const char *paste_arg  = NULL;
+    const char *disk_a_arg = NULL;
+    const char *disk_b_arg = NULL;
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
             paste_arg = argv[i] + 8;
+        else if (strncmp(argv[i], "--disk-a=", 9) == 0 && argv[i][9] != '\0')
+            disk_a_arg = argv[i] + 9;
+        else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
+            disk_b_arg = argv[i] + 9;
     }
 
     Config cfg;
     if (config_load(&cfg) < 0)
         return 1;
+
+    if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
+    if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());

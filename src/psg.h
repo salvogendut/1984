@@ -25,7 +25,7 @@ typedef struct {
 
     /* Envelope */
     u16 env_period;
-    u16 env_counter;
+    u32 env_counter;
     u8  env_step;       /* 0-31: 32 steps per cycle */
     bool env_hold;
     bool env_dir;

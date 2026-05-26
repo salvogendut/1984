@@ -41,20 +41,22 @@ void psg_set_kbd_row(PSG *psg, u8 row_data) {
 static int psg_tick(PSG *psg) {
 
     /* --- Tone counters (each half-period) --- */
+    /* AY has an internal ÷8 prescaler before the tone counters; multiply
+     * register period by 8 so that f = 1MHz / (16 × N) — standard AY formula. */
     for (int c = 0; c < 3; c++) {
         u16 period = (u16)(((psg->reg[c*2+1] & 0x0F) << 8) | psg->reg[c*2]);
         if (!period) period = 1;
-        if (++psg->tone_counter[c] >= period) {
+        if (++psg->tone_counter[c] >= (u16)(period * 8)) {
             psg->tone_counter[c] = 0;
             psg->tone_output[c] ^= 1;
         }
     }
 
-    /* --- Noise: step LFSR every noise_period*2 clocks --- */
+    /* --- Noise: step LFSR every noise_period*16 clocks (same ÷8 prescaler) --- */
     {
         u16 np = psg->reg[6] & 0x1F;
         if (!np) np = 1;
-        if (++psg->noise_counter >= (u16)(np * 2)) {
+        if (++psg->noise_counter >= (u16)(np * 16)) {
             psg->noise_counter = 0;
             u32 bit = (psg->noise_lfsr ^ (psg->noise_lfsr >> 3)) & 1;
             psg->noise_lfsr = (psg->noise_lfsr >> 1) | (bit << 16);
@@ -66,7 +68,7 @@ static int psg_tick(PSG *psg) {
     if (!psg->env_hold) {
         u16 ep = (u16)((psg->reg[12] << 8) | psg->reg[11]);
         if (!ep) ep = 1;
-        if (++psg->env_counter >= ep) {
+        if (++psg->env_counter >= (u32)ep * 8) {
             psg->env_counter = 0;
             psg->env_step++;
             if (psg->env_step >= 32) {
