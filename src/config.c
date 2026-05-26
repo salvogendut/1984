@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+void config_set_model(Config *cfg, CpcModel model);  /* defined below */
+
 #define DEFAULT_ROM_OS_464     "roms/OS_464.ROM"
 #define DEFAULT_ROM_BASIC_464  "roms/BASIC_1.0.ROM"
 #define DEFAULT_ROM_OS_6128    "roms/OS_6128.ROM"
@@ -17,17 +19,8 @@
 
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
-    cfg->model     = MODEL_6128;
-    cfg->memory_kb = 128;
-    snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS);
-    snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC);
-    snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
-    memset(cfg->rom_ext, 0, sizeof(cfg->rom_ext));
-    cfg->m4        = false;
-    cfg->ulifac    = false;
-    cfg->net4cpc   = false;
     cfg->scale     = 2;
-    cfg->fullscreen= false;
+    config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
 /* Expand a leading ~ to the home directory. Result written into out[size]. */
@@ -285,6 +278,7 @@ void config_set_model(Config *cfg, CpcModel model) {
         cfg->memory_kb = 64;
         snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_464);
         snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
+        cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS */
     } else {
         cfg->memory_kb = 128;
         snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS_6128);
