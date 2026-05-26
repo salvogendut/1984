@@ -17,9 +17,10 @@ typedef enum {
 } OvState;
 
 typedef enum {
-    DIALOG_NONE    = 0,
-    DIALOG_DISK    = 1,
-    DIALOG_ROMSLOT = 2
+    DIALOG_NONE      = 0,
+    DIALOG_DISK      = 1,
+    DIALOG_ROMSLOT   = 2,
+    DIALOG_LOWER_ROM = 3
 } DialogKind;
 
 typedef struct {

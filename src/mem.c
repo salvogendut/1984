@@ -16,6 +16,14 @@ void mem_init(Mem *m) {
     m->ram_bank          = 0;
 }
 
+int mem_load_os(Mem *m, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "Cannot open OS ROM: %s\n", path); return -1; }
+    fread(m->rom_os, 1, ROM_OS_SIZE, f);
+    fclose(f);
+    return 0;
+}
+
 int mem_load_rom(Mem *m, const char *os_path, const char *basic_path) {
     FILE *f;
 

@@ -16,6 +16,9 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ITEM_H    20   /* logical = 30 screen px per dropdown row */
 #define DROP_PAD   6   /* left margin inside dropdown */
 #define VAL_X    140   /* x where values start */
+/* ROM slots panel: idx 0 = Lower ROM, idx 1-32 = upper slots 0-31 */
+#define ROMSLOT_VISIBLE 10
+#define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
@@ -280,6 +283,12 @@ void overlay_tick(Overlay *ov) {
             }
         }
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_LOWER_ROM) {
+        snprintf(ov->cfg->rom_os, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc)
+            mem_load_os(&ov->cpc->mem, ov->dialog_path);
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;
         ov->dialog_slot = -1;
@@ -320,7 +329,8 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             config_save(ov->cfg);
             /* cold boot needed if model, DD1, or any ROM slot changed */
             bool boot = (ov->cfg->model != ov->saved.model) ||
-                        (ov->cfg->dd1   != ov->saved.dd1);
+                        (ov->cfg->dd1   != ov->saved.dd1)  ||
+                        strcmp(ov->cfg->rom_os, ov->saved.rom_os);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {
                     if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
@@ -345,8 +355,8 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     }
 
     /* ---- ROM slots sub-panel ---- */
+    /* idx 0 = Lower ROM; idx 1-32 = upper slots 0-31 */
     if (ov->state == OV_STATE_ROMSLOTS) {
-#define ROMSLOT_VISIBLE 10
         switch (sc) {
         case SDL_SCANCODE_ESCAPE:
             ov->state = OV_STATE_MENU;
@@ -359,7 +369,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             }
             break;
         case SDL_SCANCODE_DOWN:
-            if (ov->romslot_row < ROM_EXT_COUNT - 1) {
+            if (ov->romslot_row < ROMSLOT_TOTAL - 1) {
                 ov->romslot_row++;
                 if (ov->romslot_row >= ov->romslot_scroll + ROMSLOT_VISIBLE)
                     ov->romslot_scroll = ov->romslot_row - ROMSLOT_VISIBLE + 1;
@@ -371,8 +381,12 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                 { "ROM images", "rom;ROM" },
                 { "All files",  "*"       },
             };
-            ov->dialog_kind  = DIALOG_ROMSLOT;
-            ov->dialog_slot  = ov->romslot_row;
+            if (ov->romslot_row == 0) {
+                ov->dialog_kind = DIALOG_LOWER_ROM;
+            } else {
+                ov->dialog_kind = DIALOG_ROMSLOT;
+                ov->dialog_slot = ov->romslot_row - 1;
+            }
             ov->dialog_ready = false;
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
@@ -381,11 +395,15 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         }
         case SDL_SCANCODE_DELETE:
         case SDL_SCANCODE_BACKSPACE:
-            ov->cfg->rom_ext[ov->romslot_row][0] = '\0';
-            if (ov->cpc)
-                mem_unload_rom_ext(&ov->cpc->mem, ov->romslot_row);
-            ov->needs_cold_boot = true;
-            ov->dirty = true;
+            /* Lower ROM cannot be cleared */
+            if (ov->romslot_row > 0) {
+                int slot = ov->romslot_row - 1;
+                ov->cfg->rom_ext[slot][0] = '\0';
+                if (ov->cpc)
+                    mem_unload_rom_ext(&ov->cpc->mem, slot);
+                ov->needs_cold_boot = true;
+                ov->dirty = true;
+            }
             break;
         default:
             break;
@@ -436,40 +454,49 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     /* ---- ROM slots sub-panel ---- */
     if (ov->state == OV_STATE_ROMSLOTS) {
         fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
-        draw_text(r, DROP_PAD, 4, "ROM Slots (0-31)  Esc=back  Enter=load  Del=clear",
+        draw_text(r, DROP_PAD, 4, "ROMs  Esc=back  Enter=load  Del=clear (upper slots)",
                   180, 180, 220);
         SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
         SDL_RenderLine(r, 0, BAR_H - 1, lw, BAR_H - 1);
 
         for (int i = 0; i < ROMSLOT_VISIBLE; i++) {
-            int slot = ov->romslot_scroll + i;
-            if (slot >= ROM_EXT_COUNT) break;
+            int idx = ov->romslot_scroll + i;
+            if (idx >= ROMSLOT_TOTAL) break;
             float iy = BAR_H + 2.0f + i * ITEM_H;
-            bool sel = (slot == ov->romslot_row);
+            bool sel = (idx == ov->romslot_row);
 
             if (sel)
                 fill_rect(r, 0, iy, lw, ITEM_H, 70, 90, 200, 255);
 
-            char lbl[24];
-            snprintf(lbl, sizeof(lbl), "Slot %2d", slot);
             float ty = iy + (ITEM_H - FONT_H) / 2.0f;
-            draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-
             char val[48] = "";
-            bool has_ext = ov->cfg->rom_ext[slot][0] != '\0';
-            if (has_ext) {
-                /* show just the filename */
+
+            if (idx == 0) {
+                draw_text(r, DROP_PAD, ty, "Lower ROM", 220, 220, 240);
                 char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
                 trunc_path(basename(tmp), val, sizeof(val));
                 draw_text(r, VAL_X, ty, val, 100, 220, 100);
-            } else if (slot == 0) {
-                draw_text(r, VAL_X, ty, "(BASIC)", 90, 90, 110);
-            } else if (slot == 7) {
-                draw_text(r, VAL_X, ty, "(AMSDOS)", 90, 90, 110);
             } else {
-                draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
+                int slot = idx - 1;
+                char lbl[24];
+                snprintf(lbl, sizeof(lbl), "Slot %2d", slot);
+                draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
+
+                bool has_ext = ov->cfg->rom_ext[slot][0] != '\0';
+                if (has_ext) {
+                    char tmp[CONFIG_PATH_MAX];
+                    snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                    trunc_path(basename(tmp), val, sizeof(val));
+                    draw_text(r, VAL_X, ty, val, 100, 220, 100);
+                } else if (slot == 0) {
+                    draw_text(r, VAL_X, ty, "(BASIC)", 90, 90, 110);
+                } else if (slot == 7) {
+                    draw_text(r, VAL_X, ty, "(AMSDOS)", 90, 90, 110);
+                } else {
+                    draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
+                }
             }
         }
         SDL_SetRenderScale(r, 1.0f, 1.0f);

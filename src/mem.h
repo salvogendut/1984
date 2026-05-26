@@ -33,6 +33,7 @@ typedef struct {
 } Mem;
 
 void mem_init(Mem *m);
+int  mem_load_os(Mem *m, const char *path);            /* reload lower ROM only */
 int  mem_load_rom(Mem *m, const char *os_path, const char *basic_path);
 int  mem_load_amsdos(Mem *m, const char *path);        /* slot 7 default; non-fatal */
 void mem_unload_amsdos(Mem *m);                        /* clear slot 7 default */
