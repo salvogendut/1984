@@ -39,5 +39,5 @@ autoreconf -fiv
 %{_bindir}/%{name}
 
 %changelog
-* %(date "+%%a %%b %%d %%Y") Salvatore Bognanni <salvogendut@gmail.com> - 0.1.0-1
+* Mon May 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.1.0-1
 - Initial package
