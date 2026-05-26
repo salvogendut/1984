@@ -286,6 +286,7 @@ void overlay_tick(Overlay *ov) {
         snprintf(ov->cfg->rom_ext[slot], CONFIG_PATH_MAX, "%s", ov->dialog_path);
         if (ov->cpc)
             mem_load_rom_ext(&ov->cpc->mem, slot, ov->dialog_path);
+        ov->needs_cold_boot = true;
         ov->dirty = true;
     }
     ov->dialog_kind = DIALOG_NONE;
@@ -315,11 +316,23 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     if (ov->state == OV_STATE_CONFIRM) {
         switch (sc) {
         case SDL_SCANCODE_RETURN:
-        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_KP_ENTER: {
             config_save(ov->cfg);
+            /* cold boot needed if model, DD1, or any ROM slot changed */
+            bool boot = (ov->cfg->model != ov->saved.model) ||
+                        (ov->cfg->dd1   != ov->saved.dd1);
+            if (!boot) {
+                for (int i = 0; i < ROM_EXT_COUNT; i++) {
+                    if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
+                        boot = true; break;
+                    }
+                }
+            }
+            ov->needs_cold_boot = boot;
             ov->dirty   = false;
             ov->visible = false;
             break;
+        }
         case SDL_SCANCODE_ESCAPE:
             *ov->cfg    = ov->saved;  /* revert */
             ov->dirty   = false;
@@ -371,6 +384,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             ov->cfg->rom_ext[ov->romslot_row][0] = '\0';
             if (ov->cpc)
                 mem_unload_rom_ext(&ov->cpc->mem, ov->romslot_row);
+            ov->needs_cold_boot = true;
             ov->dirty = true;
             break;
         default:

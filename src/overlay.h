@@ -40,6 +40,8 @@ typedef struct {
     /* ROM slots sub-panel state */
     int          romslot_row;    /* selected slot 0-31 */
     int          romslot_scroll; /* index of first visible slot */
+    /* set by overlay after a save that requires a cold boot */
+    bool         needs_cold_boot;
 } Overlay;
 
 void overlay_init(Overlay *ov, Config *cfg, CPC *cpc);

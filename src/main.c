@@ -189,6 +189,26 @@ int main(int argc, char *argv[]) {
         }
 
         overlay_tick(&overlay);
+
+        if (overlay.needs_cold_boot) {
+            overlay.needs_cold_boot = false;
+            cpc.model = cfg.model;
+            mem_load_rom(&cpc.mem, cfg.rom_os, cfg.rom_basic);
+            if (cfg.rom_amsdos[0] && cfg.dd1)
+                mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
+            else if (!cfg.dd1 && cpc.model == MODEL_464)
+                mem_unload_amsdos(&cpc.mem);
+            for (int s = 0; s < ROM_EXT_COUNT; s++) {
+                if (cfg.rom_ext[s][0])
+                    mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+            }
+            const char *title = (cpc.model == MODEL_464)
+                ? "CPC 464  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen"
+                : "CPC 6128  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen";
+            SDL_SetWindowTitle(cpc.display.window, title);
+            cpc_reset(&cpc);
+        }
+
         paste_tick(&paste, &cpc.kbd);
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
