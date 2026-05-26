@@ -201,11 +201,7 @@ static void activate_item(Overlay *ov) {
             int cur = 0;
             for (int i = 0; i < n; i++)
                 if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
-            int next = (cur + 1) % n;
-            /* CPC 6128 requires at least 128 KB */
-            if (ov->cfg->model == MODEL_6128 && sizes[next] < 128)
-                next = (next + 1) % n;
-            ov->cfg->memory_kb = sizes[next];
+            ov->cfg->memory_kb = sizes[(cur + 1) % n];
             ov->dirty = true;
             break;
         }
