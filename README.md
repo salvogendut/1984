@@ -92,6 +92,16 @@ The machine model (464 or 6128) is selected via the options overlay (F9).
 | F12    | Quit |
 | Ctrl+V | Paste clipboard text into the emulator |
 
+### Joystick / gamepad
+
+Any USB or Bluetooth controller recognised by SDL3 is automatically mapped to CPC joystick 1 (keyboard matrix row 9). Hot-plug is supported — controllers can be connected or disconnected at any time.
+
+| Controller input | CPC joystick |
+|---|---|
+| D-pad or left stick | Up / Down / Left / Right |
+| South button (A / Cross) | Fire 1 |
+| East / West / North buttons | Fire 2 |
+
 ### Paste from host (Ctrl+V)
 
 Pressing Ctrl+V types the host clipboard contents into the emulator one character at a time, simulating keypresses through the CPC keyboard matrix. Useful for entering BASIC programs. Supports letters, digits, common punctuation, and newlines. Each pasted block ends with an automatic Return.
