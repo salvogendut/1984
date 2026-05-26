@@ -70,6 +70,11 @@ int main(int argc, char *argv[]) {
     /* Frames to wait before injecting autostart text; 200 ≈ 4 s at 50 Hz */
     int autostart_countdown = (autostart || paste_arg) ? 200 : 0;
 
+    /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
+     * VSync is off; we sleep for any leftover time in each 20 ms budget. */
+#define FRAME_NS 20000000ULL
+    Uint64 next_frame = SDL_GetTicksNS();
+
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -136,6 +141,15 @@ int main(int argc, char *argv[]) {
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
+
+        /* Sleep for whatever is left of the 20 ms frame budget */
+        next_frame += FRAME_NS;
+        Uint64 now = SDL_GetTicksNS();
+        if (now < next_frame) {
+            SDL_DelayNS(next_frame - now);
+        } else if (now > next_frame + 3 * FRAME_NS) {
+            next_frame = now; /* reset if more than 3 frames behind */
+        }
     }
 
     paste_free(&paste);

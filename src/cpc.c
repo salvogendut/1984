@@ -1,6 +1,10 @@
 #include "cpc.h"
 #include <string.h>
 
+#define AUDIO_SAMPLE_RATE   44100
+#define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
+#define PSG_CLOCK_HZ        1000000                    /* CPC PSG: 4 MHz / 4 */
+
 /* ---- Z80 bus callbacks ---- */
 
 static u8 bus_mem_read(void *ctx, u16 addr) {
@@ -120,6 +124,12 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     if (display_init(&cpc->display, title) < 0)
         return -1;
 
+    SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };
+    cpc->audio_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (cpc->audio_stream)
+        SDL_ResumeAudioStreamDevice(cpc->audio_stream);
+
     return 0;
 }
 
@@ -142,6 +152,7 @@ void cpc_reset(CPC *cpc) {
 }
 
 void cpc_destroy(CPC *cpc) {
+    if (cpc->audio_stream) SDL_DestroyAudioStream(cpc->audio_stream);
     disk_eject(&cpc->drive[0]);
     disk_eject(&cpc->drive[1]);
     display_destroy(&cpc->display);
@@ -317,6 +328,15 @@ void cpc_frame(CPC *cpc) {
             ga_write(&cpc->ga, pen);
             ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
         }
+    }
+
+    /* Push one frame of PSG audio to SDL */
+    if (cpc->audio_stream) {
+        s16 audio_buf[AUDIO_SAMPLES_FRAME];
+        psg_render(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
+                   PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
+        SDL_PutAudioStreamData(cpc->audio_stream,
+                               audio_buf, (int)sizeof(audio_buf));
     }
 }
 

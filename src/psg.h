@@ -26,9 +26,15 @@ typedef struct {
     /* Envelope */
     u16 env_period;
     u16 env_counter;
-    u8  env_step;
+    u8  env_step;       /* 0-31: 32 steps per cycle */
     bool env_hold;
     bool env_dir;
+
+    /* Fractional clock accumulator across samples */
+    float clock_rem;
+
+    /* One-pole IIR low-pass state (reduces square-wave aliasing harshness) */
+    s32 lp_state;
 
     /* Keyboard: row data fed in externally */
     u8  kbd_data;

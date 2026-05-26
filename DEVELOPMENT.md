@@ -11,7 +11,7 @@ Each source file maps to one hardware component:
 | `src/crtc.c` / `crtc.h` | MC6845 CRTC — horizontal/vertical timing, MA/RA address generation, display enable |
 | `src/gate_array.c` / `gate_array.h` | Gate Array — screen mode, ink palette (32 hardware colours), ROM enables, interrupt counter |
 | `src/ppi.c` / `ppi.h` | 8255 PPI — keyboard row selection, vsync feedback, PSG control routing |
-| `src/psg.c` / `psg.h` | AY-3-8912 PSG register file (audio generation not yet wired to SDL audio) |
+| `src/psg.c` / `psg.h` | AY-3-8912 PSG — tone (3 channels), noise (17-bit LFSR), envelope generator, logarithmic volume table; renders 882 samples per frame into an SDL3 audio stream |
 | `src/kbd.c` / `kbd.h` | Keyboard matrix — SDL scancode → CPC row/column mapping |
 | `src/display.c` / `display.h` | SDL3 display — 768×272 pixel buffer, letterboxed into the window at 4:3 aspect |
 | `src/disk.c` / `disk.h` | DSK disk image parser — track/sector layout, AMSDOS directory, read |
@@ -26,7 +26,7 @@ Each source file maps to one hardware component:
 
 The frame render is split into two phases to allow the overlay to composite on top of the CPC video output:
 
-1. **`cpc_frame()`** — runs the CPU and CRTC for one PAL frame (80,000 cycles), writing pixels into `display.pixels[]`
+1. **`cpc_frame()`** — runs the CPU and CRTC for one PAL frame (80,000 cycles), writes pixels into `display.pixels[]`, then renders 882 audio samples from the PSG and pushes them to the SDL audio stream
 2. **`display_upload()`** — uploads the pixel buffer to the SDL texture, clears the renderer, and blits the texture letterboxed into the window
 3. **`overlay_render()`** — draws the overlay on top of the renderer (if visible), using `SDL_SetRenderScale` at 1.5× for the bitmap font
 4. **`display_flip()`** — calls `SDL_RenderPresent`

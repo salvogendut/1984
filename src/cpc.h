@@ -24,6 +24,7 @@ typedef struct {
     PSG        psg;
     Keyboard   kbd;
     Display    display;
+    SDL_AudioStream *audio_stream;
     Disk       drive[2];    /* drive[0]=A, drive[1]=B */
     FDC        fdc;
 
