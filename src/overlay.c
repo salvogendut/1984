@@ -489,11 +489,12 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
             char val[48] = "";
 
             if (idx == 0) {
+                /* Lower ROM — always green */
                 draw_text(r, DROP_PAD, ty, "Lower ROM", 220, 220, 240);
                 char tmp[CONFIG_PATH_MAX];
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
                 trunc_path(basename(tmp), val, sizeof(val));
-                draw_text(r, VAL_X, ty, val, 100, 220, 100);
+                draw_text(r, VAL_X, ty, val, 80, 220, 80);
             } else {
                 int slot = idx - 1;
                 char lbl[24];
@@ -501,16 +502,34 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                 draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
 
                 bool has_ext = ov->cfg->rom_ext[slot][0] != '\0';
-                if (has_ext) {
+                if (slot == 0) {
+                    /* BASIC slot — red */
+                    if (has_ext) {
+                        char tmp[CONFIG_PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                        trunc_path(basename(tmp), val, sizeof(val));
+                    } else {
+                        snprintf(val, sizeof(val), "(BASIC)");
+                    }
+                    draw_text(r, VAL_X, ty, val, 220, 80, 80);
+                } else if (slot == 7) {
+                    /* AMSDOS slot — yellow */
+                    if (has_ext) {
+                        char tmp[CONFIG_PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                        trunc_path(basename(tmp), val, sizeof(val));
+                    } else {
+                        snprintf(val, sizeof(val), "(AMSDOS)");
+                    }
+                    draw_text(r, VAL_X, ty, val, 220, 200, 60);
+                } else if (has_ext) {
+                    /* Other populated slot — white */
                     char tmp[CONFIG_PATH_MAX];
                     snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
                     trunc_path(basename(tmp), val, sizeof(val));
-                    draw_text(r, VAL_X, ty, val, 100, 220, 100);
-                } else if (slot == 0) {
-                    draw_text(r, VAL_X, ty, "(BASIC)", 90, 90, 110);
-                } else if (slot == 7) {
-                    draw_text(r, VAL_X, ty, "(AMSDOS)", 90, 90, 110);
+                    draw_text(r, VAL_X, ty, val, 220, 220, 220);
                 } else {
+                    /* Empty slot — grey */
                     draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
                 }
             }
