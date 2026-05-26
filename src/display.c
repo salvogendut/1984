@@ -17,7 +17,7 @@ int display_init(Display *d, const char *title) {
         fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError());
         return -1;
     }
-    SDL_SetRenderVSync(d->renderer, 1);
+    SDL_SetRenderVSync(d->renderer, 0); /* timing is done by the 50 Hz software pacer */
 
     /* No logical size — we'll blit with explicit dest rect for 4:3 */
 

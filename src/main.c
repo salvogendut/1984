@@ -13,19 +13,29 @@
 int main(int argc, char *argv[]) {
 
     /* Parse --autostart=<name>: queues `run"<name>` after boot delay
-       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter) */
-    const char *autostart = NULL;
-    const char *paste_arg = NULL;
+       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter)
+       Parse --disk-a=PATH / --disk-b=PATH: override drive images from config */
+    const char *autostart  = NULL;
+    const char *paste_arg  = NULL;
+    const char *disk_a_arg = NULL;
+    const char *disk_b_arg = NULL;
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
             paste_arg = argv[i] + 8;
+        else if (strncmp(argv[i], "--disk-a=", 9) == 0 && argv[i][9] != '\0')
+            disk_a_arg = argv[i] + 9;
+        else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
+            disk_b_arg = argv[i] + 9;
     }
 
     Config cfg;
     if (config_load(&cfg) < 0)
         return 1;
+
+    if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
+    if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -69,6 +79,11 @@ int main(int argc, char *argv[]) {
 
     /* Frames to wait before injecting autostart text; 200 ≈ 4 s at 50 Hz */
     int autostart_countdown = (autostart || paste_arg) ? 200 : 0;
+
+    /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
+     * VSync is off; we sleep for any leftover time in each 20 ms budget. */
+#define FRAME_NS 20000000ULL
+    Uint64 next_frame = SDL_GetTicksNS();
 
     bool running = true;
     while (running) {
@@ -136,6 +151,15 @@ int main(int argc, char *argv[]) {
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
+
+        /* Sleep for whatever is left of the 20 ms frame budget */
+        next_frame += FRAME_NS;
+        Uint64 now = SDL_GetTicksNS();
+        if (now < next_frame) {
+            SDL_DelayNS(next_frame - now);
+        } else if (now > next_frame + 3 * FRAME_NS) {
+            next_frame = now; /* reset if more than 3 frames behind */
+        }
     }
 
     paste_free(&paste);
