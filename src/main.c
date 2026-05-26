@@ -93,8 +93,8 @@ int main(int argc, char *argv[]) {
                     char tmp[256];
                     strncpy(tmp, argv[0], sizeof(tmp) - 1);
                     tmp[sizeof(tmp) - 1] = '\0';
-                    snprintf(path, sizeof(path), "%s_%ld.ppm", basename(tmp), (long)time(NULL));
-                    display_save_ppm(&cpc.display, path);
+                    snprintf(path, sizeof(path), "%s_%ld.png", basename(tmp), (long)time(NULL));
+                    display_save_png(&cpc.display, path);
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&

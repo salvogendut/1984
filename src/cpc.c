@@ -115,8 +115,8 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->bus.ctx       = cpc;
 
     const char *title = (model == MODEL_464)
-        ? "CPC 464  |  F5 = reset   F9 = options   F11 = fullscreen"
-        : "CPC 6128  |  F5 = reset   F9 = options   F11 = fullscreen";
+        ? "CPC 464  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen"
+        : "CPC 6128  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen";
     if (display_init(&cpc->display, title) < 0)
         return -1;
 
