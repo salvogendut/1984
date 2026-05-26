@@ -68,17 +68,17 @@ model=6128        # 464 or 6128
 memory=128        # 64 (CPC 464) or 128 (CPC 6128)
 
 [roms]
-os=roms/OS_6128.ROM
-basic=roms/BASIC_1.1.ROM
-amsdos=roms/AMSDOS.ROM
+os=~/.config/1984/roms/OS_6128.ROM
+basic=~/.config/1984/roms/BASIC_1.1.ROM
+amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 464
 
 [expansion_roms]
 # Load extra ROMs into upper ROM slots 0-31.
-# slot_7 is AMSDOS by default; leave entries empty to use defaults.
-# Example: slot_5=/path/to/TOOLKIT.ROM
+# Slot 0 = BASIC fallback, slot 7 = AMSDOS fallback; all slots can be overridden.
+# Example: slot_5=~/.config/1984/roms/TOOLKIT.ROM
 
 [hardware]
-dd1=false         # CPC 464 only: enable DDI-1 floppy interface + AMSDOS
+dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
 m4=false
 ulifac=false
 net4cpc=false
@@ -116,6 +116,12 @@ Examples:
 
 # Run a disk-based game that needs its own loader command
 ./bin/1984 --disk-a=game.dsk --paste='|disc\nrun"disc'
+
+# Load a toolkit ROM into slot 5 at startup
+./bin/1984 --rom-slot=5:~/.config/1984/roms/TOOLKIT.ROM
+
+# Multiple ROM slots can be specified
+./bin/1984 --rom-slot=5:~/.config/1984/roms/TOOLKIT.ROM --rom-slot=8:~/.config/1984/roms/OTHER.ROM
 ```
 
 The machine model (464 or 6128) is selected via the options overlay (F9).
@@ -148,6 +154,8 @@ Pressing Ctrl+V types the host clipboard contents into the emulator one characte
 The overlay lets you change the machine model, RAM size, ROM paths, and hardware options without editing the config file. Navigate with arrow keys, press Enter to cycle a value. On close, if anything changed you will be asked whether to save.
 
 Switching the model automatically sets the matching ROM paths and RAM size.
+
+**CPC 464 and DD1:** on the 464, the Storage tab drives are greyed out by default. Enable **DD1** in the Advanced tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 
 **ROM Slots** (Advanced → ROM Slots) opens a sub-panel listing the lower ROM and all 32 upper ROM slots (0–31):
 
