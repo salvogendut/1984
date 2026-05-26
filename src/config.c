@@ -7,15 +7,20 @@
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
-#define DEFAULT_ROM_OS_464     "roms/OS_464.ROM"
-#define DEFAULT_ROM_BASIC_464  "roms/BASIC_1.0.ROM"
-#define DEFAULT_ROM_OS_6128    "roms/OS_6128.ROM"
-#define DEFAULT_ROM_BASIC_6128 "roms/BASIC_1.1.ROM"
-#define DEFAULT_ROM_AMSDOS     "roms/AMSDOS.ROM"
+#define ROM_FILE_OS_464     "OS_464.ROM"
+#define ROM_FILE_BASIC_464  "BASIC_1.0.ROM"
+#define ROM_FILE_OS_6128    "OS_6128.ROM"
+#define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
+#define ROM_FILE_AMSDOS     "AMSDOS.ROM"
 
-/* Keep backward-compat aliases used by the defaults/restore paths */
-#define DEFAULT_ROM_OS    DEFAULT_ROM_OS_6128
-#define DEFAULT_ROM_BASIC DEFAULT_ROM_BASIC_6128
+/* Build a full path: ~/.config/1984/roms/<file> → out[size] */
+static void rom_cfg_path(const char *file, char *out, size_t size) {
+    const char *home = getenv("HOME");
+    if (home)
+        snprintf(out, size, "%s/.config/1984/roms/%s", home, file);
+    else
+        snprintf(out, size, "roms/%s", file);  /* fallback if HOME unset */
+}
 
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
@@ -210,9 +215,11 @@ int config_load(Config *cfg) {
 
     /* Restore defaults for any fields left invalid/empty by a corrupt config */
     if (!cfg->rom_os[0])
-        snprintf(cfg->rom_os, sizeof(cfg->rom_os), "%s", DEFAULT_ROM_OS);
+        rom_cfg_path(cfg->model == MODEL_464 ? ROM_FILE_OS_464 : ROM_FILE_OS_6128,
+                     cfg->rom_os, sizeof(cfg->rom_os));
     if (!cfg->rom_basic[0])
-        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC);
+        rom_cfg_path(cfg->model == MODEL_464 ? ROM_FILE_BASIC_464 : ROM_FILE_BASIC_6128,
+                     cfg->rom_basic, sizeof(cfg->rom_basic));
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
@@ -284,36 +291,34 @@ void config_set_model(Config *cfg, CpcModel model) {
     if (model == MODEL_464) {
         cfg->memory_kb = 64;
         cfg->dd1       = false;
-        snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_464);
-        snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
+        rom_cfg_path(ROM_FILE_OS_464,    cfg->rom_os,    sizeof(cfg->rom_os));
+        rom_cfg_path(ROM_FILE_BASIC_464, cfg->rom_basic, sizeof(cfg->rom_basic));
         cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS; DD1 adds it */
     } else {
         cfg->memory_kb = 128;
         cfg->dd1       = false;      /* 6128 has built-in FDC; DD1 not applicable */
-        snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS_6128);
-        snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC_6128);
-        snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
+        rom_cfg_path(ROM_FILE_OS_6128,    cfg->rom_os,     sizeof(cfg->rom_os));
+        rom_cfg_path(ROM_FILE_BASIC_6128, cfg->rom_basic,  sizeof(cfg->rom_basic));
+        rom_cfg_path(ROM_FILE_AMSDOS,     cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
     }
 }
 
 void config_apply_dd1(Config *cfg, bool enabled) {
     cfg->dd1 = enabled;
     if (enabled)
-        snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
+        rom_cfg_path(ROM_FILE_AMSDOS, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
     else
         cfg->rom_amsdos[0] = '\0';
 }
 
 void config_default_os(CpcModel model, char *out, size_t sz) {
-    snprintf(out, sz, "%s",
-        model == MODEL_464 ? DEFAULT_ROM_OS_464 : DEFAULT_ROM_OS_6128);
+    rom_cfg_path(model == MODEL_464 ? ROM_FILE_OS_464 : ROM_FILE_OS_6128, out, sz);
 }
 
 void config_default_basic(CpcModel model, char *out, size_t sz) {
-    snprintf(out, sz, "%s",
-        model == MODEL_464 ? DEFAULT_ROM_BASIC_464 : DEFAULT_ROM_BASIC_6128);
+    rom_cfg_path(model == MODEL_464 ? ROM_FILE_BASIC_464 : ROM_FILE_BASIC_6128, out, sz);
 }
 
 void config_default_amsdos(char *out, size_t sz) {
-    snprintf(out, sz, "%s", DEFAULT_ROM_AMSDOS);
+    rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
 }
