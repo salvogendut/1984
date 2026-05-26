@@ -141,3 +141,7 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, timing, video rendering, memory map, and I/O decoding.
+
+## License
+
+[GNU General Public License v2.0](LICENSE)

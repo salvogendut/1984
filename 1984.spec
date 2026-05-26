@@ -3,7 +3,7 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
-License:        GPL-2.0-or-later
+License:        GPL-2.0-only
 URL:            https://github.com/salvogendut/1984
 Source0:        %{name}-%{version}.tar.gz
 
@@ -34,7 +34,7 @@ autoreconf -fiv
 %make_install
 
 %files
-%license COPYING
+%license LICENSE
 %doc README.md
 %{_bindir}/%{name}
 
