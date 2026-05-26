@@ -2,15 +2,15 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
+#include <libgen.h>
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
-#include "debug.h"
 
 int main(int argc, char *argv[]) {
-    debug_init();
 
     /* Parse --autostart=<name>: queues `run"<name>` after boot delay
        Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter) */
@@ -89,15 +89,12 @@ int main(int argc, char *argv[]) {
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(cpc.display.window, fullscreen);
                 } else if (ev.key.scancode == SDL_SCANCODE_F4) {
-                    FILE *f = fopen("vram_dump.bin", "wb");
-                    if (f) { fwrite(&cpc.mem.ram[0xC000], 1, 0x4000, f); fclose(f); }
-                    /* Dump game code area around 0x81A0 */
-                    FILE *g = fopen("code_dump.bin", "wb");
-                    if (g) { fwrite(&cpc.mem.ram[0x8000], 1, 0x4000, g); fclose(g); }
-                    /* Dump sprite data area */
-                    FILE *h = fopen("sprite_dump.bin", "wb");
-                    if (h) { fwrite(&cpc.mem.ram[0x4000], 1, 0x4000, h); fclose(h); }
-                    cpc_toggle_trace();
+                    char path[256];
+                    char tmp[256];
+                    strncpy(tmp, argv[0], sizeof(tmp) - 1);
+                    tmp[sizeof(tmp) - 1] = '\0';
+                    snprintf(path, sizeof(path), "%s_%ld.png", basename(tmp), (long)time(NULL));
+                    display_save_png(&cpc.display, path);
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&

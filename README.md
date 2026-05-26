@@ -10,6 +10,7 @@ Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), and AMSD
 
 - GCC (C11)
 - SDL3
+- libpng
 - CPC ROM images (not included — dump your own or source from the web)
 
 ## Build
@@ -83,8 +84,10 @@ The machine model (464 or 6128) is selected via the options overlay (F9).
 
 | Key    | Action |
 |--------|--------|
+| F4     | Save screenshot (`<binary>_<timestamp>.png`) |
 | F5     | Warm reset |
 | F9     | Open/close options overlay |
+| F11    | Toggle fullscreen |
 | F12    | Quit |
 | Ctrl+V | Paste clipboard text into the emulator |
 
