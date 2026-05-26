@@ -22,6 +22,7 @@ void config_defaults(Config *cfg) {
     snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS);
     snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC);
     snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
+    memset(cfg->rom_ext, 0, sizeof(cfg->rom_ext));
     cfg->m4        = false;
     cfg->ulifac    = false;
     cfg->net4cpc   = false;
@@ -86,6 +87,11 @@ static void config_create_default(const char *path, const char *home) {
         "os=~/.config/1984/roms/OS_6128.ROM\n"
         "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
         "amsdos=~/.config/1984/roms/AMSDOS.ROM\n"
+        "\n"
+        "[expansion_roms]\n"
+        "# Load extra ROMs into upper ROM slots 0-31.\n"
+        "# slot_7 is AMSDOS by default; leave entries empty to use defaults.\n"
+        "# Example: slot_5=/path/to/TOOLKIT.ROM\n"
         "\n"
         "[storage]\n"
         "# Paths to .dsk floppy images (leave empty for no disk)\n"
@@ -166,6 +172,12 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
             else if (!strcmp(key, "amsdos"))
                 expand_path(val, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
+        } else if (!strcmp(section, "expansion_roms")) {
+            if (strncmp(key, "slot_", 5) == 0) {
+                int slot = atoi(key + 5);
+                if (slot >= 0 && slot < ROM_EXT_COUNT && val[0])
+                    expand_path(val, cfg->rom_ext[slot], sizeof(cfg->rom_ext[slot]));
+            }
         } else if (!strcmp(section, "storage")) {
             if (!strcmp(key, "drive_a"))
                 expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
@@ -230,8 +242,21 @@ int config_save(const Config *cfg) {
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n"
-        "amsdos=%s\n\n"
-        "[storage]\n"
+        "amsdos=%s\n",
+        cfg->model == MODEL_464 ? "464" : "6128",
+        cfg->memory_kb,
+        cfg->rom_os,
+        cfg->rom_basic,
+        cfg->rom_amsdos);
+
+    fprintf(f, "\n[expansion_roms]\n");
+    for (int i = 0; i < ROM_EXT_COUNT; i++) {
+        if (cfg->rom_ext[i][0])
+            fprintf(f, "slot_%d=%s\n", i, cfg->rom_ext[i]);
+    }
+
+    fprintf(f,
+        "\n[storage]\n"
         "drive_a=%s\n"
         "drive_b=%s\n\n"
         "[hardware]\n"
@@ -241,11 +266,6 @@ int config_save(const Config *cfg) {
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
-        cfg->model == MODEL_464 ? "464" : "6128",
-        cfg->memory_kb,
-        cfg->rom_os,
-        cfg->rom_basic,
-        cfg->rom_amsdos,
         cfg->disk_a,
         cfg->disk_b,
         cfg->m4      ? "true" : "false",

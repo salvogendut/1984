@@ -1,8 +1,10 @@
 #include "overlay.h"
 #include "cpc.h"
 #include "disk.h"
+#include "mem.h"
 #include <string.h>
 #include <stdio.h>
+#include <libgen.h>
 
 static void overlay_file_callback(void *userdata, const char * const *files, int filter);
 
@@ -19,7 +21,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 4 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 5 };
 
 /* ---- Drawing helpers ---- */
 
@@ -126,6 +128,11 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Net4CPC");
             snprintf(val, vsz, "%s", ov->cfg->net4cpc ? "enabled" : "disabled");
             break;
+        case 4:
+            snprintf(lbl, lsz, "ROM Slots");
+            snprintf(val, vsz, "Enter to configure \xbb");
+            *readonly = true;
+            break;
         }
         break;
 
@@ -149,6 +156,7 @@ static void activate_item(Overlay *ov) {
 
     case OV_STORAGE:
         if (ov->row == 0 || ov->row == 1) {
+            ov->dialog_kind  = DIALOG_DISK;
             ov->dialog_drive = ov->row;
             ov->dialog_ready = false;
             static const SDL_DialogFileFilter filters[] = {
@@ -178,6 +186,9 @@ static void activate_item(Overlay *ov) {
         case 3:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
+            break;
+        case 4:
+            ov->state = OV_STATE_ROMSLOTS;
             break;
         }
         break;
@@ -213,28 +224,38 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc) {
     memset(ov, 0, sizeof(*ov));
     ov->cfg          = cfg;
     ov->cpc          = cpc;
+    ov->dialog_kind  = DIALOG_NONE;
     ov->dialog_drive = -1;
+    ov->dialog_slot  = -1;
 }
 
 void overlay_tick(Overlay *ov) {
-    if (!ov->dialog_ready || ov->dialog_drive < 0) return;
+    if (!ov->dialog_ready) return;
     ov->dialog_ready = false;
 
-    int drv = ov->dialog_drive;
-    ov->dialog_drive = -1;
-
-    char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
-    snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
-
-    if (ov->cpc) {
-        Disk *d = &ov->cpc->drive[drv];
-        disk_eject(d);
-        if (dest[0] && disk_load(d, dest) < 0) {
-            fprintf(stderr, "1984: failed to load %s\n", dest);
-            dest[0] = '\0';
+    if (ov->dialog_kind == DIALOG_DISK && ov->dialog_drive >= 0) {
+        int drv = ov->dialog_drive;
+        ov->dialog_drive = -1;
+        char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+        snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc) {
+            Disk *d = &ov->cpc->drive[drv];
+            disk_eject(d);
+            if (dest[0] && disk_load(d, dest) < 0) {
+                fprintf(stderr, "1984: failed to load %s\n", dest);
+                dest[0] = '\0';
+            }
         }
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
+        int slot = ov->dialog_slot;
+        ov->dialog_slot = -1;
+        snprintf(ov->cfg->rom_ext[slot], CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc)
+            mem_load_rom_ext(&ov->cpc->mem, slot, ov->dialog_path);
+        ov->dirty = true;
     }
-    ov->dirty = true;
+    ov->dialog_kind = DIALOG_NONE;
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
@@ -270,6 +291,54 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             *ov->cfg    = ov->saved;  /* revert */
             ov->dirty   = false;
             ov->visible = false;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    /* ---- ROM slots sub-panel ---- */
+    if (ov->state == OV_STATE_ROMSLOTS) {
+#define ROMSLOT_VISIBLE 10
+        switch (sc) {
+        case SDL_SCANCODE_ESCAPE:
+            ov->state = OV_STATE_MENU;
+            break;
+        case SDL_SCANCODE_UP:
+            if (ov->romslot_row > 0) {
+                ov->romslot_row--;
+                if (ov->romslot_row < ov->romslot_scroll)
+                    ov->romslot_scroll = ov->romslot_row;
+            }
+            break;
+        case SDL_SCANCODE_DOWN:
+            if (ov->romslot_row < ROM_EXT_COUNT - 1) {
+                ov->romslot_row++;
+                if (ov->romslot_row >= ov->romslot_scroll + ROMSLOT_VISIBLE)
+                    ov->romslot_scroll = ov->romslot_row - ROMSLOT_VISIBLE + 1;
+            }
+            break;
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER: {
+            static const SDL_DialogFileFilter filters[] = {
+                { "ROM images", "rom;ROM" },
+                { "All files",  "*"       },
+            };
+            ov->dialog_kind  = DIALOG_ROMSLOT;
+            ov->dialog_slot  = ov->romslot_row;
+            ov->dialog_ready = false;
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                filters, 2, NULL, false);
+            break;
+        }
+        case SDL_SCANCODE_DELETE:
+        case SDL_SCANCODE_BACKSPACE:
+            ov->cfg->rom_ext[ov->romslot_row][0] = '\0';
+            if (ov->cpc)
+                mem_unload_rom_ext(&ov->cpc->mem, ov->romslot_row);
+            ov->dirty = true;
             break;
         default:
             break;
@@ -316,6 +385,49 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     float lh = rh / SCALE;
 
     SDL_SetRenderScale(r, SCALE, SCALE);
+
+    /* ---- ROM slots sub-panel ---- */
+    if (ov->state == OV_STATE_ROMSLOTS) {
+        fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
+        draw_text(r, DROP_PAD, 4, "ROM Slots (0-31)  Esc=back  Enter=load  Del=clear",
+                  180, 180, 220);
+        SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_RenderLine(r, 0, BAR_H - 1, lw, BAR_H - 1);
+
+        for (int i = 0; i < ROMSLOT_VISIBLE; i++) {
+            int slot = ov->romslot_scroll + i;
+            if (slot >= ROM_EXT_COUNT) break;
+            float iy = BAR_H + 2.0f + i * ITEM_H;
+            bool sel = (slot == ov->romslot_row);
+
+            if (sel)
+                fill_rect(r, 0, iy, lw, ITEM_H, 70, 90, 200, 255);
+
+            char lbl[24];
+            snprintf(lbl, sizeof(lbl), "Slot %2d", slot);
+            float ty = iy + (ITEM_H - FONT_H) / 2.0f;
+            draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
+
+            char val[48] = "";
+            bool has_ext = ov->cfg->rom_ext[slot][0] != '\0';
+            if (has_ext) {
+                /* show just the filename */
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                trunc_path(basename(tmp), val, sizeof(val));
+                draw_text(r, VAL_X, ty, val, 100, 220, 100);
+            } else if (slot == 0) {
+                draw_text(r, VAL_X, ty, "(BASIC)", 90, 90, 110);
+            } else if (slot == 7) {
+                draw_text(r, VAL_X, ty, "(AMSDOS)", 90, 90, 110);
+            } else {
+                draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
+            }
+        }
+        SDL_SetRenderScale(r, 1.0f, 1.0f);
+        return;
+    }
 
     /* ---- Top bar ---- */
     fill_rect(r, 0, 0, lw, BAR_H, 20, 20, 50, 230);

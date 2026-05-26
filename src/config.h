@@ -14,6 +14,9 @@ typedef struct {
     char rom_basic[CONFIG_PATH_MAX];
     char rom_amsdos[CONFIG_PATH_MAX];
 
+    /* [expansion_roms] — slot_0 … slot_31 */
+    char rom_ext[ROM_EXT_COUNT][CONFIG_PATH_MAX];
+
     /* [storage] */
     char disk_a[CONFIG_PATH_MAX];
     char disk_b[CONFIG_PATH_MAX];

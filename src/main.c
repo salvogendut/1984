@@ -83,6 +83,12 @@ int main(int argc, char *argv[]) {
     if (cfg.rom_amsdos[0])
         mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
 
+    /* Load expansion ROMs into slots 0-31 */
+    for (int s = 0; s < ROM_EXT_COUNT; s++) {
+        if (cfg.rom_ext[s][0])
+            mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+    }
+
     /* Load floppy images from config */
     if (cfg.disk_a[0]) {
         if (disk_load(&cpc.drive[0], cfg.disk_a) < 0) {

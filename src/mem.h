@@ -15,6 +15,7 @@
 #define ROM_OS_SIZE    0x4000
 #define ROM_BASIC_SIZE 0x4000
 #define RAM_SIZE       0x20000   /* 128 KB (6128); 464 uses lower 64 KB */
+#define ROM_EXT_COUNT  32        /* expansion ROM slots 0-31 */
 
 typedef struct {
     u8   ram[RAM_SIZE];
@@ -22,6 +23,9 @@ typedef struct {
     u8   rom_basic[ROM_BASIC_SIZE];
     u8   rom_amsdos[ROM_BASIC_SIZE];
     bool amsdos_present;
+    /* expansion ROMs: slot 0=BASIC fallback, 7=AMSDOS fallback, 1-6/8-31 free */
+    u8   rom_ext[ROM_EXT_COUNT][ROM_BASIC_SIZE];
+    bool rom_ext_present[ROM_EXT_COUNT];
     bool lower_rom_enabled;
     bool upper_rom_enabled;
     u8   upper_rom_select;  /* current upper ROM slot (written via port 0xDFxx) */
@@ -30,7 +34,9 @@ typedef struct {
 
 void mem_init(Mem *m);
 int  mem_load_rom(Mem *m, const char *os_path, const char *basic_path);
-int  mem_load_amsdos(Mem *m, const char *path);   /* slot 7; non-fatal if missing */
+int  mem_load_amsdos(Mem *m, const char *path);        /* slot 7 default; non-fatal */
+int  mem_load_rom_ext(Mem *m, int slot, const char *path);  /* expansion slot 0-31 */
+void mem_unload_rom_ext(Mem *m, int slot);
 u8   mem_read(Mem *m, u16 addr);
 u8   mem_read_video(Mem *m, u16 addr);   /* CRTC/GA always reads RAM, bypasses ROM */
 void mem_write(Mem *m, u16 addr, u8 val);
