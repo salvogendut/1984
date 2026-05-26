@@ -57,10 +57,29 @@ fullscreen=false
 ## Usage
 
 ```bash
-./bin/1984
+./bin/1984 [OPTIONS] [disk.dsk]
 ```
 
-The model (464 or 6128) is selected via the options overlay — there are no command-line arguments.
+| Option | Description |
+|--------|-------------|
+| `disk.dsk` | DSK image to mount in drive A on startup |
+| `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
+| `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
+
+Examples:
+
+```bash
+# Boot to BASIC with a disk mounted
+./bin/1984 game.dsk
+
+# Autostart a specific file from the disk
+./bin/1984 --autostart=game game.dsk
+
+# Run a disk-based game that needs its own loader command
+./bin/1984 --paste='|disc\nrun"disc' game.dsk
+```
+
+The machine model (464 or 6128) is selected via the options overlay (F9).
 
 | Key    | Action |
 |--------|--------|
