@@ -195,10 +195,16 @@ static void activate_item(Overlay *ov) {
 
     case OV_ADVANCED:
         switch (ov->row) {
-        case 0:
-            ov->cfg->memory_kb = (ov->cfg->memory_kb == 64) ? 128 : 64;
+        case 0: {
+            static const int sizes[] = { 64, 128, 256, 512, 576 };
+            int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
+            int cur = 0;
+            for (int i = 0; i < n; i++)
+                if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
+            ov->cfg->memory_kb = sizes[(cur + 1) % n];
             ov->dirty = true;
             break;
+        }
         case 1:
             ov->cfg->m4 = !ov->cfg->m4;
             ov->dirty = true;
@@ -327,9 +333,10 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         case SDL_SCANCODE_RETURN:
         case SDL_SCANCODE_KP_ENTER: {
             config_save(ov->cfg);
-            /* cold boot needed if model, DD1, or any ROM slot changed */
-            bool boot = (ov->cfg->model != ov->saved.model) ||
-                        (ov->cfg->dd1   != ov->saved.dd1)  ||
+            /* cold boot needed if model, memory, DD1, or any ROM slot changed */
+            bool boot = (ov->cfg->model     != ov->saved.model)     ||
+                        (ov->cfg->memory_kb != ov->saved.memory_kb) ||
+                        (ov->cfg->dd1       != ov->saved.dd1)       ||
                         strcmp(ov->cfg->rom_os, ov->saved.rom_os);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {

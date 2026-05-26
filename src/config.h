@@ -7,7 +7,7 @@
 typedef struct {
     /* [machine] */
     CpcModel model;
-    int      memory_kb;     /* 64 or 128 */
+    int      memory_kb;     /* 64, 128, 256, 512, or 576 */
 
     /* [roms] */
     char rom_os[CONFIG_PATH_MAX];

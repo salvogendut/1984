@@ -162,7 +162,8 @@ int config_load(Config *cfg) {
                 else { fprintf(stderr, "1984.conf:%d: unknown model '%s', using default\n", lineno, val); }
             } else if (!strcmp(key, "memory")) {
                 int kb = atoi(val);
-                if (kb == 64 || kb == 128) cfg->memory_kb = kb;
+                if (kb == 64 || kb == 128 || kb == 256 || kb == 512 || kb == 576)
+                    cfg->memory_kb = kb;
                 else { fprintf(stderr, "1984.conf:%d: invalid memory '%s', using default (%d KB)\n", lineno, val, cfg->memory_kb); }
             }
         } else if (!strcmp(section, "roms")) {

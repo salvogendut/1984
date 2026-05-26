@@ -55,9 +55,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
-        /* 6128 RAM banking */
-        if ((val & 0xC0) == 0xC0 && cpc->model == MODEL_6128)
-            cpc->mem.ram_bank = val & 0x07;
+        /* RAM banking — bits[5:0] select 16KB page for 0xC000-0xFFFF.
+         * Standard on 6128; emulator extension enables it on 464 too
+         * when memory > 64 KB is configured. */
+        if ((val & 0xC0) == 0xC0)
+            cpc->mem.ram_bank = val & 0x3F;
         return;
     }
     /* CRTC: A14=0 → 0xBCxx (select, A8=0) / 0xBDxx (write, A8=1) */

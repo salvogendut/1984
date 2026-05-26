@@ -9,16 +9,21 @@
  *
  * Upper ROM slots: 0=BASIC, 7=AMSDOS. All others return 0xFF.
  * 464: 64 KB RAM, no extra banks
- * 6128: 128 KB RAM, banked via Gate Array
+ * 6128: 128 KB RAM, banked via Gate Array (modes 0-7)
+ * Expansion: DK'tronics-compatible banking via Gate Array bits[5:3]:
+ *   bits[5:3]=0 → standard 6128 extra 64 KB (RAM banks at offset 64–128 KB)
+ *   bits[5:3]=1–7 → 7 × 64 KB expansion banks (128–576 KB)
+ *   Maximum: 64 KB base + 8 × 64 KB = 576 KB (DK'tronics ceiling).
  */
 
 #define ROM_OS_SIZE    0x4000
 #define ROM_BASIC_SIZE 0x4000
-#define RAM_SIZE       0x20000   /* 128 KB (6128); 464 uses lower 64 KB */
+#define RAM_SIZE       0x90000   /* 576 KB max (DK'tronics ceiling); actual usable size is Mem.ram_size */
 #define ROM_EXT_COUNT  32        /* expansion ROM slots 0-31 */
 
 typedef struct {
     u8   ram[RAM_SIZE];
+    int  ram_size;              /* actual usable RAM in bytes (from config.memory_kb * 1024) */
     u8   rom_os[ROM_OS_SIZE];
     u8   rom_basic[ROM_BASIC_SIZE];
     u8   rom_amsdos[ROM_BASIC_SIZE];
