@@ -56,6 +56,7 @@ Place ROM images in the `roms/` directory with these exact names:
 | `roms/BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
 | `roms/OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
 | `roms/BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
+| `roms/AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
 
 ## Configuration
 
@@ -69,8 +70,15 @@ memory=128        # 64 (CPC 464) or 128 (CPC 6128)
 [roms]
 os=roms/OS_6128.ROM
 basic=roms/BASIC_1.1.ROM
+amsdos=roms/AMSDOS.ROM
+
+[expansion_roms]
+# Load extra ROMs into upper ROM slots 0-31.
+# slot_7 is AMSDOS by default; leave entries empty to use defaults.
+# Example: slot_5=/path/to/TOOLKIT.ROM
 
 [hardware]
+dd1=false         # CPC 464 only: enable DDI-1 floppy interface + AMSDOS
 m4=false
 ulifac=false
 net4cpc=false
@@ -139,6 +147,17 @@ Pressing Ctrl+V types the host clipboard contents into the emulator one characte
 The overlay lets you change the machine model, RAM size, ROM paths, and hardware options without editing the config file. Navigate with arrow keys, press Enter to cycle a value. On close, if anything changed you will be asked whether to save.
 
 Switching the model automatically sets the matching ROM paths and RAM size.
+
+**ROM Slots** (Advanced → ROM Slots) opens a sub-panel listing the lower ROM and all 32 upper ROM slots (0–31):
+
+| Entry | Default | Enter | Delete |
+|-------|---------|-------|--------|
+| Lower ROM | Model OS ROM | Replace with file picker | Restore model default |
+| Slot 0 | BASIC ROM | Load expansion override | Clear override / restore default BASIC |
+| Slot 7 | AMSDOS ROM | Load expansion override | Clear override / restore default AMSDOS |
+| Slots 1–6, 8–31 | empty | Load ROM into slot | Clear slot |
+
+Changes to any ROM slot or the lower ROM trigger an automatic cold boot so the new ROM takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ## Development
 

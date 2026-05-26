@@ -7,7 +7,7 @@ Each source file maps to one hardware component:
 | File | Component |
 |------|-----------|
 | `src/z80.c` / `z80.h` | Z80 CPU — full documented instruction set plus undocumented IX/IY half-register ops, all prefixes (CB/DD/ED/FD), interrupts IM0/1/2 |
-| `src/mem.c` / `mem.h` | Memory map — lower/upper ROM overlay, 6128 RAM banking via Gate Array |
+| `src/mem.c` / `mem.h` | Memory map — lower/upper ROM overlay, 32 expansion ROM slots, 6128 RAM banking via Gate Array |
 | `src/crtc.c` / `crtc.h` | MC6845 CRTC — horizontal/vertical timing, MA/RA address generation, display enable |
 | `src/gate_array.c` / `gate_array.h` | Gate Array — screen mode, ink palette (32 hardware colours), ROM enables, interrupt counter |
 | `src/ppi.c` / `ppi.h` | 8255 PPI — keyboard row selection, vsync feedback, PSG control routing |
@@ -88,11 +88,15 @@ The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called onc
 
 `cpc_reset()` performs a warm reset: all chips are reinitialised (Z80, Gate Array, CRTC, PPI, PSG, keyboard) and raster counters are cleared, but ROM and RAM contents are preserved — matching real CPC hardware reset behaviour.
 
+The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically when any of the following are saved: model change, DD1 toggle, lower ROM replacement, or any expansion ROM slot change. ROM data is updated in-place before the reset so the machine immediately boots from the new ROM without restarting the emulator.
+
 ## Configuration
 
 `config_load()` reads `~/.config/1984/1984.conf` (INI format). If the file is missing it is created with defaults. Invalid or missing values fall back to defaults silently; no value causes a hard failure.
 
 `config_set_model()` sets the model, RAM size, and ROM paths together — used by the overlay when the user switches model so all three stay consistent.
+
+`config_default_os/basic/amsdos()` return the compiled-in default ROM path for a given model, used by the overlay's Delete action to restore individual ROM slots to their factory defaults without touching the rest of the config.
 
 ## Options overlay
 
@@ -101,10 +105,12 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 | Tab | Rows |
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
-| Storage | Drive A, Tape (stubs) |
-| Advanced | Memory, M4, UliFAC, Net4CPC |
+| Storage | Drive A, Drive B |
+| Advanced | Memory, M4, UliFAC, Net4CPC, DD1, ROM Slots → |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
+
+**ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Advanced → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
 
 ## Paste
 
@@ -120,10 +126,19 @@ The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0�
 0x0000–0x3FFF   OS ROM (lower) or RAM
 0x4000–0x7FFF   RAM
 0x8000–0xBFFF   RAM
-0xC000–0xFFFF   BASIC ROM (upper) or RAM bank (6128)
+0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank (6128)
 ```
 
 The 6128 has 128 KB RAM. Extra 16 KB pages are selected via Gate Array port 0x7Fxx (function bits 11xxxxxx).
+
+**Upper ROM slots.** `mem_read()` resolves the upper ROM in priority order:
+
+1. Expansion override (`rom_ext[slot]`) — if loaded, wins for any slot 0–31
+2. Slot 0 default → `rom_basic` (Locomotive BASIC)
+3. Slot 7 default → `rom_amsdos` (AMSDOS, if present)
+4. All other slots → 0xFF (no ROM)
+
+The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot without touching the built-in BASIC or AMSDOS buffers.
 
 ## I/O decoding
 
