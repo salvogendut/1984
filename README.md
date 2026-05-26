@@ -15,11 +15,26 @@ Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS f
 
 ## Build
 
+Two build systems are provided. Use whichever suits your platform.
+
+**GNU Make (Linux, quick iteration):**
 ```bash
 make
 ```
-
 Output binary: `bin/1984`
+
+**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, …):**
+```bash
+./configure
+make
+```
+Output binary: `./1984`
+
+If `configure` is missing (e.g. after a fresh clone without the generated files), regenerate it with:
+```bash
+autoreconf -fiv
+```
+This requires `autoconf` and `automake`. On most systems they are available as packages (`autoconf`, `automake`).
 
 ## ROM files
 
