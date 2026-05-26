@@ -1,3 +1,5 @@
+![Example Image](1984.png)
+
 # 1984 — Amstrad CPC Emulator
 
 A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
