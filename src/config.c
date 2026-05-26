@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+void config_set_model(Config *cfg, CpcModel model);  /* defined below */
+
 #define DEFAULT_ROM_OS_464     "roms/OS_464.ROM"
 #define DEFAULT_ROM_BASIC_464  "roms/BASIC_1.0.ROM"
 #define DEFAULT_ROM_OS_6128    "roms/OS_6128.ROM"
@@ -17,16 +19,8 @@
 
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
-    cfg->model     = MODEL_6128;
-    cfg->memory_kb = 128;
-    snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS);
-    snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC);
-    snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
-    cfg->m4        = false;
-    cfg->ulifac    = false;
-    cfg->net4cpc   = false;
     cfg->scale     = 2;
-    cfg->fullscreen= false;
+    config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
 /* Expand a leading ~ to the home directory. Result written into out[size]. */
@@ -87,12 +81,19 @@ static void config_create_default(const char *path, const char *home) {
         "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
         "amsdos=~/.config/1984/roms/AMSDOS.ROM\n"
         "\n"
+        "[expansion_roms]\n"
+        "# Load extra ROMs into upper ROM slots 0-31.\n"
+        "# slot_7 is AMSDOS by default; leave entries empty to use defaults.\n"
+        "# Example: slot_5=/path/to/TOOLKIT.ROM\n"
+        "\n"
         "[storage]\n"
         "# Paths to .dsk floppy images (leave empty for no disk)\n"
         "drive_a=\n"
         "drive_b=\n"
         "\n"
         "[hardware]\n"
+        "# dd1: CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS)\n"
+        "dd1=false\n"
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
         "ulifac=false\n"
@@ -166,6 +167,12 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
             else if (!strcmp(key, "amsdos"))
                 expand_path(val, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
+        } else if (!strcmp(section, "expansion_roms")) {
+            if (strncmp(key, "slot_", 5) == 0) {
+                int slot = atoi(key + 5);
+                if (slot >= 0 && slot < ROM_EXT_COUNT && val[0])
+                    expand_path(val, cfg->rom_ext[slot], sizeof(cfg->rom_ext[slot]));
+            }
         } else if (!strcmp(section, "storage")) {
             if (!strcmp(key, "drive_a"))
                 expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
@@ -173,7 +180,10 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->disk_b, sizeof(cfg->disk_b));
         } else if (!strcmp(section, "hardware")) {
             bool b;
-            if (!strcmp(key, "m4")) {
+            if (!strcmp(key, "dd1")) {
+                if (parse_bool(val, &b)) cfg->dd1 = b;
+                else { fprintf(stderr, "1984.conf:%d: dd1 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "m4")) {
                 if (parse_bool(val, &b)) cfg->m4 = b;
                 else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "ulifac")) {
@@ -230,24 +240,34 @@ int config_save(const Config *cfg) {
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n"
-        "amsdos=%s\n\n"
-        "[storage]\n"
+        "amsdos=%s\n",
+        cfg->model == MODEL_464 ? "464" : "6128",
+        cfg->memory_kb,
+        cfg->rom_os,
+        cfg->rom_basic,
+        cfg->rom_amsdos);
+
+    fprintf(f, "\n[expansion_roms]\n");
+    for (int i = 0; i < ROM_EXT_COUNT; i++) {
+        if (cfg->rom_ext[i][0])
+            fprintf(f, "slot_%d=%s\n", i, cfg->rom_ext[i]);
+    }
+
+    fprintf(f,
+        "\n[storage]\n"
         "drive_a=%s\n"
         "drive_b=%s\n\n"
         "[hardware]\n"
+        "dd1=%s\n"
         "m4=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
-        cfg->model == MODEL_464 ? "464" : "6128",
-        cfg->memory_kb,
-        cfg->rom_os,
-        cfg->rom_basic,
-        cfg->rom_amsdos,
         cfg->disk_a,
         cfg->disk_b,
+        cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc ? "true" : "false",
@@ -263,12 +283,37 @@ void config_set_model(Config *cfg, CpcModel model) {
     cfg->model = model;
     if (model == MODEL_464) {
         cfg->memory_kb = 64;
+        cfg->dd1       = false;
         snprintf(cfg->rom_os,    sizeof(cfg->rom_os),    "%s", DEFAULT_ROM_OS_464);
         snprintf(cfg->rom_basic, sizeof(cfg->rom_basic), "%s", DEFAULT_ROM_BASIC_464);
+        cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS; DD1 adds it */
     } else {
         cfg->memory_kb = 128;
+        cfg->dd1       = false;      /* 6128 has built-in FDC; DD1 not applicable */
         snprintf(cfg->rom_os,     sizeof(cfg->rom_os),     "%s", DEFAULT_ROM_OS_6128);
         snprintf(cfg->rom_basic,  sizeof(cfg->rom_basic),  "%s", DEFAULT_ROM_BASIC_6128);
         snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
     }
+}
+
+void config_apply_dd1(Config *cfg, bool enabled) {
+    cfg->dd1 = enabled;
+    if (enabled)
+        snprintf(cfg->rom_amsdos, sizeof(cfg->rom_amsdos), "%s", DEFAULT_ROM_AMSDOS);
+    else
+        cfg->rom_amsdos[0] = '\0';
+}
+
+void config_default_os(CpcModel model, char *out, size_t sz) {
+    snprintf(out, sz, "%s",
+        model == MODEL_464 ? DEFAULT_ROM_OS_464 : DEFAULT_ROM_OS_6128);
+}
+
+void config_default_basic(CpcModel model, char *out, size_t sz) {
+    snprintf(out, sz, "%s",
+        model == MODEL_464 ? DEFAULT_ROM_BASIC_464 : DEFAULT_ROM_BASIC_6128);
+}
+
+void config_default_amsdos(char *out, size_t sz) {
+    snprintf(out, sz, "%s", DEFAULT_ROM_AMSDOS);
 }

@@ -8,10 +8,20 @@ void mem_init(Mem *m) {
     memset(m->rom_basic, 0, sizeof(m->rom_basic));
     memset(m->rom_amsdos, 0xFF, sizeof(m->rom_amsdos));
     m->amsdos_present    = false;
+    memset(m->rom_ext, 0xFF, sizeof(m->rom_ext));
+    memset(m->rom_ext_present, 0, sizeof(m->rom_ext_present));
     m->lower_rom_enabled = true;
     m->upper_rom_enabled = true;
     m->upper_rom_select  = 0;
     m->ram_bank          = 0;
+}
+
+int mem_load_os(Mem *m, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "Cannot open OS ROM: %s\n", path); return -1; }
+    fread(m->rom_os, 1, ROM_OS_SIZE, f);
+    fclose(f);
+    return 0;
 }
 
 int mem_load_rom(Mem *m, const char *os_path, const char *basic_path) {
@@ -40,6 +50,28 @@ int mem_load_amsdos(Mem *m, const char *path) {
     return 0;
 }
 
+void mem_unload_amsdos(Mem *m) {
+    memset(m->rom_amsdos, 0xFF, sizeof(m->rom_amsdos));
+    m->amsdos_present = false;
+}
+
+int mem_load_rom_ext(Mem *m, int slot, const char *path) {
+    if (slot < 0 || slot >= ROM_EXT_COUNT) return -1;
+    if (!path || !path[0]) return -1;
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "Cannot open ROM slot %d: %s\n", slot, path); return -1; }
+    fread(m->rom_ext[slot], 1, ROM_BASIC_SIZE, f);
+    fclose(f);
+    m->rom_ext_present[slot] = true;
+    return 0;
+}
+
+void mem_unload_rom_ext(Mem *m, int slot) {
+    if (slot < 0 || slot >= ROM_EXT_COUNT) return;
+    memset(m->rom_ext[slot], 0xFF, ROM_BASIC_SIZE);
+    m->rom_ext_present[slot] = false;
+}
+
 u8 mem_read(Mem *m, u16 addr) {
     if (addr < 0x4000 && m->lower_rom_enabled)
         return m->rom_os[addr];
@@ -49,14 +81,15 @@ u8 mem_read(Mem *m, u16 addr) {
             u32 page = m->ram_bank & 0x07;
             return m->ram[(page * 0x4000) + (addr - 0xC000)];
         }
-        /* Select upper ROM by slot */
-        switch (m->upper_rom_select) {
-        case 0:  return m->rom_basic[addr - 0xC000];
-        case 7:  return m->amsdos_present
-                        ? m->rom_amsdos[addr - 0xC000]
-                        : 0xFF;
-        default: return 0xFF;
-        }
+        /* Expansion ROM overrides take priority; fall back to BASIC/AMSDOS defaults */
+        u8 slot = m->upper_rom_select;
+        if (slot < ROM_EXT_COUNT && m->rom_ext_present[slot])
+            return m->rom_ext[slot][addr - 0xC000];
+        if (slot == 0)
+            return m->rom_basic[addr - 0xC000];
+        if (slot == 7 && m->amsdos_present)
+            return m->rom_amsdos[addr - 0xC000];
+        return 0xFF;
     }
     if (addr >= 0xC000 && m->ram_bank) {
         u32 page = m->ram_bank & 0x07;

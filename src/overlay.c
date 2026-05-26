@@ -1,8 +1,10 @@
 #include "overlay.h"
 #include "cpc.h"
 #include "disk.h"
+#include "mem.h"
 #include <string.h>
 #include <stdio.h>
+#include <libgen.h>
 
 static void overlay_file_callback(void *userdata, const char * const *files, int filter);
 
@@ -14,12 +16,15 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ITEM_H    20   /* logical = 30 screen px per dropdown row */
 #define DROP_PAD   6   /* left margin inside dropdown */
 #define VAL_X    140   /* x where values start */
+/* ROM slots panel: idx 0 = Lower ROM, idx 1-32 = upper slots 0-31 */
+#define ROMSLOT_VISIBLE 10
+#define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 4 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 6 };
 
 /* ---- Drawing helpers ---- */
 
@@ -56,6 +61,11 @@ static void trunc_path(const char *path, char *out, size_t sz) {
     }
 }
 
+/* True when floppy drives are accessible (6128 always; 464 only with DD1) */
+static bool floppy_accessible(const Overlay *ov) {
+    return ov->cfg->model == MODEL_6128 || ov->cfg->dd1;
+}
+
 /* ---- Menu item text ---- */
 
 static void item_text(const Overlay *ov, int row,
@@ -87,19 +97,26 @@ static void item_text(const Overlay *ov, int row,
         break;
 
     case OV_STORAGE: {
+        bool accessible = floppy_accessible(ov);
         Disk *da = ov->cpc ? &ov->cpc->drive[0] : NULL;
         Disk *db = ov->cpc ? &ov->cpc->drive[1] : NULL;
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "Drive A");
-            if (da && da->inserted && ov->cfg->disk_a[0])
+            if (!accessible) {
+                snprintf(val, vsz, "[enable DD1 in Advanced]");
+                *readonly = true;
+            } else if (da && da->inserted && ov->cfg->disk_a[0])
                 trunc_path(ov->cfg->disk_a, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
             break;
         case 1:
             snprintf(lbl, lsz, "Drive B");
-            if (db && db->inserted && ov->cfg->disk_b[0])
+            if (!accessible) {
+                snprintf(val, vsz, "[enable DD1 in Advanced]");
+                *readonly = true;
+            } else if (db && db->inserted && ov->cfg->disk_b[0])
                 trunc_path(ov->cfg->disk_b, val, vsz);
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
@@ -126,6 +143,20 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Net4CPC");
             snprintf(val, vsz, "%s", ov->cfg->net4cpc ? "enabled" : "disabled");
             break;
+        case 4:
+            snprintf(lbl, lsz, "DD1");
+            if (ov->cfg->model == MODEL_6128) {
+                snprintf(val, vsz, "N/A (6128 has built-in FDC)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->dd1 ? "enabled" : "disabled");
+            }
+            break;
+        case 5:
+            snprintf(lbl, lsz, "ROM Slots");
+            snprintf(val, vsz, "Enter to configure \xbb");
+            *readonly = true;
+            break;
         }
         break;
 
@@ -148,7 +179,8 @@ static void activate_item(Overlay *ov) {
         break;
 
     case OV_STORAGE:
-        if (ov->row == 0 || ov->row == 1) {
+        if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
+            ov->dialog_kind  = DIALOG_DISK;
             ov->dialog_drive = ov->row;
             ov->dialog_ready = false;
             static const SDL_DialogFileFilter filters[] = {
@@ -178,6 +210,21 @@ static void activate_item(Overlay *ov) {
         case 3:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
+            break;
+        case 4:
+            if (ov->cfg->model == MODEL_464) {
+                config_apply_dd1(ov->cfg, !ov->cfg->dd1);
+                if (ov->cpc) {
+                    if (ov->cfg->dd1)
+                        mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
+                    else
+                        mem_unload_amsdos(&ov->cpc->mem);
+                }
+                ov->dirty = true;
+            }
+            break;
+        case 5:
+            ov->state = OV_STATE_ROMSLOTS;
             break;
         }
         break;
@@ -213,28 +260,45 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc) {
     memset(ov, 0, sizeof(*ov));
     ov->cfg          = cfg;
     ov->cpc          = cpc;
+    ov->dialog_kind  = DIALOG_NONE;
     ov->dialog_drive = -1;
+    ov->dialog_slot  = -1;
 }
 
 void overlay_tick(Overlay *ov) {
-    if (!ov->dialog_ready || ov->dialog_drive < 0) return;
+    if (!ov->dialog_ready) return;
     ov->dialog_ready = false;
 
-    int drv = ov->dialog_drive;
-    ov->dialog_drive = -1;
-
-    char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
-    snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
-
-    if (ov->cpc) {
-        Disk *d = &ov->cpc->drive[drv];
-        disk_eject(d);
-        if (dest[0] && disk_load(d, dest) < 0) {
-            fprintf(stderr, "1984: failed to load %s\n", dest);
-            dest[0] = '\0';
+    if (ov->dialog_kind == DIALOG_DISK && ov->dialog_drive >= 0) {
+        int drv = ov->dialog_drive;
+        ov->dialog_drive = -1;
+        char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+        snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc) {
+            Disk *d = &ov->cpc->drive[drv];
+            disk_eject(d);
+            if (dest[0] && disk_load(d, dest) < 0) {
+                fprintf(stderr, "1984: failed to load %s\n", dest);
+                dest[0] = '\0';
+            }
         }
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_LOWER_ROM) {
+        snprintf(ov->cfg->rom_os, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc)
+            mem_load_os(&ov->cpc->mem, ov->dialog_path);
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
+        int slot = ov->dialog_slot;
+        ov->dialog_slot = -1;
+        snprintf(ov->cfg->rom_ext[slot], CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        if (ov->cpc)
+            mem_load_rom_ext(&ov->cpc->mem, slot, ov->dialog_path);
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
     }
-    ov->dirty = true;
+    ov->dialog_kind = DIALOG_NONE;
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
@@ -261,15 +325,101 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     if (ov->state == OV_STATE_CONFIRM) {
         switch (sc) {
         case SDL_SCANCODE_RETURN:
-        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_KP_ENTER: {
             config_save(ov->cfg);
+            /* cold boot needed if model, DD1, or any ROM slot changed */
+            bool boot = (ov->cfg->model != ov->saved.model) ||
+                        (ov->cfg->dd1   != ov->saved.dd1)  ||
+                        strcmp(ov->cfg->rom_os, ov->saved.rom_os);
+            if (!boot) {
+                for (int i = 0; i < ROM_EXT_COUNT; i++) {
+                    if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
+                        boot = true; break;
+                    }
+                }
+            }
+            ov->needs_cold_boot = boot;
             ov->dirty   = false;
             ov->visible = false;
             break;
+        }
         case SDL_SCANCODE_ESCAPE:
             *ov->cfg    = ov->saved;  /* revert */
             ov->dirty   = false;
             ov->visible = false;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    /* ---- ROM slots sub-panel ---- */
+    /* idx 0 = Lower ROM; idx 1-32 = upper slots 0-31 */
+    if (ov->state == OV_STATE_ROMSLOTS) {
+        switch (sc) {
+        case SDL_SCANCODE_ESCAPE:
+            ov->state = OV_STATE_MENU;
+            break;
+        case SDL_SCANCODE_UP:
+            if (ov->romslot_row > 0) {
+                ov->romslot_row--;
+                if (ov->romslot_row < ov->romslot_scroll)
+                    ov->romslot_scroll = ov->romslot_row;
+            }
+            break;
+        case SDL_SCANCODE_DOWN:
+            if (ov->romslot_row < ROMSLOT_TOTAL - 1) {
+                ov->romslot_row++;
+                if (ov->romslot_row >= ov->romslot_scroll + ROMSLOT_VISIBLE)
+                    ov->romslot_scroll = ov->romslot_row - ROMSLOT_VISIBLE + 1;
+            }
+            break;
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER: {
+            static const SDL_DialogFileFilter filters[] = {
+                { "ROM images", "rom;ROM" },
+                { "All files",  "*"       },
+            };
+            if (ov->romslot_row == 0) {
+                ov->dialog_kind = DIALOG_LOWER_ROM;
+            } else {
+                ov->dialog_kind = DIALOG_ROMSLOT;
+                ov->dialog_slot = ov->romslot_row - 1;
+            }
+            ov->dialog_ready = false;
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                filters, 2, NULL, false);
+            break;
+        }
+        case SDL_SCANCODE_DELETE:
+        case SDL_SCANCODE_BACKSPACE:
+            if (ov->romslot_row == 0) {
+                /* Lower ROM: restore model default OS */
+                config_default_os(ov->cfg->model,
+                    ov->cfg->rom_os, sizeof(ov->cfg->rom_os));
+                if (ov->cpc)
+                    mem_load_os(&ov->cpc->mem, ov->cfg->rom_os);
+                ov->needs_cold_boot = true;
+                ov->dirty = true;
+            } else {
+                int slot = ov->romslot_row - 1;
+                /* Clear any expansion override first */
+                ov->cfg->rom_ext[slot][0] = '\0';
+                if (ov->cpc)
+                    mem_unload_rom_ext(&ov->cpc->mem, slot);
+                /* For slot 0 (BASIC) or slot 7 (AMSDOS) restore the default */
+                if (slot == 0) {
+                    config_default_basic(ov->cfg->model,
+                        ov->cfg->rom_basic, sizeof(ov->cfg->rom_basic));
+                } else if (slot == 7) {
+                    config_default_amsdos(
+                        ov->cfg->rom_amsdos, sizeof(ov->cfg->rom_amsdos));
+                }
+                ov->needs_cold_boot = true;
+                ov->dirty = true;
+            }
             break;
         default:
             break;
@@ -316,6 +466,77 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     float lh = rh / SCALE;
 
     SDL_SetRenderScale(r, SCALE, SCALE);
+
+    /* ---- ROM slots sub-panel ---- */
+    if (ov->state == OV_STATE_ROMSLOTS) {
+        fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
+        draw_text(r, DROP_PAD, 4, "ROMs  Esc=back  Enter=load  Del=clear (upper slots)",
+                  180, 180, 220);
+        SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_RenderLine(r, 0, BAR_H - 1, lw, BAR_H - 1);
+
+        for (int i = 0; i < ROMSLOT_VISIBLE; i++) {
+            int idx = ov->romslot_scroll + i;
+            if (idx >= ROMSLOT_TOTAL) break;
+            float iy = BAR_H + 2.0f + i * ITEM_H;
+            bool sel = (idx == ov->romslot_row);
+
+            if (sel)
+                fill_rect(r, 0, iy, lw, ITEM_H, 70, 90, 200, 255);
+
+            float ty = iy + (ITEM_H - FONT_H) / 2.0f;
+            char val[48] = "";
+
+            if (idx == 0) {
+                /* Lower ROM — always green */
+                draw_text(r, DROP_PAD, ty, "Lower ROM", 220, 220, 240);
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
+                trunc_path(basename(tmp), val, sizeof(val));
+                draw_text(r, VAL_X, ty, val, 80, 220, 80);
+            } else {
+                int slot = idx - 1;
+                char lbl[24];
+                snprintf(lbl, sizeof(lbl), "Slot %2d", slot);
+                draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
+
+                bool has_ext = ov->cfg->rom_ext[slot][0] != '\0';
+                if (slot == 0) {
+                    /* BASIC slot — red */
+                    if (has_ext) {
+                        char tmp[CONFIG_PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                        trunc_path(basename(tmp), val, sizeof(val));
+                    } else {
+                        snprintf(val, sizeof(val), "(BASIC)");
+                    }
+                    draw_text(r, VAL_X, ty, val, 220, 80, 80);
+                } else if (slot == 7) {
+                    /* AMSDOS slot — yellow */
+                    if (has_ext) {
+                        char tmp[CONFIG_PATH_MAX];
+                        snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                        trunc_path(basename(tmp), val, sizeof(val));
+                    } else {
+                        snprintf(val, sizeof(val), "(AMSDOS)");
+                    }
+                    draw_text(r, VAL_X, ty, val, 220, 200, 60);
+                } else if (has_ext) {
+                    /* Other populated slot — white */
+                    char tmp[CONFIG_PATH_MAX];
+                    snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_ext[slot]);
+                    trunc_path(basename(tmp), val, sizeof(val));
+                    draw_text(r, VAL_X, ty, val, 220, 220, 220);
+                } else {
+                    /* Empty slot — grey */
+                    draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
+                }
+            }
+        }
+        SDL_SetRenderScale(r, 1.0f, 1.0f);
+        return;
+    }
 
     /* ---- Top bar ---- */
     fill_rect(r, 0, 0, lw, BAR_H, 20, 20, 50, 230);

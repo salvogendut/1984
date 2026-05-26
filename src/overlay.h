@@ -11,9 +11,17 @@ typedef enum {
 } OvSection;
 
 typedef enum {
-    OV_STATE_MENU    = 0,   /* normal navigation */
-    OV_STATE_CONFIRM = 1    /* "save changes?" prompt */
+    OV_STATE_MENU     = 0,   /* normal navigation */
+    OV_STATE_CONFIRM  = 1,   /* "save changes?" prompt */
+    OV_STATE_ROMSLOTS = 2    /* ROM slots sub-panel */
 } OvState;
+
+typedef enum {
+    DIALOG_NONE      = 0,
+    DIALOG_DISK      = 1,
+    DIALOG_ROMSLOT   = 2,
+    DIALOG_LOWER_ROM = 3
+} DialogKind;
 
 typedef struct {
     bool         visible;
@@ -25,9 +33,16 @@ typedef struct {
     Config       saved;        /* snapshot taken when overlay opens */
     CPC         *cpc;          /* for live disk operations */
     /* pending file-dialog result */
-    int          dialog_drive; /* 0=A, 1=B, -1=none */
+    DialogKind   dialog_kind;
+    int          dialog_drive; /* 0=A, 1=B (DIALOG_DISK) */
+    int          dialog_slot;  /* 0-31     (DIALOG_ROMSLOT) */
     char         dialog_path[512];
     bool         dialog_ready;
+    /* ROM slots sub-panel state */
+    int          romslot_row;    /* selected slot 0-31 */
+    int          romslot_scroll; /* index of first visible slot */
+    /* set by overlay after a save that requires a cold boot */
+    bool         needs_cold_boot;
 } Overlay;
 
 void overlay_init(Overlay *ov, Config *cfg, CPC *cpc);
