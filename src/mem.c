@@ -14,6 +14,7 @@ void mem_init(Mem *m) {
     m->upper_rom_enabled = true;
     m->upper_rom_select  = 0;
     m->ram_bank          = 0;
+    m->ram_size          = 0x20000;  /* default 128 KB; caller sets from config */
 }
 
 int mem_load_os(Mem *m, const char *path) {
@@ -72,14 +73,25 @@ void mem_unload_rom_ext(Mem *m, int slot) {
     m->rom_ext_present[slot] = false;
 }
 
+/* Compute the RAM offset for the banked 0xC000-0xFFFF region.
+ * Bits[5:0] of ram_bank form a 6-bit 16KB-page index (0-63):
+ *   page 0-7   = standard 128 KB (6128 built-in)
+ *   page 8-63  = DK'tronics-style expansion (up to 1 MB total)
+ * Returns RAM_SIZE if the page exceeds ram_size (treat as uninstalled). */
+static inline u32 banked_offset(const Mem *m, u16 addr) {
+    u32 page = (u32)(m->ram_bank & 0x3F);
+    u32 off  = page * 0x4000u + (u32)(addr - 0xC000u);
+    return (off < (u32)m->ram_size) ? off : RAM_SIZE;
+}
+
 u8 mem_read(Mem *m, u16 addr) {
     if (addr < 0x4000 && m->lower_rom_enabled)
         return m->rom_os[addr];
     if (addr >= 0xC000 && m->upper_rom_enabled) {
         /* RAM bank takes priority over ROM when banking is active */
         if (m->ram_bank) {
-            u32 page = m->ram_bank & 0x07;
-            return m->ram[(page * 0x4000) + (addr - 0xC000)];
+            u32 off = banked_offset(m, addr);
+            return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
         }
         /* Expansion ROM overrides take priority; fall back to BASIC/AMSDOS defaults */
         u8 slot = m->upper_rom_select;
@@ -92,23 +104,25 @@ u8 mem_read(Mem *m, u16 addr) {
         return 0xFF;
     }
     if (addr >= 0xC000 && m->ram_bank) {
-        u32 page = m->ram_bank & 0x07;
-        return m->ram[(page * 0x4000) + (addr - 0xC000)];
+        u32 off = banked_offset(m, addr);
+        return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
     }
-    return m->ram[addr & (RAM_SIZE - 1)];
+    return m->ram[addr];
 }
 
 u8 mem_read_video(Mem *m, u16 addr) {
-    if (addr >= 0xC000 && m->ram_bank)
-        return m->ram[(u32)(m->ram_bank & 0x07) * 0x4000 + (addr - 0xC000)];
-    return m->ram[addr & (RAM_SIZE - 1)];
+    if (addr >= 0xC000 && m->ram_bank) {
+        u32 off = banked_offset(m, addr);
+        return (off < RAM_SIZE) ? m->ram[off] : 0xFF;
+    }
+    return m->ram[addr];
 }
 
 void mem_write(Mem *m, u16 addr, u8 val) {
     if (addr >= 0xC000 && m->ram_bank) {
-        u32 page = m->ram_bank & 0x07;
-        m->ram[(page * 0x4000) + (addr - 0xC000)] = val;
+        u32 off = banked_offset(m, addr);
+        if (off < RAM_SIZE) m->ram[off] = val;
         return;
     }
-    m->ram[addr & (RAM_SIZE - 1)] = val;
+    m->ram[addr] = val;
 }

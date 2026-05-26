@@ -103,6 +103,7 @@ int main(int argc, char *argv[]) {
         SDL_Quit();
         return 1;
     }
+    cpc.mem.ram_size = cfg.memory_kb * 1024;
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -225,6 +226,7 @@ int main(int argc, char *argv[]) {
         if (overlay.needs_cold_boot) {
             overlay.needs_cold_boot = false;
             cpc.model = cfg.model;
+            cpc.mem.ram_size = cfg.memory_kb * 1024;
             mem_load_rom(&cpc.mem, cfg.rom_os, cfg.rom_basic);
             if (cfg.rom_amsdos[0] && cfg.dd1)
                 mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);

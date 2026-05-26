@@ -133,7 +133,9 @@ The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0�
 0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank (6128)
 ```
 
-The 6128 has 128 KB RAM. Extra 16 KB pages are selected via Gate Array port 0x7Fxx (function bits 11xxxxxx).
+The 6128 has 128 KB RAM by default. RAM is configurable from 64 KB (464 minimum) up to 1024 KB via the options overlay. Extra 16 KB pages are selected via Gate Array port 0x7Fxx (function bits 11xxxxxx).
+
+**Banking scheme.** `Mem.ram_bank` stores bits [5:0] of the Gate Array banking byte. Bits [2:0] are the standard 6128 banking mode; bits [5:3] select an expansion 64KB bank (DK'tronics-compatible for the standard 3-bit range; extended by the emulator beyond 576 KB). The mapped page for 0xC000–0xFFFF is: `page = ram_bank & 0x3F`, giving offset `page × 16 KB`. Accesses beyond `Mem.ram_size` return 0xFF (uninstalled RAM). The 464 model never sets `ram_bank` (banking disabled in the Gate Array write handler).
 
 **Upper ROM slots.** `mem_read()` resolves the upper ROM in priority order:
 
