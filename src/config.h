@@ -47,3 +47,8 @@ void config_set_model(Config *cfg, CpcModel model);
 
 /* Enable or disable the DDI-1 on a CPC 464 (sets/clears rom_amsdos). */
 void config_apply_dd1(Config *cfg, bool enabled);
+
+/* Restore individual ROM paths to the compiled-in defaults for the model. */
+void config_default_os(CpcModel model, char *out, size_t sz);
+void config_default_basic(CpcModel model, char *out, size_t sz);
+void config_default_amsdos(char *out, size_t sz);

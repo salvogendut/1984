@@ -395,12 +395,28 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         }
         case SDL_SCANCODE_DELETE:
         case SDL_SCANCODE_BACKSPACE:
-            /* Lower ROM cannot be cleared */
-            if (ov->romslot_row > 0) {
+            if (ov->romslot_row == 0) {
+                /* Lower ROM: restore model default OS */
+                config_default_os(ov->cfg->model,
+                    ov->cfg->rom_os, sizeof(ov->cfg->rom_os));
+                if (ov->cpc)
+                    mem_load_os(&ov->cpc->mem, ov->cfg->rom_os);
+                ov->needs_cold_boot = true;
+                ov->dirty = true;
+            } else {
                 int slot = ov->romslot_row - 1;
+                /* Clear any expansion override first */
                 ov->cfg->rom_ext[slot][0] = '\0';
                 if (ov->cpc)
                     mem_unload_rom_ext(&ov->cpc->mem, slot);
+                /* For slot 0 (BASIC) or slot 7 (AMSDOS) restore the default */
+                if (slot == 0) {
+                    config_default_basic(ov->cfg->model,
+                        ov->cfg->rom_basic, sizeof(ov->cfg->rom_basic));
+                } else if (slot == 7) {
+                    config_default_amsdos(
+                        ov->cfg->rom_amsdos, sizeof(ov->cfg->rom_amsdos));
+                }
                 ov->needs_cold_boot = true;
                 ov->dirty = true;
             }

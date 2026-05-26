@@ -303,3 +303,17 @@ void config_apply_dd1(Config *cfg, bool enabled) {
     else
         cfg->rom_amsdos[0] = '\0';
 }
+
+void config_default_os(CpcModel model, char *out, size_t sz) {
+    snprintf(out, sz, "%s",
+        model == MODEL_464 ? DEFAULT_ROM_OS_464 : DEFAULT_ROM_OS_6128);
+}
+
+void config_default_basic(CpcModel model, char *out, size_t sz) {
+    snprintf(out, sz, "%s",
+        model == MODEL_464 ? DEFAULT_ROM_BASIC_464 : DEFAULT_ROM_BASIC_6128);
+}
+
+void config_default_amsdos(char *out, size_t sz) {
+    snprintf(out, sz, "%s", DEFAULT_ROM_AMSDOS);
+}
