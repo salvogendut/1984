@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <libgen.h>
 #include "config.h"
@@ -11,17 +12,41 @@
 #include "paste.h"
 #include "joy.h"
 
+static void usage(const char *prog, int code) {
+    FILE *out = code ? stderr : stdout;
+    fprintf(out,
+        "Usage: %s [OPTIONS]\n"
+        "\n"
+        "Options:\n"
+        "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
+        "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
+        "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
+        "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
+        "  -h, --help          Show this help and exit\n"
+        "\n"
+        "Keyboard shortcuts:\n"
+        "  F4     Save screenshot\n"
+        "  F5     Warm reset\n"
+        "  F9     Options overlay\n"
+        "  F11    Toggle fullscreen\n"
+        "  F12    Quit\n"
+        "  Ctrl+V Paste clipboard text into the emulator\n"
+        "\n"
+        "Configuration file: ~/.config/1984/1984.conf\n",
+        prog);
+    exit(code);
+}
+
 int main(int argc, char *argv[]) {
 
-    /* Parse --autostart=<name>: queues `run"<name>` after boot delay
-       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter)
-       Parse --disk-a=PATH / --disk-b=PATH: override drive images from config */
     const char *autostart  = NULL;
     const char *paste_arg  = NULL;
     const char *disk_a_arg = NULL;
     const char *disk_b_arg = NULL;
     for (int i = 1; i < argc; i++) {
-        if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+            usage(argv[0], 0);
+        else if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
             paste_arg = argv[i] + 8;
@@ -29,6 +54,10 @@ int main(int argc, char *argv[]) {
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
             disk_b_arg = argv[i] + 9;
+        else if (argv[i][0] == '-') {
+            fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
+            usage(argv[0], 1);
+        }
     }
 
     Config cfg;

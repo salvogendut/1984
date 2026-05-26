@@ -4,7 +4,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), and joystick/gamepad (USB, Bluetooth, hot-plug) work.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), and joystick/gamepad (USB, Bluetooth, hot-plug) work. Commercial games and standard software run well. Demos that rely on undocumented hardware behaviour or cycle-exact CRTC tricks are untested and may not work correctly.
 
 ## Requirements
 
@@ -35,6 +35,14 @@ If `configure` is missing (e.g. after a fresh clone without the generated files)
 autoreconf -fiv
 ```
 This requires `autoconf` and `automake`. On most systems they are available as packages (`autoconf`, `automake`).
+
+**RPM package (Fedora / RHEL / CentOS):**
+
+A `1984.spec` file is included. Build an RPM with:
+```bash
+rpmbuild -ba 1984.spec
+```
+The spec file handles `autoreconf`, `./configure`, and `make install` automatically.
 
 ## ROM files
 
@@ -82,6 +90,9 @@ fullscreen=false
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
+| `-h`, `--help` | Print this option summary and exit |
+
+Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
 
 Examples:
 
