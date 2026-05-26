@@ -1,18 +1,31 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
+#include "debug.h"
 
 int main(int argc, char *argv[]) {
+    debug_init();
+
+    /* Parse --autostart=<name>: queues `run"<name>` after boot delay
+       Parse --paste=TEXT: queues TEXT verbatim (\n in TEXT becomes Enter) */
+    const char *autostart = NULL;
+    const char *paste_arg = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
+            autostart = argv[i] + 12;
+        else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
+            paste_arg = argv[i] + 8;
+    }
+
     Config cfg;
     if (config_load(&cfg) < 0)
         return 1;
-
-    (void)argc; (void)argv;
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -54,6 +67,9 @@ int main(int argc, char *argv[]) {
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
+    /* Frames to wait before injecting autostart text; 200 ≈ 4 s at 50 Hz */
+    int autostart_countdown = (autostart || paste_arg) ? 200 : 0;
+
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -72,6 +88,16 @@ int main(int argc, char *argv[]) {
                 } else if (ev.key.scancode == SDL_SCANCODE_F11) {
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(cpc.display.window, fullscreen);
+                } else if (ev.key.scancode == SDL_SCANCODE_F4) {
+                    FILE *f = fopen("vram_dump.bin", "wb");
+                    if (f) { fwrite(&cpc.mem.ram[0xC000], 1, 0x4000, f); fclose(f); }
+                    /* Dump game code area around 0x81A0 */
+                    FILE *g = fopen("code_dump.bin", "wb");
+                    if (g) { fwrite(&cpc.mem.ram[0x8000], 1, 0x4000, g); fclose(g); }
+                    /* Dump sprite data area */
+                    FILE *h = fopen("sprite_dump.bin", "wb");
+                    if (h) { fwrite(&cpc.mem.ram[0x4000], 1, 0x4000, h); fclose(h); }
+                    cpc_toggle_trace();
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
@@ -87,6 +113,24 @@ int main(int argc, char *argv[]) {
                 }
             } else if (ev.type == SDL_EVENT_KEY_UP) {
                 cpc_key_event(&cpc, ev.key.scancode, false);
+            }
+        }
+
+        if (autostart_countdown > 0 && --autostart_countdown == 0) {
+            if (paste_arg) {
+                /* --paste=TEXT: expand \n to real newline then inject */
+                char buf[512];
+                int j = 0;
+                for (const char *p = paste_arg; *p && j < (int)sizeof(buf)-2; p++) {
+                    if (p[0] == '\\' && p[1] == 'n') { buf[j++] = '\r'; buf[j++] = '\n'; p++; }
+                    else buf[j++] = *p;
+                }
+                buf[j] = '\0';
+                paste_text(&paste, buf);
+            } else {
+                char cmd[256];
+                snprintf(cmd, sizeof(cmd), "run\"%s", autostart);
+                paste_text(&paste, cmd);
             }
         }
 

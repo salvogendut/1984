@@ -6,7 +6,7 @@ Each source file maps to one hardware component:
 
 | File | Component |
 |------|-----------|
-| `src/z80.c` / `z80.h` | Z80 CPU — full instruction set, all prefixes (CB/DD/ED/FD), interrupts IM0/1/2 |
+| `src/z80.c` / `z80.h` | Z80 CPU — full documented instruction set plus undocumented IX/IY half-register ops, all prefixes (CB/DD/ED/FD), interrupts IM0/1/2 |
 | `src/mem.c` / `mem.h` | Memory map — lower/upper ROM overlay, 6128 RAM banking via Gate Array |
 | `src/crtc.c` / `crtc.h` | MC6845 CRTC — horizontal/vertical timing, MA/RA address generation, display enable |
 | `src/gate_array.c` / `gate_array.h` | Gate Array — screen mode, ink palette (32 hardware colours), ROM enables, interrupt counter |
@@ -48,6 +48,19 @@ Two bytes are fetched per character clock and decoded according to the Gate Arra
 - **Mode 0** — 4 bpp, 2 pixels/byte, each pixel 4× wide (160×200)
 - **Mode 1** — 2 bpp, 4 pixels/byte, each pixel 2× wide (320×200)
 - **Mode 2** — 1 bpp, 8 pixels/byte, 1:1 (640×200)
+
+## Z80 undocumented instructions
+
+When a `DD` or `FD` prefix is followed by an opcode that references the `H` or `L` register (but not `(HL)`), the real Z80 silently substitutes `IXH`/`IXL` or `IYH`/`IYL` respectively. Zilog never documented this, but it is consistent on all real silicon and some software relies on it.
+
+`exec_xy()` in `z80.c` handles all such cases:
+
+- **LD r, r'** (0x40–0x7F, neither side `(HL)`): H/L map to XYH/XYL
+- **ALU XYH/XYL** (0x84, 0x85, 0x8C, 0x8D, 0x94, 0x95, 0x9C, 0x9D, 0xA4, 0xA5, 0xAC, 0xAD, 0xB4, 0xB5, 0xBC, 0xBD)
+- **INC/DEC XYH/XYL** (0x24, 0x25, 0x2C, 0x2D)
+- **LD XYH/XYL, n** (0x26, 0x2E)
+
+Truly unrecognised DD/FD opcodes (e.g. `DD DD`) still fall through: the prefix is treated as a NOP and the following byte is re-executed as a plain instruction.
 
 ## Palette flush fallback
 

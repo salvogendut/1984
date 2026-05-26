@@ -323,11 +323,61 @@ static int exec_xy(Z80 *cpu, Z80Bus *bus, u16 *xy) {
             }
             return 23;
         }
+        /* Undocumented: INC/DEC/LD XYH,n / XYL,n */
+        case 0x24: { u8 v=do_inc(cpu,(u8)(*xy>>8)); *xy=(*xy&0x00FF)|((u16)v<<8); return 8; }
+        case 0x25: { u8 v=do_dec(cpu,(u8)(*xy>>8)); *xy=(*xy&0x00FF)|((u16)v<<8); return 8; }
+        case 0x26: { *xy=(*xy&0x00FF)|((u16)FETCH8()<<8); return 11; }
+        case 0x2C: { u8 v=do_inc(cpu,(u8)(*xy&0xFF)); *xy=(*xy&0xFF00)|v; return 8; }
+        case 0x2D: { u8 v=do_dec(cpu,(u8)(*xy&0xFF)); *xy=(*xy&0xFF00)|v; return 8; }
+        case 0x2E: { *xy=(*xy&0xFF00)|FETCH8(); return 11; }
+        /* Undocumented: LD r,r' where H→XYH, L→XYL (all non-(HL) LD pairs in 0x40-0x7F) */
+        /* Macro helpers: get/set with XY substitution for registers 4(H) and 5(L) */
+        #define GETRXY(r) ((r)==4?(u8)(*xy>>8):(r)==5?(u8)(*xy&0xFF):get_r(cpu,bus,(r),cpu->hl))
+        #define SETRXY(r,v) do{ if((r)==4)*xy=(*xy&0x00FF)|((u16)(v)<<8); \
+                                else if((r)==5)*xy=(*xy&0xFF00)|(v); \
+                                else set_r(cpu,bus,(r),cpu->hl,(v)); }while(0)
+        /* Row 0x40: LD B,r' */
+        case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x47:
+        /* Row 0x48: LD C,r' */
+        case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4F:
+        /* Row 0x50: LD D,r' */
+        case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x57:
+        /* Row 0x58: LD E,r' */
+        case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5F:
+        /* Row 0x60: LD XYH,r' */
+        case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x67:
+        /* Row 0x68: LD XYL,r' */
+        case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6F:
+        /* Row 0x78: LD A,r' */
+        case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7F: {
+            int dst=(op>>3)&7, src=op&7;
+            SETRXY(dst, GETRXY(src));
+            return 8;
+        }
+        /* Undocumented ALU with XYH/XYL operand */
+        case 0x84: do_add(cpu,(u8)(*xy>>8),false); return 8;
+        case 0x85: do_add(cpu,(u8)(*xy&0xFF),false); return 8;
+        case 0x8C: do_add(cpu,(u8)(*xy>>8),(cpu->f&Z80_FLAG_C)!=0); return 8;
+        case 0x8D: do_add(cpu,(u8)(*xy&0xFF),(cpu->f&Z80_FLAG_C)!=0); return 8;
+        case 0x94: do_sub(cpu,(u8)(*xy>>8),false); return 8;
+        case 0x95: do_sub(cpu,(u8)(*xy&0xFF),false); return 8;
+        case 0x9C: do_sub(cpu,(u8)(*xy>>8),(cpu->f&Z80_FLAG_C)!=0); return 8;
+        case 0x9D: do_sub(cpu,(u8)(*xy&0xFF),(cpu->f&Z80_FLAG_C)!=0); return 8;
+        case 0xA4: do_and(cpu,(u8)(*xy>>8)); return 8;
+        case 0xA5: do_and(cpu,(u8)(*xy&0xFF)); return 8;
+        case 0xAC: do_xor(cpu,(u8)(*xy>>8)); return 8;
+        case 0xAD: do_xor(cpu,(u8)(*xy&0xFF)); return 8;
+        case 0xB4: do_or(cpu,(u8)(*xy>>8)); return 8;
+        case 0xB5: do_or(cpu,(u8)(*xy&0xFF)); return 8;
+        case 0xBC: do_cp(cpu,(u8)(*xy>>8)); return 8;
+        case 0xBD: do_cp(cpu,(u8)(*xy&0xFF)); return 8;
         /* Unrecognised DD/FD — treat prefix as NOP and re-execute op */
         default:
             cpu->pc--;   /* put the opcode back */
             return 4;
     }
+    #undef GETRXY
+    #undef SETRXY
 }
 
 /* ---- Public API ---- */
