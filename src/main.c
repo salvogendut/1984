@@ -9,6 +9,7 @@
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
+#include "joy.h"
 
 int main(int argc, char *argv[]) {
 
@@ -37,7 +38,7 @@ int main(int argc, char *argv[]) {
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
@@ -73,6 +74,9 @@ int main(int argc, char *argv[]) {
     Paste paste;
     paste_init(&paste);
 
+    Joy joy;
+    joy_init(&joy);
+
     bool fullscreen = cfg.fullscreen;
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
@@ -93,6 +97,9 @@ int main(int argc, char *argv[]) {
                 running = false;
                 continue;
             }
+            /* Joystick/gamepad events */
+            if (joy_handle_event(&joy, &ev, &cpc.kbd))
+                continue;
             /* Overlay gets first crack at every key event */
             if (overlay_handle_event(&overlay, &ev))
                 continue;
@@ -163,6 +170,7 @@ int main(int argc, char *argv[]) {
     }
 
     paste_free(&paste);
+    joy_destroy(&joy);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;
