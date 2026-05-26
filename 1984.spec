@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.1.0
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -39,5 +39,14 @@ autoreconf -fiv
 %{_bindir}/%{name}
 
 %changelog
+* Tue May 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.2.0-1
+- Add joystick/gamepad support (USB, Bluetooth, hot-plug)
+- Add AY-3-8912 PSG audio
+- Add expansion ROM slots (0-31) configurable via options overlay
+- Add DDI-1 floppy interface option for CPC 464
+- Add autoconf/automake build system
+- Add -h/--help and unrecognised option handling
+- Add GPLv2 license
+
 * Tue May 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.1.0-1
 - Initial package
