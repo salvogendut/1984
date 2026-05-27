@@ -373,7 +373,6 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->memory_kb != ov->saved.memory_kb) ||
                         (ov->cfg->dd1       != ov->saved.dd1)       ||
                         (ov->cfg->net4cpc   != ov->saved.net4cpc)   ||
-                        (ov->cfg->rtc       != ov->saved.rtc)       ||
                         strcmp(ov->cfg->rom_os, ov->saved.rom_os);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {

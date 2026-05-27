@@ -10,6 +10,7 @@
 #include "display.h"
 #include "fdc.h"
 #include "disk.h"
+#include "rtc.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -29,6 +30,7 @@ typedef struct {
     FDC        fdc;
     bool       net4cpc;    /* Net4CPC W5100S Ethernet add-on present */
     bool       rtc;        /* Real-time clock add-on present */
+    RTC        rtc_chip;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

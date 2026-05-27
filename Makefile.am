@@ -19,6 +19,7 @@ bin_PROGRAMS = 1984
 	src/paste.c \
 	src/ppi.c \
 	src/psg.c \
+	src/rtc.c \
 	src/z80.c
 
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra

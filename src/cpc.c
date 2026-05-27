@@ -54,9 +54,15 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
-    /* Net4CPC W5100S: hi=0xFD → ports 0xFD20-0xFD23 */
+    /* hi=0xFD: RTC (0xFD14) and Net4CPC W5100S (0xFD20-0xFD23) */
     else if (hi == 0xFD) {
-        result = cpc->net4cpc ? net4cpc_in(port & 0x03) : 0xFF;
+        u8 lo = port & 0xFF;
+        if (cpc->rtc && lo == 0x14)
+            result = rtc_read_data(&cpc->rtc_chip);
+        else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
+            result = net4cpc_in(lo & 0x03);
+        else
+            result = 0xFF;
     }
     else {
         result = 0xFF;
@@ -130,8 +136,17 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
     /* FDC data: hi=0xFB, write */
     if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
-    /* Net4CPC W5100S: hi=0xFD → ports 0xFD20-0xFD23 */
-    if (hi == 0xFD) { if (cpc->net4cpc) net4cpc_out(port & 0x03, val); return; }
+    /* hi=0xFD: RTC (0xFD14/0xFD15) and Net4CPC W5100S (0xFD20-0xFD23) */
+    if (hi == 0xFD) {
+        u8 lo = port & 0xFF;
+        if (cpc->rtc) {
+            if (lo == 0x15) { rtc_write_addr(&cpc->rtc_chip, val); return; }
+            if (lo == 0x14) { rtc_write_data(&cpc->rtc_chip, val); return; }
+        }
+        if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
+            net4cpc_out(lo & 0x03, val);
+        return;
+    }
 }
 
 /* ---- Init / destroy ---- */
@@ -158,6 +173,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     disk_init(&cpc->drive[0]);
     disk_init(&cpc->drive[1]);
     fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
+    rtc_init(&cpc->rtc_chip);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -189,6 +205,7 @@ void cpc_reset(CPC *cpc) {
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
     fdc_reset(&cpc->fdc);
+    rtc_init(&cpc->rtc_chip);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
