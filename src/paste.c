@@ -97,6 +97,7 @@ static const CpcKey keymap[128] = {
     ['?']  = { 3, 6, true, true },   /* shift+/ */
     ['>']  = { 3, 7, true, true },   /* shift+. */
     ['<']  = { 4, 7, true, true },   /* shift+, */
+    ['|']  = { 3, 2, true, true },   /* shift+@ */
 };
 
 static void key_down(Keyboard *k, const CpcKey *ck) {

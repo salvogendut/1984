@@ -24,6 +24,7 @@ static void usage(const char *prog, int code) {
         "                      May be specified multiple times\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
+        "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -41,10 +42,13 @@ static void usage(const char *prog, int code) {
 
 int main(int argc, char *argv[]) {
 
-    const char *autostart  = NULL;
-    const char *paste_arg  = NULL;
-    const char *disk_a_arg = NULL;
-    const char *disk_b_arg = NULL;
+    const char *autostart       = NULL;
+    const char *paste_arg       = NULL;
+    const char *disk_a_arg      = NULL;
+    const char *disk_b_arg      = NULL;
+    int         screenshot_frame = -1;
+    const char *screenshot_path  = NULL;
+    bool        trace_io         = false;
 
     /* --rom-slot=N:PATH pairs collected from CLI */
     struct { int slot; const char *path; } rom_slots[ROM_EXT_COUNT];
@@ -79,6 +83,17 @@ int main(int argc, char *argv[]) {
                 rom_slots[rom_slot_count].path = colon + 1;
                 rom_slot_count++;
             }
+        } else if (strcmp(argv[i], "--trace-io") == 0) {
+            trace_io = true;
+        } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
+            const char *arg = argv[i] + 16;
+            char *colon = strchr(arg, ':');
+            if (!colon || colon == arg || colon[1] == '\0') {
+                fprintf(stderr, "%s: --screenshot-at requires N:PATH format\n", argv[0]);
+                usage(argv[0], 1);
+            }
+            screenshot_frame = atoi(arg);
+            screenshot_path  = colon + 1;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
             usage(argv[0], 1);
@@ -157,6 +172,7 @@ int main(int argc, char *argv[]) {
 #define FRAME_NS 20000000ULL
     Uint64 next_frame = SDL_GetTicksNS();
 
+    int  frame_count = 0;
     bool running = true;
     while (running) {
         SDL_Event ev;
@@ -247,6 +263,28 @@ int main(int argc, char *argv[]) {
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
+
+        frame_count++;
+        if (trace_io && frame_count == 210)
+            cpc_trace_io = 1;
+        if (trace_io && frame_count == 600)
+            cpc_trace_io = 0;
+        /* At frame 700, dump what the GA palette looks like and sample screen */
+        if (trace_io && frame_count == 700) {
+            fprintf(stderr, "=== GA palette (inks) ===\n");
+            for (int i = 0; i <= 16; i++)
+                fprintf(stderr, "  ink[%2d] = hw%d\n", i, cpc.ga.ink[i]);
+            /* Histogram of screen byte values */
+            int hist[256] = {0};
+            for (int i = 0; i < 0x4000; i++) hist[cpc.mem.ram[0xC000+i]]++;
+            fprintf(stderr, "=== Screen byte histogram (non-zero) ===\n");
+            for (int i = 1; i < 256; i++)
+                if (hist[i]) fprintf(stderr, "  [%02X] = %d\n", i, hist[i]);
+        }
+        if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
+            display_save_png(&cpc.display, screenshot_path);
+            running = false;
+        }
 
         /* Sleep for whatever is left of the 20 ms frame budget */
         next_frame += FRAME_NS;

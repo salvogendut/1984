@@ -64,9 +64,17 @@ Truly unrecognised DD/FD opcodes (e.g. `DD DD`) still fall through: the prefix i
 
 ## Palette flush fallback
 
-The CPC firmware manages a cooperative interrupt handler that runs a "flush task" to push palette RAM (at 0xB7D4–0xB7E4) to the Gate Array after ink changes. Some games (e.g. Spindizzy) deactivate this task before writing their initial palette, relying on real-hardware interrupt timing to catch the update.
+The CPC firmware manages a cooperative interrupt handler that runs a "flush task" to push palette RAM (at 0xB7D4–0xB7E4) to the Gate Array after ink changes. Some games (e.g. Spindizzy) deactivate this task before writing their initial palette, relying on real-hardware interrupt timing to catch the update. With our instant FDC, the task can terminate before the game's palette write, leaving the GA all-black.
 
-`cpc_frame()` includes a fallback: if the firmware's dirty flag (0xB7F7 = 0xFF) is still set at end-of-frame, all 17 ink values are flushed directly from palette RAM to the Gate Array. This is a no-op when the firmware's flush task ran normally (it clears the flag), and only activates when the firmware path was bypassed.
+`cpc_frame()` includes a fallback: if the firmware's dirty flag (0xB7F7 = 0xFF) is still set at end-of-frame and a firmware write to the palette buffer is pending, all 17 ink values are flushed directly from palette RAM to the Gate Array.
+
+**Gating the fallback.** Programs that write directly to the Gate Array (bypassing the firmware ink routine) — such as diagnostic ROMs that also run RAM tests over the firmware workspace — would otherwise corrupt the GA palette if the fallback ran unconditionally. The fallback is gated by `CPC.firmware_palette_pending`, which is:
+
+- Set **true** when code running with lower ROM enabled writes to 0xB7D4–0xB7E4 (i.e. the firmware's ink-set routine updated the palette buffer).
+- Cleared when B7F7 is written to 0x00 (the flush task ran normally and closed the cycle).
+- Cleared after the fallback fires.
+
+RAM-resident programs (lower ROM disabled) writing to 0xB7D4 as part of a memory test do not set the flag, so the fallback remains dormant.
 
 ## PSG / audio
 

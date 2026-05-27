@@ -1,5 +1,9 @@
 #include "cpc.h"
 #include <string.h>
+#include <stdio.h>
+
+/* Set to 1 at runtime to trace CRTC/GA writes to stderr */
+int cpc_trace_io = 0;
 
 #define AUDIO_SAMPLE_RATE   44100
 #define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
@@ -14,6 +18,14 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     mem_write(&cpc->mem, addr, val);
+    /* Track firmware writes to the palette buffer: only mark pending when lower ROM
+     * is enabled (the write comes from firmware code, not from a RAM-resident program).
+     * When the firmware's flush task clears B7F7 (sets it to 0x00), that means the task
+     * ran normally and flushed — clear our flag so the next cycle starts fresh. */
+    if (addr >= 0xB7D4 && addr <= 0xB7E4 && cpc->mem.lower_rom_enabled)
+        cpc->firmware_palette_pending = true;
+    else if (addr == 0xB7F7 && val == 0x00)
+        cpc->firmware_palette_pending = false;
 }
 
 static u8 bus_io_read(void *ctx, u16 port) {
@@ -52,6 +64,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 
     /* Gate Array: A15=0, A14=1 → 0x7Fxx */
     if (!(hi & 0x80) && (hi & 0x40)) {
+        if (cpc_trace_io && (val & 0xC0) == 0x80)
+            fprintf(stderr, "GA  mode=%d lorom=%d hirom=%d\n",
+                    val & 3, !(val & 8), !(val & 16));
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
@@ -64,8 +79,14 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* CRTC: A14=0 → 0xBCxx (select, A8=0) / 0xBDxx (write, A8=1) */
     if (!(hi & 0x40)) {
-        if (!(hi & 0x01)) crtc_select(&cpc->crtc, val);
-        else               crtc_write(&cpc->crtc, val);
+        if (!(hi & 0x01)) {
+            crtc_select(&cpc->crtc, val);
+        } else {
+            if (cpc_trace_io)
+                fprintf(stderr, "CRTC R%-2d = %3d (0x%02X)\n",
+                        cpc->crtc.selected, val, val);
+            crtc_write(&cpc->crtc, val);
+        }
         return;
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
@@ -323,13 +344,14 @@ void cpc_frame(CPC *cpc) {
      * the firmware's flush task has been deactivated (e.g. after game init),
      * push B7D4–B7E4 palette RAM directly to the Gate Array.
      * Layout: B7D4=border(pen16), B7D5=pen0, …, B7D4+16=B7E4=pen15. */
-    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
+    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF && cpc->firmware_palette_pending) {
         for (int p = 0; p < 17; p++) {
             u8 hw  = mem_read(&cpc->mem, (u16)(0xB7D4 + p));
             u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
             ga_write(&cpc->ga, pen);
             ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
         }
+        cpc->firmware_palette_pending = false;
     }
 
     /* Push one frame of PSG audio to SDL */
