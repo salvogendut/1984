@@ -1,7 +1,7 @@
 # 1984 CPC Emulator — Development Notes
 
-This document describes the architecture of the features added on the
-`15-add-debug-pty-and-or-assembly-memory-monitor` branch.
+Architecture and implementation details for features beyond basic emulation.
+For usage see [README.md](README.md).
 
 ---
 

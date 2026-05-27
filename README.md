@@ -105,6 +105,7 @@ fullscreen=false
 | `--rom-os=PATH` | Override the lower ROM (OS) with a custom image at PATH |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
+| `--monitor-pty` | Open a PTY for the memory monitor (`minicom -b 9600 -D <path>`) |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
@@ -134,6 +135,7 @@ The machine model can be selected from the command line (`--464` / `--6128`) or 
 |--------|--------|
 | F4     | Save screenshot (`<binary>_<timestamp>.ppm`) and play camera shutter sound |
 | F5     | Warm reset |
+| F8     | Open/close memory monitor / debugger |
 | F9     | Open/close options overlay |
 | F11    | Toggle fullscreen |
 | F12    | Quit |
@@ -187,9 +189,40 @@ Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSI
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
+### Memory monitor / debugger (F8)
+
+Press **F8** to open a separate 80×25 green-phosphor terminal window. All commands
+are also available via a PTY serial port with `--monitor-pty`.
+
+| Command | Description |
+|---------|-------------|
+| `D <addr> [<end>]` | Disassemble Z80 (10 lines default; pageable) |
+| `M <addr> [<end>]` | Hex + ASCII dump (page default; ASCII in reverse video) |
+| `B [<addr>]` | Set a breakpoint / list all breakpoints |
+| `BC <n>` | Clear breakpoint slot n (0 – 15) |
+| `N` | Single-step one instruction (when paused) |
+| `G` | Resume execution |
+| `GA` | Gate Array: screen mode + all 16 inks |
+| `CRTC` | All 18 CRTC registers + live counters |
+| `X` / `Q` | Close monitor |
+
+When a breakpoint fires the emulator freezes, the monitor opens automatically,
+and shows the hit address with a 5-line disassembly. A live register bar
+(`PC SP A F BC DE HL IX IY`) is always visible at the bottom of the window,
+turning red while paused.
+
+```bash
+# Connect to the monitor over serial with minicom
+./1984 --monitor-pty
+minicom -b 9600 -D /dev/pts/N    # path printed to stderr at startup
+```
+
+See [Development.md](Development.md) for the full architecture and implementation notes.
+
 ## Development
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, timing, video rendering, memory map, and I/O decoding.
+See [Development.md](Development.md) for architecture details, breakpoint/pause
+data flow, Z80 disassembler design, PTY interface, and key source file map.
 
 ## License
 
