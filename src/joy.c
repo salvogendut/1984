@@ -19,24 +19,17 @@ void joy_init(Joy *j) {
 
     int count = 0;
     SDL_JoystickID *ids = SDL_GetJoysticks(&count);
-    fprintf(stderr, "joy: %d device(s) found at startup\n", count);
     if (!ids) return;
 
     for (int i = 0; i < count && (j->count + j->raw_count) < JOY_MAX_PADS; i++) {
         if (SDL_IsGamepad(ids[i])) {
             SDL_Gamepad *g = SDL_OpenGamepad(ids[i]);
-            if (g && j->count < JOY_MAX_PADS) {
-                fprintf(stderr, "joy: opened gamepad %d: %s\n", ids[i],
-                        SDL_GetGamepadName(g));
+            if (g && j->count < JOY_MAX_PADS)
                 j->pad[j->count++] = g;
-            }
         } else {
             SDL_Joystick *r = SDL_OpenJoystick(ids[i]);
-            if (r && j->raw_count < JOY_MAX_PADS) {
-                fprintf(stderr, "joy: opened raw joystick %d: %s\n", ids[i],
-                        SDL_GetJoystickName(r));
+            if (r && j->raw_count < JOY_MAX_PADS)
                 j->raw[j->raw_count++] = r;
-            }
         }
     }
     SDL_free(ids);

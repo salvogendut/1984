@@ -26,6 +26,7 @@ typedef struct {
     bool m4;
     bool ulifac;
     bool net4cpc;
+    bool rtc;
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
