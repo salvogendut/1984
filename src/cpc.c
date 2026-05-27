@@ -7,6 +7,7 @@
 int cpc_trace_io = 0;
 int cpc_trace_palette = 0;
 int cpc_frame_count = 0;
+int cpc_trace_input = 0;
 
 #define AUDIO_SAMPLE_RATE   44100
 #define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
@@ -116,7 +117,12 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         else if (psg_ctrl == 0x02) psg_write(&cpc->psg, cpc->ppi.port_a);
         else if (psg_ctrl == 0x01) {
             psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
-            cpc->ppi.port_a = psg_read(&cpc->psg);
+            /* PSG read mode on CPC always reads I/O port A (reg 14 = keyboard matrix).
+             * Bypass psg_read() to avoid depending on psg->selected being 14. */
+            cpc->ppi.port_a = cpc->psg.kbd_data;
+            if (cpc_trace_input && cpc->ppi.kbd_row == 9)
+                fprintf(stderr, "[input] kbd scan row9 = %02X  (matrix=%02X)\n",
+                        cpc->ppi.port_a, cpc->kbd.matrix[9]);
         }
         return;
     }

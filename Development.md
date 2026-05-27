@@ -148,4 +148,17 @@ or `\n`.
 | `src/monitor.h` / `.c` | Monitor window, commands, PTY, status bar |
 | `src/z80dis.h` / `.c` | Z80 disassembler |
 | `src/cpc.h` / `.c` | Emulator core; breakpoint/pause logic lives in `cpc_frame()` |
+| `src/joy.h` / `.c` | Joystick/gamepad input; SDL gamepad + raw joystick fallback |
 | `src/main.c` | Event loop; F8 shortcut; post-frame pause detection |
+
+---
+
+## Joystick / input (`src/joy.c`)
+
+SDL3 controllers are handled in two tiers: **gamepad** (devices in the SDL gamepad database, opened with `SDL_OpenGamepad`) and **raw joystick** fallback (all others, opened with `SDL_OpenJoystick`). Both support hot-plug. The raw tier maps axis 0 → Left/Right, axis 1 → Up/Down, button 0 → Fire 1, button 1 → Fire 2; hat switch is also handled. All inputs land in CPC keyboard matrix row 9.
+
+`SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is set to `"1"` before `SDL_Init` so gamepad events arrive even when the emulator window is not focused.
+
+**PSG keyboard scan.** The CPC reads row 9 (joystick) through PSG I/O port A (register 14) via the PPI. When PPI port C bits 7–6 = `01` (PSG read mode), `cpc.c` reads `psg->kbd_data` directly rather than routing through `psg_read()`. This avoids a bug where software that does not explicitly pre-select PSG register 14 before the read (e.g. SymbOS) would receive `0x00` (all keys pressed) instead of the real matrix value.
+
+Use `--trace-input` to log all keyboard and joystick events to stderr.
