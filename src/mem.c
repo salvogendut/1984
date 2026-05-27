@@ -164,10 +164,12 @@ u8 mem_read(Mem *m, u16 addr) {
 }
 
 u8 mem_read_video(Mem *m, u16 addr) {
-    /* CRTC reads RAM only (no ROM overlay), applying current banking */
-    if (m->ram_bank)
-        return read_ram(m, banked_ram_offset(m, addr));
-    return m->ram[addr];
+    /* CPC video hardware is hardwired to the base 64 KB of physical RAM.
+     * GA banking only re-routes CPU address decoding; the video scanning
+     * circuit always reads from the unbanked physical address.
+     * Applying banked_ram_offset here was wrong and caused scan-line
+     * corruption whenever software switched banks mid-frame. */
+    return m->ram[(u32)addr];
 }
 
 void mem_write(Mem *m, u16 addr, u8 val) {

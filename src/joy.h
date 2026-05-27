@@ -11,8 +11,11 @@
 #define JOY_MAX_PADS 4
 
 typedef struct {
-    SDL_Gamepad *pad[JOY_MAX_PADS];
-    int          count;
+    SDL_Gamepad  *pad[JOY_MAX_PADS];
+    int           count;
+    /* Raw joystick fallback for devices not in the SDL gamepad database */
+    SDL_Joystick *raw[JOY_MAX_PADS];
+    int           raw_count;
 } Joy;
 
 void joy_init(Joy *j);
