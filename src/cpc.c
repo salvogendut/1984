@@ -75,11 +75,17 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
-        /* RAM banking — bits[5:0] select 16KB page for 0xC000-0xFFFF.
+        /* RAM banking — bits[5:0] of data select bank group and mode.
          * Standard on 6128; emulator extension enables it on 464 too
-         * when memory > 64 KB is configured. */
-        if ((val & 0xC0) == 0xC0)
-            cpc->mem.ram_bank = val & 0x3F;
+         * when memory > 64 KB is configured.
+         * Yarek extension: port address bits A10-A8 carry an upper bank_high
+         * selector for RAM above 576 KB. Port 0x7Fxx = bank_high 0 (DK'tronics
+         * compatible); 0x7Exx = 1, 0x7Dxx = 2, 0x7Cxx = 3. bank_high is packed
+         * into ram_bank bits[7:6] so banked_ram_offset() can read it. */
+        if ((val & 0xC0) == 0xC0) {
+            u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
+            cpc->mem.ram_bank = (u8)((bank_high << 6) | (val & 0x3F));
+        }
         return;
     }
     /* CRTC: A14=0 → 0xBCxx (select, A8=0) / 0xBDxx (write, A8=1) */
