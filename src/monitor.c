@@ -14,7 +14,7 @@
 /* ---- Layout ---- */
 #define MON_COLS     80
 #define MON_ROWS     25
-#define OUT_ROWS     (MON_ROWS - 1)   /* rows 0..23 = output; row 24 = input */
+#define OUT_ROWS     23   /* rows 0..22 = output; row 23 = status bar; row 24 = input */
 #define CHAR_W       8
 #define CHAR_H       8
 /* Non-uniform scale: 12 × 28.8 px chars → 960 × 720 window (4:3) */
@@ -28,6 +28,8 @@
 #define C_TEXT    0xCC, 0xFF, 0xCC   /* green phosphor */
 #define C_MORE    0xFF, 0xFF, 0x00
 #define C_PROMPT  0x88, 0xFF, 0x88
+#define C_STATUS  0xFF, 0xFF, 0x44   /* yellow status bar */
+#define C_PAUSED  0xFF, 0x44, 0x44   /* red PAUSED indicator */
 
 /* ---- Paging mode ---- */
 typedef enum { PAGE_NONE, PAGE_DIS, PAGE_HEX } PageMode;
@@ -85,7 +87,7 @@ struct Monitor {
     HexState  hex;
 
     MonPty    pty;
-    Mem      *mem;
+    CPC      *cpc;
 };
 
 /* ---- PTY output helpers (defined before screen helpers that call them) ---- */
@@ -204,7 +206,8 @@ static void dis_run_page(Monitor *mon) {
 /* ---- Hex dump streaming ---- */
 
 static u8 hex_read(Monitor *mon, u32 addr) {
-    return (addr < (u32)mon->mem->ram_size) ? mon->mem->ram[addr] : 0xFF;
+    Mem *mem = &mon->cpc->mem;
+    return (addr < (u32)mem->ram_size) ? mem->ram[addr] : 0xFF;
 }
 
 static bool hex_emit_line(Monitor *mon) {
@@ -257,6 +260,13 @@ static void hex_run_page(Monitor *mon) {
     mon->page_mode = PAGE_NONE;
 }
 
+/* ---- Snapshot CPU memory for disassembly ---- */
+
+static void take_mem_snap(Monitor *mon) {
+    for (int i = 0; i < 65536; i++)
+        mon->dis.snap[i] = mem_read(&mon->cpc->mem, (u16)i);
+}
+
 /* ---- Command execution ---- */
 
 static void mon_exec(Monitor *mon, const char *raw) {
@@ -267,29 +277,32 @@ static void mon_exec(Monitor *mon, const char *raw) {
     while (*raw == ' ') raw++;
     if (*raw == '\0') return;
 
-    char cmd = (char)toupper((unsigned char)*raw);
-    const char *args = raw + 1;
-    while (*args == ' ') args++;
+    /* Parse first word as command (uppercase) */
+    char cmd_buf[16];
+    int  ci = 0;
+    const char *p = raw;
+    while (*p && !isspace((unsigned char)*p) && ci < 15)
+        cmd_buf[ci++] = (char)toupper((unsigned char)*p++);
+    cmd_buf[ci] = '\0';
+    while (*p == ' ') p++;
+    const char *args = p;
 
-    switch (cmd) {
-    case 'D': {
+    if (strcmp(cmd_buf, "D") == 0) {
         unsigned a1 = 0, a2 = 0;
         int n = sscanf(args, "%x %x", &a1, &a2);
-        if (n < 1) { screen_puts(mon, "Usage: D <addr> [<end_addr>]"); break; }
-        for (int i = 0; i < 65536; i++)
-            mon->dis.snap[i] = mem_read(mon->mem, (u16)i);
+        if (n < 1) { screen_puts(mon, "Usage: D <addr> [<end_addr>]"); return; }
+        take_mem_snap(mon);
         mon->dis.addr       = (u16)a1;
         mon->dis.has_end    = (n >= 2);
         mon->dis.end_addr   = (u16)a2;
         mon->dis.lines_left = 10;
         mon->dis.active     = true;
         dis_run_page(mon);
-        break;
-    }
-    case 'M': {
+
+    } else if (strcmp(cmd_buf, "M") == 0) {
         unsigned a1 = 0, a2 = 0;
         int n = sscanf(args, "%x %x", &a1, &a2);
-        if (n < 1) { screen_puts(mon, "Usage: M <addr> [<end_addr>]"); break; }
+        if (n < 1) { screen_puts(mon, "Usage: M <addr> [<end_addr>]"); return; }
         mon->hex.addr    = a1;
         mon->hex.has_end = (n >= 2);
         mon->hex.end_addr = a2;
@@ -299,17 +312,122 @@ static void mon_exec(Monitor *mon, const char *raw) {
         }
         mon->hex.active = true;
         hex_run_page(mon);
-        break;
-    }
-    case 'X':
-    case 'Q':
+
+    } else if (strcmp(cmd_buf, "B") == 0) {
+        /* B alone = list; B <addr> = set new breakpoint */
+        if (*args == '\0') {
+            bool any = false;
+            for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+                if (mon->cpc->bp_enabled[i]) {
+                    char line[MON_COLS + 32];
+                    snprintf(line, sizeof(line), "  BP%2d: %04X", i, mon->cpc->breakpoints[i]);
+                    screen_puts(mon, line);
+                    any = true;
+                }
+            }
+            if (!any) screen_puts(mon, "No breakpoints set");
+        } else {
+            unsigned addr;
+            if (sscanf(args, "%x", &addr) != 1) {
+                screen_puts(mon, "Usage: B <addr_hex>");
+                return;
+            }
+            int slot = -1;
+            for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+                if (!mon->cpc->bp_enabled[i]) { slot = i; break; }
+            }
+            if (slot < 0) {
+                screen_puts(mon, "No free breakpoint slots (max 16)");
+            } else {
+                mon->cpc->breakpoints[slot] = (u16)addr;
+                mon->cpc->bp_enabled[slot]  = true;
+                char line[MON_COLS + 32];
+                snprintf(line, sizeof(line), "Breakpoint %d set at %04X", slot, (u16)addr);
+                screen_puts(mon, line);
+            }
+        }
+
+    } else if (strcmp(cmd_buf, "BC") == 0) {
+        unsigned n;
+        if (sscanf(args, "%u", &n) == 1 && n < CPC_MAX_BREAKPOINTS) {
+            mon->cpc->bp_enabled[n] = false;
+            char line[MON_COLS + 32];
+            snprintf(line, sizeof(line), "Breakpoint %u cleared", n);
+            screen_puts(mon, line);
+        } else {
+            screen_puts(mon, "Usage: BC <n>  (n = 0..15)");
+        }
+
+    } else if (strcmp(cmd_buf, "N") == 0) {
+        if (!mon->cpc->paused) {
+            screen_puts(mon, "Not paused (use B <addr> to set a breakpoint)");
+        } else {
+            mon->cpc->step_once = true;
+            screen_puts(mon, "Step");
+        }
+
+    } else if (strcmp(cmd_buf, "G") == 0 || strcmp(cmd_buf, "GO") == 0) {
+        if (!mon->cpc->paused) {
+            screen_puts(mon, "Not paused");
+        } else {
+            mon->cpc->paused = false;
+            screen_puts(mon, "Running");
+        }
+
+    } else if (strcmp(cmd_buf, "GA") == 0) {
+        GateArray *ga = &mon->cpc->ga;
+        char line[MON_COLS + 32];
+        snprintf(line, sizeof(line), "GA mode=%d  border=hw%02X",
+                 ga->screen_mode, ga->ink[16]);
+        screen_puts(mon, line);
+        /* Inks in two rows of 8 */
+        for (int row = 0; row < 2; row++) {
+            char buf[MON_COLS + 32];
+            int  pos = 0;
+            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
+                            "  ink[%d..%d]:", row * 8, row * 8 + 7);
+            for (int i = 0; i < 8; i++) {
+                pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
+                                " %02X", ga->ink[row * 8 + i]);
+            }
+            screen_puts(mon, buf);
+        }
+
+    } else if (strcmp(cmd_buf, "CRTC") == 0) {
+        CRTC *cr = &mon->cpc->crtc;
+        char line[MON_COLS + 32];
+        snprintf(line, sizeof(line),
+                 "CRTC R0=%d R1=%d R2=%d R3=%d R4=%d R5=%d R6=%d R7=%d R8=%d",
+                 cr->reg[0], cr->reg[1], cr->reg[2], cr->reg[3],
+                 cr->reg[4], cr->reg[5], cr->reg[6], cr->reg[7], cr->reg[8]);
+        screen_puts(mon, line);
+        snprintf(line, sizeof(line),
+                 "     R9=%d R10=%d R11=%d R12=%d R13=%d R14=%d R15=%d R16=%d R17=%d",
+                 cr->reg[9], cr->reg[10], cr->reg[11], cr->reg[12],
+                 cr->reg[13], cr->reg[14], cr->reg[15], cr->reg[16], cr->reg[17]);
+        screen_puts(mon, line);
+        snprintf(line, sizeof(line),
+                 "     MA=%04X VLC=%d HCC=%d VCC=%d HSYNC=%d VSYNC=%d DE=%d",
+                 cr->ma, cr->vlc, cr->hcc, cr->vcc,
+                 cr->hsync, cr->vsync, cr->display_enable);
+        screen_puts(mon, line);
+
+    } else if (strcmp(cmd_buf, "X") == 0 || strcmp(cmd_buf, "Q") == 0) {
         mon->open = false;
         SDL_StopTextInput(mon->window);
         SDL_HideWindow(mon->window);
-        break;
-    default:
-        screen_puts(mon, "Commands:  D <addr> [<end>]   M <addr> [<end>]   X = exit");
-        break;
+
+    } else {
+        screen_puts(mon, "Commands:");
+        screen_puts(mon, "  D <addr> [<end>]    disassemble Z80");
+        screen_puts(mon, "  M <addr> [<end>]    hex+ASCII dump");
+        screen_puts(mon, "  B [<addr>]          set / list breakpoints");
+        screen_puts(mon, "  BC <n>              clear breakpoint n");
+        screen_puts(mon, "  N                   single step (when paused)");
+        screen_puts(mon, "  G                   resume (clear pause)");
+        screen_puts(mon, "  GA                  show Gate Array inks / mode");
+        screen_puts(mon, "  CRTC                show CRTC registers");
+        screen_puts(mon, "  X / Q               close monitor");
     }
 }
 
@@ -339,6 +457,52 @@ static void handle_keydown(Monitor *mon, SDL_Keycode key, const char *text) {
             mon->input[mon->input_len] = '\0';
         }
     }
+}
+
+/* ---- Status bar ---- */
+
+static void draw_status_bar(Monitor *mon) {
+    SDL_Renderer *r = mon->renderer;
+    Z80 *cpu = &mon->cpc->cpu;
+    u8   f   = cpu->f;
+
+    char flags[10];
+    flags[0] = (f & Z80_FLAG_S)  ? 'S' : '-';
+    flags[1] = (f & Z80_FLAG_Z)  ? 'Z' : '-';
+    flags[2] = '-';                             /* unused bit 5 */
+    flags[3] = (f & Z80_FLAG_H)  ? 'H' : '-';
+    flags[4] = '-';                             /* unused bit 3 */
+    flags[5] = (f & Z80_FLAG_PV) ? 'P' : '-';
+    flags[6] = (f & Z80_FLAG_N)  ? 'N' : '-';
+    flags[7] = (f & Z80_FLAG_C)  ? 'C' : '-';
+    flags[8] = '\0';
+
+    const char *state = mon->cpc->paused ? " [PAUSED]" : " [RUN]   ";
+
+    char bar[MON_COLS + 32];
+    snprintf(bar, sizeof(bar),
+             "PC:%04X SP:%04X A:%02X F:%s BC:%04X DE:%04X HL:%04X IX:%04X IY:%04X%s",
+             cpu->pc, cpu->sp, cpu->a, flags,
+             cpu->bc, cpu->de, cpu->hl, cpu->ix, cpu->iy, state);
+
+    float y = (float)(OUT_ROWS * CHAR_H);
+
+    /* Coloured background rect for full status row */
+    SDL_FRect bg = { 0, y, (float)(MON_COLS * CHAR_W), (float)CHAR_H };
+    if (mon->cpc->paused) {
+        SDL_SetRenderDrawColor(r, 0x33, 0x00, 0x00, 255);
+    } else {
+        SDL_SetRenderDrawColor(r, 0x00, 0x22, 0x00, 255);
+    }
+    SDL_RenderFillRect(r, &bg);
+
+    /* Text */
+    if (mon->cpc->paused) {
+        SDL_SetRenderDrawColor(r, C_PAUSED, 255);
+    } else {
+        SDL_SetRenderDrawColor(r, C_STATUS, 255);
+    }
+    SDL_RenderDebugText(r, 0, y, bar);
 }
 
 /* ---- Rendering ---- */
@@ -381,7 +545,9 @@ void monitor_render(Monitor *mon) {
         draw_line(mon->renderer, (float)(row * CHAR_H),
                   mon->screen[row], mon->screen_rev[row]);
 
-    float input_y = (float)(OUT_ROWS * CHAR_H);
+    draw_status_bar(mon);
+
+    float input_y = (float)((OUT_ROWS + 1) * CHAR_H);
     if (mon->page_mode != PAGE_NONE) {
         SDL_SetRenderDrawBlendMode(mon->renderer, SDL_BLENDMODE_NONE);
         SDL_SetRenderDrawColor(mon->renderer, C_MORE, 255);
@@ -408,10 +574,10 @@ void monitor_render(Monitor *mon) {
 
 /* ---- Public API ---- */
 
-Monitor *monitor_create(Mem *mem) {
+Monitor *monitor_create(CPC *cpc) {
     Monitor *mon = calloc(1, sizeof(*mon));
     if (!mon) return NULL;
-    mon->mem    = mem;
+    mon->cpc    = cpc;
     mon->open   = false;
     mon->pty.fd = -1;
 
@@ -428,11 +594,16 @@ Monitor *monitor_create(Mem *mem) {
 
     SDL_HideWindow(mon->window);
 
-    screen_puts(mon, "CPC Memory Monitor");
-    screen_puts(mon, "  D <addr> [<end>]  disassemble Z80 (10 lines default)");
-    screen_puts(mon, "  M <addr> [<end>]  hex+ASCII dump (page default)");
-    screen_puts(mon, "  X                 close monitor");
-    screen_puts(mon, "  Addresses: 4-digit hex (CPU) or 5-digit hex (physical RAM)");
+    screen_puts(mon, "CPC Debugger / Memory Monitor");
+    screen_puts(mon, "  D <addr> [<end>]    disassemble Z80 (10 lines default)");
+    screen_puts(mon, "  M <addr> [<end>]    hex+ASCII dump");
+    screen_puts(mon, "  B [<addr>]          set / list breakpoints");
+    screen_puts(mon, "  BC <n>              clear breakpoint n");
+    screen_puts(mon, "  N                   single step  (when paused)");
+    screen_puts(mon, "  G                   resume execution");
+    screen_puts(mon, "  GA                  Gate Array inks / mode");
+    screen_puts(mon, "  CRTC                CRTC register dump");
+    screen_puts(mon, "  X                   close monitor");
     screen_puts(mon, "");
 
     return mon;
@@ -483,6 +654,34 @@ bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
     return false;
 }
 
+/* ---- Breakpoint / step notifications ---- */
+
+void monitor_notify_break(Monitor *mon) {
+    if (!mon) return;
+    Z80 *cpu = &mon->cpc->cpu;
+    char line[MON_COLS + 32];
+    snprintf(line, sizeof(line),
+             "*** Breakpoint at PC=%04X SP=%04X ***", cpu->pc, cpu->sp);
+    screen_puts(mon, line);
+    take_mem_snap(mon);
+    mon->dis.addr       = cpu->pc;
+    mon->dis.has_end    = false;
+    mon->dis.lines_left = 5;
+    mon->dis.active     = true;
+    dis_run_page(mon);
+}
+
+void monitor_notify_step(Monitor *mon) {
+    if (!mon) return;
+    Z80 *cpu = &mon->cpc->cpu;
+    take_mem_snap(mon);
+    mon->dis.addr       = cpu->pc;
+    mon->dis.has_end    = false;
+    mon->dis.lines_left = 1;
+    mon->dis.active     = true;
+    dis_run_page(mon);
+}
+
 /* ---- PTY public API ---- */
 
 const char *monitor_pty_open(Monitor *mon) {
@@ -512,10 +711,8 @@ const char *monitor_pty_open(Monitor *mon) {
     mon->pty.fd = fd;
 
     /* Send welcome banner to anyone already connected */
-    pty_puts_line(mon, "CPC Memory Monitor (serial PTY)", 0);
-    pty_puts_line(mon, "  D <addr> [<end>]  disassemble Z80", 0);
-    pty_puts_line(mon, "  M <addr> [<end>]  hex+ASCII dump", 0);
-    pty_puts_line(mon, "  X                 close SDL window", 0);
+    pty_puts_line(mon, "CPC Debugger / Memory Monitor (PTY)", 0);
+    pty_puts_line(mon, "  D/M/B/BC/N/G/GA/CRTC/X", 0);
     pty_write(mon, ">_ ", 3);
 
     return mon->pty.slave;

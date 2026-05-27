@@ -202,7 +202,7 @@ int main(int argc, char *argv[]) {
     Overlay overlay;
     overlay_init(&overlay, &cfg, &cpc);
 
-    Monitor *monitor = monitor_create(&cpc.mem);
+    Monitor *monitor = monitor_create(&cpc);
     if (monitor_pty) {
         const char *pty_path = monitor_pty_open(monitor);
         if (pty_path)
@@ -335,7 +335,16 @@ int main(int argc, char *argv[]) {
 
         monitor_pty_tick(monitor);
         paste_tick(&paste, &cpc.kbd);
+        bool was_paused   = cpc.paused;
+        bool was_stepping = cpc.step_once;
         cpc_frame(&cpc);
+        /* Auto-open monitor on breakpoint hit */
+        if (!was_paused && cpc.paused) {
+            monitor_open(monitor);
+            monitor_notify_break(monitor);
+        } else if (was_stepping && cpc.paused) {
+            monitor_notify_step(monitor);
+        }
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
         monitor_render(monitor);

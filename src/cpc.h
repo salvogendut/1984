@@ -39,6 +39,13 @@ typedef struct {
     int  raster_y;        /* 0 = first scanline after vsync */
     bool prev_hsync;
     bool prev_vsync;
+
+    /* Debugger */
+#define CPC_MAX_BREAKPOINTS 16
+    bool paused;
+    bool step_once;
+    u16  breakpoints[CPC_MAX_BREAKPOINTS];
+    bool bp_enabled[CPC_MAX_BREAKPOINTS];
 } CPC;
 
 extern int cpc_trace_io;      /* set to 1 to log CRTC/GA writes to stderr */
