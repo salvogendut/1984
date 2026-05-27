@@ -104,6 +104,7 @@ static void config_create_default(const char *path, const char *home) {
         "m4=false\n"
         "ulifac=false\n"
         "net4cpc=false\n"
+        "rtc=false\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -200,6 +201,9 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "net4cpc")) {
                 if (parse_bool(val, &b)) cfg->net4cpc = b;
                 else { fprintf(stderr, "1984.conf:%d: net4cpc must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "rtc")) {
+                if (parse_bool(val, &b)) cfg->rtc = b;
+                else { fprintf(stderr, "1984.conf:%d: rtc must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -271,7 +275,8 @@ int config_save(const Config *cfg) {
         "dd1=%s\n"
         "m4=%s\n"
         "ulifac=%s\n"
-        "net4cpc=%s\n\n"
+        "net4cpc=%s\n"
+        "rtc=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -281,6 +286,7 @@ int config_save(const Config *cfg) {
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc ? "true" : "false",
+        cfg->rtc     ? "true" : "false",
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );

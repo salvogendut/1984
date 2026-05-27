@@ -153,6 +153,7 @@ int main(int argc, char *argv[]) {
     }
     cpc.mem.ram_size = cfg.memory_kb * 1024;
     cpc.net4cpc = cfg.net4cpc;
+    cpc.rtc     = cfg.rtc;
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -337,6 +338,7 @@ int main(int argc, char *argv[]) {
                 : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
             SDL_SetWindowTitle(cpc.display.window, title);
             cpc.net4cpc = cfg.net4cpc;
+            cpc.rtc     = cfg.rtc;
             net4cpc_reset();
             cpc_reset(&cpc);
         }

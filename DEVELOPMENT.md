@@ -16,6 +16,7 @@ Each source file maps to one hardware component:
 | `src/display.c` / `display.h` | SDL3 display — 768×272 pixel buffer, letterboxed into the window at 4:3 aspect |
 | `src/disk.c` / `disk.h` | DSK disk image parser — track/sector layout, AMSDOS directory, read |
 | `src/fdc.c` / `fdc.h` | µPD765 FDC — command/exec/result phases, READ DATA, SEEK, SENSE INTERRUPT STATUS |
+| `src/rtc.c` / `rtc.h` | DS12887 RTC — register read/write, NVRAM, time from host `localtime()` |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -124,7 +125,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
 | Storage | Drive A, Drive B |
-| Advanced | Memory, M4, UliFAC, Net4CPC, DD1, ROM Slots →, Diag Cart |
+| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], RTC, DD1, ROM Slots →, Diag Cart, Net4CPC |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
@@ -174,6 +175,9 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | A11=0 | PPI (8255) | 0xF4–0xF7xx |
 | hi=0xFA | FDC motor control | 0xFAxx |
 | hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |
+| hi=0xFD, lo=0x14 | RTC data (DS12887) | 0xFD14 |
+| hi=0xFD, lo=0x15 | RTC address (DS12887) | 0xFD15 |
+| hi=0xFD, lo=0x20–0x23 | Net4CPC W5100S | 0xFD20–0xFD23 |
 
 ## Joystick / input
 

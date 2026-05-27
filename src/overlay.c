@@ -25,7 +25,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 7 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 8 };
 
 /* ---- Drawing helpers ---- */
 
@@ -134,17 +134,23 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 1:
             snprintf(lbl, lsz, "M4");
-            snprintf(val, vsz, "%s", ov->cfg->m4 ? "enabled" : "disabled");
+            snprintf(val, vsz, "[unimplemented]");
+            *readonly = true;
             break;
         case 2:
             snprintf(lbl, lsz, "UliFAC");
-            snprintf(val, vsz, "%s", ov->cfg->ulifac ? "enabled" : "disabled");
+            snprintf(val, vsz, "[unimplemented]");
+            *readonly = true;
             break;
         case 3:
             snprintf(lbl, lsz, "Net4CPC");
             snprintf(val, vsz, "%s", ov->cfg->net4cpc ? "enabled" : "disabled");
             break;
         case 4:
+            snprintf(lbl, lsz, "RTC");
+            snprintf(val, vsz, "%s", ov->cfg->rtc ? "enabled" : "disabled");
+            break;
+        case 5:
             snprintf(lbl, lsz, "DD1");
             if (ov->cfg->model == MODEL_6128) {
                 snprintf(val, vsz, "N/A (6128 has built-in FDC)");
@@ -153,12 +159,12 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->dd1 ? "enabled" : "disabled");
             }
             break;
-        case 5:
+        case 6:
             snprintf(lbl, lsz, "ROM Slots");
             snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
             break;
-        case 6: {
+        case 7: {
             char diag[CONFIG_PATH_MAX];
             config_default_diag(diag, sizeof(diag));
             bool available = (access(diag, R_OK) == 0);
@@ -223,19 +229,16 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         }
-        case 1:
-            ov->cfg->m4 = !ov->cfg->m4;
-            ov->dirty = true;
-            break;
-        case 2:
-            ov->cfg->ulifac = !ov->cfg->ulifac;
-            ov->dirty = true;
-            break;
+        /* cases 1 (M4) and 2 (UliFAC) are unimplemented — Enter does nothing */
         case 3:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
             break;
         case 4:
+            ov->cfg->rtc = !ov->cfg->rtc;
+            ov->dirty = true;
+            break;
+        case 5:
             if (ov->cfg->model == MODEL_464) {
                 config_apply_dd1(ov->cfg, !ov->cfg->dd1);
                 if (ov->cpc) {
@@ -247,10 +250,10 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        case 5:
+        case 6:
             ov->state = OV_STATE_ROMSLOTS;
             break;
-        case 6: {
+        case 7: {
             char diag[CONFIG_PATH_MAX];
             config_default_diag(diag, sizeof(diag));
             if (access(diag, R_OK) != 0) break;  /* greyed out — ROM missing */
