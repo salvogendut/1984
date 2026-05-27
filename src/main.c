@@ -18,6 +18,9 @@ static void usage(const char *prog, int code) {
         "Usage: %s [OPTIONS]\n"
         "\n"
         "Options:\n"
+        "  --464               Boot as CPC 464 (overrides config)\n"
+        "  --6128              Boot as CPC 6128 (overrides config)\n"
+        "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
@@ -51,6 +54,8 @@ int main(int argc, char *argv[]) {
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
     bool        trace_io         = false;
+    CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
+    bool        dd1_override     = false;
 
     /* --rom-slot=N:PATH pairs collected from CLI */
     struct { int slot; const char *path; } rom_slots[ROM_EXT_COUNT];
@@ -87,8 +92,16 @@ int main(int argc, char *argv[]) {
                 rom_slots[rom_slot_count].path = colon + 1;
                 rom_slot_count++;
             }
+        } else if (strcmp(argv[i], "--464") == 0) {
+            model_override = MODEL_464;
+        } else if (strcmp(argv[i], "--6128") == 0) {
+            model_override = MODEL_6128;
+        } else if (strcmp(argv[i], "--dd1") == 0) {
+            dd1_override = true;
         } else if (strcmp(argv[i], "--trace-io") == 0) {
             trace_io = true;
+        } else if (strcmp(argv[i], "--trace-palette") == 0) {
+            cpc_trace_palette = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
@@ -108,6 +121,10 @@ int main(int argc, char *argv[]) {
     if (config_load(&cfg) < 0)
         return 1;
 
+    if (model_override != (CpcModel)-1)
+        config_set_model(&cfg, model_override);
+    if (dd1_override)
+        config_apply_dd1(&cfg, true);
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);

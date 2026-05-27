@@ -33,15 +33,6 @@ typedef struct {
     int  cycles_per_frame;
     int  cycle_debt;      /* leftover cycles from previous frame */
 
-    /* Palette flush gate.
-     * firmware_palette_armed: set when lower-ROM-enabled code writes 0xFF to B7F7.
-     * firmware_palette_count: counts consecutive end-of-frames where B7F7=0xFF
-     *   persists since arming.  Fallback fires when count >= PALETTE_FLUSH_FRAMES.
-     *   A non-0xFF write to B7F7 (test pattern, flush-task clear) resets the count,
-     *   preventing memory-test fills from triggering false flushes. */
-    bool firmware_palette_armed;
-    int  firmware_palette_count;
-
     /* Raster position (in character-clock units; 16 output pixels each) */
     int  raster_x;        /* 0 = first char after hsync end */
     int  raster_y;        /* 0 = first scanline after vsync */
@@ -49,7 +40,9 @@ typedef struct {
     bool prev_vsync;
 } CPC;
 
-extern int cpc_trace_io;  /* set to 1 to log CRTC/GA writes to stderr */
+extern int cpc_trace_io;      /* set to 1 to log CRTC/GA writes to stderr */
+extern int cpc_trace_palette; /* set to 1 to log palette buffer state when B7F7=0xFF */
+extern int cpc_frame_count;   /* incremented by cpc_frame(); used by trace helpers */
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);
 void cpc_reset(CPC *cpc);
