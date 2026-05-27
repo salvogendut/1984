@@ -12,6 +12,7 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 #define ROM_FILE_OS_6128    "OS_6128.ROM"
 #define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
 #define ROM_FILE_AMSDOS     "AMSDOS.ROM"
+#define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
 /* Build a full path: ~/.config/1984/roms/<file> → out[size] */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
@@ -198,8 +199,6 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "net4cpc")) {
                 if (parse_bool(val, &b)) cfg->net4cpc = b;
                 else { fprintf(stderr, "1984.conf:%d: net4cpc must be true/false\n", lineno); rc = -1; }
-            } else if (!strcmp(key, "diag_cart_rom") && val[0]) {
-                expand_path(val, cfg->diag_cart_rom, sizeof(cfg->diag_cart_rom));
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -271,8 +270,7 @@ int config_save(const Config *cfg) {
         "dd1=%s\n"
         "m4=%s\n"
         "ulifac=%s\n"
-        "net4cpc=%s\n"
-        "diag_cart_rom=%s\n\n"
+        "net4cpc=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -282,7 +280,6 @@ int config_save(const Config *cfg) {
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc ? "true" : "false",
-        cfg->diag_cart_rom,
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );
@@ -326,4 +323,8 @@ void config_default_basic(CpcModel model, char *out, size_t sz) {
 
 void config_default_amsdos(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
+}
+
+void config_default_diag(char *out, size_t sz) {
+    rom_cfg_path(ROM_FILE_DIAG, out, sz);
 }

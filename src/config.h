@@ -26,7 +26,6 @@ typedef struct {
     bool m4;
     bool ulifac;
     bool net4cpc;
-    char diag_cart_rom[CONFIG_PATH_MAX]; /* path to diagnostic lower ROM, empty = none */
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
@@ -53,3 +52,4 @@ void config_apply_dd1(Config *cfg, bool enabled);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(char *out, size_t sz);
+void config_default_diag(char *out, size_t sz);
