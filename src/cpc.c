@@ -54,10 +54,12 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
-    /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14), Net4CPC W5100S (0xFD20-0xFD23) */
+    /* hi=0xFD: Mouse (0xFD10), IDE (0xFD06,0xFD08-0xFD0F), RTC (0xFD14), Net4CPC (0xFD20-0xFD23) */
     else if (hi == 0xFD) {
         u8 lo = port & 0xFF;
-        if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F)))
+        if (cpc->symbiface_mouse && lo == 0x10)
+            result = mouse_read(&cpc->mouse);
+        else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F)))
             result = ide_read(&cpc->ide_chip, lo);
         else if (cpc->rtc && lo == 0x14)
             result = rtc_read_data(&cpc->rtc_chip);
@@ -180,6 +182,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
     rtc_init(&cpc->rtc_chip);
     ide_init(&cpc->ide_chip);
+    mouse_init(&cpc->mouse);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -213,6 +216,7 @@ void cpc_reset(CPC *cpc) {
     fdc_reset(&cpc->fdc);
     rtc_init(&cpc->rtc_chip);
     ide_reset(&cpc->ide_chip);  /* keeps image file open across warm reset */
+    mouse_init(&cpc->mouse);    /* clear accumulated deltas; capture state managed by main */
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;

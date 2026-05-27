@@ -25,7 +25,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 9 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 11 };
 
 /* ---- Drawing helpers ---- */
 
@@ -188,6 +188,19 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->symbiface_ide ? "enabled" : "disabled");
             }
             break;
+        case 9:
+            snprintf(lbl, lsz, "SYMBiFACE Mouse");
+            snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
+            break;
+        case 10: {
+            bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
+                       ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
+            bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
+                        !ov->cfg->symbiface_ide && !ov->cfg->symbiface_mouse;
+            snprintf(lbl, lsz, "Cyboard");
+            snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
+            break;
+        }
         }
         break;
 
@@ -296,6 +309,23 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
+        case 9:
+            ov->cfg->symbiface_mouse = !ov->cfg->symbiface_mouse;
+            ov->dirty = true;
+            break;
+        case 10: {
+            bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
+                       ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
+            bool enable = !all;
+            ov->cfg->net4cpc        = enable;
+            ov->cfg->rtc            = enable;
+            ov->cfg->symbiface_ide  = enable;
+            ov->cfg->symbiface_mouse = enable;
+            if (!enable)
+                ov->cfg->ide_image[0] = '\0';
+            ov->dirty = true;
+            break;
+        }
         }
         break;
 

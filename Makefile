@@ -114,7 +114,7 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
-	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) src/1984-mouse.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -144,7 +144,7 @@ am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
 	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-net4cpc.Po \
 	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
 	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-z80.Po \
+	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-mouse.Po src/$(DEPDIR)/1984-z80.Po \
 	src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_$(V))
@@ -260,7 +260,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-SDL3_CFLAGS = -I/usr/include
+SDL3_CFLAGS = -I/include
 SDL3_LIBS = /usr/lib64/libSDL3.so.0
 SET_MAKE = 
 SHELL = /bin/sh
@@ -464,6 +464,8 @@ src/1984-rtc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-ide.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-mouse.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-z80.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 
@@ -497,6 +499,7 @@ include src/$(DEPDIR)/1984-ppi.Po # am--include-marker
 include src/$(DEPDIR)/1984-psg.Po # am--include-marker
 include src/$(DEPDIR)/1984-rtc.Po # am--include-marker
 include src/$(DEPDIR)/1984-ide.Po # am--include-marker
+include src/$(DEPDIR)/1984-mouse.Po # am--include-marker
 include src/$(DEPDIR)/1984-z80.Po # am--include-marker
 include src/$(DEPDIR)/1984-z80dis.Po # am--include-marker
 
@@ -801,6 +804,20 @@ src/1984-ide.obj: src/ide.c
 #	$(AM_V_CC)source='src/ide.c' object='src/1984-ide.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ide.obj `if test -f 'src/ide.c'; then $(CYGPATH_W) 'src/ide.c'; else $(CYGPATH_W) '$(srcdir)/src/ide.c'; fi`
+
+src/1984-mouse.o: src/mouse.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-mouse.o -MD -MP -MF src/$(DEPDIR)/1984-mouse.Tpo -c -o src/1984-mouse.o `test -f 'src/mouse.c' || echo '$(srcdir)/'`src/mouse.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-mouse.Tpo src/$(DEPDIR)/1984-mouse.Po
+#	$(AM_V_CC)source='src/mouse.c' object='src/1984-mouse.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-mouse.o `test -f 'src/mouse.c' || echo '$(srcdir)/'`src/mouse.c
+
+src/1984-mouse.obj: src/mouse.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-mouse.obj -MD -MP -MF src/$(DEPDIR)/1984-mouse.Tpo -c -o src/1984-mouse.obj `if test -f 'src/mouse.c'; then $(CYGPATH_W) 'src/mouse.c'; else $(CYGPATH_W) '$(srcdir)/src/mouse.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-mouse.Tpo src/$(DEPDIR)/1984-mouse.Po
+#	$(AM_V_CC)source='src/mouse.c' object='src/1984-mouse.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-mouse.obj `if test -f 'src/mouse.c'; then $(CYGPATH_W) 'src/mouse.c'; else $(CYGPATH_W) '$(srcdir)/src/mouse.c'; fi`
 
 src/1984-z80.o: src/z80.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-z80.o -MD -MP -MF src/$(DEPDIR)/1984-z80.Tpo -c -o src/1984-z80.o `test -f 'src/z80.c' || echo '$(srcdir)/'`src/z80.c
@@ -1117,6 +1134,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-ide.Po
+	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile

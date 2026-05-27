@@ -29,6 +29,7 @@ typedef struct {
     bool rtc;
     bool symbiface_ide;
     char ide_image[CONFIG_PATH_MAX];
+    bool symbiface_mouse;
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
