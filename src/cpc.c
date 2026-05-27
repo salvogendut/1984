@@ -4,6 +4,8 @@
 
 /* Set to 1 at runtime to trace CRTC/GA writes to stderr */
 int cpc_trace_io = 0;
+int cpc_trace_palette = 0;
+int cpc_frame_count = 0;
 
 #define AUDIO_SAMPLE_RATE   44100
 #define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
@@ -18,21 +20,13 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     mem_write(&cpc->mem, addr, val);
-    /* Gate the per-frame fallback palette flush.
-     * The standard firmware ink-set routine (running from lower ROM) writes 0xFF to
-     * B7F7 to signal that B7D4–B7E4 need flushing to the Gate Array.  We use that
-     * specific write — lower ROM enabled AND value 0xFF — as the trigger, so that
-     * RAM-resident programs (lower ROM disabled) writing arbitrary test patterns to
-     * B7F7 cannot arm the flush.  This also covers replacement lower ROMs (e.g.
-     * diagnostic ROMs) that disable themselves before running RAM tests. */
-    if (addr == 0xB7F7) {
-        if (val == 0xFF && cpc->mem.lower_rom_enabled) {
-            cpc->firmware_palette_armed = true;
-        } else {
-            cpc->firmware_palette_armed = false;
-            cpc->firmware_palette_count = 0;
-        }
-    }
+    /* When palette tracing, log all writes to the firmware workspace area
+     * (0xB700-0xB7FF) so we can find the real dirty-flag address on each model. */
+    /* When tracing, log writes to suspected 464 palette buffer B1D9-B1FC. */
+    if (cpc_trace_palette && cpc_frame_count > 520
+            && addr >= 0xB1D9 && addr <= 0xB1FC)
+        fprintf(stderr, "[f%04d memw] %04X <- %02X  lrom=%d\n",
+                cpc_frame_count, addr, val, cpc->mem.lower_rom_enabled);
 }
 
 static u8 bus_io_read(void *ctx, u16 port) {
@@ -71,18 +65,16 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 
     /* Gate Array: A15=0, A14=1 → 0x7Fxx */
     if (!(hi & 0x80) && (hi & 0x40)) {
+        if (cpc_trace_palette && cpc_frame_count > 520 && (val & 0xC0) == 0x40)
+            fprintf(stderr, "[f%04d ga] pen=%02X col=%02X\n",
+                    cpc_frame_count, cpc->ga.selected_pen, val & 0x1F);
+        else if (cpc_trace_palette && cpc_frame_count > 520
+                 && (val & 0xC0) == 0x00 && val <= 0x10)
+            fprintf(stderr, "[f%04d ga] select pen=%02X\n",
+                    cpc_frame_count, val);
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
-        /* When lower ROM is disabled the firmware ink-set routine is unreachable,
-         * so any pending palette flush is no longer valid. This prevents a
-         * replacement lower ROM (e.g. diagnostic) from arming the flush during
-         * its initialisation phase and then having it fire after relocation. */
-        /* NOTE: we do NOT reset firmware_palette_count when lower ROM is disabled.
-         * Games (e.g. Spindizzy) often do GA writes every frame after disabling
-         * lower ROM, which would constantly zero the count and prevent the fallback
-         * from ever firing.  The count is already protected by the arming condition
-         * (lower ROM enabled when 0xFF is written) and by the 50-frame threshold. */
         /* RAM banking — bits[5:0] select 16KB page for 0xC000-0xFFFF.
          * Standard on 6128; emulator extension enables it on 464 too
          * when memory > 64 KB is configured. */
@@ -352,34 +344,76 @@ void cpc_frame(CPC *cpc) {
     }
 
     cpc->cycle_debt = done - target;
+    cpc_frame_count++;
 
-    /* Fallback palette flush: the CPC firmware ink routine writes 0xFF to B7F7
-     * requesting a flush.  Some games deactivate the flush task, leaving B7F7=0xFF
-     * indefinitely.  We detect this by counting consecutive frames where B7F7=0xFF
-     * persists after arming.  PALETTE_FLUSH_FRAMES must exceed the longest
-     * consecutive-0xFF-frame run of any legitimate RAM test (measured: 38 frames
-     * for AmstradDiag 1.4L), so we use 50.  Spindizzy holds B7F7=0xFF for
-     * thousands of frames, so it fires well within the delay. */
-#define PALETTE_FLUSH_FRAMES 50
-
-    /* Maintain counter: increment while B7F7=0xFF persists since arming. */
-    if (cpc->firmware_palette_armed || cpc->firmware_palette_count > 0) {
-        if (mem_read(&cpc->mem, 0xB7F7) == 0xFF)
-            cpc->firmware_palette_count++;
-        else
-            cpc->firmware_palette_count = 0;
-        cpc->firmware_palette_armed = false;
+    /* Fallback palette flush — CPC 6128.
+     * The 6128 firmware ink routine writes 0xFF to 0xB7F7 and stores the new
+     * palette in 0xB7D4-0xB7E4.  Some games deactivate the firmware flush task
+     * (e.g. Spindizzy), leaving 0xB7F7=0xFF and the palette unflushed.
+     * We detect this by checking 0xB7F7=0xFF AND all 17 palette buffer bytes
+     * are valid hardware colour indices (0x00-0x1F).  Values outside that range
+     * (e.g. 0xFF or 0x55 written by a diagnostic RAM fill) suppress the flush,
+     * preventing false triggers during memory tests. */
+    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
+        bool palette_valid = true;
+        for (int p = 0; p < 17; p++) {
+            if (mem_read(&cpc->mem, (u16)(0xB7D4 + p)) > 0x1F) {
+                palette_valid = false;
+                break;
+            }
+        }
+        if (cpc_trace_palette) {
+            fprintf(stderr, "[palette] B7F7=FF  valid=%d  buf:",
+                    palette_valid);
+            for (int p = 0; p < 17; p++)
+                fprintf(stderr, " %02X",
+                        mem_read(&cpc->mem, (u16)(0xB7D4 + p)));
+            fprintf(stderr, "\n");
+        }
+        if (palette_valid) {
+            for (int p = 0; p < 17; p++) {
+                u8 hw  = mem_read(&cpc->mem, (u16)(0xB7D4 + p));
+                u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
+                ga_write(&cpc->ga, pen);
+                ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
+            }
+            if (cpc_trace_palette)
+                fprintf(stderr, "[palette] flushed → B7F7 cleared\n");
+            mem_write(&cpc->mem, 0xB7F7, 0x00);
+        }
     }
 
-    /* Fire when counter reaches threshold */
-    if (cpc->firmware_palette_count >= PALETTE_FLUSH_FRAMES) {
+    /* Fallback palette flush — CPC 464.
+     * The 464 firmware uses 0xB1FC as dirty flag and 0xB1D9-0xB1E9 as the
+     * palette buffer (17 bytes: border first, then inks 0-15).  Same validity
+     * guard as above: only flush when all bytes are in 0x00-0x1F range. */
+    if (mem_read(&cpc->mem, 0xB1FC) == 0xFF) {
+        bool palette_valid = true;
         for (int p = 0; p < 17; p++) {
-            u8 hw  = mem_read(&cpc->mem, (u16)(0xB7D4 + p));
-            u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
-            ga_write(&cpc->ga, pen);
-            ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
+            if (mem_read(&cpc->mem, (u16)(0xB1D9 + p)) > 0x1F) {
+                palette_valid = false;
+                break;
+            }
         }
-        cpc->firmware_palette_count = 0;
+        if (cpc_trace_palette) {
+            fprintf(stderr, "[palette464] B1FC=FF  valid=%d  buf:",
+                    palette_valid);
+            for (int p = 0; p < 17; p++)
+                fprintf(stderr, " %02X",
+                        mem_read(&cpc->mem, (u16)(0xB1D9 + p)));
+            fprintf(stderr, "\n");
+        }
+        if (palette_valid) {
+            for (int p = 0; p < 17; p++) {
+                u8 hw  = mem_read(&cpc->mem, (u16)(0xB1D9 + p));
+                u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
+                ga_write(&cpc->ga, pen);
+                ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
+            }
+            if (cpc_trace_palette)
+                fprintf(stderr, "[palette464] flushed → B1FC cleared\n");
+            mem_write(&cpc->mem, 0xB1FC, 0x00);
+        }
     }
 
     /* Push one frame of PSG audio to SDL */
