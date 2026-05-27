@@ -70,11 +70,11 @@ The CPC firmware manages a cooperative interrupt handler that runs a "flush task
 
 **Gating the fallback.** Programs that write directly to the Gate Array (bypassing the firmware ink routine) — such as diagnostic ROMs that also run RAM tests over the firmware workspace — would otherwise corrupt the GA palette if the fallback ran unconditionally. The fallback is gated by `CPC.firmware_palette_pending`, which is:
 
-- Set **true** when code running with lower ROM enabled writes to 0xB7D4–0xB7E4 (i.e. the firmware's ink-set routine updated the palette buffer).
-- Cleared when B7F7 is written to 0x00 (the flush task ran normally and closed the cycle).
+- Set **true** when lower-ROM-enabled code writes `0xFF` to `0xB7F7` — the exact signal the firmware ink-set routine uses to request a flush.
+- Cleared when B7F7 is written to `0x00` (the flush task ran normally and closed the cycle).
 - Cleared after the fallback fires.
 
-RAM-resident programs (lower ROM disabled) writing to 0xB7D4 as part of a memory test do not set the flag, so the fallback remains dormant.
+RAM-resident programs running with lower ROM disabled cannot set the flag, even if they write `0xFF` to `0xB7F7` as part of a RAM test pattern. Replacement lower ROMs (e.g. diagnostic ROMs) disable themselves before running RAM tests, so they also cannot arm the flush once relocated to RAM.
 
 ## PSG / audio
 

@@ -18,11 +18,14 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     mem_write(&cpc->mem, addr, val);
-    /* Track firmware writes to the palette buffer: only mark pending when lower ROM
-     * is enabled (the write comes from firmware code, not from a RAM-resident program).
-     * When the firmware's flush task clears B7F7 (sets it to 0x00), that means the task
-     * ran normally and flushed — clear our flag so the next cycle starts fresh. */
-    if (addr >= 0xB7D4 && addr <= 0xB7E4 && cpc->mem.lower_rom_enabled)
+    /* Gate the per-frame fallback palette flush.
+     * The standard firmware ink-set routine (running from lower ROM) writes 0xFF to
+     * B7F7 to signal that B7D4–B7E4 need flushing to the Gate Array.  We use that
+     * specific write — lower ROM enabled AND value 0xFF — as the trigger, so that
+     * RAM-resident programs (lower ROM disabled) writing arbitrary test patterns to
+     * B7F7 cannot arm the flush.  This also covers replacement lower ROMs (e.g.
+     * diagnostic ROMs) that disable themselves before running RAM tests. */
+    if (addr == 0xB7F7 && val == 0xFF && cpc->mem.lower_rom_enabled)
         cpc->firmware_palette_pending = true;
     else if (addr == 0xB7F7 && val == 0x00)
         cpc->firmware_palette_pending = false;

@@ -174,6 +174,8 @@ static void activate_item(Overlay *ov) {
         if (ov->row == 0) {
             CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
             config_set_model(ov->cfg, next);
+            if (next == MODEL_6128 && ov->cfg->memory_kb < 128)
+                ov->cfg->memory_kb = 128;
             ov->dirty = true;
         }
         break;
@@ -198,10 +200,11 @@ static void activate_item(Overlay *ov) {
         case 0: {
             static const int sizes[] = { 64, 128, 256, 512, 576 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
-            int cur = 0;
-            for (int i = 0; i < n; i++)
+            int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
+            int cur = min_idx;
+            for (int i = min_idx; i < n; i++)
                 if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
-            ov->cfg->memory_kb = sizes[(cur + 1) % n];
+            ov->cfg->memory_kb = sizes[min_idx + (cur - min_idx + 1) % (n - min_idx)];
             ov->dirty = true;
             break;
         }

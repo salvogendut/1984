@@ -20,6 +20,7 @@ static void usage(const char *prog, int code) {
         "Options:\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
+        "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
@@ -46,6 +47,7 @@ int main(int argc, char *argv[]) {
     const char *paste_arg       = NULL;
     const char *disk_a_arg      = NULL;
     const char *disk_b_arg      = NULL;
+    const char *rom_os_arg      = NULL;
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
     bool        trace_io         = false;
@@ -65,6 +67,8 @@ int main(int argc, char *argv[]) {
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
             disk_b_arg = argv[i] + 9;
+        else if (strncmp(argv[i], "--rom-os=", 9) == 0 && argv[i][9] != '\0')
+            rom_os_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--rom-slot=", 11) == 0 && argv[i][11] != '\0') {
             const char *arg = argv[i] + 11;
             char *colon = strchr(arg, ':');
@@ -106,6 +110,7 @@ int main(int argc, char *argv[]) {
 
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
+    if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
