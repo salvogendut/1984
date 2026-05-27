@@ -3,7 +3,9 @@ bin_PROGRAMS = 1984
 1984_SOURCES = \
 	src/config.c \
 	src/cpc.c \
+	src/monitor.c \
 	src/net4cpc.c \
+	src/z80dis.c \
 	src/crtc.c \
 	src/disk.c \
 	src/display.c \

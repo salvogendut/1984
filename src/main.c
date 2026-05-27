@@ -12,6 +12,7 @@
 #include "paste.h"
 #include "joy.h"
 #include "net4cpc.h"
+#include "monitor.h"
 #include "shutter_wav.h"
 
 static void usage(const char *prog, int code) {
@@ -36,6 +37,7 @@ static void usage(const char *prog, int code) {
         "Keyboard shortcuts:\n"
         "  F4     Save screenshot (.ppm)\n"
         "  F5     Warm reset\n"
+        "  F8     Open/close memory monitor / disassembler\n"
         "  F9     Options overlay\n"
         "  F11    Toggle fullscreen\n"
         "  F12    Quit\n"
@@ -196,6 +198,8 @@ int main(int argc, char *argv[]) {
     Overlay overlay;
     overlay_init(&overlay, &cfg, &cpc);
 
+    Monitor *monitor = monitor_create(&cpc.mem);
+
     Paste paste;
     paste_init(&paste);
 
@@ -226,6 +230,9 @@ int main(int argc, char *argv[]) {
             /* Joystick/gamepad events */
             if (joy_handle_event(&joy, &ev, &cpc.kbd))
                 continue;
+            /* Monitor window gets its own events */
+            if (monitor_handle_event(monitor, &ev))
+                continue;
             /* Overlay gets first crack at every key event */
             if (overlay_handle_event(&overlay, &ev))
                 continue;
@@ -233,6 +240,13 @@ int main(int argc, char *argv[]) {
             if (ev.type == SDL_EVENT_KEY_DOWN) {
                 if (ev.key.scancode == SDL_SCANCODE_F12) {
                     running = false;
+                } else if (ev.key.scancode == SDL_SCANCODE_F8) {
+                    if (monitor_is_open(monitor))
+                        monitor_handle_event(monitor,
+                            &(SDL_Event){.type=SDL_EVENT_WINDOW_CLOSE_REQUESTED,
+                                         .window.windowID=monitor_window_id(monitor)});
+                    else
+                        monitor_open(monitor);
                 } else if (ev.key.scancode == SDL_SCANCODE_F11) {
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(cpc.display.window, fullscreen);
@@ -299,8 +313,8 @@ int main(int argc, char *argv[]) {
                     mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
             }
             const char *title = (cpc.model == MODEL_464)
-                ? "CPC 464  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen"
-                : "CPC 6128  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen";
+                ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
+                : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
             SDL_SetWindowTitle(cpc.display.window, title);
             cpc.net4cpc = cfg.net4cpc;
             net4cpc_reset();
@@ -311,6 +325,7 @@ int main(int argc, char *argv[]) {
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
         display_flip(&cpc.display);
+        monitor_render(monitor);
 
         frame_count++;
         if (trace_io && frame_count == 210)
@@ -346,6 +361,7 @@ int main(int argc, char *argv[]) {
 
     paste_free(&paste);
     joy_destroy(&joy);
+    monitor_destroy(monitor);
     if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
     if (sfx_buf)    SDL_free(sfx_buf);
     cpc_destroy(&cpc);
