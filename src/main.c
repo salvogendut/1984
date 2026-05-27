@@ -152,8 +152,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     cpc.mem.ram_size = cfg.memory_kb * 1024;
-    cpc.net4cpc = cfg.net4cpc;
-    cpc.rtc     = cfg.rtc;
+    cpc.net4cpc       = cfg.net4cpc;
+    cpc.rtc           = cfg.rtc;
+    cpc.symbiface_ide = cfg.symbiface_ide;
+    if (cfg.symbiface_ide && cfg.ide_image[0])
+        ide_open(&cpc.ide_chip, cfg.ide_image);
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -337,8 +340,12 @@ int main(int argc, char *argv[]) {
                 ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
                 : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
             SDL_SetWindowTitle(cpc.display.window, title);
-            cpc.net4cpc = cfg.net4cpc;
-            cpc.rtc     = cfg.rtc;
+            cpc.net4cpc       = cfg.net4cpc;
+            cpc.rtc           = cfg.rtc;
+            cpc.symbiface_ide = cfg.symbiface_ide;
+            ide_close(&cpc.ide_chip);
+            if (cfg.symbiface_ide && cfg.ide_image[0])
+                ide_open(&cpc.ide_chip, cfg.ide_image);
             net4cpc_reset();
             cpc_reset(&cpc);
         }

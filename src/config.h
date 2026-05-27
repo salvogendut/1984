@@ -27,6 +27,8 @@ typedef struct {
     bool ulifac;
     bool net4cpc;
     bool rtc;
+    bool symbiface_ide;
+    char ide_image[CONFIG_PATH_MAX];
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
