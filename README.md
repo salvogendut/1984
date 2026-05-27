@@ -12,7 +12,6 @@ Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS f
 
 - GCC (C11)
 - SDL3
-- libpng
 - CPC ROM images (not included — dump your own or source from the web)
 
 ## Build
@@ -133,7 +132,7 @@ The machine model can be selected from the command line (`--464` / `--6128`) or 
 
 | Key    | Action |
 |--------|--------|
-| F4     | Save screenshot (`<binary>_<timestamp>.png`) and play camera shutter sound |
+| F4     | Save screenshot (`<binary>_<timestamp>.ppm`) and play camera shutter sound |
 | F5     | Warm reset |
 | F9     | Open/close options overlay |
 | F11    | Toggle fullscreen |

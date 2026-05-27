@@ -1,7 +1,6 @@
 #include "display.h"
 #include <string.h>
 #include <stdio.h>
-#include <png.h>
 
 int display_init(Display *d, const char *title) {
     memset(d, 0, sizeof(*d));
@@ -77,41 +76,25 @@ void display_flip(Display *d) {
     SDL_RenderPresent(d->renderer);
 }
 
-void display_save_png(Display *d, const char *path) {
+void display_save_ppm(Display *d, const char *path) {
     FILE *f = fopen(path, "wb");
     if (!f) return;
 
-    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png) { fclose(f); return; }
-    png_infop info = png_create_info_struct(png);
-    if (!info) { png_destroy_write_struct(&png, NULL); fclose(f); return; }
-
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_write_struct(&png, &info);
-        fclose(f);
-        return;
-    }
-
-    png_init_io(png, f);
-    png_set_IHDR(png, info, CPC_SCREEN_W, WINDOW_H, 8,
-                 PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_write_info(png, info);
+    fprintf(f, "P6\n%d %d\n255\n", CPC_SCREEN_W, WINDOW_H);
 
     /* Scale vertically from CPC_SCREEN_H to WINDOW_H for correct 4:3 aspect */
-    png_byte row[CPC_SCREEN_W * 3];
     for (int y = 0; y < WINDOW_H; y++) {
         int src_y = y * CPC_SCREEN_H / WINDOW_H;
         for (int x = 0; x < CPC_SCREEN_W; x++) {
             u32 px = d->pixels[src_y * CPC_SCREEN_W + x];
-            row[x * 3 + 0] = (px >> 16) & 0xFF;
-            row[x * 3 + 1] = (px >>  8) & 0xFF;
-            row[x * 3 + 2] =  px        & 0xFF;
+            unsigned char rgb[3] = {
+                (px >> 16) & 0xFF,
+                (px >>  8) & 0xFF,
+                 px        & 0xFF,
+            };
+            fwrite(rgb, 1, 3, f);
         }
-        png_write_row(png, row);
     }
 
-    png_write_end(png, NULL);
-    png_destroy_write_struct(&png, &info);
     fclose(f);
 }

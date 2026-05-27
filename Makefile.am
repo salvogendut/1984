@@ -18,8 +18,8 @@ bin_PROGRAMS = 1984
 	src/psg.c \
 	src/z80.c
 
-1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) $(LIBPNG_CFLAGS) -Wall -Wextra
-1984_LDADD   = $(SDL3_LIBS) $(LIBPNG_LIBS) -lm
+1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
+1984_LDADD   = $(SDL3_LIBS) -lm
 
 # Keep the hand-written Makefile usable alongside autotools
 EXTRA_DIST = Makefile
