@@ -6,7 +6,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), and joystick/gamepad (USB, Bluetooth, hot-plug) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), and DS12887 real-time clock (Cyboard/Symbiface II compatible) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
 
 ## Requirements
 
@@ -79,9 +79,10 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 
 [hardware]
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
-m4=false
-ulifac=false
+m4=false          # [unimplemented]
+ulifac=false      # [unimplemented]
 net4cpc=false
+rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)
 
 [display]
 scale=2           # 1, 2, or 3
@@ -192,6 +193,15 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 
 Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library. The toggle triggers a cold boot on save.
 
+**RTC** (Advanced → RTC): enables emulation of a DS12887 real-time clock compatible with the Cyboard and Symbiface II add-on boards. Time is sourced from the host OS via `localtime()` and is always current. Two I/O ports are exposed at:
+
+| Port | Direction | Description |
+|------|-----------|-------------|
+| 0xFD15 | write | Address register — selects which DS12887 register (0x00–0x7F) to access |
+| 0xFD14 | read/write | Data — read or write the selected register |
+
+Time and date registers (seconds, minutes, hours, day-of-week, day, month, year, century) always reflect the current host time. Register B controls binary/BCD and 12h/24h format. The 114-byte NVRAM area (registers 0x0E–0x7F) is stored in RAM for the lifetime of the session. SymbOS detects the RTC via its `SYMBOS.INI` hardware flags byte (offset 0x240, bit 1) and reads the clock at boot using binary 24h mode. The toggle does **not** trigger a cold boot.
+
 Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ### Memory monitor / debugger (F8)
@@ -238,6 +248,7 @@ data flow, Z80 disassembler design, PTY interface, and key source file map.
 - **[SDL3](https://github.com/libsdl-org/SDL)** — cross-platform library providing window management, rendering, audio, and input used throughout the emulator.
 - **[llopis/amstrad-diagnostics](https://github.com/llopis/amstrad-diagnostics)** — Amstrad Diagnostics ROM used as an optional lower-ROM override for hardware testing (Diag Cart toggle in the options overlay).
 - **[salafek/Net4CPC](https://github.com/salafek/Net4CPC)** — Net4CPC Ethernet add-on hardware design and W5100S interface reference; the emulated I/O ports (0xFD20–0xFD23) and register map in `src/net4cpc.c` follow this hardware specification.
+- **[salafek/cyboard-for-cpc](https://github.com/salafek/cyboard-for-cpc)** — Cyboard hardware design; source of the DS12887 I/O port mapping (0xFD14/0xFD15) implemented in `src/rtc.c`.
 - **[Prodatron's SymbOS](https://www.symbos.org/)** — multitasking operating system for Z80 machines; a key test target and reference for CPC system-level behaviour and expanded memory use.
 
 ## License

@@ -114,7 +114,7 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
-	src/1984-z80.$(OBJEXT)
+	src/1984-rtc.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -144,7 +144,8 @@ am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
 	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-net4cpc.Po \
 	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
 	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-z80.Po src/$(DEPDIR)/1984-z80dis.Po
+	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-z80.Po \
+	src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -259,7 +260,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-SDL3_CFLAGS = -I/include
+SDL3_CFLAGS = -I/usr/include
 SDL3_LIBS = /usr/lib64/libSDL3.so.0
 SET_MAKE = 
 SHELL = /bin/sh
@@ -329,6 +330,7 @@ top_srcdir = .
 	src/paste.c \
 	src/ppi.c \
 	src/psg.c \
+	src/rtc.c \
 	src/z80.c
 
 1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
@@ -457,6 +459,8 @@ src/1984-ppi.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-psg.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-rtc.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-z80.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 
@@ -488,6 +492,7 @@ include src/$(DEPDIR)/1984-overlay.Po # am--include-marker
 include src/$(DEPDIR)/1984-paste.Po # am--include-marker
 include src/$(DEPDIR)/1984-ppi.Po # am--include-marker
 include src/$(DEPDIR)/1984-psg.Po # am--include-marker
+include src/$(DEPDIR)/1984-rtc.Po # am--include-marker
 include src/$(DEPDIR)/1984-z80.Po # am--include-marker
 include src/$(DEPDIR)/1984-z80dis.Po # am--include-marker
 
@@ -764,6 +769,20 @@ src/1984-psg.obj: src/psg.c
 #	$(AM_V_CC)source='src/psg.c' object='src/1984-psg.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-psg.obj `if test -f 'src/psg.c'; then $(CYGPATH_W) 'src/psg.c'; else $(CYGPATH_W) '$(srcdir)/src/psg.c'; fi`
+
+src/1984-rtc.o: src/rtc.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-rtc.o -MD -MP -MF src/$(DEPDIR)/1984-rtc.Tpo -c -o src/1984-rtc.o `test -f 'src/rtc.c' || echo '$(srcdir)/'`src/rtc.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-rtc.Tpo src/$(DEPDIR)/1984-rtc.Po
+#	$(AM_V_CC)source='src/rtc.c' object='src/1984-rtc.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-rtc.o `test -f 'src/rtc.c' || echo '$(srcdir)/'`src/rtc.c
+
+src/1984-rtc.obj: src/rtc.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-rtc.obj -MD -MP -MF src/$(DEPDIR)/1984-rtc.Tpo -c -o src/1984-rtc.obj `if test -f 'src/rtc.c'; then $(CYGPATH_W) 'src/rtc.c'; else $(CYGPATH_W) '$(srcdir)/src/rtc.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-rtc.Tpo src/$(DEPDIR)/1984-rtc.Po
+#	$(AM_V_CC)source='src/rtc.c' object='src/1984-rtc.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-rtc.obj `if test -f 'src/rtc.c'; then $(CYGPATH_W) 'src/rtc.c'; else $(CYGPATH_W) '$(srcdir)/src/rtc.c'; fi`
 
 src/1984-z80.o: src/z80.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-z80.o -MD -MP -MF src/$(DEPDIR)/1984-z80.Tpo -c -o src/1984-z80.o `test -f 'src/z80.c' || echo '$(srcdir)/'`src/z80.c
@@ -1078,6 +1097,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
+	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
@@ -1144,6 +1164,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
+	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile

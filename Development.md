@@ -153,6 +153,37 @@ or `\n`.
 
 ---
 
+## DS12887 Real-Time Clock (`src/rtc.c`)
+
+The RTC emulates a DS12887 as used in the Cyboard and Symbiface II CPC add-ons. It is enabled via `rtc=true` in `1984.conf` (or the Advanced → RTC toggle in the overlay). The toggle does not require a cold boot.
+
+**Port mapping:**
+
+| Port | Direction | Function |
+|------|-----------|----------|
+| 0xFD15 | write | Address register — selects DS12887 register 0x00–0x7F |
+| 0xFD14 | read/write | Data register |
+
+**Registers.** Time and date registers (0x00=sec, 0x02=min, 0x04=hour, 0x06=dow, 0x07=day, 0x08=month, 0x09=year, 0x32=century) always return the current host time from `localtime()`. Register B (0x0B) is the only control register stored persistently per-session; it controls the data format:
+
+- Bit 2 (DM): 0 = BCD output, 1 = binary output
+- Bit 1 (24/12): 0 = 12h mode (PM bit = bit 7 of hours register), 1 = 24h mode
+
+`regb` defaults to `0x02` (24h BCD) so the first read before any software sets Register B returns valid BCD hours without a PM bit.
+
+**NVRAM.** Registers 0x0E–0x7F are 114 bytes of battery-backed RAM. The `RTC` struct holds a `nvram[114]` array; writes are stored and reads return the stored value. This is required because SymbOS performs a write-then-read battery check on NVRAM before trusting the RTC: it writes a signature byte to register 0x0F, reads it back, and only reads the time if the values match. Without NVRAM storage, the check would always fail and SymbOS would ignore the hardware clock.
+
+**SymbOS boot sequence.** SymbOS checks its `SYMBOS.INI` hardware flags byte (file offset 0x240, bit 1 = RTC present). If set, it:
+1. Sets RegB = 0x07 (binary mode, 24h, DSE enabled)
+2. Writes a signature to NVRAM reg 0x0F and reads it back (battery check)
+3. Reads RegA (0x0A) to confirm UIP=0 (no update in progress)
+4. Reads all time/date registers in binary 24h format
+5. Sets RegB bit 7 (SET=1) to freeze the clock, writes the time back, then clears SET
+
+**Writes to time/date registers** are accepted but silently discarded — the host clock is always the authoritative source. Step 5 above is therefore a no-op on the emulated chip.
+
+---
+
 ## Joystick / input (`src/joy.c`)
 
 SDL3 controllers are handled in two tiers: **gamepad** (devices in the SDL gamepad database, opened with `SDL_OpenGamepad`) and **raw joystick** fallback (all others, opened with `SDL_OpenJoystick`). Both support hot-plug. The raw tier maps axis 0 → Left/Right, axis 1 → Up/Down, button 0 → Fire 1, button 1 → Fire 2; hat switch is also handled. All inputs land in CPC keyboard matrix row 9.

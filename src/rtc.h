@@ -14,8 +14,9 @@
  */
 
 typedef struct {
-    u8 addr;    /* currently selected register */
-    u8 regb;    /* register B: bit2=DM(0=BCD,1=binary), bit1=24h(0=12h,1=24h) */
+    u8 addr;        /* currently selected register */
+    u8 regb;        /* register B: bit2=DM(0=BCD,1=binary), bit1=24h(0=12h,1=24h) */
+    u8 nvram[114];  /* 114 bytes of battery-backed NVRAM (registers 0x0E–0x7F) */
 } RTC;
 
 void rtc_init(RTC *r);
