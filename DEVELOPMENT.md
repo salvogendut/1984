@@ -71,7 +71,7 @@ The CPC firmware manages a cooperative interrupt handler that runs a "flush task
 **Gating the fallback.** Programs that write directly to the Gate Array (bypassing the firmware ink routine) — such as diagnostic ROMs that also run RAM tests over the firmware workspace — would otherwise corrupt the GA palette if the fallback ran unconditionally. The fallback is gated by `CPC.firmware_palette_count`, which:
 
 - Starts incrementing each frame when lower-ROM-enabled code writes `0xFF` to `0xB7F7` and B7F7 remains `0xFF` at end-of-frame.
-- Resets to zero when any non-`0xFF` value is written to `0xB7F7` (test pattern, flush-task clear) or when lower ROM is disabled.
+- Resets to zero when any non-`0xFF` value is written to `0xB7F7` (test pattern, flush-task clear).
 - Fires the fallback when the count reaches `PALETTE_FLUSH_FRAMES` (50).
 
 The 50-frame threshold exceeds the longest known consecutive-0xFF run produced by a RAM test (AmstradDiag 1.4L's 0xFF fill lasts 38 frames before the next test pattern is written). Spindizzy holds `0xB7F7=0xFF` indefinitely, so it fires well within the 1-second delay.
@@ -110,6 +110,8 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 
 `config_apply_dd1()` sets or clears the AMSDOS ROM path and the `dd1` flag together, keeping them consistent. Called by the overlay when DD1 is toggled and by `config_set_model()` when switching to 464.
 
+`config_default_diag()` returns the compiled-in path for `AmstradDiagLower.rom` (`~/.config/1984/roms/AmstradDiagLower.rom`). Used by the overlay's Diag Cart toggle to resolve the ROM path without hardcoding the filename in the UI layer.
+
 **`memory_kb`** accepts 64, 128, 256, 512, or 576. The 464 default is 64; the 6128 default is 128. Values outside this set are rejected and the previous value is kept. The field is written directly to `Mem.ram_size` (in bytes) at startup and on every cold boot.
 
 **CLI ROM slot overrides.** `--rom-slot=N:PATH` (repeatable) loads a ROM into slot N after the config-based expansion ROMs are applied. This lets you test or launch with a specific ROM without modifying `1984.conf`. CLI overrides win over config-file assignments for the same slot.
@@ -122,7 +124,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
 | Storage | Drive A, Drive B |
-| Advanced | Memory, M4, UliFAC, Net4CPC, DD1, ROM Slots → |
+| Advanced | Memory, M4, UliFAC, Net4CPC, DD1, ROM Slots →, Diag Cart |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
