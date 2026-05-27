@@ -52,3 +52,4 @@ void config_apply_dd1(Config *cfg, bool enabled);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(char *out, size_t sz);
+void config_default_diag(char *out, size_t sz);

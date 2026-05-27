@@ -12,6 +12,7 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 #define ROM_FILE_OS_6128    "OS_6128.ROM"
 #define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
 #define ROM_FILE_AMSDOS     "AMSDOS.ROM"
+#define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
 /* Build a full path: ~/.config/1984/roms/<file> → out[size] */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
@@ -322,4 +323,8 @@ void config_default_basic(CpcModel model, char *out, size_t sz) {
 
 void config_default_amsdos(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
+}
+
+void config_default_diag(char *out, size_t sz) {
+    rom_cfg_path(ROM_FILE_DIAG, out, sz);
 }

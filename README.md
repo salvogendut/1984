@@ -57,6 +57,7 @@ Place ROM images in the `roms/` directory with these exact names:
 | `roms/OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
 | `roms/BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
 | `roms/AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
+| `roms/AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |
 
 ## Configuration
 
@@ -99,6 +100,7 @@ fullscreen=false
 | `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
 | `--rom-slot=N:PATH` | Load a ROM image into upper ROM slot N (0-31); may be repeated |
+| `--rom-os=PATH` | Override the lower ROM (OS) with a custom image at PATH |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 | `-h`, `--help` | Print this option summary and exit |
@@ -155,7 +157,7 @@ The overlay lets you change the machine model, RAM size, ROM paths, and hardware
 
 Switching the model automatically sets the matching ROM paths and RAM size.
 
-**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, and 576 KB. 576 KB is the DK'tronics hardware ceiling (64 KB base + 8 × 64 KB expansion banks). The CPC 6128 minimum is 128 KB. Extra RAM beyond 128 KB is accessible via DK'tronics-compatible banking (Gate Array port 0x7Fxx). Changing RAM size triggers a cold boot on save.
+**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, and 576 KB. 576 KB is the DK'tronics hardware ceiling (64 KB base + 8 × 64 KB expansion banks). Extra RAM beyond 64 KB is accessible via DK'tronics-compatible banking (Gate Array port 0x7Fxx). Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
 
 **CPC 464 and DD1:** on the 464, the Storage tab drives are greyed out by default. Enable **DD1** in the Advanced tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 
@@ -167,6 +169,8 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 | Slot 0 | BASIC ROM | Load expansion override | Clear override / restore default BASIC |
 | Slot 7 | AMSDOS ROM | Load expansion override | Clear override / restore default AMSDOS |
 | Slots 1–6, 8–31 | empty | Load ROM into slot | Clear slot |
+
+**Diagnostics Cartridge** (Advanced → Diag Cart): toggles the lower ROM between the model's default OS and `AmstradDiagLower.rom`. When ON, the machine boots into the Amstrad Diagnostics program. When OFF, the lower ROM reverts to the model's normal OS ROM. The toggle is greyed out if `AmstradDiagLower.rom` is not found in the ROMs directory. The change triggers a cold boot on save.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 

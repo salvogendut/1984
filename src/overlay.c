@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
+#include <unistd.h>
 
 static void overlay_file_callback(void *userdata, const char * const *files, int filter);
 
@@ -24,7 +25,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 6 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 7 };
 
 /* ---- Drawing helpers ---- */
 
@@ -157,6 +158,20 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
             break;
+        case 6: {
+            char diag[CONFIG_PATH_MAX];
+            config_default_diag(diag, sizeof(diag));
+            bool available = (access(diag, R_OK) == 0);
+            snprintf(lbl, lsz, "Diag Cart");
+            if (!available) {
+                snprintf(val, vsz, "[ROM not found]");
+                *readonly = true;
+            } else {
+                bool active = strcmp(ov->cfg->rom_os, diag) == 0;
+                snprintf(val, vsz, "%s", active ? "ON" : "OFF");
+            }
+            break;
+        }
         }
         break;
 
@@ -174,6 +189,8 @@ static void activate_item(Overlay *ov) {
         if (ov->row == 0) {
             CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
             config_set_model(ov->cfg, next);
+            if (next == MODEL_6128 && ov->cfg->memory_kb < 128)
+                ov->cfg->memory_kb = 128;
             ov->dirty = true;
         }
         break;
@@ -198,10 +215,11 @@ static void activate_item(Overlay *ov) {
         case 0: {
             static const int sizes[] = { 64, 128, 256, 512, 576 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
-            int cur = 0;
-            for (int i = 0; i < n; i++)
+            int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
+            int cur = min_idx;
+            for (int i = min_idx; i < n; i++)
                 if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
-            ov->cfg->memory_kb = sizes[(cur + 1) % n];
+            ov->cfg->memory_kb = sizes[min_idx + (cur - min_idx + 1) % (n - min_idx)];
             ov->dirty = true;
             break;
         }
@@ -232,6 +250,20 @@ static void activate_item(Overlay *ov) {
         case 5:
             ov->state = OV_STATE_ROMSLOTS;
             break;
+        case 6: {
+            char diag[CONFIG_PATH_MAX];
+            config_default_diag(diag, sizeof(diag));
+            if (access(diag, R_OK) != 0) break;  /* greyed out — ROM missing */
+            bool active = strcmp(ov->cfg->rom_os, diag) == 0;
+            if (active) {
+                config_default_os(ov->cfg->model,
+                    ov->cfg->rom_os, sizeof(ov->cfg->rom_os));
+            } else {
+                snprintf(ov->cfg->rom_os, CONFIG_PATH_MAX, "%s", diag);
+            }
+            ov->dirty = true;
+            break;
+        }
         }
         break;
 
