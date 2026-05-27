@@ -317,13 +317,28 @@ static void activate_item(Overlay *ov) {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool enable = !all;
-            ov->cfg->net4cpc        = enable;
-            ov->cfg->rtc            = enable;
-            ov->cfg->symbiface_ide  = enable;
+            ov->cfg->net4cpc         = enable;
+            ov->cfg->rtc             = enable;
+            ov->cfg->symbiface_ide   = enable;
             ov->cfg->symbiface_mouse = enable;
-            if (!enable)
+            if (!enable) {
                 ov->cfg->ide_image[0] = '\0';
-            ov->dirty = true;
+                ov->dirty = true;
+            } else if (!ov->cfg->ide_image[0]) {
+                /* Enabling with no image selected — open file picker */
+                ov->dialog_kind  = DIALOG_IDE;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter ide_filters[] = {
+                    { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
+                    { "All files",   "*"                       },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    ide_filters, 2, NULL, false);
+                /* dirty set by file callback once image is chosen */
+            } else {
+                ov->dirty = true;
+            }
             break;
         }
         }
