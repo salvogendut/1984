@@ -12,9 +12,12 @@
 #define OUT_ROWS     (MON_ROWS - 1)   /* rows 0..23 = output; row 24 = input */
 #define CHAR_W       8
 #define CHAR_H       8
-#define FONT_SCALE   1.5f
-#define WIN_W        ((int)(MON_COLS * CHAR_W * FONT_SCALE))   /* 960 */
-#define WIN_H        ((int)(MON_ROWS * CHAR_H * FONT_SCALE))   /* 300 */
+/* Non-uniform scale: characters are 12 × 28 px on screen (1:2.4 ratio),
+ * giving a 960×720 window which is exactly 4:3. */
+#define FONT_SCALE_X  1.5f
+#define FONT_SCALE_Y  3.6f
+#define WIN_W  ((int)(MON_COLS * CHAR_W * FONT_SCALE_X))   /* 960 */
+#define WIN_H  ((int)(MON_ROWS * CHAR_H * FONT_SCALE_Y))   /* 720 */
 
 /* ---- Colours ---- */
 #define C_BG      0x00, 0x00, 0x00
@@ -281,7 +284,11 @@ static void mon_exec(Monitor *mon, const char *raw) {
     case 'D': cmd_disassemble(mon, args); break;
     case 'M': cmd_hexdump(mon, args);     break;
     case 'X':
-    case 'Q': mon->open = false;          break;
+    case 'Q':
+        mon->open = false;
+        SDL_StopTextInput(mon->window);
+        SDL_HideWindow(mon->window);
+        break;
     default:
         mon_puts(mon, "Commands:  D <addr> [<end>]   M <addr> [<end>]   X = exit");
         break;
@@ -356,7 +363,7 @@ void monitor_render(Monitor *mon) {
 
     SDL_SetRenderDrawColor(mon->renderer, C_BG, 255);
     SDL_RenderClear(mon->renderer);
-    SDL_SetRenderScale(mon->renderer, FONT_SCALE, FONT_SCALE);
+    SDL_SetRenderScale(mon->renderer, FONT_SCALE_X, FONT_SCALE_Y);
 
     for (int row = 0; row < OUT_ROWS; row++) {
         float y = (float)(row * CHAR_H);
@@ -440,6 +447,7 @@ void monitor_open(Monitor *mon) {
     mon->open = true;
     SDL_ShowWindow(mon->window);
     SDL_RaiseWindow(mon->window);
+    SDL_StartTextInput(mon->window);
 }
 
 bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
@@ -448,6 +456,7 @@ bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
     if (e->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
         e->window.windowID == SDL_GetWindowID(mon->window)) {
         mon->open = false;
+        SDL_StopTextInput(mon->window);
         SDL_HideWindow(mon->window);
         return true;
     }
