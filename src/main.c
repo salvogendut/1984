@@ -11,6 +11,7 @@
 #include "mem.h"
 #include "paste.h"
 #include "joy.h"
+#include "shutter_wav.h"
 
 static void usage(const char *prog, int code) {
     FILE *out = code ? stderr : stdout;
@@ -173,6 +174,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Camera shutter SFX — loaded from embedded WAV data in shutter_wav.h.
+     * sfx_buf/sfx_buf_len hold the decoded PCM so it can be replayed on each F4 press.
+     * A dedicated logical device stream is opened; SDL3 mixes it with the PSG stream. */
+    SDL_AudioStream *sfx_stream = NULL;
+    Uint8  *sfx_buf     = NULL;
+    Uint32  sfx_buf_len = 0;
+    {
+        SDL_AudioSpec sfx_spec;
+        SDL_IOStream *io = SDL_IOFromConstMem(shutter_wav, shutter_wav_len);
+        if (io && SDL_LoadWAV_IO(io, true, &sfx_spec, &sfx_buf, &sfx_buf_len)) {
+            sfx_stream = SDL_OpenAudioDeviceStream(
+                SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &sfx_spec, NULL, NULL);
+            if (sfx_stream)
+                SDL_ResumeAudioStreamDevice(sfx_stream);
+        }
+    }
+
     Overlay overlay;
     overlay_init(&overlay, &cfg, &cpc);
 
@@ -223,6 +241,10 @@ int main(int argc, char *argv[]) {
                     tmp[sizeof(tmp) - 1] = '\0';
                     snprintf(path, sizeof(path), "%s_%ld.png", basename(tmp), (long)time(NULL));
                     display_save_png(&cpc.display, path);
+                    if (sfx_stream && sfx_buf) {
+                        SDL_ClearAudioStream(sfx_stream);
+                        SDL_PutAudioStreamData(sfx_stream, sfx_buf, (int)sfx_buf_len);
+                    }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
@@ -320,6 +342,8 @@ int main(int argc, char *argv[]) {
 
     paste_free(&paste);
     joy_destroy(&joy);
+    if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
+    if (sfx_buf)    SDL_free(sfx_buf);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

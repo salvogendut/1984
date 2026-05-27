@@ -97,6 +97,9 @@ fullscreen=false
 
 | Option | Description |
 |--------|-------------|
+| `--464` | Boot as CPC 464 (overrides config) |
+| `--6128` | Boot as CPC 6128 (overrides config) |
+| `--dd1` | Enable DDI-1 floppy interface on CPC 464 (overrides config) |
 | `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
 | `--rom-slot=N:PATH` | Load a ROM image into upper ROM slot N (0-31); may be repeated |
@@ -126,11 +129,11 @@ Examples:
 ./bin/1984 --rom-slot=5:~/.config/1984/roms/TOOLKIT.ROM --rom-slot=8:~/.config/1984/roms/OTHER.ROM
 ```
 
-The machine model (464 or 6128) is selected via the options overlay (F9).
+The machine model can be selected from the command line (`--464` / `--6128`) or via the options overlay (F9).
 
 | Key    | Action |
 |--------|--------|
-| F4     | Save screenshot (`<binary>_<timestamp>.png`) |
+| F4     | Save screenshot (`<binary>_<timestamp>.png`) and play camera shutter sound |
 | F5     | Warm reset |
 | F9     | Open/close options overlay |
 | F11    | Toggle fullscreen |
