@@ -114,7 +114,9 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
-	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) src/1984-mouse.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
+	src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -139,13 +141,14 @@ am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
 	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-crtc.Po \
 	src/$(DEPDIR)/1984-disk.Po src/$(DEPDIR)/1984-display.Po \
 	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-gate_array.Po \
-	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
+	src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-joy.Po \
+	src/$(DEPDIR)/1984-kbd.Po src/$(DEPDIR)/1984-m4.Po \
 	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
-	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-net4cpc.Po \
-	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-mouse.Po src/$(DEPDIR)/1984-z80.Po \
-	src/$(DEPDIR)/1984-z80dis.Po
+	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-mouse.Po \
+	src/$(DEPDIR)/1984-net4cpc.Po src/$(DEPDIR)/1984-overlay.Po \
+	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-ppi.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-rtc.Po \
+	src/$(DEPDIR)/1984-z80.Po src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -332,6 +335,8 @@ top_srcdir = @top_srcdir@
 	src/psg.c \
 	src/rtc.c \
 	src/ide.c \
+	src/m4.c \
+	src/mouse.c \
 	src/z80.c
 
 1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
@@ -464,6 +469,8 @@ src/1984-rtc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-ide.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-m4.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-mouse.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-z80.$(OBJEXT): src/$(am__dirstamp) \
@@ -487,19 +494,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-display.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-fdc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-gate_array.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ide.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-joy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-kbd.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-m4.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-main.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mem.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-monitor.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mouse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-net4cpc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-overlay.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-paste.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ppi.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-psg.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-rtc.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ide.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mouse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-z80.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-z80dis.Po@am__quote@ # am--include-marker
 
@@ -804,6 +812,20 @@ src/1984-ide.obj: src/ide.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/ide.c' object='src/1984-ide.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ide.obj `if test -f 'src/ide.c'; then $(CYGPATH_W) 'src/ide.c'; else $(CYGPATH_W) '$(srcdir)/src/ide.c'; fi`
+
+src/1984-m4.o: src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-m4.o -MD -MP -MF src/$(DEPDIR)/1984-m4.Tpo -c -o src/1984-m4.o `test -f 'src/m4.c' || echo '$(srcdir)/'`src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-m4.Tpo src/$(DEPDIR)/1984-m4.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/m4.c' object='src/1984-m4.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-m4.o `test -f 'src/m4.c' || echo '$(srcdir)/'`src/m4.c
+
+src/1984-m4.obj: src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-m4.obj -MD -MP -MF src/$(DEPDIR)/1984-m4.Tpo -c -o src/1984-m4.obj `if test -f 'src/m4.c'; then $(CYGPATH_W) 'src/m4.c'; else $(CYGPATH_W) '$(srcdir)/src/m4.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-m4.Tpo src/$(DEPDIR)/1984-m4.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/m4.c' object='src/1984-m4.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-m4.obj `if test -f 'src/m4.c'; then $(CYGPATH_W) 'src/m4.c'; else $(CYGPATH_W) '$(srcdir)/src/m4.c'; fi`
 
 src/1984-mouse.o: src/mouse.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-mouse.o -MD -MP -MF src/$(DEPDIR)/1984-mouse.Tpo -c -o src/1984-mouse.o `test -f 'src/mouse.c' || echo '$(srcdir)/'`src/mouse.c
@@ -1122,19 +1144,20 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-display.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
+	-rm -f src/$(DEPDIR)/1984-ide.Po
 	-rm -f src/$(DEPDIR)/1984-joy.Po
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
+	-rm -f src/$(DEPDIR)/1984-m4.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
 	-rm -f src/$(DEPDIR)/1984-monitor.Po
+	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
-	-rm -f src/$(DEPDIR)/1984-ide.Po
-	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
@@ -1191,11 +1214,14 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-display.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
+	-rm -f src/$(DEPDIR)/1984-ide.Po
 	-rm -f src/$(DEPDIR)/1984-joy.Po
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
+	-rm -f src/$(DEPDIR)/1984-m4.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
 	-rm -f src/$(DEPDIR)/1984-monitor.Po
+	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po

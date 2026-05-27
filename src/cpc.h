@@ -13,6 +13,7 @@
 #include "rtc.h"
 #include "ide.h"
 #include "mouse.h"
+#include "m4.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -37,6 +38,8 @@ typedef struct {
     IDE        ide_chip;
     bool       symbiface_mouse; /* SYMBiFACE II / Cyboard PS/2 mouse present */
     Mouse      mouse;
+    bool       m4;             /* M4 board hardware present */
+    M4         m4_card;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

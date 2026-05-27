@@ -12,6 +12,7 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 #define ROM_FILE_OS_6128    "OS_6128.ROM"
 #define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
 #define ROM_FILE_AMSDOS     "AMSDOS.ROM"
+#define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
 /* Build a full path: ~/.config/1984/roms/<file> → out[size] */
@@ -102,6 +103,7 @@ static void config_create_default(const char *path, const char *home) {
         "dd1=false\n"
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
+        "m4_path=\n"
         "ulifac=false\n"
         "net4cpc=false\n"
         "rtc=false\n"
@@ -198,6 +200,8 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "m4")) {
                 if (parse_bool(val, &b)) cfg->m4 = b;
                 else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "m4_path")) {
+                snprintf(cfg->m4_path, CONFIG_PATH_MAX, "%s", val);
             } else if (!strcmp(key, "ulifac")) {
                 if (parse_bool(val, &b)) cfg->ulifac = b;
                 else { fprintf(stderr, "1984.conf:%d: ulifac must be true/false\n", lineno); rc = -1; }
@@ -285,6 +289,7 @@ int config_save(const Config *cfg) {
         "[hardware]\n"
         "dd1=%s\n"
         "m4=%s\n"
+        "m4_path=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n"
         "rtc=%s\n"
@@ -298,6 +303,7 @@ int config_save(const Config *cfg) {
         cfg->disk_b,
         cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
+        cfg->m4_path,
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc          ? "true" : "false",
         cfg->rtc              ? "true" : "false",
@@ -347,6 +353,10 @@ void config_default_basic(CpcModel model, char *out, size_t sz) {
 
 void config_default_amsdos(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
+}
+
+void config_default_m4rom(char *out, size_t sz) {
+    rom_cfg_path(ROM_FILE_M4ROM, out, sz);
 }
 
 void config_default_diag(char *out, size_t sz) {

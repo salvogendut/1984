@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include "cpc.h"
+#include "m4.h"
 #include "disk.h"
 #include "mem.h"
 #include <string.h>
@@ -134,8 +135,13 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 1:
             snprintf(lbl, lsz, "M4");
-            snprintf(val, vsz, "[unimplemented]");
-            *readonly = true;
+            if (ov->cfg->m4 && ov->cfg->m4_path[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_path);
+                trunc_path(basename(tmp), val, vsz);
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->m4 ? "enabled" : "disabled");
+            }
             break;
         case 2:
             snprintf(lbl, lsz, "UliFAC");
@@ -252,7 +258,29 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         }
-        /* cases 1 (M4) and 2 (UliFAC) are unimplemented — Enter does nothing */
+        case 1:
+            if (!ov->cfg->m4) {
+                /* Enable: open folder picker to select SD card root */
+                ov->dialog_kind  = DIALOG_M4_ROOT;
+                ov->dialog_ready = false;
+                SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL, NULL, false);
+            } else {
+                /* Disable: clear flag (keep path so re-enabling is easy) */
+                ov->cfg->m4 = false;
+                if (ov->cpc) ov->cpc->m4 = false;
+                /* Restore slot 7 to AMSDOS (or clear it if 6128 with no dd1) */
+                ov->cfg->rom_ext[7][0] = '\0';
+                char amsdos[CONFIG_PATH_MAX];
+                config_default_amsdos(amsdos, sizeof(amsdos));
+                if (ov->cpc) {
+                    mem_unload_rom_ext(&ov->cpc->mem, 7);
+                    mem_load_rom_ext(&ov->cpc->mem, 7, amsdos);
+                }
+                ov->dirty = true;
+            }
+            break;
+        /* case 2 (UliFAC) is unimplemented — Enter does nothing */
         case 3:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
@@ -407,6 +435,19 @@ void overlay_tick(Overlay *ov) {
     } else if (ov->dialog_kind == DIALOG_IDE) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->cfg->symbiface_ide = true;
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_M4_ROOT) {
+        snprintf(ov->cfg->m4_path, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->cfg->m4 = true;
+        /* Load M4ROM into slot 7, overriding AMSDOS */
+        char m4rom[CONFIG_PATH_MAX];
+        config_default_m4rom(m4rom, sizeof(m4rom));
+        snprintf(ov->cfg->rom_ext[7], CONFIG_PATH_MAX, "%s", m4rom);
+        if (ov->cpc) {
+            ov->cpc->m4 = true;
+            snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->dialog_path);
+            mem_load_rom_ext(&ov->cpc->mem, 7, m4rom);
+        }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;

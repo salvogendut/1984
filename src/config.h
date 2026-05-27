@@ -24,6 +24,7 @@ typedef struct {
     /* [hardware] */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
+    char m4_path[CONFIG_PATH_MAX];  /* host directory mapped as M4 SD card */
     bool ulifac;
     bool net4cpc;
     bool rtc;
@@ -56,4 +57,5 @@ void config_apply_dd1(Config *cfg, bool enabled);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(char *out, size_t sz);
+void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);

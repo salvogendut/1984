@@ -167,6 +167,9 @@ int main(int argc, char *argv[]) {
     cpc.rtc             = cfg.rtc;
     cpc.symbiface_ide   = cfg.symbiface_ide;
     cpc.symbiface_mouse = cfg.symbiface_mouse;
+    cpc.m4              = cfg.m4;
+    if (cfg.m4 && cfg.m4_path[0])
+        snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
 
@@ -411,6 +414,9 @@ int main(int argc, char *argv[]) {
             cpc.rtc              = cfg.rtc;
             cpc.symbiface_ide    = cfg.symbiface_ide;
             cpc.symbiface_mouse  = cfg.symbiface_mouse;
+            cpc.m4               = cfg.m4;
+            if (cfg.m4 && cfg.m4_path[0])
+                snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
             ide_close(&cpc.ide_chip);
             if (cfg.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
