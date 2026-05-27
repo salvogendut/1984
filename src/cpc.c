@@ -54,10 +54,12 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
-    /* hi=0xFD: RTC (0xFD14) and Net4CPC W5100S (0xFD20-0xFD23) */
+    /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14), Net4CPC W5100S (0xFD20-0xFD23) */
     else if (hi == 0xFD) {
         u8 lo = port & 0xFF;
-        if (cpc->rtc && lo == 0x14)
+        if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F)))
+            result = ide_read(&cpc->ide_chip, lo);
+        else if (cpc->rtc && lo == 0x14)
             result = rtc_read_data(&cpc->rtc_chip);
         else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
             result = net4cpc_in(lo & 0x03);
@@ -136,9 +138,12 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
     /* FDC data: hi=0xFB, write */
     if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
-    /* hi=0xFD: RTC (0xFD14/0xFD15) and Net4CPC W5100S (0xFD20-0xFD23) */
+    /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14/0xFD15), Net4CPC (0xFD20-0xFD23) */
     if (hi == 0xFD) {
         u8 lo = port & 0xFF;
+        if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
+            ide_write(&cpc->ide_chip, lo, val); return;
+        }
         if (cpc->rtc) {
             if (lo == 0x15) { rtc_write_addr(&cpc->rtc_chip, val); return; }
             if (lo == 0x14) { rtc_write_data(&cpc->rtc_chip, val); return; }
@@ -174,6 +179,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     disk_init(&cpc->drive[1]);
     fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
     rtc_init(&cpc->rtc_chip);
+    ide_init(&cpc->ide_chip);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -206,6 +212,7 @@ void cpc_reset(CPC *cpc) {
     kbd_init(&cpc->kbd);
     fdc_reset(&cpc->fdc);
     rtc_init(&cpc->rtc_chip);
+    ide_reset(&cpc->ide_chip);  /* keeps image file open across warm reset */
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -220,6 +227,7 @@ void cpc_destroy(CPC *cpc) {
     if (cpc->audio_stream) SDL_DestroyAudioStream(cpc->audio_stream);
     disk_eject(&cpc->drive[0]);
     disk_eject(&cpc->drive[1]);
+    ide_close(&cpc->ide_chip);
     display_destroy(&cpc->display);
 }
 

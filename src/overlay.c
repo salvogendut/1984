@@ -25,7 +25,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 8 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 9 };
 
 /* ---- Drawing helpers ---- */
 
@@ -178,6 +178,16 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         }
+        case 8:
+            snprintf(lbl, lsz, "SYMBiFACE IDE");
+            if (ov->cfg->symbiface_ide && ov->cfg->ide_image[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->ide_image);
+                trunc_path(basename(tmp), val, vsz);
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->symbiface_ide ? "enabled" : "disabled");
+            }
+            break;
         }
         break;
 
@@ -267,6 +277,25 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         }
+        case 8:
+            if (!ov->cfg->symbiface_ide) {
+                /* Enabling: open file dialog to select a disk image */
+                ov->dialog_kind  = DIALOG_IDE;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter ide_filters[] = {
+                    { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
+                    { "All files",   "*"                       },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    ide_filters, 2, NULL, false);
+            } else {
+                /* Disabling: clear image path and disable */
+                ov->cfg->symbiface_ide = false;
+                ov->cfg->ide_image[0]  = '\0';
+                ov->dirty = true;
+            }
+            break;
         }
         break;
 
@@ -330,6 +359,10 @@ void overlay_tick(Overlay *ov) {
             mem_load_os(&ov->cpc->mem, ov->dialog_path);
         ov->needs_cold_boot = true;
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_IDE) {
+        snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->cfg->symbiface_ide = true;
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;
         ov->dialog_slot = -1;
@@ -369,11 +402,13 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         case SDL_SCANCODE_KP_ENTER: {
             config_save(ov->cfg);
             /* cold boot needed if model, memory, DD1, or any ROM slot changed */
-            bool boot = (ov->cfg->model     != ov->saved.model)     ||
-                        (ov->cfg->memory_kb != ov->saved.memory_kb) ||
-                        (ov->cfg->dd1       != ov->saved.dd1)       ||
-                        (ov->cfg->net4cpc   != ov->saved.net4cpc)   ||
-                        strcmp(ov->cfg->rom_os, ov->saved.rom_os);
+            bool boot = (ov->cfg->model         != ov->saved.model)         ||
+                        (ov->cfg->memory_kb     != ov->saved.memory_kb)     ||
+                        (ov->cfg->dd1           != ov->saved.dd1)           ||
+                        (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
+                        (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
+                        strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||
+                        strcmp(ov->cfg->rom_os,    ov->saved.rom_os);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {
                     if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
