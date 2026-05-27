@@ -106,7 +106,8 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
-	src/1984-net4cpc.$(OBJEXT) src/1984-crtc.$(OBJEXT) \
+	src/1984-monitor.$(OBJEXT) src/1984-net4cpc.$(OBJEXT) \
+	src/1984-z80dis.$(OBJEXT) src/1984-crtc.$(OBJEXT) \
 	src/1984-disk.$(OBJEXT) src/1984-display.$(OBJEXT) \
 	src/1984-fdc.$(OBJEXT) src/1984-gate_array.$(OBJEXT) \
 	src/1984-joy.$(OBJEXT) src/1984-kbd.$(OBJEXT) \
@@ -140,9 +141,10 @@ am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
 	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-gate_array.Po \
 	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
 	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
-	src/$(DEPDIR)/1984-net4cpc.Po src/$(DEPDIR)/1984-overlay.Po \
-	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-ppi.Po \
-	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-z80.Po
+	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-net4cpc.Po \
+	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
+	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
+	src/$(DEPDIR)/1984-z80.Po src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -311,7 +313,9 @@ top_srcdir = .
 1984_SOURCES = \
 	src/config.c \
 	src/cpc.c \
+	src/monitor.c \
 	src/net4cpc.c \
+	src/z80dis.c \
 	src/crtc.c \
 	src/disk.c \
 	src/display.c \
@@ -421,7 +425,11 @@ src/1984-config.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-cpc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-monitor.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-net4cpc.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-z80dis.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-crtc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
@@ -474,12 +482,14 @@ include src/$(DEPDIR)/1984-joy.Po # am--include-marker
 include src/$(DEPDIR)/1984-kbd.Po # am--include-marker
 include src/$(DEPDIR)/1984-main.Po # am--include-marker
 include src/$(DEPDIR)/1984-mem.Po # am--include-marker
+include src/$(DEPDIR)/1984-monitor.Po # am--include-marker
 include src/$(DEPDIR)/1984-net4cpc.Po # am--include-marker
 include src/$(DEPDIR)/1984-overlay.Po # am--include-marker
 include src/$(DEPDIR)/1984-paste.Po # am--include-marker
 include src/$(DEPDIR)/1984-ppi.Po # am--include-marker
 include src/$(DEPDIR)/1984-psg.Po # am--include-marker
 include src/$(DEPDIR)/1984-z80.Po # am--include-marker
+include src/$(DEPDIR)/1984-z80dis.Po # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -531,6 +541,20 @@ src/1984-cpc.obj: src/cpc.c
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-cpc.obj `if test -f 'src/cpc.c'; then $(CYGPATH_W) 'src/cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/cpc.c'; fi`
 
+src/1984-monitor.o: src/monitor.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-monitor.o -MD -MP -MF src/$(DEPDIR)/1984-monitor.Tpo -c -o src/1984-monitor.o `test -f 'src/monitor.c' || echo '$(srcdir)/'`src/monitor.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-monitor.Tpo src/$(DEPDIR)/1984-monitor.Po
+#	$(AM_V_CC)source='src/monitor.c' object='src/1984-monitor.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-monitor.o `test -f 'src/monitor.c' || echo '$(srcdir)/'`src/monitor.c
+
+src/1984-monitor.obj: src/monitor.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-monitor.obj -MD -MP -MF src/$(DEPDIR)/1984-monitor.Tpo -c -o src/1984-monitor.obj `if test -f 'src/monitor.c'; then $(CYGPATH_W) 'src/monitor.c'; else $(CYGPATH_W) '$(srcdir)/src/monitor.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-monitor.Tpo src/$(DEPDIR)/1984-monitor.Po
+#	$(AM_V_CC)source='src/monitor.c' object='src/1984-monitor.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-monitor.obj `if test -f 'src/monitor.c'; then $(CYGPATH_W) 'src/monitor.c'; else $(CYGPATH_W) '$(srcdir)/src/monitor.c'; fi`
+
 src/1984-net4cpc.o: src/net4cpc.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-net4cpc.o -MD -MP -MF src/$(DEPDIR)/1984-net4cpc.Tpo -c -o src/1984-net4cpc.o `test -f 'src/net4cpc.c' || echo '$(srcdir)/'`src/net4cpc.c
 	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-net4cpc.Tpo src/$(DEPDIR)/1984-net4cpc.Po
@@ -544,6 +568,20 @@ src/1984-net4cpc.obj: src/net4cpc.c
 #	$(AM_V_CC)source='src/net4cpc.c' object='src/1984-net4cpc.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-net4cpc.obj `if test -f 'src/net4cpc.c'; then $(CYGPATH_W) 'src/net4cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/net4cpc.c'; fi`
+
+src/1984-z80dis.o: src/z80dis.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-z80dis.o -MD -MP -MF src/$(DEPDIR)/1984-z80dis.Tpo -c -o src/1984-z80dis.o `test -f 'src/z80dis.c' || echo '$(srcdir)/'`src/z80dis.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-z80dis.Tpo src/$(DEPDIR)/1984-z80dis.Po
+#	$(AM_V_CC)source='src/z80dis.c' object='src/1984-z80dis.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-z80dis.o `test -f 'src/z80dis.c' || echo '$(srcdir)/'`src/z80dis.c
+
+src/1984-z80dis.obj: src/z80dis.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-z80dis.obj -MD -MP -MF src/$(DEPDIR)/1984-z80dis.Tpo -c -o src/1984-z80dis.obj `if test -f 'src/z80dis.c'; then $(CYGPATH_W) 'src/z80dis.c'; else $(CYGPATH_W) '$(srcdir)/src/z80dis.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-z80dis.Tpo src/$(DEPDIR)/1984-z80dis.Po
+#	$(AM_V_CC)source='src/z80dis.c' object='src/1984-z80dis.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-z80dis.obj `if test -f 'src/z80dis.c'; then $(CYGPATH_W) 'src/z80dis.c'; else $(CYGPATH_W) '$(srcdir)/src/z80dis.c'; fi`
 
 src/1984-crtc.o: src/crtc.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-crtc.o -MD -MP -MF src/$(DEPDIR)/1984-crtc.Tpo -c -o src/1984-crtc.o `test -f 'src/crtc.c' || echo '$(srcdir)/'`src/crtc.c
@@ -1034,12 +1072,14 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
+	-rm -f src/$(DEPDIR)/1984-monitor.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
+	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -1098,12 +1138,14 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
+	-rm -f src/$(DEPDIR)/1984-monitor.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
+	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

@@ -161,8 +161,8 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->bus.ctx       = cpc;
 
     const char *title = (model == MODEL_464)
-        ? "CPC 464  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen"
-        : "CPC 6128  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen";
+        ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
+        : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
     if (display_init(&cpc->display, title) < 0)
         return -1;
 
@@ -279,8 +279,13 @@ static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
 #define VSYNC_TO_DISPLAY_LINES 40
 
 void cpc_frame(CPC *cpc) {
+    if (cpc->paused && !cpc->step_once) return;
+    bool was_stepping = cpc->step_once;
+    cpc->step_once = false;
+
     int target = cpc->cycles_per_frame + cpc->cycle_debt;
     int done   = 0;
+    bool stop_early = false;
 
     while (done < target) {
         /* Capture CRTC state BEFORE tick for this character clock */
@@ -355,9 +360,19 @@ void cpc_frame(CPC *cpc) {
             cpc->ga.interrupt_pending = false;
             z80_interrupt(&cpc->cpu);
         }
+
+        /* Breakpoint check */
+        for (int b = 0; b < CPC_MAX_BREAKPOINTS; b++) {
+            if (cpc->bp_enabled[b] && cpc->cpu.pc == cpc->breakpoints[b]) {
+                cpc->paused   = true;
+                stop_early    = true;
+                break;
+            }
+        }
+        if (stop_early || was_stepping) break;
     }
 
-    cpc->cycle_debt = done - target;
+    cpc->cycle_debt = stop_early ? 0 : (done - target);
     cpc_frame_count++;
 
     /* Fallback palette flush — CPC 6128.
@@ -430,8 +445,8 @@ void cpc_frame(CPC *cpc) {
         }
     }
 
-    /* Push one frame of PSG audio to SDL */
-    if (cpc->audio_stream) {
+    /* Push one frame of PSG audio to SDL (skip on breakpoint/step to avoid burst) */
+    if (!stop_early && cpc->audio_stream) {
         s16 audio_buf[AUDIO_SAMPLES_FRAME];
         psg_render(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
                    PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
