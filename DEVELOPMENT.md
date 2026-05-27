@@ -68,13 +68,15 @@ The CPC firmware manages a cooperative interrupt handler that runs a "flush task
 
 `cpc_frame()` includes a fallback: if the firmware's dirty flag (0xB7F7 = 0xFF) is still set at end-of-frame and a firmware write to the palette buffer is pending, all 17 ink values are flushed directly from palette RAM to the Gate Array.
 
-**Gating the fallback.** Programs that write directly to the Gate Array (bypassing the firmware ink routine) — such as diagnostic ROMs that also run RAM tests over the firmware workspace — would otherwise corrupt the GA palette if the fallback ran unconditionally. The fallback is gated by `CPC.firmware_palette_pending`, which is:
+**Gating the fallback.** Programs that write directly to the Gate Array (bypassing the firmware ink routine) — such as diagnostic ROMs that also run RAM tests over the firmware workspace — would otherwise corrupt the GA palette if the fallback ran unconditionally. The fallback is gated by `CPC.firmware_palette_count`, which:
 
-- Set **true** when lower-ROM-enabled code writes `0xFF` to `0xB7F7` — the exact signal the firmware ink-set routine uses to request a flush.
-- Cleared when B7F7 is written to `0x00` (the flush task ran normally and closed the cycle).
-- Cleared after the fallback fires.
+- Starts incrementing each frame when lower-ROM-enabled code writes `0xFF` to `0xB7F7` and B7F7 remains `0xFF` at end-of-frame.
+- Resets to zero when any non-`0xFF` value is written to `0xB7F7` (test pattern, flush-task clear) or when lower ROM is disabled.
+- Fires the fallback when the count reaches `PALETTE_FLUSH_FRAMES` (50).
 
-RAM-resident programs running with lower ROM disabled cannot set the flag, even if they write `0xFF` to `0xB7F7` as part of a RAM test pattern. Replacement lower ROMs (e.g. diagnostic ROMs) disable themselves before running RAM tests, so they also cannot arm the flush once relocated to RAM.
+The 50-frame threshold exceeds the longest known consecutive-0xFF run produced by a RAM test (AmstradDiag 1.4L's 0xFF fill lasts 38 frames before the next test pattern is written). Spindizzy holds `0xB7F7=0xFF` indefinitely, so it fires well within the 1-second delay.
+
+RAM-resident programs running with lower ROM disabled cannot arm the counter at all.
 
 ## PSG / audio
 

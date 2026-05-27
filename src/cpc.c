@@ -25,10 +25,14 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
      * RAM-resident programs (lower ROM disabled) writing arbitrary test patterns to
      * B7F7 cannot arm the flush.  This also covers replacement lower ROMs (e.g.
      * diagnostic ROMs) that disable themselves before running RAM tests. */
-    if (addr == 0xB7F7 && val == 0xFF && cpc->mem.lower_rom_enabled)
-        cpc->firmware_palette_pending = true;
-    else if (addr == 0xB7F7 && val == 0x00)
-        cpc->firmware_palette_pending = false;
+    if (addr == 0xB7F7) {
+        if (val == 0xFF && cpc->mem.lower_rom_enabled) {
+            cpc->firmware_palette_armed = true;
+        } else {
+            cpc->firmware_palette_armed = false;
+            cpc->firmware_palette_count = 0;
+        }
+    }
 }
 
 static u8 bus_io_read(void *ctx, u16 port) {
@@ -67,12 +71,15 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 
     /* Gate Array: A15=0, A14=1 → 0x7Fxx */
     if (!(hi & 0x80) && (hi & 0x40)) {
-        if (cpc_trace_io && (val & 0xC0) == 0x80)
-            fprintf(stderr, "GA  mode=%d lorom=%d hirom=%d\n",
-                    val & 3, !(val & 8), !(val & 16));
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
+        /* When lower ROM is disabled the firmware ink-set routine is unreachable,
+         * so any pending palette flush is no longer valid. This prevents a
+         * replacement lower ROM (e.g. diagnostic) from arming the flush during
+         * its initialisation phase and then having it fire after relocation. */
+        if (!cpc->mem.lower_rom_enabled)
+            cpc->firmware_palette_count = 0;
         /* RAM banking — bits[5:0] select 16KB page for 0xC000-0xFFFF.
          * Standard on 6128; emulator extension enables it on 464 too
          * when memory > 64 KB is configured. */
@@ -343,18 +350,33 @@ void cpc_frame(CPC *cpc) {
 
     cpc->cycle_debt = done - target;
 
-    /* Fallback palette flush: if the firmware dirty flag (B7F7=0xFF) is set but
-     * the firmware's flush task has been deactivated (e.g. after game init),
-     * push B7D4–B7E4 palette RAM directly to the Gate Array.
-     * Layout: B7D4=border(pen16), B7D5=pen0, …, B7D4+16=B7E4=pen15. */
-    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF && cpc->firmware_palette_pending) {
+    /* Fallback palette flush: the CPC firmware ink routine writes 0xFF to B7F7
+     * requesting a flush.  Some games deactivate the flush task, leaving B7F7=0xFF
+     * indefinitely.  We detect this by counting consecutive frames where B7F7=0xFF
+     * persists after arming.  PALETTE_FLUSH_FRAMES must exceed the longest
+     * consecutive-0xFF-frame run of any legitimate RAM test (measured: 38 frames
+     * for AmstradDiag 1.4L), so we use 50.  Spindizzy holds B7F7=0xFF for
+     * thousands of frames, so it fires well within the delay. */
+#define PALETTE_FLUSH_FRAMES 50
+
+    /* Maintain counter: increment while B7F7=0xFF persists since arming. */
+    if (cpc->firmware_palette_armed || cpc->firmware_palette_count > 0) {
+        if (mem_read(&cpc->mem, 0xB7F7) == 0xFF)
+            cpc->firmware_palette_count++;
+        else
+            cpc->firmware_palette_count = 0;
+        cpc->firmware_palette_armed = false;
+    }
+
+    /* Fire when counter reaches threshold */
+    if (cpc->firmware_palette_count >= PALETTE_FLUSH_FRAMES) {
         for (int p = 0; p < 17; p++) {
             u8 hw  = mem_read(&cpc->mem, (u16)(0xB7D4 + p));
             u8 pen = (p == 0) ? 0x10 : (u8)(p - 1);
             ga_write(&cpc->ga, pen);
             ga_write(&cpc->ga, (u8)(0x40 | (hw & 0x1F)));
         }
-        cpc->firmware_palette_pending = false;
+        cpc->firmware_palette_count = 0;
     }
 
     /* Push one frame of PSG audio to SDL */

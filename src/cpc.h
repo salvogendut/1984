@@ -33,11 +33,14 @@ typedef struct {
     int  cycles_per_frame;
     int  cycle_debt;      /* leftover cycles from previous frame */
 
-    /* Set when firmware code (lower ROM enabled) writes 0xFF to B7F7 (palette dirty flag);
-     * gates the per-frame fallback flush so RAM-test code writing arbitrary patterns to
-     * B7F7 — including replacement lower ROMs that disable themselves before testing —
-     * cannot arm the flush. Cleared when B7F7 is written to 0x00 or after flush fires. */
-    bool firmware_palette_pending;
+    /* Palette flush gate.
+     * firmware_palette_armed: set when lower-ROM-enabled code writes 0xFF to B7F7.
+     * firmware_palette_count: counts consecutive end-of-frames where B7F7=0xFF
+     *   persists since arming.  Fallback fires when count >= PALETTE_FLUSH_FRAMES.
+     *   A non-0xFF write to B7F7 (test pattern, flush-task clear) resets the count,
+     *   preventing memory-test fills from triggering false flushes. */
+    bool firmware_palette_armed;
+    int  firmware_palette_count;
 
     /* Raster position (in character-clock units; 16 output pixels each) */
     int  raster_x;        /* 0 = first char after hsync end */
