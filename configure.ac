@@ -15,9 +15,8 @@ AC_SUBST([AM_CFLAGS])
 PKG_PROG_PKG_CONFIG
 
 # Required libraries
-PKG_CHECK_MODULES([SDL3],   [sdl3],   [], [AC_MSG_ERROR([SDL3 not found])])
-PKG_CHECK_MODULES([LIBPNG], [libpng], [], [AC_MSG_ERROR([libpng not found])])
-AC_CHECK_LIB([m], [sqrt],  [], [AC_MSG_ERROR([libm not found])])
+PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
+AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

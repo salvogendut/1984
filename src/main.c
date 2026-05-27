@@ -33,7 +33,7 @@ static void usage(const char *prog, int code) {
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
-        "  F4     Save screenshot\n"
+        "  F4     Save screenshot (.ppm)\n"
         "  F5     Warm reset\n"
         "  F9     Options overlay\n"
         "  F11    Toggle fullscreen\n"
@@ -239,8 +239,8 @@ int main(int argc, char *argv[]) {
                     char tmp[256];
                     strncpy(tmp, argv[0], sizeof(tmp) - 1);
                     tmp[sizeof(tmp) - 1] = '\0';
-                    snprintf(path, sizeof(path), "%s_%ld.png", basename(tmp), (long)time(NULL));
-                    display_save_png(&cpc.display, path);
+                    snprintf(path, sizeof(path), "%s_%ld.ppm", basename(tmp), (long)time(NULL));
+                    display_save_ppm(&cpc.display, path);
                     if (sfx_stream && sfx_buf) {
                         SDL_ClearAudioStream(sfx_stream);
                         SDL_PutAudioStreamData(sfx_stream, sfx_buf, (int)sfx_buf_len);
@@ -326,7 +326,7 @@ int main(int argc, char *argv[]) {
                 if (hist[i]) fprintf(stderr, "  [%02X] = %d\n", i, hist[i]);
         }
         if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
-            display_save_png(&cpc.display, screenshot_path);
+            display_save_ppm(&cpc.display, screenshot_path);
             running = false;
         }
 
