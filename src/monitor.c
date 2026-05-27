@@ -17,43 +17,65 @@
 #define WIN_H        ((int)(MON_ROWS * CHAR_H * FONT_SCALE))   /* 300 */
 
 /* ---- Colours ---- */
-#define C_BG         0x00, 0x00, 0x00
-#define C_TEXT       0xCC, 0xFF, 0xCC   /* green phosphor */
-#define C_DIM        0x44, 0x88, 0x44
-#define C_MORE       0xFF, 0xFF, 0x00   /* "-- more --" in yellow */
-#define C_PROMPT     0x88, 0xFF, 0x88
-#define C_ADDR       0xAA, 0xCC, 0xFF
-#define C_BYTES      0x77, 0x99, 0xBB
-#define C_MNEM       0xCC, 0xFF, 0xCC
+#define C_BG      0x00, 0x00, 0x00
+#define C_TEXT    0xCC, 0xFF, 0xCC   /* green phosphor */
+#define C_MORE    0xFF, 0xFF, 0x00   /* "-- more --" in yellow */
+#define C_PROMPT  0x88, 0xFF, 0x88
 
-/* ---- Paging / streaming disassembly state ---- */
+/* ---- Paging mode ---- */
+typedef enum { PAGE_NONE, PAGE_DIS, PAGE_HEX } PageMode;
+
+/* ---- Disassembly streaming state ---- */
 typedef struct {
     bool  active;
-    u16   addr;        /* next address to disassemble */
+    u16   addr;
     u16   end_addr;
     bool  has_end;
-    int   lines_left;  /* for no-end case (max 10) */
-    u8    snap[65536]; /* memory snapshot taken at command start */
+    int   lines_left;
+    u8    snap[65536];
 } DisState;
+
+/* ---- Hex dump streaming state ---- */
+typedef struct {
+    bool  active;
+    u32   addr;
+    u32   end_addr;
+    bool  has_end;
+} HexState;
+
+/* ---- Hex dump format constants ----
+ *  >AAAAA XX XX XX XX XX XX XX XX: CCCCCCCC
+ *  col 0      = '>'
+ *  col 1-5    = 5-digit address
+ *  col 6      = ' '
+ *  col 7-29   = 8 hex bytes "XX " × 7 + "XX" (23 chars)
+ *  col 30     = ':'
+ *  col 31     = ' '
+ *  col 32-39  = 8 ASCII chars  ← reverse video starts here
+ */
+#define HEX_REV_COL  32
+#define HEX_BYTES    8
 
 struct Monitor {
     SDL_Window   *window;
     SDL_Renderer *renderer;
     bool          open;
 
-    /* Output screen buffer — OUT_ROWS lines of text */
-    char          screen[OUT_ROWS][MON_COLS + 1];
+    /* Output screen buffer */
+    char  screen[OUT_ROWS][MON_COLS + 1];
+    int   screen_rev[OUT_ROWS];  /* 0 = normal; >0 = column where reverse video starts */
 
     /* Input line */
-    char          input[MON_COLS + 1];
-    int           input_len;
+    char  input[MON_COLS + 1];
+    int   input_len;
 
     /* Paging */
-    bool          waiting_more;   /* showing "-- more --", blocking input */
-    int           page_lines;     /* output lines emitted this page */
-    DisState      dis;
+    PageMode  page_mode;
+    int       page_lines;
+    DisState  dis;
+    HexState  hex;
 
-    Mem          *mem;
+    Mem *mem;
 };
 
 /* ---- Screen helpers ---- */
@@ -61,29 +83,34 @@ struct Monitor {
 static void screen_scroll(Monitor *mon) {
     memmove(mon->screen[0], mon->screen[1],
             (OUT_ROWS - 1) * (MON_COLS + 1));
+    memmove(&mon->screen_rev[0], &mon->screen_rev[1],
+            (OUT_ROWS - 1) * sizeof(int));
     memset(mon->screen[OUT_ROWS - 1], ' ', MON_COLS);
     mon->screen[OUT_ROWS - 1][MON_COLS] = '\0';
+    mon->screen_rev[OUT_ROWS - 1] = 0;
 }
 
-static void screen_puts(Monitor *mon, const char *line) {
+static void screen_puts_ex(Monitor *mon, const char *line, int rev_col) {
     screen_scroll(mon);
     int len = (int)strlen(line);
     if (len > MON_COLS) len = MON_COLS;
     memcpy(mon->screen[OUT_ROWS - 1], line, (size_t)len);
-    mon->screen[OUT_ROWS - 1][len] = '\0';
-    /* pad with spaces */
     for (int i = len; i < MON_COLS; i++)
         mon->screen[OUT_ROWS - 1][i] = ' ';
     mon->screen[OUT_ROWS - 1][MON_COLS] = '\0';
+    mon->screen_rev[OUT_ROWS - 1] = rev_col;
+}
+
+static void screen_puts(Monitor *mon, const char *line) {
+    screen_puts_ex(mon, line, 0);
 }
 
 /* ---- Disassembly streaming ---- */
 
-/* Emit one disassembly line; returns false if we should pause for paging. */
 static bool dis_emit_line(Monitor *mon) {
     if (!mon->dis.active) return true;
-    if (mon->dis.has_end && (u16)(mon->dis.addr - mon->dis.end_addr) < 0x8000) {
-        /* past end */
+    if (mon->dis.has_end &&
+        (u16)(mon->dis.addr - mon->dis.end_addr) < 0x8000) {
         mon->dis.active = false;
         return true;
     }
@@ -92,12 +119,11 @@ static bool dis_emit_line(Monitor *mon) {
         return true;
     }
 
-    u16 addr = mon->dis.addr;
+    u16  addr = mon->dis.addr;
     char mnem[64];
     int  bytes = z80dis(mon->dis.snap, addr, mnem, sizeof(mnem));
     if (bytes <= 0) bytes = 1;
 
-    /* Build hex bytes string (up to 4 bytes shown) */
     char hexbuf[16] = "";
     int  show = bytes > 4 ? 4 : bytes;
     for (int i = 0; i < show; i++) {
@@ -114,10 +140,8 @@ static bool dis_emit_line(Monitor *mon) {
     if (!mon->dis.has_end) mon->dis.lines_left--;
     mon->page_lines++;
 
-    /* Pause when output area is full (leave 1 row for "-- more --") */
-    if (mon->page_lines >= OUT_ROWS - 1 && mon->dis.active) {
-        return false;  /* caller should show "-- more --" */
-    }
+    if (mon->page_lines >= OUT_ROWS - 1 && mon->dis.active)
+        return false;
     return true;
 }
 
@@ -125,11 +149,79 @@ static void dis_run_page(Monitor *mon) {
     mon->page_lines = 0;
     while (mon->dis.active) {
         if (!dis_emit_line(mon)) {
-            mon->waiting_more = true;
+            mon->page_mode = PAGE_DIS;
             return;
         }
     }
-    mon->waiting_more = false;
+    mon->page_mode = PAGE_NONE;
+}
+
+/* ---- Hex dump streaming ---- */
+
+static u8 hex_read(Monitor *mon, u32 addr) {
+    if (addr < (u32)mon->mem->ram_size)
+        return mon->mem->ram[addr];
+    return 0xFF;
+}
+
+static bool hex_emit_line(Monitor *mon) {
+    if (!mon->hex.active) return true;
+    if (mon->hex.has_end && mon->hex.addr > mon->hex.end_addr) {
+        mon->hex.active = false;
+        return true;
+    }
+
+    u32 addr = mon->hex.addr;
+
+    /* Determine how many bytes to show on this line */
+    int count = HEX_BYTES;
+    if (mon->hex.has_end && addr + (u32)count - 1 > mon->hex.end_addr)
+        count = (int)(mon->hex.end_addr - addr + 1);
+
+    /* Build hex portion */
+    char hexpart[HEX_BYTES * 3 + 1] = "";
+    for (int i = 0; i < HEX_BYTES; i++) {
+        char tmp[4];
+        if (i < count)
+            snprintf(tmp, sizeof(tmp), "%02X ", hex_read(mon, addr + (u32)i));
+        else
+            snprintf(tmp, sizeof(tmp), "   ");  /* pad if short line */
+        strncat(hexpart, tmp, sizeof(hexpart) - strlen(hexpart) - 1);
+    }
+    /* Remove trailing space after last byte, replace with colon-space */
+    int hlen = (int)strlen(hexpart);
+    if (hlen > 0 && hexpart[hlen - 1] == ' ') hexpart[hlen - 1] = '\0';
+
+    /* Build ASCII portion (non-printable → '.') */
+    char ascpart[HEX_BYTES + 1];
+    for (int i = 0; i < HEX_BYTES; i++) {
+        u8 b = (i < count) ? hex_read(mon, addr + (u32)i) : ' ';
+        ascpart[i] = (b >= 0x20 && b < 0x7F) ? (char)b : '.';
+    }
+    ascpart[HEX_BYTES] = '\0';
+
+    char line[MON_COLS + 32];
+    snprintf(line, sizeof(line), ">%05X %s: %s",
+             addr, hexpart, ascpart);
+    screen_puts_ex(mon, line, HEX_REV_COL);
+
+    mon->hex.addr += (u32)HEX_BYTES;
+    mon->page_lines++;
+
+    if (mon->page_lines >= OUT_ROWS - 1 && mon->hex.active)
+        return false;
+    return true;
+}
+
+static void hex_run_page(Monitor *mon) {
+    mon->page_lines = 0;
+    while (mon->hex.active) {
+        if (!hex_emit_line(mon)) {
+            mon->page_mode = PAGE_HEX;
+            return;
+        }
+    }
+    mon->page_mode = PAGE_NONE;
 }
 
 /* ---- Command execution ---- */
@@ -139,31 +231,45 @@ static void mon_puts(Monitor *mon, const char *s) {
 }
 
 static void cmd_disassemble(Monitor *mon, const char *args) {
-    /* Parse: D <hex1> [<hex2>] */
     unsigned a1 = 0, a2 = 0;
     int n = sscanf(args, "%x %x", &a1, &a2);
     if (n < 1) { mon_puts(mon, "Usage: D <addr> [<end_addr>]"); return; }
 
-    /* Snapshot current CPU-visible memory */
     for (int i = 0; i < 65536; i++)
         mon->dis.snap[i] = mem_read(mon->mem, (u16)i);
 
-    mon->dis.addr     = (u16)a1;
-    mon->dis.has_end  = (n >= 2);
-    mon->dis.end_addr = (u16)a2;
+    mon->dis.addr       = (u16)a1;
+    mon->dis.has_end    = (n >= 2);
+    mon->dis.end_addr   = (u16)a2;
     mon->dis.lines_left = 10;
-    mon->dis.active   = true;
-
+    mon->dis.active     = true;
     dis_run_page(mon);
 }
 
+static void cmd_hexdump(Monitor *mon, const char *args) {
+    unsigned a1 = 0, a2 = 0;
+    int n = sscanf(args, "%x %x", &a1, &a2);
+    if (n < 1) { mon_puts(mon, "Usage: M <addr> [<end_addr>]"); return; }
+
+    mon->hex.addr     = a1;
+    mon->hex.has_end  = (n >= 2);
+    mon->hex.end_addr = a2;
+    mon->hex.active   = true;
+
+    /* No end address: fill one page (OUT_ROWS-1 lines = (OUT_ROWS-1)*8 bytes) */
+    if (!mon->hex.has_end) {
+        mon->hex.has_end  = true;
+        mon->hex.end_addr = a1 + (u32)(OUT_ROWS - 2) * HEX_BYTES - 1;
+    }
+
+    hex_run_page(mon);
+}
+
 static void mon_exec(Monitor *mon, const char *raw) {
-    /* Echo the command */
     char echo[MON_COLS + 4];
     snprintf(echo, sizeof(echo), "> %s", raw);
     mon_puts(mon, echo);
 
-    /* Strip leading whitespace */
     while (*raw == ' ') raw++;
     if (*raw == '\0') return;
 
@@ -172,15 +278,12 @@ static void mon_exec(Monitor *mon, const char *raw) {
     while (*args == ' ') args++;
 
     switch (cmd) {
-    case 'D':
-        cmd_disassemble(mon, args);
-        break;
+    case 'D': cmd_disassemble(mon, args); break;
+    case 'M': cmd_hexdump(mon, args);     break;
     case 'X':
-    case 'Q':
-        mon->open = false;
-        break;
+    case 'Q': mon->open = false;          break;
     default:
-        mon_puts(mon, "Commands:  D <addr> [<end>]   X = exit");
+        mon_puts(mon, "Commands:  D <addr> [<end>]   M <addr> [<end>]   X = exit");
         break;
     }
 }
@@ -188,10 +291,11 @@ static void mon_exec(Monitor *mon, const char *raw) {
 /* ---- Input handling ---- */
 
 static void handle_keydown(Monitor *mon, SDL_Keycode key, const char *text) {
-    if (mon->waiting_more) {
+    if (mon->page_mode != PAGE_NONE) {
         if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) {
             mon->page_lines = 0;
-            dis_run_page(mon);
+            if (mon->page_mode == PAGE_DIS)      dis_run_page(mon);
+            else if (mon->page_mode == PAGE_HEX) hex_run_page(mon);
         }
         return;
     }
@@ -204,7 +308,6 @@ static void handle_keydown(Monitor *mon, SDL_Keycode key, const char *text) {
     } else if (key == SDLK_BACKSPACE) {
         if (mon->input_len > 0) mon->input[--mon->input_len] = '\0';
     } else if (text && *text >= 0x20) {
-        /* Printable text input */
         int tlen = (int)strlen(text);
         if (mon->input_len + tlen < MON_COLS - 4) {
             memcpy(mon->input + mon->input_len, text, (size_t)tlen);
@@ -216,16 +319,36 @@ static void handle_keydown(Monitor *mon, SDL_Keycode key, const char *text) {
 
 /* ---- Rendering ---- */
 
-static void set_color(SDL_Renderer *r, Uint8 R, Uint8 G, Uint8 B) {
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r, R, G, B, 255);
-}
+/* Draw a line; if rev_col > 0, the portion from rev_col onward is shown
+ * in reverse video (green background, black text). */
+static void draw_line(SDL_Renderer *r, float y, const char *line, int rev_col) {
+    int len = (int)strlen(line);
 
-static void draw_text(SDL_Renderer *r, float x, float y, const char *s,
-                      Uint8 R, Uint8 G, Uint8 B) {
+    if (rev_col <= 0 || rev_col >= len) {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(r, C_TEXT, 255);
+        SDL_RenderDebugText(r, 0, y, line);
+        return;
+    }
+
+    /* Normal part (before reverse section) */
+    char tmp[MON_COLS + 1];
+    memcpy(tmp, line, (size_t)rev_col);
+    tmp[rev_col] = '\0';
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r, R, G, B, 255);
-    SDL_RenderDebugText(r, x, y, s);
+    SDL_SetRenderDrawColor(r, C_TEXT, 255);
+    SDL_RenderDebugText(r, 0, y, tmp);
+
+    /* Green background rect behind the reversed chars */
+    int  rlen = len - rev_col;
+    float rx  = (float)(rev_col * CHAR_W);
+    SDL_FRect bg = { rx, y, (float)(rlen * CHAR_W), (float)CHAR_H };
+    SDL_SetRenderDrawColor(r, C_TEXT, 255);
+    SDL_RenderFillRect(r, &bg);
+
+    /* Reversed chars in black */
+    SDL_SetRenderDrawColor(r, C_BG, 255);
+    SDL_RenderDebugText(r, rx, y, line + rev_col);
 }
 
 void monitor_render(Monitor *mon) {
@@ -235,26 +358,29 @@ void monitor_render(Monitor *mon) {
     SDL_RenderClear(mon->renderer);
     SDL_SetRenderScale(mon->renderer, FONT_SCALE, FONT_SCALE);
 
-    /* Output lines */
     for (int row = 0; row < OUT_ROWS; row++) {
         float y = (float)(row * CHAR_H);
-        draw_text(mon->renderer, 0, y, mon->screen[row], C_TEXT);
+        draw_line(mon->renderer, y, mon->screen[row], mon->screen_rev[row]);
     }
 
-    /* Bottom row: "-- more --" or prompt + input */
     float input_y = (float)(OUT_ROWS * CHAR_H);
-    if (mon->waiting_more) {
-        draw_text(mon->renderer, 0, input_y, "-- more -- (ENTER/SPACE)", C_MORE);
+    if (mon->page_mode != PAGE_NONE) {
+        SDL_SetRenderDrawBlendMode(mon->renderer, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(mon->renderer, C_MORE, 255);
+        SDL_RenderDebugText(mon->renderer, 0, input_y,
+                            "-- more -- (ENTER/SPACE to continue)");
     } else {
-        /* Prompt */
-        draw_text(mon->renderer, 0, input_y, ">_", C_PROMPT);
-        /* Input text */
-        if (mon->input_len > 0)
-            draw_text(mon->renderer, (float)(3 * CHAR_W), input_y,
-                      mon->input, C_TEXT);
+        SDL_SetRenderDrawBlendMode(mon->renderer, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(mon->renderer, C_PROMPT, 255);
+        SDL_RenderDebugText(mon->renderer, 0, input_y, ">_");
+        if (mon->input_len > 0) {
+            SDL_SetRenderDrawColor(mon->renderer, C_TEXT, 255);
+            SDL_RenderDebugText(mon->renderer,
+                                (float)(3 * CHAR_W), input_y, mon->input);
+        }
         /* Cursor block */
         float cx = (float)((3 + mon->input_len) * CHAR_W);
-        set_color(mon->renderer, C_TEXT);
+        SDL_SetRenderDrawColor(mon->renderer, C_TEXT, 255);
         SDL_FRect cur = { cx, input_y, CHAR_W, CHAR_H };
         SDL_RenderFillRect(mon->renderer, &cur);
     }
@@ -271,10 +397,8 @@ Monitor *monitor_create(Mem *mem) {
     mon->mem  = mem;
     mon->open = false;
 
-    mon->window = SDL_CreateWindow(
-        "Memory Monitor",
-        WIN_W, WIN_H,
-        SDL_WINDOW_RESIZABLE);
+    mon->window = SDL_CreateWindow("Memory Monitor", WIN_W, WIN_H,
+                                   SDL_WINDOW_RESIZABLE);
     if (!mon->window) { free(mon); return NULL; }
 
     mon->renderer = SDL_CreateRenderer(mon->window, NULL);
@@ -286,9 +410,11 @@ Monitor *monitor_create(Mem *mem) {
 
     SDL_HideWindow(mon->window);
 
-    /* Seed the screen with a welcome message */
     mon_puts(mon, "CPC Memory Monitor");
-    mon_puts(mon, "Commands:  D <addr> [<end_addr>]   X = exit");
+    mon_puts(mon, "  D <addr> [<end>]  disassemble Z80 (10 lines default)");
+    mon_puts(mon, "  M <addr> [<end>]  hex+ASCII dump (page default)");
+    mon_puts(mon, "  X                 close monitor");
+    mon_puts(mon, "  Addresses: 4-digit hex (CPU) or 5-digit hex (physical RAM)");
     mon_puts(mon, "");
 
     return mon;
@@ -319,7 +445,6 @@ void monitor_open(Monitor *mon) {
 bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
     if (!mon) return false;
 
-    /* Close button on the monitor window */
     if (e->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
         e->window.windowID == SDL_GetWindowID(mon->window)) {
         mon->open = false;
@@ -327,7 +452,6 @@ bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
         return true;
     }
 
-    /* Only consume key events directed at the monitor window */
     if (e->type == SDL_EVENT_KEY_DOWN &&
         e->key.windowID == SDL_GetWindowID(mon->window)) {
         handle_keydown(mon, e->key.key, NULL);
@@ -339,6 +463,5 @@ bool monitor_handle_event(Monitor *mon, SDL_Event *e) {
         return true;
     }
 
-    /* Hide window when it loses focus? No — let it stay visible. */
     return false;
 }
