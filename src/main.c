@@ -110,6 +110,8 @@ int main(int argc, char *argv[]) {
             trace_io = true;
         } else if (strcmp(argv[i], "--trace-palette") == 0) {
             cpc_trace_palette = 1;
+        } else if (strcmp(argv[i], "--trace-input") == 0) {
+            cpc_trace_input = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
@@ -137,6 +139,7 @@ int main(int argc, char *argv[]) {
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
 
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -284,9 +287,14 @@ int main(int argc, char *argv[]) {
                     char *text = SDL_GetClipboardText();
                     if (text) { paste_text(&paste, text); SDL_free(text); }
                 } else {
+                    if (cpc_trace_input)
+                        fprintf(stderr, "[input] KEY_DOWN scancode=%d name=%s\n",
+                                ev.key.scancode, SDL_GetScancodeName(ev.key.scancode));
                     cpc_key_event(&cpc, ev.key.scancode, true);
                 }
             } else if (ev.type == SDL_EVENT_KEY_UP) {
+                if (cpc_trace_input)
+                    fprintf(stderr, "[input] KEY_UP   scancode=%d\n", ev.key.scancode);
                 cpc_key_event(&cpc, ev.key.scancode, false);
             }
         }

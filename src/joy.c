@@ -1,5 +1,7 @@
 #include "joy.h"
+#include "cpc.h"
 #include <string.h>
+#include <stdio.h>
 
 /* CPC joystick 1: keyboard matrix row 9, bits 0-5 */
 #define JOY_ROW   9
@@ -17,17 +19,24 @@ void joy_init(Joy *j) {
 
     int count = 0;
     SDL_JoystickID *ids = SDL_GetJoysticks(&count);
+    fprintf(stderr, "joy: %d device(s) found at startup\n", count);
     if (!ids) return;
 
     for (int i = 0; i < count && (j->count + j->raw_count) < JOY_MAX_PADS; i++) {
         if (SDL_IsGamepad(ids[i])) {
             SDL_Gamepad *g = SDL_OpenGamepad(ids[i]);
-            if (g && j->count < JOY_MAX_PADS)
+            if (g && j->count < JOY_MAX_PADS) {
+                fprintf(stderr, "joy: opened gamepad %d: %s\n", ids[i],
+                        SDL_GetGamepadName(g));
                 j->pad[j->count++] = g;
+            }
         } else {
             SDL_Joystick *r = SDL_OpenJoystick(ids[i]);
-            if (r && j->raw_count < JOY_MAX_PADS)
+            if (r && j->raw_count < JOY_MAX_PADS) {
+                fprintf(stderr, "joy: opened raw joystick %d: %s\n", ids[i],
+                        SDL_GetJoystickName(r));
                 j->raw[j->raw_count++] = r;
+            }
         }
     }
     SDL_free(ids);
@@ -57,6 +66,9 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
     /* ---- Gamepad (database-mapped devices) ---- */
 
     case SDL_EVENT_GAMEPAD_ADDED: {
+        if (cpc_trace_input)
+            fprintf(stderr, "[input] SDL_EVENT_GAMEPAD_ADDED which=%d (already count=%d)\n",
+                    ev->gdevice.which, j->count);
         if (j->count < JOY_MAX_PADS) {
             SDL_Gamepad *g = SDL_OpenGamepad(ev->gdevice.which);
             if (g) j->pad[j->count++] = g;
@@ -81,6 +93,9 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
         bool pressed = (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+        if (cpc_trace_input)
+            fprintf(stderr, "[input] gamepad button %d %s\n",
+                    ev->gbutton.button, pressed ? "DOWN" : "UP");
         int col = -1;
         switch ((SDL_GamepadButton)ev->gbutton.button) {
         case SDL_GAMEPAD_BUTTON_DPAD_UP:    col = JOY_UP;    break;
@@ -102,6 +117,9 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
     }
 
     case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+        if (cpc_trace_input)
+            fprintf(stderr, "[input] gamepad axis %d = %d\n",
+                    ev->gaxis.axis, ev->gaxis.value);
         switch ((SDL_GamepadAxis)ev->gaxis.axis) {
         case SDL_GAMEPAD_AXIS_LEFTX:
             axis_update(k, JOY_LEFT, JOY_RIGHT, ev->gaxis.value);
@@ -174,8 +192,12 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
         }
         if (!is_raw) break;
         switch (ev->jaxis.axis) {
-        case 0: axis_update(k, JOY_LEFT, JOY_RIGHT, ev->jaxis.value); return true;
-        case 1: axis_update(k, JOY_UP,   JOY_DOWN,  ev->jaxis.value); return true;
+        case 0:
+            if (cpc_trace_input) fprintf(stderr, "[input] raw joy axis0=%d\n", ev->jaxis.value);
+            axis_update(k, JOY_LEFT, JOY_RIGHT, ev->jaxis.value); return true;
+        case 1:
+            if (cpc_trace_input) fprintf(stderr, "[input] raw joy axis1=%d\n", ev->jaxis.value);
+            axis_update(k, JOY_UP,   JOY_DOWN,  ev->jaxis.value); return true;
         default: break;
         }
         break;
