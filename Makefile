@@ -106,13 +106,14 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
-	src/1984-crtc.$(OBJEXT) src/1984-disk.$(OBJEXT) \
-	src/1984-display.$(OBJEXT) src/1984-fdc.$(OBJEXT) \
-	src/1984-gate_array.$(OBJEXT) src/1984-joy.$(OBJEXT) \
-	src/1984-kbd.$(OBJEXT) src/1984-main.$(OBJEXT) \
-	src/1984-mem.$(OBJEXT) src/1984-overlay.$(OBJEXT) \
-	src/1984-paste.$(OBJEXT) src/1984-ppi.$(OBJEXT) \
-	src/1984-psg.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-net4cpc.$(OBJEXT) src/1984-crtc.$(OBJEXT) \
+	src/1984-disk.$(OBJEXT) src/1984-display.$(OBJEXT) \
+	src/1984-fdc.$(OBJEXT) src/1984-gate_array.$(OBJEXT) \
+	src/1984-joy.$(OBJEXT) src/1984-kbd.$(OBJEXT) \
+	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
+	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
+	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
+	src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -139,9 +140,9 @@ am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
 	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-gate_array.Po \
 	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
 	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
-	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-z80.Po
+	src/$(DEPDIR)/1984-net4cpc.Po src/$(DEPDIR)/1984-overlay.Po \
+	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-ppi.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-z80.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -256,7 +257,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-SDL3_CFLAGS = -I/var/lib/flatpak/runtime/org.freedesktop.Sdk/x86_64/25.08/d1eb1c10d166e7a611e0f26d2332aa9265ce2d048b054dca07f7919258ee1a0b/files/include
+SDL3_CFLAGS = -I/include
 SDL3_LIBS = /usr/lib64/libSDL3.so.0
 SET_MAKE = 
 SHELL = /bin/sh
@@ -310,6 +311,7 @@ top_srcdir = .
 1984_SOURCES = \
 	src/config.c \
 	src/cpc.c \
+	src/net4cpc.c \
 	src/crtc.c \
 	src/disk.c \
 	src/display.c \
@@ -419,6 +421,8 @@ src/1984-config.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-cpc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-net4cpc.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-crtc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-disk.$(OBJEXT): src/$(am__dirstamp) \
@@ -470,6 +474,7 @@ include src/$(DEPDIR)/1984-joy.Po # am--include-marker
 include src/$(DEPDIR)/1984-kbd.Po # am--include-marker
 include src/$(DEPDIR)/1984-main.Po # am--include-marker
 include src/$(DEPDIR)/1984-mem.Po # am--include-marker
+include src/$(DEPDIR)/1984-net4cpc.Po # am--include-marker
 include src/$(DEPDIR)/1984-overlay.Po # am--include-marker
 include src/$(DEPDIR)/1984-paste.Po # am--include-marker
 include src/$(DEPDIR)/1984-ppi.Po # am--include-marker
@@ -525,6 +530,20 @@ src/1984-cpc.obj: src/cpc.c
 #	$(AM_V_CC)source='src/cpc.c' object='src/1984-cpc.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-cpc.obj `if test -f 'src/cpc.c'; then $(CYGPATH_W) 'src/cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/cpc.c'; fi`
+
+src/1984-net4cpc.o: src/net4cpc.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-net4cpc.o -MD -MP -MF src/$(DEPDIR)/1984-net4cpc.Tpo -c -o src/1984-net4cpc.o `test -f 'src/net4cpc.c' || echo '$(srcdir)/'`src/net4cpc.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-net4cpc.Tpo src/$(DEPDIR)/1984-net4cpc.Po
+#	$(AM_V_CC)source='src/net4cpc.c' object='src/1984-net4cpc.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-net4cpc.o `test -f 'src/net4cpc.c' || echo '$(srcdir)/'`src/net4cpc.c
+
+src/1984-net4cpc.obj: src/net4cpc.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-net4cpc.obj -MD -MP -MF src/$(DEPDIR)/1984-net4cpc.Tpo -c -o src/1984-net4cpc.obj `if test -f 'src/net4cpc.c'; then $(CYGPATH_W) 'src/net4cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/net4cpc.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-net4cpc.Tpo src/$(DEPDIR)/1984-net4cpc.Po
+#	$(AM_V_CC)source='src/net4cpc.c' object='src/1984-net4cpc.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-net4cpc.obj `if test -f 'src/net4cpc.c'; then $(CYGPATH_W) 'src/net4cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/net4cpc.c'; fi`
 
 src/1984-crtc.o: src/crtc.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-crtc.o -MD -MP -MF src/$(DEPDIR)/1984-crtc.Tpo -c -o src/1984-crtc.o `test -f 'src/crtc.c' || echo '$(srcdir)/'`src/crtc.c
@@ -1015,6 +1034,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
+	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
@@ -1078,6 +1098,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
+	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po

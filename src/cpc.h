@@ -27,6 +27,7 @@ typedef struct {
     SDL_AudioStream *audio_stream;
     Disk       drive[2];    /* drive[0]=A, drive[1]=B */
     FDC        fdc;
+    bool       net4cpc;    /* Net4CPC W5100S Ethernet add-on present */
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

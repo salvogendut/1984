@@ -174,6 +174,17 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 
 **Diagnostics Cartridge** (Advanced → Diag Cart): toggles the lower ROM between the model's default OS and `AmstradDiagLower.rom`. When ON, the machine boots into the Amstrad Diagnostics program. When OFF, the lower ROM reverts to the model's normal OS ROM. The toggle is greyed out if `AmstradDiagLower.rom` is not found in the ROMs directory. The change triggers a cold boot on save.
 
+**Net4CPC** (Advanced → Net4CPC): enables emulation of the Net4CPC Ethernet add-on board based on the WIZnet W5100S chip. When enabled, four I/O ports are exposed at 0xFD20–0xFD23:
+
+| Port | Name | Description |
+|------|------|-------------|
+| 0xFD20 | MR | Mode Register — reads 0x03 when the chip is present |
+| 0xFD21 | IDM_ARH | High byte of the 16-bit indirect address register |
+| 0xFD22 | IDM_ARL | Low byte of the 16-bit indirect address register |
+| 0xFD23 | IDM_DR | Data register — read/write to the W5100S register space at the current address; auto-increments when MR bit 1 (AI) is set |
+
+Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library. The toggle triggers a cold boot on save.
+
 Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ## Development
