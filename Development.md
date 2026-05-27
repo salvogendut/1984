@@ -22,6 +22,7 @@ Each source file maps to one hardware component:
 | `src/disk.c` / `disk.h` | DSK disk image parser — track/sector layout, AMSDOS directory, read |
 | `src/fdc.c` / `fdc.h` | µPD765 FDC — command/exec/result phases, READ DATA, SEEK, SENSE INTERRUPT STATUS |
 | `src/rtc.c` / `rtc.h` | DS12887 RTC — register read/write, NVRAM, time from host `localtime()` |
+| `src/ide.c` / `ide.h` | ATA PIO IDE — SYMBiFACE II / Cyboard port mapping, raw disk image backend, IDENTIFY/READ/WRITE |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -102,6 +103,8 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | A11=0 | PPI (8255) | 0xF4–0xF7xx |
 | hi=0xFA | FDC motor control | 0xFAxx |
 | hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |
+| hi=0xFD, lo=0x06 | IDE Alt Status / Device Control | 0xFD06 |
+| hi=0xFD, lo=0x08–0x0F | IDE task-file registers (Data … Command) | 0xFD08–0xFD0F |
 | hi=0xFD, lo=0x14 | RTC data (DS12887) | 0xFD14 |
 | hi=0xFD, lo=0x15 | RTC address (DS12887) | 0xFD15 |
 | hi=0xFD, lo=0x20–0x23 | Net4CPC W5100S | 0xFD20–0xFD23 |
@@ -163,7 +166,7 @@ The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called onc
 
 `cpc_reset()` performs a warm reset: all chips are reinitialised (Z80, Gate Array, CRTC, PPI, PSG, keyboard) and raster counters are cleared, but ROM and RAM contents are preserved — matching real CPC hardware reset behaviour.
 
-The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically when any of the following are saved: model change, RAM size change, DD1 toggle, lower ROM replacement, or any expansion ROM slot change. ROM data and `Mem.ram_size` are updated in-place before the reset so the machine immediately boots with the new configuration without restarting the emulator.
+The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically when any of the following are saved: model change, RAM size change, DD1 toggle, lower ROM replacement, any expansion ROM slot change, or any change to the SYMBiFACE IDE enable state or image path. ROM data and `Mem.ram_size` are updated in-place before the reset so the machine immediately boots with the new configuration without restarting the emulator.
 
 ---
 
@@ -193,7 +196,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
 | Storage | Drive A, Drive B |
-| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], RTC, DD1, ROM Slots →, Diag Cart, Net4CPC |
+| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], RTC, DD1, ROM Slots →, Diag Cart, Net4CPC, SYMBiFACE IDE |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
@@ -241,6 +244,43 @@ The RTC emulates a DS12887 as used in the Cyboard and Symbiface II CPC add-ons. 
 5. Sets RegB bit 7 (SET=1) to freeze the clock, writes the time back, then clears SET
 
 **Writes to time/date registers** are accepted but silently discarded — the host clock is always the authoritative source. Step 5 above is therefore a no-op on the emulated chip.
+
+---
+
+## SYMBiFACE II / Cyboard IDE (`src/ide.c`)
+
+The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cyboard CPC add-ons. It is enabled via `symbiface_ide=true` in `1984.conf` (or Advanced → SYMBiFACE IDE in the overlay). The backend is a raw disk image opened with `fopen("r+b")`; the FAT filesystem is handled entirely by the guest OS driver.
+
+**Port mapping** (confirmed against HDCPM.ROM disassembly):
+
+| Port | Direction | ATA register |
+|------|-----------|-------------|
+| 0xFD06 | read | Alternate Status (no side effects) |
+| 0xFD06 | write | Device Control (bit 2 = SRST) |
+| 0xFD08 | read/write | Data |
+| 0xFD09 | read | Error |
+| 0xFD09 | write | Features |
+| 0xFD0A | read/write | Sector Count |
+| 0xFD0B | read/write | LBA Low |
+| 0xFD0C | read/write | LBA Mid |
+| 0xFD0D | read/write | LBA High |
+| 0xFD0E | read/write | Device / Head |
+| 0xFD0F | read | Status |
+| 0xFD0F | write | Command |
+
+**Supported commands:**
+
+| Command | Opcode | Notes |
+|---------|--------|-------|
+| IDENTIFY DEVICE | 0xEC | Returns 512-byte block; ATA strings are byte-swapped per spec; word 49 sets LBA capability |
+| READ SECTORS | 0x20 / 0x21 | LBA28; `fseeko` + `fread` per sector; multi-sector auto-advances LBA |
+| WRITE SECTORS | 0x30 / 0x31 | LBA28; `fseeko` + `fwrite` + `fflush` per sector |
+| INITIALIZE DRIVE PARAMETERS | 0x91 | Accepted silently |
+| SET FEATURES | 0xEF | Accepted silently |
+
+**LBA addressing.** 28-bit LBA is assembled from the four task-file registers: `lba = lba_low | (lba_mid << 8) | (lba_high << 16) | ((device & 0x0F) << 24)`.
+
+**Reset behaviour.** `ide_reset()` (called on SRST and on `cpc_reset()`) preserves the open file pointer and sector count, then zeroes all ATA task-file registers. This keeps the drive connected across warm CPC resets. `ide_init()` (called once at startup) zeroes everything including the file pointer; `ide_open()` / `ide_close()` manage the file lifetime.
 
 ---
 

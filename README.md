@@ -6,7 +6,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), and DS12887 real-time clock (Cyboard/Symbiface II compatible) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, and SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
 
 ## Requirements
 
@@ -83,6 +83,8 @@ m4=false          # [unimplemented]
 ulifac=false      # [unimplemented]
 net4cpc=false
 rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)
+symbiface_ide=false
+ide_image=        # path to a raw FAT16/FAT32 disk image (.img)
 
 [display]
 scale=2           # 1, 2, or 3
@@ -202,7 +204,23 @@ Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSI
 
 Time and date registers (seconds, minutes, hours, day-of-week, day, month, year, century) always reflect the current host time. Register B controls binary/BCD and 12h/24h format. The 114-byte NVRAM area (registers 0x0E–0x7F) is stored in RAM for the lifetime of the session. SymbOS detects the RTC via its `SYMBOS.INI` hardware flags byte (offset 0x240, bit 1) and reads the clock at boot using binary 24h mode. The toggle does **not** trigger a cold boot.
 
-Changes to the model, RAM size, DD1 toggle, any ROM slot, or the lower ROM trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
+**SYMBiFACE IDE** (Advanced → SYMBiFACE IDE): enables emulation of the SYMBiFACE II / Cyboard compatible IDE interface. The backend is a raw disk image file formatted with FAT16 or FAT32 (`.img`). Enabling the option opens a file picker to select the image; the path is saved to `ide_image` in `1984.conf`. The following I/O ports are emulated:
+
+| Port | Direction | Description |
+|------|-----------|-------------|
+| 0xFD06 | read/write | Alternate Status (read) / Device Control (write) |
+| 0xFD08 | read/write | Data |
+| 0xFD09 | read/write | Error (read) / Features (write) |
+| 0xFD0A | read/write | Sector Count |
+| 0xFD0B | read/write | LBA Low |
+| 0xFD0C | read/write | LBA Mid |
+| 0xFD0D | read/write | LBA High |
+| 0xFD0E | read/write | Device / Head |
+| 0xFD0F | read/write | Status (read) / Command (write) |
+
+Supported ATA commands: IDENTIFY DEVICE (0xEC), READ SECTORS (0x20/0x21), WRITE SECTORS (0x30/0x31), INITIALIZE DRIVE PARAMETERS (0x91), SET FEATURES (0xEF). Multi-sector transfers and software reset (SRST via Device Control) are supported. The open image file is preserved across warm resets (F5); only a cold boot closes and reopens it. Enabling, disabling, or changing the image triggers a cold boot.
+
+Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, or SYMBiFACE IDE trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ### Memory monitor / debugger (F8)
 
