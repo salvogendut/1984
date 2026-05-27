@@ -115,7 +115,7 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-psg.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
-1984_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
 	-o $@
 AM_V_P = $(am__v_P_$(V))
@@ -240,8 +240,6 @@ INSTALL_SCRIPT = ${INSTALL}
 INSTALL_STRIP_PROGRAM = $(install_sh) -c -s
 LDFLAGS = 
 LIBOBJS = 
-LIBPNG_CFLAGS = -I/usr/include/libpng16 -DWITH_GZFILEOP
-LIBPNG_LIBS = -lpng16
 LIBS = -lm 
 LTLIBOBJS = 
 MAKEINFO = ${SHELL} '/var/home/salvogendut/Dev/1984/build-aux/missing' makeinfo
@@ -258,8 +256,8 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-SDL3_CFLAGS = 
-SDL3_LIBS = -lSDL3
+SDL3_CFLAGS = -I/var/lib/flatpak/runtime/org.freedesktop.Sdk/x86_64/25.08/d1eb1c10d166e7a611e0f26d2332aa9265ce2d048b054dca07f7919258ee1a0b/files/include
+SDL3_LIBS = /usr/lib64/libSDL3.so.0
 SET_MAKE = 
 SHELL = /bin/sh
 STRIP = 
@@ -327,8 +325,8 @@ top_srcdir = .
 	src/psg.c \
 	src/z80.c
 
-1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) $(LIBPNG_CFLAGS) -Wall -Wextra
-1984_LDADD = $(SDL3_LIBS) $(LIBPNG_LIBS) -lm
+1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
+1984_LDADD = $(SDL3_LIBS) -lm
 
 # Keep the hand-written Makefile usable alongside autotools
 EXTRA_DIST = Makefile
