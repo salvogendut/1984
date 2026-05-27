@@ -160,7 +160,7 @@ The overlay lets you change the machine model, RAM size, ROM paths, and hardware
 
 Switching the model automatically sets the matching ROM paths and RAM size.
 
-**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, and 576 KB. 576 KB is the DK'tronics hardware ceiling (64 KB base + 8 × 64 KB expansion banks). Extra RAM beyond 64 KB is accessible via DK'tronics-compatible banking (Gate Array port 0x7Fxx). Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
+**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
 
 **CPC 464 and DD1:** on the 464, the Storage tab drives are greyed out by default. Enable **DD1** in the Advanced tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 

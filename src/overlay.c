@@ -213,7 +213,7 @@ static void activate_item(Overlay *ov) {
     case OV_ADVANCED:
         switch (ov->row) {
         case 0: {
-            static const int sizes[] = { 64, 128, 256, 512, 576 };
+            static const int sizes[] = { 64, 128, 256, 512, 576, 768, 1024 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
             int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
             int cur = min_idx;

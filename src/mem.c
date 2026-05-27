@@ -101,9 +101,11 @@ void mem_unload_rom_ext(Mem *m, int slot) {
  * (handled in mem_read); writes always go to the banked RAM page (here).
  * Video reads (mem_read_video) bypass ROM and use this function directly. */
 static u32 banked_ram_offset(const Mem *m, u16 addr) {
-    u8  mode  = m->ram_bank & 0x07;
-    u8  group = (m->ram_bank >> 3) & 0x07;
-    u32 extra = (u32)(group + 1) * 0x10000u;   /* start of romb4-romb7 */
+    u8  mode      = m->ram_bank & 0x07;
+    u8  group     = (m->ram_bank >> 3) & 0x07;
+    u8  bank_high = (m->ram_bank >> 6) & 0x03;  /* Yarek upper bank group (0=DK'tronics) */
+    u32 full_bg   = (u32)bank_high * 8u + group;
+    u32 extra     = (full_bg + 1u) * 0x10000u;  /* start of romb4-romb7 */
 
     if (addr < 0x4000) {
         return (mode == 2) ? extra + (u32)addr : (u32)addr;

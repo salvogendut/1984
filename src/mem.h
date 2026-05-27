@@ -10,15 +10,18 @@
  * Upper ROM slots: 0=BASIC, 7=AMSDOS. All others return 0xFF.
  * 464: 64 KB RAM, no extra banks
  * 6128: 128 KB RAM, banked via Gate Array (modes 0-7)
- * Expansion: DK'tronics-compatible banking via Gate Array bits[5:3]:
+ * Expansion — DK'tronics (≤576 KB): port 0x7Fxx, data bits[5:3] select bank group.
  *   bits[5:3]=0 → standard 6128 extra 64 KB (RAM banks at offset 64–128 KB)
  *   bits[5:3]=1–7 → 7 × 64 KB expansion banks (128–576 KB)
- *   Maximum: 64 KB base + 8 × 64 KB = 576 KB (DK'tronics ceiling).
+ * Expansion — Yarek/RAM7 (>576 KB): port address bits A10–A8 carry the upper
+ *   bank group (bank_high). Port 0x7Fxx = bank_high 0 (DK'tronics compatible).
+ *   Port 0x7Exx = bank_high 1 (576–1088 KB), 0x7Dxx = 2, 0x7Cxx = 3.
+ *   Full bank group = bank_high*8 + data_bits[5:3]; max 1024 KB with bank_high≤1.
  */
 
 #define ROM_OS_SIZE    0x4000
 #define ROM_BASIC_SIZE 0x4000
-#define RAM_SIZE       0x90000   /* 576 KB max (DK'tronics ceiling); actual usable size is Mem.ram_size */
+#define RAM_SIZE       0x100000  /* 1024 KB max (Yarek ceiling); actual usable size is Mem.ram_size */
 #define ROM_EXT_COUNT  32        /* expansion ROM slots 0-31 */
 
 typedef struct {
