@@ -174,3 +174,28 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | A11=0 | PPI (8255) | 0xF4–0xF7xx |
 | hi=0xFA | FDC motor control | 0xFAxx |
 | hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |
+
+## Joystick / input
+
+Joystick input is mapped to CPC keyboard matrix row 9 (the hardware joystick row). Column assignments: 0 = Up, 1 = Down, 2 = Left, 3 = Right, 4 = Fire 1, 5 = Fire 2.
+
+### SDL event handling (`src/joy.c`)
+
+SDL3 controllers are handled in two tiers:
+
+- **Gamepad** (`SDL_EVENT_GAMEPAD_*`): devices in the SDL gamepad database are opened with `SDL_OpenGamepad`. D-pad and face buttons map directly to the row-9 columns; the left analogue stick uses a ±8000 dead zone to derive digital Up/Down/Left/Right.
+- **Raw joystick** (`SDL_EVENT_JOYSTICK_*`): devices not in the gamepad database fall back to `SDL_OpenJoystick`. Axis 0 → Left/Right, axis 1 → Up/Down; button 0 → Fire 1, button 1 → Fire 2; hat switch is also handled.
+
+Both tiers support hot-plug via the `ADDED`/`REMOVED` events. Up to `JOY_MAX_PADS` of each type can be open simultaneously; only the first active controller generates CPC keypresses.
+
+**Background events.** SDL3 defaults to suppressing gamepad and joystick events when the SDL window does not have focus. `SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1")` is called before `SDL_Init` so events are always delivered.
+
+### PSG keyboard scan (`src/cpc.c` / `src/psg.c`)
+
+The CPC reads the keyboard matrix (including the joystick row) through PSG I/O port A (register 14). The scan sequence driven by software:
+
+1. Write the row number to PPI port C bits 3–0 (`ppi.kbd_row`).
+2. Set PPI port C bits 7–6 = `11` (PSG latch mode) with the desired register number on PPI port A → calls `psg_select()`.
+3. Set PPI port C bits 7–6 = `01` (PSG read mode) → the emulator calls `psg_set_kbd_row()` then returns the row data via PPI port A.
+
+In step 3, `psg_ctrl == 0x01` always means the CPU is reading the keyboard through I/O port A (register 14). The code reads `psg->kbd_data` directly rather than going through `psg_read()`, which would only return `kbd_data` if `psg->selected == 14`. This avoids a bug where software that relies on register 14 being implicitly selected (e.g. SymbOS) would receive `psg->reg[0] = 0x00` — all keys falsely "pressed" — instead of the real matrix data.

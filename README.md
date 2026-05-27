@@ -106,6 +106,7 @@ fullscreen=false
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 | `--monitor-pty` | Open a PTY for the memory monitor (`minicom -b 9600 -D <path>`) |
+| `--trace-input` | Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down) |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
@@ -150,6 +151,10 @@ Any USB or Bluetooth controller recognised by SDL3 is automatically mapped to CP
 | D-pad or left stick | Up / Down / Left / Right |
 | South button (A / Cross) | Fire 1 |
 | East / West / North buttons | Fire 2 |
+
+Controllers that SDL3 recognises via its gamepad database are opened as gamepads; any other device (legacy sticks, budget pads not in the database) falls back to raw joystick mode and is mapped by physical axis/button index (axis 0 = left/right, axis 1 = up/down; button 0 = Fire 1, button 1 = Fire 2; hat switch also works).
+
+Gamepad and joystick events are delivered regardless of whether the emulator window has focus (`SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is enabled at startup).
 
 ### Paste from host (Ctrl+V)
 
