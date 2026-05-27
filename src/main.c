@@ -175,7 +175,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Camera shutter SFX — loaded from embedded WAV data in shutter_wav.h.
-     * sfx_buf/sfx_buf_len hold the decoded PCM so it can be replayed each press. */
+     * sfx_buf/sfx_buf_len hold the decoded PCM so it can be replayed on each F4 press.
+     * A dedicated logical device stream is opened; SDL3 mixes it with the PSG stream. */
     SDL_AudioStream *sfx_stream = NULL;
     Uint8  *sfx_buf     = NULL;
     Uint32  sfx_buf_len = 0;
@@ -183,11 +184,10 @@ int main(int argc, char *argv[]) {
         SDL_AudioSpec sfx_spec;
         SDL_IOStream *io = SDL_IOFromConstMem(shutter_wav, shutter_wav_len);
         if (io && SDL_LoadWAV_IO(io, true, &sfx_spec, &sfx_buf, &sfx_buf_len)) {
-            sfx_stream = SDL_CreateAudioStream(&sfx_spec, &sfx_spec);
-            if (sfx_stream && cpc.audio_stream) {
-                SDL_AudioDeviceID dev = SDL_GetAudioStreamDevice(cpc.audio_stream);
-                SDL_BindAudioStream(dev, sfx_stream);
-            }
+            sfx_stream = SDL_OpenAudioDeviceStream(
+                SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &sfx_spec, NULL, NULL);
+            if (sfx_stream)
+                SDL_ResumeAudioStreamDevice(sfx_stream);
         }
     }
 
