@@ -1,4 +1,5 @@
 #include "cpc.h"
+#include "net4cpc.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -51,6 +52,10 @@ static u8 bus_io_read(void *ctx, u16 port) {
     }
     else if (hi == 0xFA) {
         result = 0xFF;
+    }
+    /* Net4CPC W5100S: hi=0xFD → ports 0xFD20-0xFD23 */
+    else if (hi == 0xFD) {
+        result = cpc->net4cpc ? net4cpc_in(port & 0x03) : 0xFF;
     }
     else {
         result = 0xFF;
@@ -119,6 +124,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
     /* FDC data: hi=0xFB, write */
     if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
+    /* Net4CPC W5100S: hi=0xFD → ports 0xFD20-0xFD23 */
+    if (hi == 0xFD) { if (cpc->net4cpc) net4cpc_out(port & 0x03, val); return; }
 }
 
 /* ---- Init / destroy ---- */
@@ -145,6 +152,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     disk_init(&cpc->drive[0]);
     disk_init(&cpc->drive[1]);
     fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
+    net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
     cpc->bus.mem_write = bus_mem_write;

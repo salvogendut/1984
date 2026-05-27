@@ -11,6 +11,7 @@
 #include "mem.h"
 #include "paste.h"
 #include "joy.h"
+#include "net4cpc.h"
 #include "shutter_wav.h"
 
 static void usage(const char *prog, int code) {
@@ -142,6 +143,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     cpc.mem.ram_size = cfg.memory_kb * 1024;
+    cpc.net4cpc = cfg.net4cpc;
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -300,6 +302,8 @@ int main(int argc, char *argv[]) {
                 ? "CPC 464  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen"
                 : "CPC 6128  |  F4 = screenshot   F5 = reset   F9 = options   F11 = fullscreen";
             SDL_SetWindowTitle(cpc.display.window, title);
+            cpc.net4cpc = cfg.net4cpc;
+            net4cpc_reset();
             cpc_reset(&cpc);
         }
 
