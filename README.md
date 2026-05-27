@@ -233,7 +233,7 @@ The port returns a variable-length burst of packets terminated by `0x00` (no mor
 | `0xC0`–`0xDF` | Button state: bit0=left, bit1=right, bit2=middle |
 | `0xE0`–`0xFF` | Scroll wheel offset, signed 5-bit |
 
-**Cyboard** (Advanced → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
+**SYMBiFACE II/Cyboard** (Advanced → SYMBiFACE II/Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, or SYMBiFACE IDE trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 

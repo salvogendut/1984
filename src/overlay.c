@@ -197,7 +197,7 @@ static void item_text(const Overlay *ov, int row,
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
                         !ov->cfg->symbiface_ide && !ov->cfg->symbiface_mouse;
-            snprintf(lbl, lsz, "Cyboard");
+            snprintf(lbl, lsz, "SYMBiFACE II/Cyboard");
             snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
             break;
         }
