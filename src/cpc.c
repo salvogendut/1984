@@ -78,8 +78,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
          * so any pending palette flush is no longer valid. This prevents a
          * replacement lower ROM (e.g. diagnostic) from arming the flush during
          * its initialisation phase and then having it fire after relocation. */
-        if (!cpc->mem.lower_rom_enabled)
-            cpc->firmware_palette_count = 0;
+        /* NOTE: we do NOT reset firmware_palette_count when lower ROM is disabled.
+         * Games (e.g. Spindizzy) often do GA writes every frame after disabling
+         * lower ROM, which would constantly zero the count and prevent the fallback
+         * from ever firing.  The count is already protected by the arming condition
+         * (lower ROM enabled when 0xFF is written) and by the 50-frame threshold. */
         /* RAM banking — bits[5:0] select 16KB page for 0xC000-0xFFFF.
          * Standard on 6128; emulator extension enables it on 464 too
          * when memory > 64 KB is configured. */

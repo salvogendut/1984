@@ -26,6 +26,7 @@ typedef struct {
     bool m4;
     bool ulifac;
     bool net4cpc;
+    char diag_cart_rom[CONFIG_PATH_MAX]; /* path to diagnostic lower ROM, empty = none */
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */

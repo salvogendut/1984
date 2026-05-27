@@ -24,7 +24,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 6 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 7 };
 
 /* ---- Drawing helpers ---- */
 
@@ -157,6 +157,13 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
             break;
+        case 6: {
+            bool active = ov->cfg->diag_cart_rom[0] != '\0' &&
+                          strcmp(ov->cfg->rom_os, ov->cfg->diag_cart_rom) == 0;
+            snprintf(lbl, lsz, "Diag Cart");
+            snprintf(val, vsz, "%s", active ? "ON" : "OFF");
+            break;
+        }
         }
         break;
 
@@ -235,6 +242,28 @@ static void activate_item(Overlay *ov) {
         case 5:
             ov->state = OV_STATE_ROMSLOTS;
             break;
+        case 6: {
+            bool active = ov->cfg->diag_cart_rom[0] != '\0' &&
+                          strcmp(ov->cfg->rom_os, ov->cfg->diag_cart_rom) == 0;
+            if (active) {
+                /* Disable: restore model-default OS ROM */
+                config_default_os(ov->cfg->model,
+                    ov->cfg->rom_os, sizeof(ov->cfg->rom_os));
+                ov->dirty = true;
+            } else {
+                /* Enable: open file picker to select the diagnostic ROM */
+                ov->dialog_kind  = DIALOG_DIAG_ROM;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter filters[] = {
+                    { "ROM images", "rom;ROM" },
+                    { "All files",  "*"       },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    filters, 2, NULL, false);
+            }
+            break;
+        }
         }
         break;
 
@@ -297,6 +326,11 @@ void overlay_tick(Overlay *ov) {
         if (ov->cpc)
             mem_load_os(&ov->cpc->mem, ov->dialog_path);
         ov->needs_cold_boot = true;
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_DIAG_ROM) {
+        /* Remember the diagnostic ROM path and activate it as the OS ROM */
+        snprintf(ov->cfg->diag_cart_rom, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        snprintf(ov->cfg->rom_os,        CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;
