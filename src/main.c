@@ -15,6 +15,17 @@
 #include "monitor.h"
 #include "shutter_wav.h"
 
+#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_CAPTURED    "Mouse captured  |  Ctrl+Enter to release"
+
+static void set_mouse_capture(SDL_Window *win, bool capture, bool *flag, CpcModel model) {
+    SDL_SetWindowRelativeMouseMode(win, capture);
+    *flag = capture;
+    SDL_SetWindowTitle(win, capture ? TITLE_CAPTURED
+        : (model == MODEL_464 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128));
+}
+
 static void usage(const char *prog, int code) {
     FILE *out = code ? stderr : stdout;
     fprintf(out,
@@ -151,10 +162,11 @@ int main(int argc, char *argv[]) {
         SDL_Quit();
         return 1;
     }
-    cpc.mem.ram_size = cfg.memory_kb * 1024;
-    cpc.net4cpc       = cfg.net4cpc;
-    cpc.rtc           = cfg.rtc;
-    cpc.symbiface_ide = cfg.symbiface_ide;
+    cpc.mem.ram_size    = cfg.memory_kb * 1024;
+    cpc.net4cpc         = cfg.net4cpc;
+    cpc.rtc             = cfg.rtc;
+    cpc.symbiface_ide   = cfg.symbiface_ide;
+    cpc.symbiface_mouse = cfg.symbiface_mouse;
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
 
@@ -225,7 +237,8 @@ int main(int argc, char *argv[]) {
     Joy joy;
     joy_init(&joy);
 
-    bool fullscreen = cfg.fullscreen;
+    bool fullscreen     = cfg.fullscreen;
+    bool mouse_captured = false;
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
@@ -246,12 +259,67 @@ int main(int argc, char *argv[]) {
                 running = false;
                 continue;
             }
+
+            /* Mouse events when captured — route to CPC mouse state, skip other handlers */
+            if (mouse_captured) {
+                if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                    if (cpc.symbiface_mouse)
+                        mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
+                    continue;
+                }
+                if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                    ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (cpc.symbiface_mouse) {
+                        int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
+                                  (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
+                                  (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
+                        if (btn >= 0)
+                            mouse_button(&cpc.mouse, btn,
+                                         ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    }
+                    continue;
+                }
+                if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+                    if (cpc.symbiface_mouse)
+                        mouse_scroll(&cpc.mouse, (int)ev.wheel.y);
+                    continue;
+                }
+                /* Ctrl+Enter releases mouse capture — do not pass Enter to CPC */
+                if (ev.type == SDL_EVENT_KEY_DOWN &&
+                    ev.key.scancode == SDL_SCANCODE_RETURN &&
+                    (SDL_GetModState() & SDL_KMOD_CTRL)) {
+                    set_mouse_capture(cpc.display.window, false,
+                                      &mouse_captured, cpc.model);
+                    continue;
+                }
+            }
+
+            /* Click in emulator window captures mouse when mouse support is enabled */
+            if (!mouse_captured && cpc.symbiface_mouse && !overlay.visible &&
+                ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
+                set_mouse_capture(cpc.display.window, true,
+                                  &mouse_captured, cpc.model);
+                /* Also feed this button press into the mouse state */
+                int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
+                          (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
+                          (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
+                if (btn >= 0)
+                    mouse_button(&cpc.mouse, btn, true);
+                continue;
+            }
+
             /* Joystick/gamepad events */
             if (joy_handle_event(&joy, &ev, &cpc.kbd))
                 continue;
             /* Monitor window gets its own events */
             if (monitor_handle_event(monitor, &ev))
                 continue;
+            /* F9 opens overlay — release mouse capture first so UI is usable */
+            if (mouse_captured && ev.type == SDL_EVENT_KEY_DOWN &&
+                    ev.key.scancode == SDL_SCANCODE_F9)
+                set_mouse_capture(cpc.display.window, false,
+                                  &mouse_captured, cpc.model);
             /* Overlay gets first crack at every key event */
             if (overlay_handle_event(&overlay, &ev))
                 continue;
@@ -337,15 +405,19 @@ int main(int argc, char *argv[]) {
                     mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
             }
             const char *title = (cpc.model == MODEL_464)
-                ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
-                : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
+                ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;
             SDL_SetWindowTitle(cpc.display.window, title);
-            cpc.net4cpc       = cfg.net4cpc;
-            cpc.rtc           = cfg.rtc;
-            cpc.symbiface_ide = cfg.symbiface_ide;
+            cpc.net4cpc          = cfg.net4cpc;
+            cpc.rtc              = cfg.rtc;
+            cpc.symbiface_ide    = cfg.symbiface_ide;
+            cpc.symbiface_mouse  = cfg.symbiface_mouse;
             ide_close(&cpc.ide_chip);
             if (cfg.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
+            /* Release mouse capture on cold boot */
+            if (mouse_captured)
+                set_mouse_capture(cpc.display.window, false,
+                                  &mouse_captured, cpc.model);
             net4cpc_reset();
             cpc_reset(&cpc);
         }
@@ -398,6 +470,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    if (mouse_captured)
+        SDL_SetWindowRelativeMouseMode(cpc.display.window, false);
     paste_free(&paste);
     joy_destroy(&joy);
     monitor_destroy(monitor);

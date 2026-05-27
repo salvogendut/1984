@@ -107,6 +107,7 @@ static void config_create_default(const char *path, const char *home) {
         "rtc=false\n"
         "symbiface_ide=false\n"
         "ide_image=\n"
+        "symbiface_mouse=false\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -211,6 +212,9 @@ int config_load(Config *cfg) {
                 else { fprintf(stderr, "1984.conf:%d: symbiface_ide must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "ide_image")) {
                 if (val[0]) expand_path(val, cfg->ide_image, sizeof(cfg->ide_image));
+            } else if (!strcmp(key, "symbiface_mouse")) {
+                if (parse_bool(val, &b)) cfg->symbiface_mouse = b;
+                else { fprintf(stderr, "1984.conf:%d: symbiface_mouse must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -285,7 +289,8 @@ int config_save(const Config *cfg) {
         "net4cpc=%s\n"
         "rtc=%s\n"
         "symbiface_ide=%s\n"
-        "ide_image=%s\n\n"
+        "ide_image=%s\n"
+        "symbiface_mouse=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -294,10 +299,11 @@ int config_save(const Config *cfg) {
         cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
         cfg->ulifac  ? "true" : "false",
-        cfg->net4cpc       ? "true" : "false",
-        cfg->rtc           ? "true" : "false",
-        cfg->symbiface_ide ? "true" : "false",
+        cfg->net4cpc          ? "true" : "false",
+        cfg->rtc              ? "true" : "false",
+        cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,
+        cfg->symbiface_mouse  ? "true" : "false",
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );

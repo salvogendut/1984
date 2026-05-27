@@ -21,6 +21,7 @@ bin_PROGRAMS = 1984
 	src/psg.c \
 	src/rtc.c \
 	src/ide.c \
+	src/mouse.c \
 	src/z80.c
 
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra

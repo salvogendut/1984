@@ -23,6 +23,7 @@ Each source file maps to one hardware component:
 | `src/fdc.c` / `fdc.h` | µPD765 FDC — command/exec/result phases, READ DATA, SEEK, SENSE INTERRUPT STATUS |
 | `src/rtc.c` / `rtc.h` | DS12887 RTC — register read/write, NVRAM, time from host `localtime()` |
 | `src/ide.c` / `ide.h` | ATA PIO IDE — SYMBiFACE II / Cyboard port mapping, raw disk image backend, IDENTIFY/READ/WRITE |
+| `src/mouse.c` / `mouse.h` | SYMBiFACE II PS/2 mouse — port 0xFD10, variable-length burst protocol, SDL relative mouse capture |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -105,6 +106,7 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |
 | hi=0xFD, lo=0x06 | IDE Alt Status / Device Control | 0xFD06 |
 | hi=0xFD, lo=0x08–0x0F | IDE task-file registers (Data … Command) | 0xFD08–0xFD0F |
+| hi=0xFD, lo=0x10 | PS/2 mouse (SYMBiFACE II) | 0xFD10 |
 | hi=0xFD, lo=0x14 | RTC data (DS12887) | 0xFD14 |
 | hi=0xFD, lo=0x15 | RTC address (DS12887) | 0xFD15 |
 | hi=0xFD, lo=0x20–0x23 | Net4CPC W5100S | 0xFD20–0xFD23 |
@@ -196,7 +198,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
 | Storage | Drive A, Drive B |
-| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], RTC, DD1, ROM Slots →, Diag Cart, Net4CPC, SYMBiFACE IDE |
+| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Cyboard |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
@@ -281,6 +283,34 @@ The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cy
 **LBA addressing.** 28-bit LBA is assembled from the four task-file registers: `lba = lba_low | (lba_mid << 8) | (lba_high << 16) | ((device & 0x0F) << 24)`.
 
 **Reset behaviour.** `ide_reset()` (called on SRST and on `cpc_reset()`) preserves the open file pointer and sector count, then zeroes all ATA task-file registers. This keeps the drive connected across warm CPC resets. `ide_init()` (called once at startup) zeroes everything including the file pointer; `ide_open()` / `ide_close()` manage the file lifetime.
+
+---
+
+## SYMBiFACE II PS/2 Mouse (`src/mouse.c`)
+
+The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-only). It is enabled via `symbiface_mouse=true` in `1984.conf` (or Advanced → SYMBiFACE Mouse in the overlay). The toggle does not require a cold boot.
+
+**Protocol.** The CPC reads port 0xFD10 in a tight polling loop until it receives `0x00` (no more data for this cycle). The port only emits packets for data that has actually changed since the last burst, which means a stationary mouse with no button activity returns `0x00` immediately.
+
+| Byte range | Bits 7:6 | Bits 5:0 | Meaning |
+|---|---|---|---|
+| `0x00` | `00` | — | No more data; end polling loop |
+| `0x40`–`0x7F` | `01` | signed 6-bit X | X offset; positive = right |
+| `0x80`–`0xBF` | `10` | signed 6-bit Y | Y offset; positive = up |
+| `0xC0`–`0xDF` | `11`, bit5=0 | button bits | bit0=left, bit1=right, bit2=middle |
+| `0xE0`–`0xFF` | `11`, bit5=1 | signed 5-bit scroll | scroll wheel; negative = down |
+
+**State machine.** The `Mouse` struct holds accumulated raw deltas (`dx`, `dy`, `dz`) and a `btn_changed` flag. When `mouse_read()` is called with `state == 0` (idle / start of burst), it snapshots all accumulated values, clears the accumulators, and advances through states 1–4 (X → Y → buttons → scroll), skipping any slot that carries no data. It returns `0x00` once all slots are exhausted and resets to state 0.
+
+**SDL integration.** When captured, `SDL_EVENT_MOUSE_MOTION` delivers `xrel`/`yrel` (relative deltas; SDL Y is positive-downward, so Y is negated before storing). `SDL_EVENT_MOUSE_BUTTON_DOWN/UP` update the button state and set `btn_changed`. `SDL_EVENT_MOUSE_WHEEL` accumulates `wheel.y` into `dz`.
+
+**Capture flow.** Clicking the emulator window calls `SDL_SetWindowRelativeMouseMode(win, true)`, hides the cursor, and updates the window title. Pressing **Ctrl+Enter** releases capture. Opening the overlay (F9) also releases capture automatically before the overlay takes focus.
+
+---
+
+## Cyboard master toggle
+
+The **Cyboard** overlay item (Advanced → Cyboard, row 10) is a UI-only convenience; it writes to the four existing config flags rather than introducing a new one. Activating it when all four peripherals (Net4CPC, RTC, SYMBiFACE IDE, SYMBiFACE Mouse) are enabled disables all of them (and clears `ide_image`); activating it when any of the four is off enables all of them. The displayed value is `enabled` / `disabled` / `partial` depending on the combination.
 
 ---
 

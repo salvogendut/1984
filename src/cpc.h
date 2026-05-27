@@ -12,6 +12,7 @@
 #include "disk.h"
 #include "rtc.h"
 #include "ide.h"
+#include "mouse.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -32,8 +33,10 @@ typedef struct {
     bool       net4cpc;       /* Net4CPC W5100S Ethernet add-on present */
     bool       rtc;           /* Real-time clock add-on present */
     RTC        rtc_chip;
-    bool       symbiface_ide; /* SYMBiFACE II / Cyboard IDE add-on present */
+    bool       symbiface_ide;   /* SYMBiFACE II / Cyboard IDE add-on present */
     IDE        ide_chip;
+    bool       symbiface_mouse; /* SYMBiFACE II / Cyboard PS/2 mouse present */
+    Mouse      mouse;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

@@ -6,7 +6,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, and SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32), and SYMBiFACE II PS/2 mouse work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
 
 ## Requirements
 
@@ -85,6 +85,7 @@ net4cpc=false
 rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)
 symbiface_ide=false
 ide_image=        # path to a raw FAT16/FAT32 disk image (.img)
+symbiface_mouse=false
 
 [display]
 scale=2           # 1, 2, or 3
@@ -219,6 +220,20 @@ Time and date registers (seconds, minutes, hours, day-of-week, day, month, year,
 | 0xFD0F | read/write | Status (read) / Command (write) |
 
 Supported ATA commands: IDENTIFY DEVICE (0xEC), READ SECTORS (0x20/0x21), WRITE SECTORS (0x30/0x31), INITIALIZE DRIVE PARAMETERS (0x91), SET FEATURES (0xEF). Multi-sector transfers and software reset (SRST via Device Control) are supported. The open image file is preserved across warm resets (F5); only a cold boot closes and reopens it. Enabling, disabling, or changing the image triggers a cold boot.
+
+**SYMBiFACE Mouse** (Advanced → SYMBiFACE Mouse): enables emulation of the SYMBiFACE II PS/2 mouse interface at port 0xFD10. When enabled, clicking inside the emulator window captures the host mouse (cursor hidden, relative mode). While captured, host mouse movement and button presses drive the emulated PS/2 mouse. Press **Ctrl+Enter** to release the mouse; the window title shows the current capture state. The toggle does **not** trigger a cold boot. Immediately usable by SymbOS without any additional drivers.
+
+The port returns a variable-length burst of packets terminated by `0x00` (no more data). Only fields that actually changed are included in each burst:
+
+| Byte | Meaning |
+|------|---------|
+| `0x00` | No more data — stop reading |
+| `0x40`–`0x7F` | X offset, signed 6-bit; positive = right |
+| `0x80`–`0xBF` | Y offset, signed 6-bit; positive = up |
+| `0xC0`–`0xDF` | Button state: bit0=left, bit1=right, bit2=middle |
+| `0xE0`–`0xFF` | Scroll wheel offset, signed 5-bit |
+
+**Cyboard** (Advanced → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, or SYMBiFACE IDE trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
