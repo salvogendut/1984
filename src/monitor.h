@@ -14,3 +14,10 @@ bool            monitor_is_open(const Monitor *mon);
 bool            monitor_handle_event(Monitor *mon, SDL_Event *e);
 void            monitor_render(Monitor *mon);
 SDL_WindowID    monitor_window_id(const Monitor *mon);
+
+/* PTY / serial interface (--monitor-pty).
+ * monitor_pty_open: opens a PTY master, configures it at 9600 baud (raw),
+ *   and returns the slave device path (e.g. "/dev/pts/5") or NULL on error.
+ * monitor_pty_tick: call once per frame to drain input and push output. */
+const char     *monitor_pty_open(Monitor *mon);
+void            monitor_pty_tick(Monitor *mon);

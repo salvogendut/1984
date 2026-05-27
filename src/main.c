@@ -32,6 +32,7 @@ static void usage(const char *prog, int code) {
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
+        "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -58,6 +59,7 @@ int main(int argc, char *argv[]) {
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
     bool        trace_io         = false;
+    bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
 
@@ -102,6 +104,8 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_6128;
         } else if (strcmp(argv[i], "--dd1") == 0) {
             dd1_override = true;
+        } else if (strcmp(argv[i], "--monitor-pty") == 0) {
+            monitor_pty = true;
         } else if (strcmp(argv[i], "--trace-io") == 0) {
             trace_io = true;
         } else if (strcmp(argv[i], "--trace-palette") == 0) {
@@ -199,6 +203,14 @@ int main(int argc, char *argv[]) {
     overlay_init(&overlay, &cfg, &cpc);
 
     Monitor *monitor = monitor_create(&cpc.mem);
+    if (monitor_pty) {
+        const char *pty_path = monitor_pty_open(monitor);
+        if (pty_path)
+            fprintf(stderr, "1984: monitor PTY: %s  (minicom -b 9600 -D %s)\n",
+                    pty_path, pty_path);
+        else
+            fprintf(stderr, "1984: failed to open monitor PTY\n");
+    }
 
     Paste paste;
     paste_init(&paste);
@@ -321,6 +333,7 @@ int main(int argc, char *argv[]) {
             cpc_reset(&cpc);
         }
 
+        monitor_pty_tick(monitor);
         paste_tick(&paste, &cpc.kbd);
         cpc_frame(&cpc);
         overlay_render(&overlay, cpc.display.renderer);
