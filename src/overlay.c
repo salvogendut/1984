@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <libgen.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static void overlay_file_callback(void *userdata, const char * const *files, int filter);
 
@@ -26,7 +27,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 12 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 11 };
 
 /* ---- Drawing helpers ---- */
 
@@ -135,9 +136,9 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 1:
             snprintf(lbl, lsz, "M4");
-            if (ov->cfg->m4 && ov->cfg->m4_path[0]) {
+            if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_path);
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_image);
                 trunc_path(basename(tmp), val, vsz);
             } else {
                 snprintf(val, vsz, "%s", ov->cfg->m4 ? "enabled" : "disabled");
@@ -207,16 +208,6 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
             break;
         }
-        case 11:
-            snprintf(lbl, lsz, "M4 image");
-            if (ov->cfg->m4_image[0]) {
-                char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_image);
-                trunc_path(basename(tmp), val, vsz);
-            } else {
-                snprintf(val, vsz, "[none]");
-            }
-            break;
         }
         break;
 
@@ -270,15 +261,24 @@ static void activate_item(Overlay *ov) {
         }
         case 1:
             if (!ov->cfg->m4) {
-                /* Enable: open folder picker to select SD card root */
-                ov->dialog_kind  = DIALOG_M4_ROOT;
+                /* Enable: open file picker to select SD card image (raw FAT) */
+                ov->dialog_kind  = DIALOG_M4_IMAGE;
                 ov->dialog_ready = false;
-                SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL, NULL, false);
+                static const SDL_DialogFileFilter m4_filters[] = {
+                    { "SD card images", "img;IMG;bin;BIN;raw;RAW" },
+                    { "All files",      "*"                        },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    m4_filters, 2, NULL, false);
             } else {
                 /* Disable: clear flag and unload M4ROM from its slot */
                 ov->cfg->m4 = false;
-                if (ov->cpc) ov->cpc->m4 = false;
+                ov->cfg->m4_image[0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->m4 = false;
+                    m4_set_image(&ov->cpc->m4_card, "");
+                }
                 ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
                 if (ov->cpc)
                     mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
@@ -374,26 +374,6 @@ static void activate_item(Overlay *ov) {
             }
             break;
         }
-        case 11: {
-            /* M4 image: open file picker. Selecting a file sets m4_image;
-             * pressing Enter on an already-set image clears it. */
-            if (ov->cfg->m4_image[0]) {
-                ov->cfg->m4_image[0] = '\0';
-                if (ov->cpc) m4_set_image(&ov->cpc->m4_card, "");
-                ov->dirty = true;
-            } else {
-                ov->dialog_kind  = DIALOG_M4_IMAGE;
-                ov->dialog_ready = false;
-                static const SDL_DialogFileFilter img_filters[] = {
-                    { "Disk images", "img;IMG;bin;BIN;raw;RAW" },
-                    { "All files",   "*"                        },
-                };
-                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    img_filters, 2, NULL, false);
-            }
-            break;
-        }
         }
         break;
 
@@ -461,25 +441,37 @@ void overlay_tick(Overlay *ov) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->cfg->symbiface_ide = true;
         ov->dirty = true;
-    } else if (ov->dialog_kind == DIALOG_M4_ROOT) {
-        snprintf(ov->cfg->m4_path, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+    } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
+        /* User picked an SD card image — enable M4, load its ROM, and seed
+         * the M4 board's config buffer from the ROM defaults.
+         * If a sibling directory exists with the same base name (e.g. picking
+         * SDCARD.img and SDCARD/ sits next to it), wire it up as the file-API
+         * backing so BASIC's cat/load/save keep working. */
+        snprintf(ov->cfg->m4_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->cfg->m4 = true;
-        /* Load M4ROM into slot 7, overriding AMSDOS */
+
+        char sibling[CONFIG_PATH_MAX];
+        snprintf(sibling, sizeof(sibling), "%s", ov->dialog_path);
+        char *dot = strrchr(sibling, '.');
+        if (dot) *dot = '\0';
+        struct stat st;
+        if (stat(sibling, &st) == 0 && S_ISDIR(st.st_mode))
+            snprintf(ov->cfg->m4_path, CONFIG_PATH_MAX, "%s", sibling);
+        else
+            ov->cfg->m4_path[0] = '\0';
+
         char m4rom[CONFIG_PATH_MAX];
         config_default_m4rom(m4rom, sizeof(m4rom));
         snprintf(ov->cfg->rom_ext[M4_ROM_SLOT], CONFIG_PATH_MAX, "%s", m4rom);
         if (ov->cpc) {
             ov->cpc->m4 = true;
-            snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->dialog_path);
+            m4_set_image(&ov->cpc->m4_card, ov->dialog_path);
+            snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->cfg->m4_path);
             mem_load_rom_ext(&ov->cpc->mem, M4_ROM_SLOT, m4rom);
             memcpy(ov->cpc->m4_card.cfg_mem,
                    &ov->cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
                    sizeof(ov->cpc->m4_card.cfg_mem));
         }
-        ov->dirty = true;
-    } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
-        snprintf(ov->cfg->m4_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
-        if (ov->cpc) m4_set_image(&ov->cpc->m4_card, ov->dialog_path);
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;
