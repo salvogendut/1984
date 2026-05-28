@@ -329,6 +329,14 @@ void m4_set_image(M4 *m, const char *image_path) {
     m4_open_image(m);
 }
 
+void m4_tick(M4 *m) {
+    /* Polled from cpc_frame so the sock_info bytes (visible to CPC code via
+     * the bus bypass at 0xFE00) stay current while applications busy-loop on
+     * the status byte without sending any M4 commands. */
+    for (int i = 0; i < M4_NSOCKS; i++)
+        if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
+}
+
 void m4_reset(M4 *m) {
     /* Close all open files and directories, reset command buffer and cwd */
     for (int i = 0; i < M4_MAX_FDS; i++) {
@@ -363,6 +371,11 @@ u8 m4_dataport_read(M4 *m) {
 /* ---- Command dispatch ---- */
 
 bool m4_ackport_write(M4 *m, Mem *mem) {
+    /* Real M4 board enters "RAM mode" on every command strobe — its RAM
+     * (rom_response, sock_info, cfg) then wins reads at 0xE800/0xF400/0xFE00
+     * regardless of the CPU's upper ROM selection. The board re-enters ROM
+     * mode when the CPU calls KL_ROM_SELECT 6. We track that in m->ram_mode. */
+    m->ram_mode = true;
     /* Refresh sock_info for any sockets that were busy connecting or have
      * data waiting — the daemon polls sock_info between commands. */
     for (int i = 0; i < M4_NSOCKS; i++)
@@ -1096,13 +1109,28 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
                 m->sockets[s].lastcmd = 3;
                 int r = connect(m->sockets[s].fd, (struct sockaddr *)&sa, sizeof(sa));
+                int err_ = errno;
                 if (r == 0) {
                     m->sockets[s].status = 0;  /* connected */
                     ok = 0;
-                } else if (errno == EINPROGRESS) {
-                    m->sockets[s].status     = 1;  /* connecting */
-                    m->sockets[s].connecting = true;
-                    ok = 0;  /* the daemon will poll status */
+                } else if (err_ == EINPROGRESS) {
+                    /* Real M4 firmware blocks inside C_NETCONNECT until the ESP8266
+                     * has resolved the connect, so the host code sees status=IDLE
+                     * (or an error) on the first sock[0] read after the strobe.
+                     * cpc-sdcc relies on this — its busy-wait loop hoists the read
+                     * outside the loop, so it never observes a transition from
+                     * CONN to IDLE. Block here for up to 5 s. */
+                    struct pollfd pfd = { .fd = m->sockets[s].fd, .events = POLLOUT };
+                    int pr = poll(&pfd, 1, 5000);
+                    if (pr > 0 && (pfd.revents & (POLLOUT | POLLERR | POLLHUP))) {
+                        int soerr = 0; socklen_t l = sizeof(soerr);
+                        getsockopt(m->sockets[s].fd, SOL_SOCKET, SO_ERROR, &soerr, &l);
+                        m->sockets[s].status = soerr ? 240 : 0;
+                        ok = soerr ? 0xFF : 0;
+                    } else {
+                        m->sockets[s].status = 240;  /* timeout */
+                        ok = 0xFF;
+                    }
                 } else {
                     m->sockets[s].status = 240;
                 }

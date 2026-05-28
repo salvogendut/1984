@@ -74,6 +74,11 @@ typedef struct {
     char    dir_filter[64];  /* fnmatch pattern, e.g. "*.DSK" or "*" */
 
     bool    nmi_enabled;     /* true = trigger Z80 NMI after each command */
+    /* "RAM mode" — true after a command strobe, the M4 board presents live
+     * RAM (response / sock_info / cfg) on the expansion bus regardless of
+     * which ROM the CPC has paged in. The CPU code re-enters "ROM mode"
+     * by calling KL_ROM_SELECT 6, which we detect via the ROM-select port. */
+    bool    ram_mode;
     u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
 
     /* M4 board's own memory mapped on the expansion bus when M4ROM is paged in.
@@ -95,6 +100,9 @@ typedef struct {
 void m4_init(M4 *m, const char *root);
 void m4_set_image(M4 *m, const char *image_path);
 void m4_reset(M4 *m);
+/* Called once per frame: refreshes sock_info for any in-flight TCP work
+ * (non-blocking connect completion, byte counts, remote-close detection). */
+void m4_tick(M4 *m);
 
 /* Called on every write to port 0xFE00 or 0xFF00 (DATAPORT) */
 void m4_dataport_write(M4 *m, u8 val);
