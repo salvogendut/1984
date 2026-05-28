@@ -296,17 +296,17 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
 
     case C_TIME: {
+        /* M4 protocol: returns the current date/time as a null-terminated
+         * ASCII string in the form "hh:mm:ss yyyy-mm-dd". */
         time_t t = time(NULL);
         struct tm *tm = localtime(&t);
+        char buf[32];
+        if (tm)
+            strftime(buf, sizeof(buf), "%H:%M:%S %Y-%m-%d", tm);
+        else
+            snprintf(buf, sizeof(buf), "00:00:00 1980-01-01");
         err = M4_OK;
-        /* year (2-digit), month (1-12), day, hour, min, sec, day-of-week (0=Sun) */
-        resp_u8(m, &roff, (u8)(tm->tm_year % 100));
-        resp_u8(m, &roff, (u8)(tm->tm_mon + 1));
-        resp_u8(m, &roff, (u8)tm->tm_mday);
-        resp_u8(m, &roff, (u8)tm->tm_hour);
-        resp_u8(m, &roff, (u8)tm->tm_min);
-        resp_u8(m, &roff, (u8)tm->tm_sec);
-        resp_u8(m, &roff, (u8)tm->tm_wday);
+        resp_str(m, &roff, buf);
         break;
     }
 
