@@ -442,48 +442,77 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_READ: {
+        /* Request:  data[0]=fd, data[1..2]=size
+         * Response: resp+3 = result (0=OK, non-zero error e.g. 20=EOF)
+         *           resp+4 onwards = the requested bytes
+         * The ROM uses the size it requested (not a returned count). */
         if (plen < 3) { err = M4_ERR_IO; break; }
         u8  fd    = p[0];
         u16 count = (u16)p[1] | ((u16)p[2] << 8);
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-
-        /* Write byte count placeholder, then data */
-        u16 cnt_off = roff;
-        roff += 2;
+        if (!valid_fd(m, fd)) {
+            resp_u8(m, &roff, M4_ERR_BADFD);
+            err = M4_ERR_BADFD;
+            break;
+        }
+        resp_u8(m, &roff, M4_OK);  /* result at resp+3 */
         u16 n = 0;
         for (; n < count; n++) {
             int c = fgetc(m->fds[fd - 1].fp);
             if (c == EOF) break;
             resp_u8(m, &roff, (u8)c);
         }
-        /* Fill in actual count */
-        m->bus_mem[cnt_off]     = n & 0xFF;
-        m->bus_mem[cnt_off + 1] = n >> 8;
+        /* If we hit EOF before reading all requested bytes, signal it
+         * by overwriting the result byte with 20 (FR_FILE_LOCKED in
+         * FatFs maps to ROM's EOF marker). The ROM's load loops then
+         * stop using the partial data already in the buffer. */
+        if (n < count)
+            m->bus_mem[3] = 20;
         err = M4_OK;
         break;
     }
 
     case C_READ2: {
-        /* Read a single character from fd */
-        u8 fd = (plen >= 3) ? p[2] : (plen >= 1 ? p[0] : 0);
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        int c = fgetc(m->fds[fd - 1].fp);
-        if (c == EOF) { err = M4_ERR_EOF; break; }
+        /* Same as C_READ but skips AMSDOS header detection. Used by
+         * char_in for unbuffered reads.
+         * Request:  data[0]=fd, data[1..2]=size
+         * Response: resp+3 = status (0=OK, 20=EOF)
+         *           resp+4..5 = actual bytes read (size_lo, size_hi)
+         *           resp+8 onwards = data (note the +6/+7 gap) */
+        if (plen < 1) { err = M4_ERR_IO; break; }
+        u8  fd    = p[0];
+        u16 count = (plen >= 3) ? ((u16)p[1] | ((u16)p[2] << 8)) : 1;
+        if (!valid_fd(m, fd)) {
+            resp_u8(m, &roff, M4_ERR_BADFD);
+            err = M4_ERR_BADFD;
+            break;
+        }
+        u8 *status_p = &m->bus_mem[3];
+        u8 *size_p   = &m->bus_mem[4];
+        *status_p = 0;
+        size_p[0] = 0; size_p[1] = 0;
+        roff = 8;  /* data starts at resp+8 per ROM expectation */
+        u16 n = 0;
+        for (; n < count; n++) {
+            int c = fgetc(m->fds[fd - 1].fp);
+            if (c == EOF) break;
+            resp_u8(m, &roff, (u8)c);
+        }
+        size_p[0] = n & 0xFF;
+        size_p[1] = n >> 8;
+        if (n == 0) *status_p = 20;  /* EOF */
         err = M4_OK;
-        resp_u8(m, &roff, (u8)c);
         break;
     }
 
     case C_WRITE: {
-        if (plen < 3) { err = M4_ERR_IO; break; }
-        u8  fd    = p[0];
-        u16 count = (u16)p[1] | ((u16)p[2] << 8);
+        /* M4 protocol: data[0] = fd, data[1..] = raw bytes to write.
+         * The payload length is implicit (whole packet minus header+fd). */
+        if (plen < 1) { err = M4_ERR_IO; break; }
+        u8 fd = p[0];
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        u16 actual = (u16)plen - 3;
-        if (actual > count) actual = count;
-        size_t written = fwrite(&p[3], 1, actual, m->fds[fd - 1].fp);
-        err = M4_OK;
-        resp_u16le(m, &roff, (u16)written);
+        size_t actual = (size_t)(plen - 1);
+        size_t written = fwrite(&p[1], 1, actual, m->fds[fd - 1].fp);
+        err = (written == actual) ? M4_OK : M4_ERR_IO;
         break;
     }
 
