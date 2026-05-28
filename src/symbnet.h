@@ -1,50 +1,45 @@
 /* symbnet.h — 1984 emulator's synthetic SymbOS network port.
  *
- * Talks to the SymbOS netd-1984.exe driver via two CPC I/O ports:
- *   0xFD30  R/W  data FIFO (command bytes in, response bytes out)
- *   0xFD31   R   status (bit 0 = response ready, bit 1 = last cmd errored)
+ * Re-exposes the M4 board's command dispatcher over a single FIFO pair
+ * so a stripped-down SymbOS network daemon (netd-1984.exe) can drive it
+ * without any ROM scanning, bus-mapped buffers, or bank tricks.
  *
- * Wire format and opcodes are documented in
+ *   0xFD30  R/W  data FIFO (M4 command bytes in, response bytes out)
+ *   0xFD31   R   status (bit 0 = response ready, bit 1 = last cmd errored)
+ *           W    strobe — ignored (the FIFO auto-executes when the
+ *                length-prefixed packet is complete)
+ *
+ * Wire format is the M4 packet format byte-for-byte:
+ *   first byte = N (count of bytes that follow), then opcode-lo,
+ *   opcode-hi, args. Opcodes are the standard M4_C* values.
+ *
+ * Protocol details and the daemon glue live in
  *   ../../symsys-networkdaemon-1984/README.md
  */
 #pragma once
 #include "types.h"
+#include "m4.h"
 #include <stdbool.h>
 
-#define SYMBNET_NSOCKS 16
-#define SYMBNET_BUFLEN 4096
-
 typedef struct {
-    int  fd;                /* host POSIX fd, -1 = unused */
-    u8   state;             /* 0=unused, 1=listen, 2=estab, 3=closewait, 4=closed */
-    bool is_udp;
-    u16  local_port;
-    u8   remote_ip[4];
-    u16  remote_port;
-} SymbNetSock;
+    M4  *m4;                /* upstream M4 instance providing the dispatcher */
 
-typedef struct {
-    /* Command FIFO (CPU → host) */
-    u8   cmd[SYMBNET_BUFLEN];
-    int  cmd_len;           /* bytes received so far */
-    int  cmd_expected;      /* total bytes expected (after length header decoded) */
+    /* Incoming command bytes from FD30 writes. First byte is the count of
+     * bytes that follow; when (cmd_len == 1 + cmd[0]) we hand them off to
+     * the M4 dispatcher. */
+    u8   cmd[M4_CMD_BUF];
+    int  cmd_len;
 
-    /* Response FIFO (host → CPU) */
-    u8   resp[SYMBNET_BUFLEN];
-    int  resp_len;          /* total bytes ready to read */
-    int  resp_pos;          /* next byte to return on FD30 read */
-
-    bool last_error;        /* mirrored to FD31 bit 1 */
-
-    SymbNetSock sockets[SYMBNET_NSOCKS];
+    /* The dispatcher writes its response to m4->bus_mem; we pull bytes out
+     * of there byte-by-byte as the daemon reads from FD30. */
+    int  resp_pos;
+    bool resp_ready;
+    bool last_error;
 } SymbNet;
 
-void symbnet_init(SymbNet *n);
+void symbnet_init(SymbNet *n, M4 *m4);
 void symbnet_reset(SymbNet *n);
-
-/* Per-frame poll: accepts incoming server connections, no other side effects. */
 void symbnet_tick(SymbNet *n);
 
-/* Port handlers. port_lo is 0x30 (data) or 0x31 (status). */
 u8   symbnet_port_read(SymbNet *n, u8 port_lo);
 void symbnet_port_write(SymbNet *n, u8 port_lo, u8 val);

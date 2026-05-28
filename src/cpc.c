@@ -222,7 +222,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ide_init(&cpc->ide_chip);
     mouse_init(&cpc->mouse);
     m4_init(&cpc->m4_card, "");
-    symbnet_init(&cpc->symbnet_card);
+    symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;

@@ -69,6 +69,10 @@
 #define C_GETNETWORK  0x433B
 #define C_WIFIPOW     0x433C
 #define C_CONFIG      0x43FE
+/* 1984-only: drain N bytes from arbitrary M4 memory. Used by symbnet's
+ * daemon (netd-1984.exe) to poll sock_info between commands without a
+ * bus-mapped buffer. Args: addr-lo, addr-hi, length. */
+#define C_READMEM     0x43FD
 
 /* Response base address — virtual; data is written to m->bus_mem, not CPC RAM,
  * to avoid corrupting screen memory (CPC screen RAM lives at 0xC000-0xFFFF). */
@@ -1238,6 +1242,31 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     case C_HTTPGETMEM:
         err = M4_ERR_NOTSUP;
         break;
+
+    case C_READMEM: {
+        /* Drain bytes out of the M4's internal buffers — used by netd-1984
+         * to poll sock_info[s] between commands. Args: addr-lo, addr-hi,
+         * length. Response: 'length' bytes copied from the matching buffer. */
+        if (plen < 3) { err = M4_ERR_IO; break; }
+        u16 addr = (u16)p[0] | ((u16)p[1] << 8);
+        u16 n    = (u16)p[2];
+        const u8 *src = NULL; u16 cap = 0;
+        if (addr >= 0xE800 && addr < 0xF400) {
+            src = &m->bus_mem[addr - 0xE800];
+            cap = (u16)(0xF400 - addr);
+        } else if (addr >= 0xF400 && addr < 0xF500) {
+            src = &m->cfg_mem[addr - 0xF400];
+            cap = (u16)(0xF500 - addr);
+        } else if (addr >= 0xFE00 && addr < 0xFE50) {
+            src = &m->sock_mem[addr - 0xFE00];
+            cap = (u16)(0xFE50 - addr);
+        }
+        if (!src) { err = M4_ERR_IO; break; }
+        if (n > cap) n = cap;
+        for (u16 i = 0; i < n; i++) resp_u8(m, &roff, src[i]);
+        err = M4_OK;
+        break;
+    }
 
     default:
         err = M4_ERR_NOTSUP;
