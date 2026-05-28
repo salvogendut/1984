@@ -202,16 +202,14 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          * set_SDdrive's ldi reads the correct fio_jvec address rather than the
          * ROM default of 0x0000. Also write rom_num (slot) at 0xF404. */
         if (plen >= 6 && p[0] == 0) {
-            u8 jvec_lo = p[3];
-            u8 jvec_hi = p[4];
-            u8 slot    = p[5];
-            /* Patch ROM content so set_SDdrive's ldi copies the real jvec */
-            mem->rom_ext[M4_ROM_SLOT][0xF402 - 0xC000] = jvec_lo;
-            mem->rom_ext[M4_ROM_SLOT][0xF403 - 0xC000] = jvec_hi;
-            mem->rom_ext[M4_ROM_SLOT][0xF404 - 0xC000] = slot;
+            /* Offset 0: init_rom workspace — fio_jvec address and slot.
+             * Write to CPC RAM at jump_vec (0xF402) so set_SDdrive's ldi
+             * reads the correct dispatch vector via the bus bypass. */
+            mem->ram[0xF402] = p[3];   /* jvec_lo */
+            mem->ram[0xF403] = p[4];   /* jvec_hi */
+            mem->ram[0xF404] = p[5];   /* slot (rom_num) */
         } else if (plen >= 2 && p[0] == 5) {
-            /* Offset 5: init_count update — ROM writes new count, we store it in
-             * CPC RAM at 0xF405 so the ROM can read it back via the bus bypass. */
+            /* Offset 5: init_count update. */
             m->init_count = p[1];
             mem->ram[0xF405] = m->init_count;
         }
