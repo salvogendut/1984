@@ -12,7 +12,6 @@ Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS f
 
 - GCC (C11)
 - SDL3
-- CPC ROM images (not included — dump your own or source from the web)
 
 ## Build
 
@@ -47,16 +46,24 @@ The spec file handles `autoreconf`, `./configure`, and `make install` automatica
 
 ## ROM files
 
-Place ROM images in the `roms/` directory with these exact names:
+The required CPC firmware ROMs and the open-source M4ROM / Amstrad
+diagnostics ROM are bundled in the `roms/` directory and installed to
+`$(datadir)/1984/roms/` by `make install` (e.g. `/usr/share/1984/roms/`).
 
 | File | Contents |
 |------|----------|
-| `roms/OS_464.ROM` | CPC 464 OS ROM (16 KB) |
-| `roms/BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
-| `roms/OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
-| `roms/BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
-| `roms/AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
-| `roms/AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |
+| `OS_464.ROM` | CPC 464 OS ROM (16 KB) |
+| `BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
+| `OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
+| `BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
+| `AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
+| `M4ROM.ROM` | M4 board firmware (16 KB) — open source ([M4Duke/m4rom](https://github.com/M4Duke/m4rom)); enables the SD-card emulation when M4 is toggled on |
+| `AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |
+
+At runtime, ROMs are looked up in this order:
+1. `~/.config/1984/roms/<file>` (user override)
+2. `$(datadir)/1984/roms/<file>` (system install)
+3. `./roms/<file>` (dev tree)
 
 ## Configuration
 

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
@@ -16,13 +17,47 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 #define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
-/* Build a full path: ~/.config/1984/roms/<file> → out[size] */
+/* Build a path to a bundled ROM file.
+ * Priority:
+ *   1. ~/.config/1984/roms/<file>      — user override
+ *   2. $(pkgdatadir)/roms/<file>       — system install (from autotools)
+ *   3. ./roms/<file>                   — dev tree / cwd fallback
+ * The first path that exists is returned; otherwise the user-config path
+ * (so a "file not found" error names the location the user is expected
+ * to populate). */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
+    char user[512], system_[512];
     const char *home = getenv("HOME");
+
+    user[0] = '\0';
     if (home)
-        snprintf(out, size, "%s/.config/1984/roms/%s", home, file);
-    else
-        snprintf(out, size, "roms/%s", file);  /* fallback if HOME unset */
+        snprintf(user, sizeof(user), "%s/.config/1984/roms/%s", home, file);
+
+    if (user[0] && access(user, R_OK) == 0) {
+        snprintf(out, size, "%s", user);
+        return;
+    }
+#ifdef ROM_INSTALL_DIR
+    snprintf(system_, sizeof(system_), "%s/%s", ROM_INSTALL_DIR, file);
+    if (access(system_, R_OK) == 0) {
+        snprintf(out, size, "%s", system_);
+        return;
+    }
+#else
+    (void)system_;
+#endif
+    if (access("roms", R_OK) == 0) {
+        char dev_[512];
+        snprintf(dev_, sizeof(dev_), "roms/%s", file);
+        if (access(dev_, R_OK) == 0) {
+            snprintf(out, size, "%s", dev_);
+            return;
+        }
+    }
+    /* Nothing found — return the user-config path so any error message
+     * points the user at the location they should populate. */
+    snprintf(out, size, "%s",
+             user[0] ? user : (const char *)file);
 }
 
 void config_defaults(Config *cfg) {

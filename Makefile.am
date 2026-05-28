@@ -25,8 +25,21 @@ bin_PROGRAMS = 1984
 	src/mouse.c \
 	src/z80.c
 
-1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
+1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
+               -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
 1984_LDADD   = $(SDL3_LIBS) -lm
+
+# Bundled ROM images installed to $(datadir)/1984/roms/
+# (CPC firmware are freely redistributable for emulator use; M4ROM and
+# Amstrad diagnostics ROM are open source.)
+romsdir       = $(pkgdatadir)/roms
+dist_roms_DATA = roms/AMSDOS.ROM \
+                 roms/BASIC_1.0.ROM \
+                 roms/BASIC_1.1.ROM \
+                 roms/M4ROM.ROM \
+                 roms/OS_464.ROM \
+                 roms/OS_6128.ROM \
+                 roms/AmstradDiagLower.rom
 
 # Keep the hand-written Makefile usable alongside autotools
 EXTRA_DIST = Makefile
