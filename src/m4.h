@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "mem.h"
+#include "fat.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <dirent.h>
@@ -30,8 +31,9 @@
 #define M4_ERR_NOTSUP  0xFF
 
 typedef struct {
-    FILE *fp;
-    bool  in_use;
+    FILE    *fp;        /* directory-mode host file */
+    FatFile *fatf;      /* image-mode FAT file (NULL = host file) */
+    bool     in_use;
 } M4Fd;
 
 typedef struct {
@@ -53,9 +55,16 @@ typedef struct {
     char    root[M4_PATH_MAX];
     /* Current working directory within the SD card (file-API mode only) */
     char    cwd[M4_PATH_MAX];
-    /* Optional raw FAT image backing the sector API (C_SDREAD/C_SDWRITE). */
+    /* Optional raw FAT image backing the sector API (C_SDREAD/C_SDWRITE) AND
+     * the file API when no host directory is configured. */
     char    image_path[M4_PATH_MAX];
     FILE   *image_fp;
+    FatVol  image_vol;
+    bool    image_mounted;        /* true when image_vol is a valid FAT volume */
+
+    /* Per-fd FAT directory iterators (one slot per dir handle).
+     * dir_fat is used in image mode in place of dir_dp. */
+    FatDir *dir_fat;
 
     /* File descriptors (1-indexed: fd=1 → fds[0]) */
     M4Fd    fds[M4_MAX_FDS];

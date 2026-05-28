@@ -209,14 +209,47 @@ static bool valid_fd(const M4 *m, u8 fd) {
 
 /* ---- Public API ---- */
 
-/* Open the raw disk image file if image_path is set. */
+/* True when the file API should route through the FAT image (image mode):
+ * no host directory configured AND the image mounts as a valid FAT volume. */
+static bool m4_use_fat(const M4 *m) {
+    return !m->root[0] && m->image_mounted;
+}
+
+/* Build an absolute FAT path from a caller-supplied CPC path (which may be
+ * relative or absolute) and the current cwd. */
+static void fat_abs_path(const M4 *m, const char *cpc_path,
+                         char *out, size_t outsz) {
+    /* Normalise backslashes to forward slashes */
+    char clean[M4_PATH_MAX];
+    size_t ci = 0;
+    for (size_t i = 0; cpc_path[i] && ci < sizeof(clean) - 1; i++)
+        clean[ci++] = (cpc_path[i] == '\\') ? '/' : cpc_path[i];
+    clean[ci] = '\0';
+
+    if (clean[0] == '/') {
+        snprintf(out, outsz, "%s", clean);
+    } else {
+        const char *cwd = m->cwd[0] ? m->cwd : "/";
+        if (strcmp(cwd, "/") == 0)
+            snprintf(out, outsz, "/%s", clean);
+        else
+            snprintf(out, outsz, "%s/%s", cwd, clean);
+    }
+}
+
+/* Open the raw disk image file if image_path is set. Also try mounting it as
+ * a FAT16/FAT32 volume so the file API can route through it when no host
+ * directory is configured. */
 static void m4_open_image(M4 *m) {
+    if (m->image_mounted) { fat_unmount(&m->image_vol); m->image_mounted = false; }
     if (m->image_fp) { fclose(m->image_fp); m->image_fp = NULL; }
     if (!m->image_path[0]) return;
     struct stat st;
     if (stat(m->image_path, &st) != 0 || !S_ISREG(st.st_mode)) return;
     m->image_fp = fopen(m->image_path, "r+b");
     if (!m->image_fp) m->image_fp = fopen(m->image_path, "rb"); /* read-only fallback */
+    if (m->image_fp)
+        m->image_mounted = fat_mount(&m->image_vol, m->image_fp);
 }
 
 /* ---- Network helpers ---- */
@@ -299,12 +332,14 @@ void m4_set_image(M4 *m, const char *image_path) {
 void m4_reset(M4 *m) {
     /* Close all open files and directories, reset command buffer and cwd */
     for (int i = 0; i < M4_MAX_FDS; i++) {
-        if (m->fds[i].in_use && m->fds[i].fp)
-            fclose(m->fds[i].fp);
+        if (m->fds[i].fp)   fclose(m->fds[i].fp);
+        if (m->fds[i].fatf) fat_close(m->fds[i].fatf);
         m->fds[i].in_use = false;
-        m->fds[i].fp = NULL;
+        m->fds[i].fp     = NULL;
+        m->fds[i].fatf   = NULL;
     }
-    if (m->dir_dp) { closedir(m->dir_dp); m->dir_dp = NULL; }
+    if (m->dir_dp)  { closedir(m->dir_dp); m->dir_dp = NULL; }
+    if (m->dir_fat) { fat_closedir(m->dir_fat); m->dir_fat = NULL; }
     m->cmd_len = 0;
     snprintf(m->cwd, sizeof(m->cwd), "/");
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
@@ -405,7 +440,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
 
     case C_CD: {
-        if (!m->root[0] || plen < 1) { err = M4_ERR_IO; break; }
+        if (plen < 1 || (!m->root[0] && !m4_use_fat(m))) { err = M4_ERR_IO; break; }
         const char *path = (const char *)p;
         if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0) {
             snprintf(m->cwd, sizeof(m->cwd), "/");
@@ -419,11 +454,18 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             err = M4_OK;
             break;
         }
+        if (m4_use_fat(m)) {
+            char abs[M4_PATH_MAX];
+            fat_abs_path(m, path, abs, sizeof(abs));
+            if (!fat_dir_exists(&m->image_vol, abs)) { err = M4_ERR_NOFILE; break; }
+            snprintf(m->cwd, sizeof(m->cwd), "%s", abs);
+            err = M4_OK;
+            break;
+        }
         char hostpath[M4_PATH_MAX];
         if (!resolve_path(m, path, hostpath, sizeof(hostpath))) { err = M4_ERR_NOFILE; break; }
         struct stat st;
         if (stat(hostpath, &st) != 0 || !S_ISDIR(st.st_mode)) { err = M4_ERR_NOFILE; break; }
-        /* Update cwd to path relative to root */
         const char *rel = hostpath + strlen(m->root);
         snprintf(m->cwd, sizeof(m->cwd), "%s", rel[0] ? rel : "/");
         err = M4_OK;
@@ -432,7 +474,9 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_FREE: {
         u32 free_kb = 0;
-        if (m->root[0]) {
+        if (m4_use_fat(m)) {
+            free_kb = fat_free_kb(&m->image_vol);
+        } else if (m->root[0]) {
             struct statvfs sv;
             if (statvfs(m->root, &sv) == 0)
                 free_kb = (u32)((u64)sv.f_bavail * sv.f_bsize / 1024);
@@ -447,50 +491,66 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     /* ---- Directory listing ---- */
 
     case C_DIRSETARGS: {
-        if (!m->root[0]) { err = M4_ERR_IO; break; }
-        if (m->dir_dp) { closedir(m->dir_dp); m->dir_dp = NULL; }
+        if (!m->root[0] && !m4_use_fat(m)) { err = M4_ERR_IO; break; }
+        if (m->dir_dp)  { closedir(m->dir_dp); m->dir_dp = NULL; }
+        if (m->dir_fat) { fat_closedir(m->dir_fat); m->dir_fat = NULL; }
 
-        /* params: optional filter string */
         if (plen > 0 && p[0])
             snprintf(m->dir_filter, sizeof(m->dir_filter), "%s", (const char *)p);
         else
             snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
 
-        char hostpath[M4_PATH_MAX];
-        snprintf(hostpath, sizeof(hostpath), "%s%s", m->root, m->cwd);
-        m->dir_dp = opendir(hostpath);
-        err = m->dir_dp ? M4_OK : M4_ERR_IO;
+        if (m4_use_fat(m)) {
+            m->dir_fat = fat_opendir(&m->image_vol, m->cwd[0] ? m->cwd : "/");
+            err = m->dir_fat ? M4_OK : M4_ERR_IO;
+        } else {
+            char hostpath[M4_PATH_MAX];
+            snprintf(hostpath, sizeof(hostpath), "%s%s", m->root, m->cwd);
+            m->dir_dp = opendir(hostpath);
+            err = m->dir_dp ? M4_OK : M4_ERR_IO;
+        }
         break;
     }
 
     case C_READDIR: {
-        /* M4ROM's catalog loop checks rom_response+0 == 2 for EOF, so the
-         * EOF marker for THIS command is fixed at 2 regardless of our
-         * generic error map. */
-        if (!m->dir_dp) { err = 2; break; }
+        /* M4ROM's catalog loop checks rom_response+0 == 2 for EOF. */
+        if (!m->dir_dp && !m->dir_fat) { err = 2; break; }
 
-        struct dirent *de = NULL;
-        for (;;) {
-            de = readdir(m->dir_dp);
-            if (!de) { err = 2; goto readdir_done; }
-            if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
-                continue;
-            if (fnmatch(m->dir_filter, de->d_name,
-                        FNM_NOESCAPE | FNM_CASEFOLD) != 0)
-                continue;
-            break;
-        }
+        char  entry_name[256];
+        bool  is_dir = false;
+        u32   fsize  = 0;
 
-        /* Get file info */
-        char hostpath[M4_PATH_MAX];
-        snprintf(hostpath, sizeof(hostpath), "%s%s/%s",
-                 m->root, m->cwd, de->d_name);
-        struct stat st;
-        bool is_dir = false;
-        u32  fsize  = 0;
-        if (stat(hostpath, &st) == 0) {
-            is_dir = S_ISDIR(st.st_mode);
-            fsize  = is_dir ? 0 : (u32)st.st_size;
+        if (m->dir_fat) {
+            for (;;) {
+                if (!fat_readdir(m->dir_fat, entry_name, sizeof(entry_name),
+                                 &fsize, &is_dir)) { err = 2; goto readdir_done; }
+                if (fnmatch(m->dir_filter, entry_name,
+                            FNM_NOESCAPE | FNM_CASEFOLD) == 0)
+                    break;
+            }
+            if (is_dir) fsize = 0;
+        } else {
+            struct dirent *de = NULL;
+            for (;;) {
+                de = readdir(m->dir_dp);
+                if (!de) { err = 2; goto readdir_done; }
+                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+                    continue;
+                if (fnmatch(m->dir_filter, de->d_name,
+                            FNM_NOESCAPE | FNM_CASEFOLD) != 0)
+                    continue;
+                break;
+            }
+            snprintf(entry_name, sizeof(entry_name), "%s", de->d_name);
+
+            char hostpath[M4_PATH_MAX];
+            snprintf(hostpath, sizeof(hostpath), "%s%s/%s",
+                     m->root, m->cwd, entry_name);
+            struct stat st;
+            if (stat(hostpath, &st) == 0) {
+                is_dir = S_ISDIR(st.st_mode);
+                fsize  = is_dir ? 0 : (u32)st.st_size;
+            }
         }
 
         /* Format as 8.3 for display.
@@ -504,7 +564,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          * Directories are prefixed with '>' per M4 board convention. */
         char name8[9] = "        ";
         char ext3[4]  = "   ";
-        const char *src = de->d_name;
+        const char *src = entry_name;
         if (is_dir) {
             name8[0] = '>';
             for (int i = 1; i < 8 && src[i-1]; i++)
@@ -551,11 +611,58 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          *   mode with FA_REALMODE: dynamic fd from a pool (fds 3..M4_MAX_FDS).
          * Response: resp+3 = fd, resp+4 = 0 on success, non-zero error otherwise. */
         u8 open_fd = 0xFF, open_err = M4_ERR_IO;
-        if (m->root[0] && plen >= 2) {
+        if ((m->root[0] || m4_use_fat(m)) && plen >= 2) {
             u8 mode = p[0];
             const char *name = (const char *)&p[1];
-            char hostpath[M4_PATH_MAX];
             bool is_write = (mode & 0x02) != 0;
+
+            if (m4_use_fat(m)) {
+                /* Image-mode: route through the FAT volume. */
+                char abs[M4_PATH_MAX];
+                fat_abs_path(m, name, abs, sizeof(abs));
+                FatFile *ff = fat_open(&m->image_vol, abs, is_write);
+                if (!ff && !is_write && !strchr(name, '.')) {
+                    /* Try .BAS / .BIN auto-extension for read mode. */
+                    static const char *exts[] = { ".BAS", ".BIN", NULL };
+                    for (int e = 0; exts[e] && !ff; e++) {
+                        char tryabs[M4_PATH_MAX];
+                        snprintf(tryabs, sizeof(tryabs), "%s%s", abs, exts[e]);
+                        ff = fat_open(&m->image_vol, tryabs, false);
+                    }
+                }
+                int idx;
+                if (mode & 0x80) {
+                    idx = -1;
+                    for (int i = 2; i < M4_MAX_FDS; i++)
+                        if (!m->fds[i].in_use) { idx = i + 1; break; }
+                } else {
+                    idx = (mode & 0x02) ? 2 : 1;
+                    if (m->fds[idx - 1].in_use) {
+                        if (m->fds[idx - 1].fp)   fclose(m->fds[idx - 1].fp);
+                        if (m->fds[idx - 1].fatf) fat_close(m->fds[idx - 1].fatf);
+                        m->fds[idx - 1].fp = NULL;
+                        m->fds[idx - 1].fatf = NULL;
+                        m->fds[idx - 1].in_use = false;
+                    }
+                }
+                if (!ff) {
+                    open_err = M4_ERR_NOFILE;
+                } else if (idx < 0) {
+                    fat_close(ff);
+                    open_err = M4_ERR_FULL;
+                } else {
+                    m->fds[idx - 1].fatf   = ff;
+                    m->fds[idx - 1].in_use = true;
+                    open_fd  = (u8)idx;
+                    open_err = M4_OK;
+                }
+                err = open_err;
+                resp_u8(m, &roff, open_fd);
+                resp_u8(m, &roff, open_err);
+                break;
+            }
+
+            char hostpath[M4_PATH_MAX];
             bool path_ok = resolve_path(m, name, hostpath, sizeof(hostpath));
             if (path_ok && !is_write) {
                 struct stat st;
@@ -638,10 +745,16 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         }
         resp_u8(m, &roff, M4_OK);
         u16 n = 0;
-        for (; n < count; n++) {
-            int c = fgetc(m->fds[fd - 1].fp);
-            if (c == EOF) break;
-            resp_u8(m, &roff, (u8)c);
+        if (m->fds[fd - 1].fatf) {
+            u32 got = fat_read(m->fds[fd - 1].fatf, &m->bus_mem[roff], count);
+            n   = (u16)got;
+            roff = (u16)(roff + got);
+        } else {
+            for (; n < count; n++) {
+                int c = fgetc(m->fds[fd - 1].fp);
+                if (c == EOF) break;
+                resp_u8(m, &roff, (u8)c);
+            }
         }
         for (; n < count; n++)
             resp_u8(m, &roff, 0x00);
@@ -670,10 +783,16 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         size_p[0] = 0; size_p[1] = 0;
         roff = 8;  /* data starts at resp+8 per ROM expectation */
         u16 n = 0;
-        for (; n < count; n++) {
-            int c = fgetc(m->fds[fd - 1].fp);
-            if (c == EOF) break;
-            resp_u8(m, &roff, (u8)c);
+        if (m->fds[fd - 1].fatf) {
+            u32 got = fat_read(m->fds[fd - 1].fatf, &m->bus_mem[roff], count);
+            n   = (u16)got;
+            roff = (u16)(roff + got);
+        } else {
+            for (; n < count; n++) {
+                int c = fgetc(m->fds[fd - 1].fp);
+                if (c == EOF) break;
+                resp_u8(m, &roff, (u8)c);
+            }
         }
         size_p[0] = n & 0xFF;
         size_p[1] = n >> 8;
@@ -683,24 +802,28 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_WRITE: {
-        /* M4 protocol: data[0] = fd, data[1..] = raw bytes to write.
-         * The payload length is implicit (whole packet minus header+fd). */
         if (plen < 1) { err = M4_ERR_IO; break; }
         u8 fd = p[0];
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
         size_t actual = (size_t)(plen - 1);
-        size_t written = fwrite(&p[1], 1, actual, m->fds[fd - 1].fp);
+        size_t written;
+        if (m->fds[fd - 1].fatf)
+            written = fat_write(m->fds[fd - 1].fatf, &p[1], (u32)actual);
+        else
+            written = fwrite(&p[1], 1, actual, m->fds[fd - 1].fp);
         err = (written == actual) ? M4_OK : M4_ERR_IO;
         break;
     }
 
     case C_WRITE2: {
-        /* Write single byte */
         if (plen < 2) { err = M4_ERR_IO; break; }
         u8 fd = p[0];
         u8 ch = p[1];
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        fputc(ch, m->fds[fd - 1].fp);
+        if (m->fds[fd - 1].fatf)
+            fat_write(m->fds[fd - 1].fatf, &ch, 1);
+        else
+            fputc(ch, m->fds[fd - 1].fp);
         err = M4_OK;
         break;
     }
@@ -709,14 +832,20 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u8 fd = (plen >= 1) ? p[0] : 0;
         u8 close_res;
         if (valid_fd(m, fd)) {
-            fclose(m->fds[fd - 1].fp);
-            m->fds[fd - 1].fp = NULL;
+            if (m->fds[fd - 1].fatf) {
+                fat_close(m->fds[fd - 1].fatf);
+                m->fds[fd - 1].fatf = NULL;
+            }
+            if (m->fds[fd - 1].fp) {
+                fclose(m->fds[fd - 1].fp);
+                m->fds[fd - 1].fp = NULL;
+            }
             m->fds[fd - 1].in_use = false;
             err = M4_OK;
-            close_res = 0x00;  /* success */
+            close_res = 0x00;
         } else {
             err = M4_ERR_BADFD;
-            close_res = 0xFF;  /* fd not open — triggers init_count check in M4ROM's fclose */
+            close_res = 0xFF;
         }
         resp_u8(m, &roff, close_res);
         break;
@@ -728,8 +857,16 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u32 pos = (u32)p[1] | ((u32)p[2] << 8) | ((u32)p[3] << 16) | ((u32)p[4] << 24);
         int wh  = (int)p[5]; /* 0=SET, 1=CUR, 2=END */
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        int whence = (wh == 1) ? SEEK_CUR : (wh == 2) ? SEEK_END : SEEK_SET;
-        err = (fseek(m->fds[fd - 1].fp, (long)pos, whence) == 0) ? M4_OK : M4_ERR_IO;
+        if (m->fds[fd - 1].fatf) {
+            FatFile *ff = m->fds[fd - 1].fatf;
+            u32 target = pos;
+            if (wh == 1) target = fat_tell(ff) + pos;
+            else if (wh == 2) target = fat_file_size(ff) + pos;
+            err = fat_seek(ff, target) ? M4_OK : M4_ERR_IO;
+        } else {
+            int whence = (wh == 1) ? SEEK_CUR : (wh == 2) ? SEEK_END : SEEK_SET;
+            err = (fseek(m->fds[fd - 1].fp, (long)pos, whence) == 0) ? M4_OK : M4_ERR_IO;
+        }
         break;
     }
 
@@ -737,30 +874,49 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u8 fd = (plen >= 1) ? p[0] : 0;
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
         err = M4_OK;
-        resp_u8(m, &roff, feof(m->fds[fd - 1].fp) ? 1 : 0);
+        u8 eof_v;
+        if (m->fds[fd - 1].fatf) {
+            FatFile *ff = m->fds[fd - 1].fatf;
+            eof_v = (fat_tell(ff) >= fat_file_size(ff)) ? 1 : 0;
+        } else {
+            eof_v = feof(m->fds[fd - 1].fp) ? 1 : 0;
+        }
+        resp_u8(m, &roff, eof_v);
         break;
     }
 
     case C_FTELL: {
         u8 fd = (plen >= 1) ? p[0] : 0;
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        long pos = ftell(m->fds[fd - 1].fp);
-        if (pos < 0) { err = M4_ERR_IO; break; }
+        u32 pos;
+        if (m->fds[fd - 1].fatf) {
+            pos = fat_tell(m->fds[fd - 1].fatf);
+        } else {
+            long lp = ftell(m->fds[fd - 1].fp);
+            if (lp < 0) { err = M4_ERR_IO; break; }
+            pos = (u32)lp;
+        }
         err = M4_OK;
-        resp_u32le(m, &roff, (u32)pos);
+        resp_u32le(m, &roff, pos);
         break;
     }
 
     case C_FSIZE: {
         u8 fd = (plen >= 1) ? p[0] : 0;
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        long saved = ftell(m->fds[fd - 1].fp);
-        fseek(m->fds[fd - 1].fp, 0, SEEK_END);
-        long sz = ftell(m->fds[fd - 1].fp);
-        fseek(m->fds[fd - 1].fp, saved, SEEK_SET);
-        if (sz < 0) { err = M4_ERR_IO; break; }
+        u32 sz;
+        if (m->fds[fd - 1].fatf) {
+            sz = fat_file_size(m->fds[fd - 1].fatf);
+        } else {
+            long saved = ftell(m->fds[fd - 1].fp);
+            fseek(m->fds[fd - 1].fp, 0, SEEK_END);
+            long lp = ftell(m->fds[fd - 1].fp);
+            fseek(m->fds[fd - 1].fp, saved, SEEK_SET);
+            if (lp < 0) { err = M4_ERR_IO; break; }
+            sz = (u32)lp;
+        }
         err = M4_OK;
-        resp_u32le(m, &roff, (u32)sz);
+        resp_u32le(m, &roff, sz);
         break;
     }
 
