@@ -189,6 +189,11 @@ int main(int argc, char *argv[]) {
         char m4rom[512];
         config_default_m4rom(m4rom, sizeof(m4rom));
         mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
+        /* Seed the bus-mapped variable area (0xF400-0xF500) with the ROM's
+         * default contents so reads via the bypass return valid pointers
+         * (e.g. runfile_ptr → autoexec_fn) before any C_CONFIG write. */
+        memcpy(&cpc.mem.ram[0xF400],
+               &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000], 0x100);
     }
 
     /* Apply --rom-slot=N:PATH overrides from CLI */
@@ -420,6 +425,8 @@ int main(int argc, char *argv[]) {
                 char m4rom[512];
                 config_default_m4rom(m4rom, sizeof(m4rom));
                 mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
+                memcpy(&cpc.mem.ram[0xF400],
+                       &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000], 0x100);
             }
             const char *title = (cpc.model == MODEL_464)
                 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;

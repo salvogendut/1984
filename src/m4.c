@@ -195,26 +195,21 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     /* ---- System ---- */
 
-    case C_CONFIG:
-        /* Config read/write. Packet: [offset][...data...].
-         * Offset 0: init_rom workspace — extract jump vector (params[3-4]).
-         * Patch the ROM content at jump_vec (0xF402, file offset 0x3402) so
-         * set_SDdrive's ldi reads the correct fio_jvec address rather than the
-         * ROM default of 0x0000. Also write rom_num (slot) at 0xF404. */
-        if (plen >= 6 && p[0] == 0) {
-            /* Offset 0: init_rom workspace — fio_jvec address and slot.
-             * Write to CPC RAM at jump_vec (0xF402) so set_SDdrive's ldi
-             * reads the correct dispatch vector via the bus bypass. */
-            mem->ram[0xF402] = p[3];   /* jvec_lo */
-            mem->ram[0xF403] = p[4];   /* jvec_hi */
-            mem->ram[0xF404] = p[5];   /* slot (rom_num) */
-        } else if (plen >= 2 && p[0] == 5) {
-            /* Offset 5: init_count update. */
-            m->init_count = p[1];
-            mem->ram[0xF405] = m->init_count;
+    case C_CONFIG: {
+        /* Generic config area write. Packet: [offset][data...].
+         * Writes payload bytes to CPC RAM at rom_config+offset (0xF400+offset)
+         * so the M4ROM can read them back via the bus bypass (0xF400-0xF500). */
+        if (plen >= 1) {
+            u16 base = 0xF400 + p[0];
+            int n = plen - 1;
+            for (int i = 0; i < n && (base + i) < 0xF500; i++)
+                mem->ram[base + i] = p[1 + i];
+            if (p[0] == 5 && plen >= 2)
+                m->init_count = p[1];
         }
         err = M4_OK;
         break;
+    }
 
     case C_VERSION:
         err = M4_OK;
@@ -463,11 +458,18 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_CLOSE: {
         u8 fd = (plen >= 1) ? p[0] : 0;
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        fclose(m->fds[fd - 1].fp);
-        m->fds[fd - 1].fp = NULL;
-        m->fds[fd - 1].in_use = false;
-        err = M4_OK;
+        u8 close_res;
+        if (valid_fd(m, fd)) {
+            fclose(m->fds[fd - 1].fp);
+            m->fds[fd - 1].fp = NULL;
+            m->fds[fd - 1].in_use = false;
+            err = M4_OK;
+            close_res = 0x00;  /* success */
+        } else {
+            err = M4_ERR_BADFD;
+            close_res = 0xFF;  /* fd not open — triggers init_count check in M4ROM's fclose */
+        }
+        resp_u8(mem, &roff, close_res);
         break;
     }
 
