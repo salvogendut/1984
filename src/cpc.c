@@ -17,6 +17,16 @@ int cpc_trace_input = 0;
 
 static u8 bus_mem_read(void *ctx, u16 addr) {
     CPC *cpc = ctx;
+    /* M4 board maps its variable/response areas on the expansion bus, making
+     * them read/write even while the M4ROM is paged in.
+     * 0xE800-0xEFFF: command response buffer (rom_response, m4_workspace etc.)
+     * 0xF400-0xF500: ROM variables (jump_vec, init_count, rom_workspace, etc.)
+     * Only applies when M4ROM (slot 6) is the active upper ROM. */
+    if (cpc->m4 && cpc->mem.upper_rom_enabled
+            && cpc->mem.upper_rom_select == M4_ROM_SLOT
+            && ((addr >= 0xE800 && addr < 0xF000)
+                || (addr >= 0xF400 && addr < 0xF500)))
+        return cpc->mem.ram[addr];
     return mem_read(&cpc->mem, addr);
 }
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {

@@ -42,6 +42,7 @@ typedef struct {
     char    dir_filter[64];  /* fnmatch pattern, e.g. "*.DSK" or "*" */
 
     bool    nmi_enabled;     /* true = trigger Z80 NMI after each command */
+    u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
 } M4;
 
 void m4_init(M4 *m, const char *root);

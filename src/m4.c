@@ -189,11 +189,34 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     const u8 *p = m->cmd_buf + 3;   /* params */
     int plen    = m->cmd_len - 3;
     u8  err     = M4_ERR_NOTSUP;
-    u16 roff    = 1;                 /* response data written starting at RESP_BASE+1 */
+    u16 roff    = 3;                 /* response data written starting at RESP_BASE+3 (M4 protocol) */
 
     switch (cmd) {
 
     /* ---- System ---- */
+
+    case C_CONFIG:
+        /* Config read/write. Packet: [offset][...data...].
+         * Offset 0: init_rom workspace — extract jump vector (params[3-4]).
+         * Patch the ROM content at jump_vec (0xF402, file offset 0x3402) so
+         * set_SDdrive's ldi reads the correct fio_jvec address rather than the
+         * ROM default of 0x0000. Also write rom_num (slot) at 0xF404. */
+        if (plen >= 6 && p[0] == 0) {
+            u8 jvec_lo = p[3];
+            u8 jvec_hi = p[4];
+            u8 slot    = p[5];
+            /* Patch ROM content so set_SDdrive's ldi copies the real jvec */
+            mem->rom_ext[M4_ROM_SLOT][0xF402 - 0xC000] = jvec_lo;
+            mem->rom_ext[M4_ROM_SLOT][0xF403 - 0xC000] = jvec_hi;
+            mem->rom_ext[M4_ROM_SLOT][0xF404 - 0xC000] = slot;
+        } else if (plen >= 2 && p[0] == 5) {
+            /* Offset 5: init_count update — ROM writes new count, we store it in
+             * CPC RAM at 0xF405 so the ROM can read it back via the bus bypass. */
+            m->init_count = p[1];
+            mem->ram[0xF405] = m->init_count;
+        }
+        err = M4_OK;
+        break;
 
     case C_VERSION:
         err = M4_OK;
@@ -351,28 +374,35 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     /* ---- File I/O ---- */
 
     case C_OPEN: {
-        if (!m->root[0] || plen < 2) { err = M4_ERR_IO; break; }
-        u8 mode = p[0];
-        const char *name = (const char *)&p[1];
-
-        char hostpath[M4_PATH_MAX];
-        if (!resolve_path(m, name, hostpath, sizeof(hostpath))) { err = M4_ERR_NOFILE; break; }
-
-        const char *fmode;
-        if (mode & 0x02) fmode = "wb";      /* write / create */
-        else if (mode & 0x30) fmode = "ab"; /* append */
-        else fmode = "rb";                   /* read (default) */
-
-        int idx = alloc_fd(m);
-        if (idx < 0) { err = M4_ERR_IO; break; }
-
-        FILE *fp = fopen(hostpath, fmode);
-        if (!fp) { err = M4_ERR_NOFILE; break; }
-
-        m->fds[idx - 1].fp = fp;
-        m->fds[idx - 1].in_use = true;
-        err = M4_OK;
-        resp_u8(mem, &roff, (u8)idx);
+        /* ROM reads: resp+3 = fd, resp+4 = 0 means success / non-zero means error */
+        u8 open_fd = 0xFF, open_err = M4_ERR_IO;
+        if (m->root[0] && plen >= 2) {
+            u8 mode = p[0];
+            const char *name = (const char *)&p[1];
+            char hostpath[M4_PATH_MAX];
+            if (!resolve_path(m, name, hostpath, sizeof(hostpath))) {
+                open_err = M4_ERR_NOFILE;
+            } else {
+                const char *fmode = (mode & 0x02) ? "wb" : (mode & 0x30) ? "ab" : "rb";
+                int idx = alloc_fd(m);
+                if (idx < 0) {
+                    open_err = M4_ERR_FULL;
+                } else {
+                    FILE *fp = fopen(hostpath, fmode);
+                    if (!fp) {
+                        open_err = M4_ERR_NOFILE;
+                    } else {
+                        m->fds[idx - 1].fp = fp;
+                        m->fds[idx - 1].in_use = true;
+                        open_fd = (u8)idx;
+                        open_err = M4_OK;
+                    }
+                }
+            }
+        }
+        err = open_err;
+        resp_u8(mem, &roff, open_fd);  /* fd at resp+3 */
+        resp_u8(mem, &roff, open_err); /* error indicator at resp+4 (ROM checks this: 0=OK) */
         break;
     }
 
