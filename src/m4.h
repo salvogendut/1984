@@ -54,12 +54,15 @@ typedef struct {
     u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
 
     /* M4 board's own memory mapped on the expansion bus when M4ROM is paged in.
-     * Covers 0xE800-0xF500 (response buffer + config area). Reading these
-     * addresses while M4ROM is the active upper ROM returns from this buffer
-     * instead of CPC RAM, so M4 responses don't corrupt screen memory
-     * (CPC screen RAM is at 0xC000-0xFFFF by default). */
-    u8      bus_mem[0x800];  /* covers 0xE800-0xEFFF */
-    u8      cfg_mem[0x100];  /* covers 0xF400-0xF4FF */
+     * Reading these addresses while M4ROM is the active upper ROM returns from
+     * this buffer instead of CPC RAM, so M4 responses don't corrupt screen
+     * memory (CPC screen RAM is at 0xC000-0xFFFF by default).
+     *   0xE800-0xF3FF: rom_response (.ds 0xC00 in M4ROM.s) — large enough
+     *                  for a 2KB C_READ payload (resp+3 status, resp+4+ data
+     *                  spans up to 0xF003).
+     *   0xF400-0xF4FF: rom_config — jump_vec, init_count, runfile_ptr, etc. */
+    u8      bus_mem[0xC00]; /* covers 0xE800-0xF3FF — full rom_response area */
+    u8      cfg_mem[0x100]; /* covers 0xF400-0xF4FF — rom_config area */
 } M4;
 
 void m4_init(M4 *m, const char *root);

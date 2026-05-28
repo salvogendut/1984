@@ -519,9 +519,15 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_READ: {
         /* Request:  data[0]=fd, data[1..2]=size
-         * Response: resp+3 = result (0=OK, non-zero error e.g. 20=EOF)
-         *           resp+4 onwards = the requested bytes
-         * The ROM uses the size it requested (not a returned count). */
+         * Response: resp+3 = result (0=OK)
+         *           resp+4 onwards = exactly `size` bytes (zero-padded on EOF).
+         * On real hardware reading past EOF from a disk sector returns the
+         * sector padding (zeros), and AMSDOS hands those zeros back to the
+         * caller. The M4ROM's fread skips the destination copy entirely if
+         * resp+3 is non-zero — so signalling EOF here would leave garbage
+         * in the caller's load buffer and break programs (e.g. SymbOS) that
+         * rely on the trailing padding being predictable. Always return 0
+         * (success) and zero-fill the unread tail. */
         if (plen < 3) { err = M4_ERR_IO; break; }
         u8  fd    = p[0];
         u16 count = (u16)p[1] | ((u16)p[2] << 8);
@@ -530,19 +536,15 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             err = M4_ERR_BADFD;
             break;
         }
-        resp_u8(m, &roff, M4_OK);  /* result at resp+3 */
+        resp_u8(m, &roff, M4_OK);
         u16 n = 0;
         for (; n < count; n++) {
             int c = fgetc(m->fds[fd - 1].fp);
             if (c == EOF) break;
             resp_u8(m, &roff, (u8)c);
         }
-        /* If we hit EOF before reading all requested bytes, signal it
-         * by overwriting the result byte with 20 (FR_FILE_LOCKED in
-         * FatFs maps to ROM's EOF marker). The ROM's load loops then
-         * stop using the partial data already in the buffer. */
-        if (n < count)
-            m->bus_mem[3] = 20;
+        for (; n < count; n++)
+            resp_u8(m, &roff, 0x00);
         err = M4_OK;
         break;
     }

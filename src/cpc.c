@@ -21,11 +21,12 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
      * M4ROM is the active upper ROM. Reads return from the M4 board's RAM,
      * not CPC RAM — this is critical because CPC screen memory lives at
      * 0xC000-0xFFFF and we'd otherwise corrupt the display.
-     *   0xE800-0xEFFF → m4_card.bus_mem (response buffer, m4_workspace, etc.)
-     *   0xF400-0xF4FF → m4_card.cfg_mem (config: jump_vec, init_count, etc.) */
+     *   0xE800-0xF3FF → m4_card.bus_mem (rom_response, 0xC00 bytes — large
+     *                   enough for 2KB C_READ payload starting at resp+4)
+     *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count) */
     if (cpc->m4 && cpc->mem.upper_rom_enabled
             && cpc->mem.upper_rom_select == M4_ROM_SLOT) {
-        if (addr >= 0xE800 && addr < 0xF000)
+        if (addr >= 0xE800 && addr < 0xF400)
             return cpc->m4_card.bus_mem[addr - 0xE800];
         if (addr >= 0xF400 && addr < 0xF500)
             return cpc->m4_card.cfg_mem[addr - 0xF400];
