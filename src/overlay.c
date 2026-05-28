@@ -442,8 +442,9 @@ void overlay_tick(Overlay *ov) {
             ov->cpc->m4 = true;
             snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->dialog_path);
             mem_load_rom_ext(&ov->cpc->mem, M4_ROM_SLOT, m4rom);
-            memcpy(&ov->cpc->mem.ram[0xF400],
-                   &ov->cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000], 0x100);
+            memcpy(ov->cpc->m4_card.cfg_mem,
+                   &ov->cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+                   sizeof(ov->cpc->m4_card.cfg_mem));
         }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {

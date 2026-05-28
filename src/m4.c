@@ -59,32 +59,35 @@
 #define C_WIFIPOW     0x433C
 #define C_CONFIG      0x43FE
 
-/* Response base address in CPC RAM */
+/* Response base address — virtual; data is written to m->bus_mem, not CPC RAM,
+ * to avoid corrupting screen memory (CPC screen RAM lives at 0xC000-0xFFFF). */
 #define RESP_BASE 0xE800u
 
-/* ---- Response helpers ---- */
+/* ---- Response helpers (write to M4 board's own buffer, not CPC RAM) ---- */
 
-static void resp_u8(Mem *mem, u16 *off, u8 v) {
-    mem_write(mem, RESP_BASE + (*off)++, v);
+static void resp_u8(M4 *m, u16 *off, u8 v) {
+    if (*off < sizeof(m->bus_mem))
+        m->bus_mem[(*off)] = v;
+    (*off)++;
 }
-static void resp_u16le(Mem *mem, u16 *off, u16 v) {
-    resp_u8(mem, off, v & 0xFF);
-    resp_u8(mem, off, v >> 8);
+static void resp_u16le(M4 *m, u16 *off, u16 v) {
+    resp_u8(m, off, v & 0xFF);
+    resp_u8(m, off, v >> 8);
 }
-static void resp_u32le(Mem *mem, u16 *off, u32 v) {
-    resp_u8(mem, off, v & 0xFF);
-    resp_u8(mem, off, (v >> 8) & 0xFF);
-    resp_u8(mem, off, (v >> 16) & 0xFF);
-    resp_u8(mem, off, v >> 24);
+static void resp_u32le(M4 *m, u16 *off, u32 v) {
+    resp_u8(m, off, v & 0xFF);
+    resp_u8(m, off, (v >> 8) & 0xFF);
+    resp_u8(m, off, (v >> 16) & 0xFF);
+    resp_u8(m, off, v >> 24);
 }
-static void resp_str(Mem *mem, u16 *off, const char *s) {
-    while (*s) resp_u8(mem, off, (u8)*s++);
-    resp_u8(mem, off, 0);
+static void resp_str(M4 *m, u16 *off, const char *s) {
+    while (*s) resp_u8(m, off, (u8)*s++);
+    resp_u8(m, off, 0);
 }
 
 /* Write error at base, return for use in switch cases */
-static void resp_err(Mem *mem, u8 err) {
-    mem_write(mem, RESP_BASE, err);
+static void resp_err(M4 *m, u8 err) {
+    m->bus_mem[0] = err;
 }
 
 /* ---- Path helpers ---- */
@@ -181,7 +184,7 @@ u8 m4_dataport_read(M4 *m) {
 
 bool m4_ackport_write(M4 *m, Mem *mem) {
     if (m->cmd_len < 3) {
-        resp_err(mem, M4_ERR_IO);
+        resp_err(m, M4_ERR_IO);
         m->cmd_len = 0;
         return m->nmi_enabled;
     }
@@ -198,13 +201,13 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_CONFIG: {
         /* Generic config area write. Packet: [offset][data...].
-         * Writes payload bytes to CPC RAM at rom_config+offset (0xF400+offset)
-         * so the M4ROM can read them back via the bus bypass (0xF400-0xF500). */
+         * Writes payload bytes into the M4 board's own config buffer
+         * (read via the bus bypass at 0xF400-0xF500). */
         if (plen >= 1) {
-            u16 base = 0xF400 + p[0];
+            int base = p[0];
             int n = plen - 1;
-            for (int i = 0; i < n && (base + i) < 0xF500; i++)
-                mem->ram[base + i] = p[1 + i];
+            for (int i = 0; i < n && (base + i) < (int)sizeof(m->cfg_mem); i++)
+                m->cfg_mem[base + i] = p[1 + i];
             if (p[0] == 5 && plen >= 2)
                 m->init_count = p[1];
         }
@@ -214,7 +217,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_VERSION:
         err = M4_OK;
-        resp_str(mem, &roff, "M4 1984 Emulator");
+        resp_str(m, &roff, "M4 1984 Emulator");
         break;
 
     case C_TIME: {
@@ -222,13 +225,13 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         struct tm *tm = localtime(&t);
         err = M4_OK;
         /* year (2-digit), month (1-12), day, hour, min, sec, day-of-week (0=Sun) */
-        resp_u8(mem, &roff, (u8)(tm->tm_year % 100));
-        resp_u8(mem, &roff, (u8)(tm->tm_mon + 1));
-        resp_u8(mem, &roff, (u8)tm->tm_mday);
-        resp_u8(mem, &roff, (u8)tm->tm_hour);
-        resp_u8(mem, &roff, (u8)tm->tm_min);
-        resp_u8(mem, &roff, (u8)tm->tm_sec);
-        resp_u8(mem, &roff, (u8)tm->tm_wday);
+        resp_u8(m, &roff, (u8)(tm->tm_year % 100));
+        resp_u8(m, &roff, (u8)(tm->tm_mon + 1));
+        resp_u8(m, &roff, (u8)tm->tm_mday);
+        resp_u8(m, &roff, (u8)tm->tm_hour);
+        resp_u8(m, &roff, (u8)tm->tm_min);
+        resp_u8(m, &roff, (u8)tm->tm_sec);
+        resp_u8(m, &roff, (u8)tm->tm_wday);
         break;
     }
 
@@ -248,7 +251,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     case C_GETPATH:
         if (!m->root[0]) { err = M4_ERR_IO; break; }
         err = M4_OK;
-        resp_str(mem, &roff, m->cwd);
+        resp_str(m, &roff, m->cwd);
         break;
 
     case C_CD: {
@@ -287,7 +290,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         char buf[40];
         snprintf(buf, sizeof(buf), "\r\n%uK free\r\n\r\n", (unsigned)free_kb);
         err = M4_OK;
-        resp_str(mem, &roff, buf);
+        resp_str(m, &roff, buf);
         break;
     }
 
@@ -367,9 +370,9 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         }
 
         err = M4_OK;
-        for (int i = 0; i < 8; i++) resp_u8(mem, &roff, (u8)name8[i]);
-        resp_u8(mem, &roff, '.');
-        for (int i = 0; i < 3; i++) resp_u8(mem, &roff, (u8)ext3[i]);
+        for (int i = 0; i < 8; i++) resp_u8(m, &roff, (u8)name8[i]);
+        resp_u8(m, &roff, '.');
+        for (int i = 0; i < 3; i++) resp_u8(m, &roff, (u8)ext3[i]);
         /* 5-char right-aligned size (or "  DIR" for directories) */
         char szbuf[6];
         if (is_dir) {
@@ -378,9 +381,9 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             snprintf(szbuf, sizeof(szbuf), "%5u",
                      (unsigned)(fsize > 99999 ? 99999 : fsize));
         }
-        for (int i = 0; i < 5; i++) resp_u8(mem, &roff, (u8)szbuf[i]);
-        resp_u8(mem, &roff, 0x00);                      /* terminator */
-        resp_u16le(mem, &roff, (u16)(fsize & 0xFFFF));  /* binary size */
+        for (int i = 0; i < 5; i++) resp_u8(m, &roff, (u8)szbuf[i]);
+        resp_u8(m, &roff, 0x00);                      /* terminator */
+        resp_u16le(m, &roff, (u16)(fsize & 0xFFFF));  /* binary size */
         readdir_done:;
         break;
     }
@@ -415,8 +418,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             }
         }
         err = open_err;
-        resp_u8(mem, &roff, open_fd);  /* fd at resp+3 */
-        resp_u8(mem, &roff, open_err); /* error indicator at resp+4 (ROM checks this: 0=OK) */
+        resp_u8(m, &roff, open_fd);  /* fd at resp+3 */
+        resp_u8(m, &roff, open_err); /* error indicator at resp+4 (ROM checks this: 0=OK) */
         break;
     }
 
@@ -433,11 +436,11 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         for (; n < count; n++) {
             int c = fgetc(m->fds[fd - 1].fp);
             if (c == EOF) break;
-            resp_u8(mem, &roff, (u8)c);
+            resp_u8(m, &roff, (u8)c);
         }
         /* Fill in actual count */
-        mem_write(mem, RESP_BASE + cnt_off,     n & 0xFF);
-        mem_write(mem, RESP_BASE + cnt_off + 1, n >> 8);
+        m->bus_mem[cnt_off]     = n & 0xFF;
+        m->bus_mem[cnt_off + 1] = n >> 8;
         err = M4_OK;
         break;
     }
@@ -449,7 +452,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         int c = fgetc(m->fds[fd - 1].fp);
         if (c == EOF) { err = M4_ERR_EOF; break; }
         err = M4_OK;
-        resp_u8(mem, &roff, (u8)c);
+        resp_u8(m, &roff, (u8)c);
         break;
     }
 
@@ -462,7 +465,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         if (actual > count) actual = count;
         size_t written = fwrite(&p[3], 1, actual, m->fds[fd - 1].fp);
         err = M4_OK;
-        resp_u16le(mem, &roff, (u16)written);
+        resp_u16le(m, &roff, (u16)written);
         break;
     }
 
@@ -490,7 +493,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             err = M4_ERR_BADFD;
             close_res = 0xFF;  /* fd not open — triggers init_count check in M4ROM's fclose */
         }
-        resp_u8(mem, &roff, close_res);
+        resp_u8(m, &roff, close_res);
         break;
     }
 
@@ -509,7 +512,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u8 fd = (plen >= 1) ? p[0] : 0;
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
         err = M4_OK;
-        resp_u8(mem, &roff, feof(m->fds[fd - 1].fp) ? 1 : 0);
+        resp_u8(m, &roff, feof(m->fds[fd - 1].fp) ? 1 : 0);
         break;
     }
 
@@ -519,7 +522,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         long pos = ftell(m->fds[fd - 1].fp);
         if (pos < 0) { err = M4_ERR_IO; break; }
         err = M4_OK;
-        resp_u32le(mem, &roff, (u32)pos);
+        resp_u32le(m, &roff, (u32)pos);
         break;
     }
 
@@ -532,7 +535,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         fseek(m->fds[fd - 1].fp, saved, SEEK_SET);
         if (sz < 0) { err = M4_ERR_IO; break; }
         err = M4_OK;
-        resp_u32le(mem, &roff, (u32)sz);
+        resp_u32le(m, &roff, (u32)sz);
         break;
     }
 
@@ -592,7 +595,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
     }
 
-    resp_err(mem, err);
+    resp_err(m, err);
     m->cmd_len = 0;
     return m->nmi_enabled;
 }

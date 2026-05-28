@@ -43,6 +43,14 @@ typedef struct {
 
     bool    nmi_enabled;     /* true = trigger Z80 NMI after each command */
     u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
+
+    /* M4 board's own memory mapped on the expansion bus when M4ROM is paged in.
+     * Covers 0xE800-0xF500 (response buffer + config area). Reading these
+     * addresses while M4ROM is the active upper ROM returns from this buffer
+     * instead of CPC RAM, so M4 responses don't corrupt screen memory
+     * (CPC screen RAM is at 0xC000-0xFFFF by default). */
+    u8      bus_mem[0x800];  /* covers 0xE800-0xEFFF */
+    u8      cfg_mem[0x100];  /* covers 0xF400-0xF4FF */
 } M4;
 
 void m4_init(M4 *m, const char *root);
