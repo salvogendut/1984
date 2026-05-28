@@ -857,21 +857,18 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_SEEK: {
-        if (plen < 6) { err = M4_ERR_IO; break; }
+        /* M4 protocol: data[0]=fd, data[1..4]=offset (32-bit LE). Absolute
+         * seek (SET) only — there's no whence byte. M4ROM's fseek wrapper
+         * sends exactly 5 bytes after the command header. */
+        if (plen < 5) { err = M4_ERR_IO; break; }
         u8  fd  = p[0];
         u32 pos = (u32)p[1] | ((u32)p[2] << 8) | ((u32)p[3] << 16) | ((u32)p[4] << 24);
-        int wh  = (int)p[5]; /* 0=SET, 1=CUR, 2=END */
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
-        if (m->fds[fd - 1].fatf) {
-            FatFile *ff = m->fds[fd - 1].fatf;
-            u32 target = pos;
-            if (wh == 1) target = fat_tell(ff) + pos;
-            else if (wh == 2) target = fat_file_size(ff) + pos;
-            err = fat_seek(ff, target) ? M4_OK : M4_ERR_IO;
-        } else {
-            int whence = (wh == 1) ? SEEK_CUR : (wh == 2) ? SEEK_END : SEEK_SET;
-            err = (fseek(m->fds[fd - 1].fp, (long)pos, whence) == 0) ? M4_OK : M4_ERR_IO;
-        }
+        if (m->fds[fd - 1].fatf)
+            err = fat_seek(m->fds[fd - 1].fatf, pos) ? M4_OK : M4_ERR_IO;
+        else
+            err = (fseek(m->fds[fd - 1].fp, (long)pos, SEEK_SET) == 0)
+                  ? M4_OK : M4_ERR_IO;
         break;
     }
 
