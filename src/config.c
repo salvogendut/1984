@@ -147,6 +147,7 @@ static void config_create_default(const char *path, const char *home) {
         "symbiface_ide=false\n"
         "ide_image=\n"
         "symbiface_mouse=false\n"
+        "symbnet=false\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -258,6 +259,9 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "symbiface_mouse")) {
                 if (parse_bool(val, &b)) cfg->symbiface_mouse = b;
                 else { fprintf(stderr, "1984.conf:%d: symbiface_mouse must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "symbnet")) {
+                if (parse_bool(val, &b)) cfg->symbnet = b;
+                else { fprintf(stderr, "1984.conf:%d: symbnet must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -337,7 +341,8 @@ int config_save(const Config *cfg) {
         "rtc=%s\n"
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
-        "symbiface_mouse=%s\n\n"
+        "symbiface_mouse=%s\n"
+        "symbnet=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -353,6 +358,7 @@ int config_save(const Config *cfg) {
         cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,
         cfg->symbiface_mouse  ? "true" : "false",
+        cfg->symbnet          ? "true" : "false",
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );

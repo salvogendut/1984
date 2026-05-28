@@ -86,6 +86,8 @@ static u8 bus_io_read(void *ctx, u16 port) {
             result = rtc_read_data(&cpc->rtc_chip);
         else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
             result = net4cpc_in(lo & 0x03);
+        else if (cpc->symbnet && (lo == 0x30 || lo == 0x31))
+            result = symbnet_port_read(&cpc->symbnet_card, lo);
         else
             result = 0xFF;
     }
@@ -138,7 +140,10 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         return;
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
-    if ((hi & 0xE0) == 0xC0) { cpc->mem.upper_rom_select = val; return; }
+    if ((hi & 0xE0) == 0xC0) {
+        cpc->mem.upper_rom_select = val;
+        return;
+    }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
         ppi_write(&cpc->ppi, hi & 0x03, val);
@@ -183,6 +188,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
             net4cpc_out(lo & 0x03, val);
+        if (cpc->symbnet && (lo == 0x30 || lo == 0x31))
+            symbnet_port_write(&cpc->symbnet_card, lo, val);
         return;
     }
 }
@@ -215,6 +222,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ide_init(&cpc->ide_chip);
     mouse_init(&cpc->mouse);
     m4_init(&cpc->m4_card, "");
+    symbnet_init(&cpc->symbnet_card);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -442,6 +450,11 @@ void cpc_frame(CPC *cpc) {
 
     cpc->cycle_debt = stop_early ? 0 : (done - target);
     cpc_frame_count++;
+
+    /* Drive M4 sockets so non-blocking TCP work makes progress while CPC
+     * code polls sock_info between commands. */
+    if (cpc->m4) m4_tick(&cpc->m4_card);
+    if (cpc->symbnet) symbnet_tick(&cpc->symbnet_card);
 
     /* Fallback palette flush — CPC 6128.
      * The 6128 firmware ink routine writes 0xFF to 0xB7F7 and stores the new

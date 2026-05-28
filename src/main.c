@@ -179,6 +179,7 @@ int main(int argc, char *argv[]) {
     cpc.symbiface_ide   = cfg.symbiface_ide;
     cpc.symbiface_mouse = cfg.symbiface_mouse;
     cpc.m4              = cfg.m4;
+    cpc.symbnet         = cfg.symbnet;
     if (cfg.m4 && cfg.m4_path[0])
         snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
     if (cfg.m4)
@@ -451,6 +452,7 @@ int main(int argc, char *argv[]) {
             cpc.symbiface_ide    = cfg.symbiface_ide;
             cpc.symbiface_mouse  = cfg.symbiface_mouse;
             cpc.m4               = cfg.m4;
+            cpc.symbnet          = cfg.symbnet;
             if (cfg.m4 && cfg.m4_path[0])
                 snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
             if (cfg.m4)

@@ -14,6 +14,7 @@
 #include "ide.h"
 #include "mouse.h"
 #include "m4.h"
+#include "symbnet.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -40,6 +41,8 @@ typedef struct {
     Mouse      mouse;
     bool       m4;             /* M4 board hardware present */
     M4         m4_card;
+    bool       symbnet;        /* 1984 emulator synthetic SymbOS network port */
+    SymbNet    symbnet_card;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */
