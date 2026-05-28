@@ -13,6 +13,14 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <poll.h>
 
 /* M4 command IDs (from m4cmds.i) */
 #define C_OPEN        0x4301
@@ -211,6 +219,65 @@ static void m4_open_image(M4 *m) {
     if (!m->image_fp) m->image_fp = fopen(m->image_path, "rb"); /* read-only fallback */
 }
 
+/* ---- Network helpers ---- */
+
+/* sock_info layout (16 bytes per socket): status, lastcmd, rxlo, rxhi,
+ * ip0..ip3, portlo, porthi, 6 reserved. Mirror M4Socket → sock_mem. */
+static void sync_sock_mem(M4 *m, int s) {
+    if (s < 0 || s >= M4_NSOCKS) return;
+    u8 *p = &m->sock_mem[s * 16];
+    p[0]  = m->sockets[s].status;
+    p[1]  = m->sockets[s].lastcmd;
+    p[2]  = (u8)(m->sockets[s].rx_count & 0xFF);
+    p[3]  = (u8)(m->sockets[s].rx_count >> 8);
+    memcpy(&p[4], m->sockets[s].peer_ip, 4);
+    p[8]  = (u8)(m->sockets[s].peer_port & 0xFF);
+    p[9]  = (u8)(m->sockets[s].peer_port >> 8);
+}
+
+static void net_close_socket(M4 *m, int s) {
+    if (s < 0 || s >= M4_NSOCKS) return;
+    if (m->sockets[s].fd >= 0) close(m->sockets[s].fd);
+    memset(&m->sockets[s], 0, sizeof(m->sockets[s]));
+    m->sockets[s].fd     = -1;
+    m->sockets[s].status = 0;
+    sync_sock_mem(m, s);
+}
+
+/* Probe an in-flight connect on socket s; updates status to connected (0) or
+ * error (240+) when the kernel has decided. */
+static void net_poll_socket(M4 *m, int s) {
+    if (s < 0 || s >= M4_NSOCKS) return;
+    M4Socket *sk = &m->sockets[s];
+    if (sk->fd < 0) return;
+    if (sk->connecting) {
+        struct pollfd pfd = { .fd = sk->fd, .events = POLLOUT };
+        int r = poll(&pfd, 1, 0);
+        if (r > 0 && (pfd.revents & (POLLOUT | POLLERR | POLLHUP))) {
+            int soerr = 0; socklen_t l = sizeof(soerr);
+            getsockopt(sk->fd, SOL_SOCKET, SO_ERROR, &soerr, &l);
+            sk->connecting = false;
+            sk->status = soerr ? 240 : 0;  /* 0 = connected/idle, 240+ = error */
+        }
+    }
+    /* Peek RX bytes available */
+    if (sk->status == 0 || sk->status == 5) {
+        int avail = 0;
+        if (ioctl(sk->fd, FIONREAD, &avail) == 0) {
+            if (avail < 0) avail = 0;
+            if (avail > 0xFFFF) avail = 0xFFFF;
+            sk->rx_count = (u16)avail;
+            /* Detect remote close: read 0 bytes available but socket dead */
+            if (avail == 0) {
+                char b;
+                ssize_t n = recv(sk->fd, &b, 1, MSG_PEEK | MSG_DONTWAIT);
+                if (n == 0) sk->status = 3; /* remote closed */
+            }
+        }
+    }
+    sync_sock_mem(m, s);
+}
+
 void m4_init(M4 *m, const char *root) {
     memset(m, 0, sizeof(*m));
     m->nmi_enabled = false;  /* ROM enables NMI explicitly via C_NMION after init */
@@ -218,6 +285,7 @@ void m4_init(M4 *m, const char *root) {
     if (root && root[0])
         snprintf(m->root, sizeof(m->root), "%s", root);
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
+    for (int i = 0; i < M4_NSOCKS; i++) m->sockets[i].fd = -1;
 }
 
 void m4_set_image(M4 *m, const char *image_path) {
@@ -242,6 +310,8 @@ void m4_reset(M4 *m) {
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
     /* Re-open image fd (if image_path is set) */
     m4_open_image(m);
+    /* Tear down any open TCP sockets and clear sock_info */
+    for (int i = 0; i < M4_NSOCKS; i++) net_close_socket(m, i);
     m->nmi_enabled = false;
 }
 
@@ -258,6 +328,11 @@ u8 m4_dataport_read(M4 *m) {
 /* ---- Command dispatch ---- */
 
 bool m4_ackport_write(M4 *m, Mem *mem) {
+    /* Refresh sock_info for any sockets that were busy connecting or have
+     * data waiting — the daemon polls sock_info between commands. */
+    for (int i = 0; i < M4_NSOCKS; i++)
+        if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
+
     if (m->cmd_len < 3) {
         resp_err(m, M4_ERR_IO);
         m->cmd_len = 0;
@@ -782,21 +857,197 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
     }
 
-    /* ---- Network stubs (Phase 2) ---- */
-    case C_NETSOCKET:
-    case C_NETCONNECT:
-    case C_NETCLOSE:
-    case C_NETSEND:
-    case C_NETRECV:
-    case C_NETHOSTIP:
+    /* ---- Network — host-backed TCP via ESP8266 emulation ---- */
+
+    case C_NETSTAT: {
+        /* M4 protocol: text "network status string" + trailing status byte.
+         * We're always "connected (and got IP)" in the emulator. */
+        err = M4_OK;
+        resp_str(m, &roff, "Connected (emulated host)");
+        resp_u8(m, &roff, 5); /* status = connected */
+        break;
+    }
+
+    case C_GETNETWORK: {
+        /* 192-byte structure — fill enough so the daemon doesn't reject it. */
+        u8 cfg[192];
+        memset(cfg, 0, sizeof(cfg));
+        strncpy((char *)&cfg[0],   "1984",   16);
+        strncpy((char *)&cfg[16],  "emulator", 32);
+        cfg[112]=192; cfg[113]=168; cfg[114]=1; cfg[115]=100; /* ip */
+        cfg[116]=255; cfg[117]=255; cfg[118]=255; cfg[119]=0; /* nm */
+        cfg[120]=192; cfg[121]=168; cfg[122]=1; cfg[123]=1;   /* gw */
+        cfg[124]=8;   cfg[125]=8;   cfg[126]=8;   cfg[127]=8; /* dns1 */
+        cfg[128]=8;   cfg[129]=8;   cfg[130]=4;   cfg[131]=4; /* dns2 */
+        cfg[132]=1;                                            /* dhcp */
+        err = M4_OK;
+        for (size_t i = 0; i < sizeof(cfg); i++) resp_u8(m, &roff, cfg[i]);
+        break;
+    }
+
+    case C_SETNETWORK:
+        /* Setup string accepted but ignored — emulator uses host TCP stack. */
+        err = M4_OK;
+        break;
+
+    case C_NETRSSI:
+        err = M4_OK;
+        resp_u8(m, &roff, 50);
+        break;
+
+    case C_WIFIPOW:
+        err = M4_OK;
+        break;
+
+    case C_NETSOCKET: {
+        /* Allocate a TCP socket. Return socket id 1..4 at resp+3, or 0xFF. */
+        int idx = -1;
+        for (int i = 1; i < M4_NSOCKS; i++)
+            if (m->sockets[i].fd < 0) { idx = i; break; }
+        u8 sid = 0xFF;
+        if (idx > 0) {
+            int s = socket(AF_INET, SOCK_STREAM, 0);
+            if (s >= 0) {
+                int fl = fcntl(s, F_GETFL, 0);
+                fcntl(s, F_SETFL, fl | O_NONBLOCK);
+                int one = 1;
+                setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+                m->sockets[idx].fd      = s;
+                m->sockets[idx].status  = 0;
+                m->sockets[idx].lastcmd = 0;
+                m->sockets[idx].rx_count = 0;
+                sync_sock_mem(m, idx);
+                sid = (u8)idx;
+            }
+        }
+        err = M4_OK;
+        resp_u8(m, &roff, sid);
+        break;
+    }
+
+    case C_NETCONNECT: {
+        u8 ok = 0xFF;
+        if (plen >= 7) {
+            int s = p[0];
+            if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
+                struct sockaddr_in sa = {0};
+                sa.sin_family = AF_INET;
+                memcpy(&sa.sin_addr.s_addr, &p[1], 4);
+                sa.sin_port = htons((u16)p[5] | ((u16)p[6] << 8));
+                memcpy(m->sockets[s].peer_ip, &p[1], 4);
+                m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
+                m->sockets[s].lastcmd = 3;
+                int r = connect(m->sockets[s].fd, (struct sockaddr *)&sa, sizeof(sa));
+                if (r == 0) {
+                    m->sockets[s].status = 0;  /* connected */
+                    ok = 0;
+                } else if (errno == EINPROGRESS) {
+                    m->sockets[s].status     = 1;  /* connecting */
+                    m->sockets[s].connecting = true;
+                    ok = 0;  /* the daemon will poll status */
+                } else {
+                    m->sockets[s].status = 240;
+                }
+                sync_sock_mem(m, s);
+            }
+        }
+        err = M4_OK;
+        resp_u8(m, &roff, ok);
+        break;
+    }
+
+    case C_NETCLOSE: {
+        if (plen >= 1) net_close_socket(m, p[0]);
+        err = M4_OK;
+        resp_u8(m, &roff, 0);
+        break;
+    }
+
+    case C_NETSEND: {
+        u8 ok = 0xFF;
+        if (plen >= 3) {
+            int s = p[0];
+            u16 sz = (u16)p[1] | ((u16)p[2] << 8);
+            if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0
+                    && (int)sz <= plen - 3) {
+                ssize_t n = send(m->sockets[s].fd, &p[3], sz, MSG_NOSIGNAL);
+                if (n == (ssize_t)sz) ok = 0;
+                m->sockets[s].lastcmd = 1;
+                sync_sock_mem(m, s);
+            }
+        }
+        err = M4_OK;
+        resp_u8(m, &roff, ok);
+        break;
+    }
+
+    case C_NETRECV: {
+        /* Response: resp+3 = result (0=OK), resp+4..5 = actual size,
+         *           resp+6..7 = reserved, resp+8.. = data (up to 2KB). */
+        u16 actual = 0;
+        u8  result = 0xFF;
+        if (plen >= 3) {
+            int s = p[0];
+            u16 want = (u16)p[1] | ((u16)p[2] << 8);
+            if (want > 0x800) want = 0x800;
+            if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
+                ssize_t n = recv(m->sockets[s].fd, &m->bus_mem[8], want,
+                                 MSG_DONTWAIT);
+                if (n >= 0) {
+                    actual = (u16)n;
+                    result = 0;
+                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    actual = 0;
+                    result = 0;
+                }
+                m->sockets[s].lastcmd = 5;
+                if (n == 0) m->sockets[s].status = 3; /* remote closed */
+                m->sockets[s].rx_count = (m->sockets[s].rx_count > actual)
+                                          ? (u16)(m->sockets[s].rx_count - actual) : 0;
+                sync_sock_mem(m, s);
+            }
+        }
+        m->bus_mem[3] = result;
+        m->bus_mem[4] = (u8)(actual & 0xFF);
+        m->bus_mem[5] = (u8)(actual >> 8);
+        m->bus_mem[6] = 0;
+        m->bus_mem[7] = 0;
+        roff = (u16)(8 + actual);
+        err = M4_OK;
+        break;
+    }
+
+    case C_NETHOSTIP: {
+        /* Synchronous resolution into socket 0's sock_info entry. */
+        if (plen < 1) { err = M4_OK; resp_u8(m, &roff, 0xFF); break; }
+        char host[256];
+        size_t hl = (size_t)plen < sizeof(host) - 1 ? (size_t)plen : sizeof(host) - 1;
+        memcpy(host, p, hl);
+        host[hl] = '\0';
+        /* Strip trailing NULs from the M4 protocol terminator */
+        while (hl > 0 && host[hl-1] == '\0') hl--;
+        host[hl] = '\0';
+
+        struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM };
+        struct addrinfo *res = NULL;
+        if (getaddrinfo(host, NULL, &hints, &res) == 0 && res) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)res->ai_addr;
+            memcpy(m->sockets[0].peer_ip, &sa->sin_addr.s_addr, 4);
+            m->sockets[0].status = 0;
+            freeaddrinfo(res);
+        } else {
+            m->sockets[0].status = 0xF0; /* error */
+        }
+        m->sockets[0].lastcmd = 2;
+        sync_sock_mem(m, 0);
+        err = M4_OK;
+        resp_u8(m, &roff, 1);  /* "lookup in progress / done — read sockinfo" */
+        break;
+    }
+
     case C_NETBIND:
     case C_NETLISTEN:
     case C_NETACCEPT:
-    case C_NETSTAT:
-    case C_NETRSSI:
-    case C_GETNETWORK:
-    case C_SETNETWORK:
-    case C_WIFIPOW:
     case C_HTTPGET:
     case C_HTTPGETMEM:
         err = M4_ERR_NOTSUP;

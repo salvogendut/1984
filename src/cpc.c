@@ -23,13 +23,16 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
      * 0xC000-0xFFFF and we'd otherwise corrupt the display.
      *   0xE800-0xF3FF → m4_card.bus_mem (rom_response, 0xC00 bytes — large
      *                   enough for 2KB C_READ payload starting at resp+4)
-     *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count) */
+     *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count)
+     *   0xFE00-0xFE4F → m4_card.sock_mem (sock_info: 5 × 16 bytes for NETAPI) */
     if (cpc->m4 && cpc->mem.upper_rom_enabled
             && cpc->mem.upper_rom_select == M4_ROM_SLOT) {
         if (addr >= 0xE800 && addr < 0xF400)
             return cpc->m4_card.bus_mem[addr - 0xE800];
         if (addr >= 0xF400 && addr < 0xF500)
             return cpc->m4_card.cfg_mem[addr - 0xF400];
+        if (addr >= 0xFE00 && addr < 0xFE50)
+            return cpc->m4_card.sock_mem[addr - 0xFE00];
     }
     return mem_read(&cpc->mem, addr);
 }
