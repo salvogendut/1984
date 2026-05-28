@@ -10,13 +10,22 @@
 #define M4_CMD_BUF   512
 #define M4_PATH_MAX  512
 
-/* Error codes written to CPC RAM at 0xE800 */
-#define M4_OK          0x00
-#define M4_ERR_NOFILE  0x01
-#define M4_ERR_EOF     0x02
-#define M4_ERR_FULL    0x03
-#define M4_ERR_BADFD   0x04
-#define M4_ERR_IO      0x05
+/* M4 board error codes — these go through M4ROM's ff_error_map (FatFs FRESULT
+ * indices) before reaching BASIC, so the values MUST match FatFs FR_* codes.
+ * The map turns 4/5/6 into AMSDOS 0x92 (file not found), 8 into 0x91 (file
+ * already exists), 20 into AMSDOS 0x0E ("file already open"), and others
+ * into 0xFF (generic disk error). */
+#define M4_OK          0  /* FR_OK */
+#define M4_ERR_IO      1  /* FR_DISK_ERR — generic I/O failure */
+#define M4_ERR_NOFILE  4  /* FR_NO_FILE  — opens "file not found" path */
+#define M4_ERR_NOPATH  5  /* FR_NO_PATH  — also "file not found" */
+#define M4_ERR_BADNAME 6  /* FR_INVALID_NAME */
+#define M4_ERR_DENIED  7  /* FR_DENIED   — permission/write-protect */
+#define M4_ERR_EXIST   8  /* FR_EXIST    — "file already exists" */
+#define M4_ERR_BADFD   9  /* FR_INVALID_OBJECT — stale/invalid fd */
+#define M4_ERR_RDONLY  10 /* FR_WRITE_PROTECTED */
+#define M4_ERR_FULL    18 /* FR_TOO_MANY_OPEN_FILES */
+#define M4_ERR_EOF     20 /* M4-specific: EOF / "file already open" sentinel */
 #define M4_ERR_NOTSUP  0xFF
 
 typedef struct {

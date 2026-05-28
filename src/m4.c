@@ -11,6 +11,7 @@
 #include <time.h>
 #include <errno.h>
 #include <ctype.h>
+#include <unistd.h>
 #include <libgen.h>
 
 /* M4 command IDs (from m4cmds.i) */
@@ -94,10 +95,51 @@ static void resp_err(M4 *m, u8 err) {
 
 /* Build a host filesystem path from an M4 CPC path (absolute or relative to cwd).
  * Ensures the resolved path stays within m->root. Returns true on success. */
+/* Walk a relative path one segment at a time starting from `base_dir`,
+ * matching each segment case-insensitively against entries in that
+ * directory (FAT filesystems are case-insensitive; the host isn't).
+ * Writes the resolved absolute host path into `out`. Returns true if
+ * the full path matched a real filesystem entry. */
+static bool walk_path_nocase(const char *base_dir, const char *rel_path,
+                             char *out, size_t outsz) {
+    char cur[PATH_MAX];
+    snprintf(cur, sizeof(cur), "%s", base_dir);
+
+    const char *p = rel_path;
+    while (*p == '/') p++;
+    while (*p) {
+        const char *slash = strchr(p, '/');
+        size_t seglen = slash ? (size_t)(slash - p) : strlen(p);
+        if (seglen == 0) { p += 1; continue; }
+        char seg[256];
+        if (seglen >= sizeof(seg)) return false;
+        memcpy(seg, p, seglen); seg[seglen] = '\0';
+
+        DIR *d = opendir(cur);
+        if (!d) return false;
+        char matched[256] = "";
+        struct dirent *de;
+        while ((de = readdir(d))) {
+            if (strcasecmp(de->d_name, seg) == 0) {
+                snprintf(matched, sizeof(matched), "%s", de->d_name);
+                break;
+            }
+        }
+        closedir(d);
+        if (!matched[0]) return false;
+        size_t curlen = strlen(cur);
+        snprintf(cur + curlen, sizeof(cur) - curlen, "/%s", matched);
+
+        p += seglen;
+        while (*p == '/') p++;
+    }
+    snprintf(out, outsz, "%s", cur);
+    return true;
+}
+
 static bool resolve_path(const M4 *m, const char *cpc_path, char *out, size_t outsz) {
     if (!m->root[0]) return false;
 
-    char combined[M4_PATH_MAX * 2];
     /* Replace backslashes with forward slashes */
     char clean[M4_PATH_MAX];
     size_t ci = 0;
@@ -105,31 +147,42 @@ static bool resolve_path(const M4 *m, const char *cpc_path, char *out, size_t ou
         clean[ci++] = (cpc_path[i] == '\\') ? '/' : cpc_path[i];
     clean[ci] = '\0';
 
+    /* Build the absolute path the caller refers to (rooted at SD root or cwd) */
+    char rel[M4_PATH_MAX * 2];
     if (clean[0] == '/') {
-        snprintf(combined, sizeof(combined), "%s%s", m->root, clean);
+        snprintf(rel, sizeof(rel), "%s", clean + 1);
     } else {
-        snprintf(combined, sizeof(combined), "%s%s/%s", m->root, m->cwd, clean);
+        const char *cwd = m->cwd[0] == '/' ? m->cwd + 1 : m->cwd;
+        if (*cwd)
+            snprintf(rel, sizeof(rel), "%s/%s", cwd, clean);
+        else
+            snprintf(rel, sizeof(rel), "%s", clean);
     }
 
-    char resolved[PATH_MAX];
-    if (!realpath(combined, resolved)) {
-        /* File doesn't exist yet (for writes); try parent */
-        char tmp[PATH_MAX];
-        snprintf(tmp, sizeof(tmp), "%s", combined);
-        char *slash = strrchr(tmp, '/');
-        if (!slash) return false;
-        *slash = '\0';
-        char parent[PATH_MAX];
-        if (!realpath(tmp, parent)) return false;
-        snprintf(resolved, sizeof(resolved), "%s/%s", parent, slash + 1);
-    }
+    /* Resolve case-insensitively (FAT filesystem semantics on a case-sensitive
+     * host). If the leaf doesn't exist (e.g. SAVE creating a new file), fall
+     * back to resolving the parent and appending the original leaf name. */
+    if (walk_path_nocase(m->root, rel, out, outsz))
+        return true;
 
+    char relcopy[M4_PATH_MAX * 2];
+    snprintf(relcopy, sizeof(relcopy), "%s", rel);
+    char *last = strrchr(relcopy, '/');
+    char parent[PATH_MAX];
+    const char *leaf;
+    if (last) {
+        *last = '\0';
+        leaf = last + 1;
+        if (!walk_path_nocase(m->root, relcopy, parent, sizeof(parent)))
+            return false;
+    } else {
+        snprintf(parent, sizeof(parent), "%s", m->root);
+        leaf = relcopy;
+    }
+    snprintf(out, outsz, "%s/%s", parent, leaf);
     /* Security: must stay within root */
     size_t rootlen = strlen(m->root);
-    if (strncmp(resolved, m->root, rootlen) != 0) return false;
-
-    snprintf(out, outsz, "%s", resolved);
-    return true;
+    return strncmp(out, m->root, rootlen) == 0;
 }
 
 /* ---- File descriptor helpers ---- */
@@ -402,7 +455,30 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u8 mode = p[0];
             const char *name = (const char *)&p[1];
             char hostpath[M4_PATH_MAX];
-            if (!resolve_path(m, name, hostpath, sizeof(hostpath))) {
+            bool is_write = (mode & 0x02) != 0;
+            bool path_ok = resolve_path(m, name, hostpath, sizeof(hostpath));
+            if (path_ok && !is_write) {
+                struct stat st;
+                /* Must exist as a regular file (not a directory) for read mode */
+                if (stat(hostpath, &st) != 0 || !S_ISREG(st.st_mode))
+                    path_ok = false;
+            }
+            /* M4 board auto-extension (per spinpoint.org/cpc/m4info): for READ
+             * mode only, if the verbatim name isn't found, retry with .BAS then
+             * .BIN appended. Skip when caller already gave an extension. */
+            if (!path_ok && !is_write && !strchr(name, '.')) {
+                char tryname[M4_PATH_MAX];
+                static const char *exts[] = { ".BAS", ".BIN", NULL };
+                for (int e = 0; exts[e] && !path_ok; e++) {
+                    snprintf(tryname, sizeof(tryname), "%s%s", name, exts[e]);
+                    if (resolve_path(m, tryname, hostpath, sizeof(hostpath))) {
+                        struct stat st;
+                        if (stat(hostpath, &st) == 0 && S_ISREG(st.st_mode))
+                            path_ok = true;
+                    }
+                }
+            }
+            if (!path_ok) {
                 open_err = M4_ERR_NOFILE;
             } else {
                 const char *fmode = (mode & 0x02) ? "wb" : (mode & 0x30) ? "ab" : "rb";
