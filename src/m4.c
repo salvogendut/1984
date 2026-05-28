@@ -434,9 +434,14 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     /* ---- Filesystem navigation ---- */
 
     case C_GETPATH:
-        if (!m->root[0]) { err = M4_ERR_IO; break; }
+        /* The cwd is meaningful in both directory and image modes, so always
+         * return it. If we returned an error in image-only mode, M4ROM's
+         * disp_msg would dump whatever stale bytes happen to be in the
+         * response buffer to the screen — potentially mid-string control
+         * codes that flip the screen mode (which is exactly how the
+         * "cat switches to mode 2" bug used to manifest). */
         err = M4_OK;
-        resp_str(m, &roff, m->cwd);
+        resp_str(m, &roff, m->cwd[0] ? m->cwd : "/");
         break;
 
     case C_CD: {
