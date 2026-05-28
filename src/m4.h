@@ -38,14 +38,12 @@ typedef struct {
     u8      cmd_buf[M4_CMD_BUF];
     int     cmd_len;
 
-    /* SD card root: host directory mapped as SD card (file-API mode)
-     * OR path to a raw FAT image file (image mode — enables C_SDREAD/WRITE). */
+    /* Host directory backing the file API (C_OPEN, C_CD, C_READDIR…). */
     char    root[M4_PATH_MAX];
     /* Current working directory within the SD card (file-API mode only) */
     char    cwd[M4_PATH_MAX];
-    /* Disk image mode: when root points to a regular file, this fd is opened
-     * and C_SDREAD/C_SDWRITE address it as a raw block device. NULL means
-     * directory mode (root is a host directory). */
+    /* Optional raw FAT image backing the sector API (C_SDREAD/C_SDWRITE). */
+    char    image_path[M4_PATH_MAX];
     FILE   *image_fp;
 
     /* File descriptors (1-indexed: fd=1 → fds[0]) */
@@ -71,6 +69,7 @@ typedef struct {
 } M4;
 
 void m4_init(M4 *m, const char *root);
+void m4_set_image(M4 *m, const char *image_path);
 void m4_reset(M4 *m);
 
 /* Called on every write to port 0xFE00 or 0xFF00 (DATAPORT) */

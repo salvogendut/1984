@@ -24,7 +24,8 @@ typedef struct {
     /* [hardware] */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
-    char m4_path[CONFIG_PATH_MAX];  /* host directory mapped as M4 SD card */
+    char m4_path[CONFIG_PATH_MAX];   /* host directory for M4 file API (cat/load/save) */
+    char m4_image[CONFIG_PATH_MAX];  /* optional raw FAT32 image for C_SDREAD/C_SDWRITE */
     bool ulifac;
     bool net4cpc;
     bool rtc;

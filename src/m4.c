@@ -201,16 +201,14 @@ static bool valid_fd(const M4 *m, u8 fd) {
 
 /* ---- Public API ---- */
 
-/* If root points to a regular file, open it as a raw disk image (read-write).
- * Returns true if the image was opened successfully. */
-static bool m4_open_image_if_file(M4 *m) {
+/* Open the raw disk image file if image_path is set. */
+static void m4_open_image(M4 *m) {
     if (m->image_fp) { fclose(m->image_fp); m->image_fp = NULL; }
-    if (!m->root[0]) return false;
+    if (!m->image_path[0]) return;
     struct stat st;
-    if (stat(m->root, &st) != 0 || !S_ISREG(st.st_mode)) return false;
-    m->image_fp = fopen(m->root, "r+b");
-    if (!m->image_fp) m->image_fp = fopen(m->root, "rb");  /* read-only fallback */
-    return m->image_fp != NULL;
+    if (stat(m->image_path, &st) != 0 || !S_ISREG(st.st_mode)) return;
+    m->image_fp = fopen(m->image_path, "r+b");
+    if (!m->image_fp) m->image_fp = fopen(m->image_path, "rb"); /* read-only fallback */
 }
 
 void m4_init(M4 *m, const char *root) {
@@ -220,7 +218,14 @@ void m4_init(M4 *m, const char *root) {
     if (root && root[0])
         snprintf(m->root, sizeof(m->root), "%s", root);
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
-    m4_open_image_if_file(m);
+}
+
+void m4_set_image(M4 *m, const char *image_path) {
+    if (image_path && image_path[0])
+        snprintf(m->image_path, sizeof(m->image_path), "%s", image_path);
+    else
+        m->image_path[0] = '\0';
+    m4_open_image(m);
 }
 
 void m4_reset(M4 *m) {
@@ -235,8 +240,8 @@ void m4_reset(M4 *m) {
     m->cmd_len = 0;
     snprintf(m->cwd, sizeof(m->cwd), "/");
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
-    /* Re-open image fd if root points to an image file */
-    m4_open_image_if_file(m);
+    /* Re-open image fd (if image_path is set) */
+    m4_open_image(m);
     m->nmi_enabled = false;
 }
 

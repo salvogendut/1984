@@ -181,6 +181,8 @@ int main(int argc, char *argv[]) {
     cpc.m4              = cfg.m4;
     if (cfg.m4 && cfg.m4_path[0])
         snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
+    if (cfg.m4)
+        m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
 
@@ -451,6 +453,8 @@ int main(int argc, char *argv[]) {
             cpc.m4               = cfg.m4;
             if (cfg.m4 && cfg.m4_path[0])
                 snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
+            if (cfg.m4)
+                m4_set_image(&cpc.m4_card, cfg.m4_image);
             ide_close(&cpc.ide_chip);
             if (cfg.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);

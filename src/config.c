@@ -140,6 +140,7 @@ static void config_create_default(const char *path, const char *home) {
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
         "m4_path=\n"
+        "m4_image=\n"
         "ulifac=false\n"
         "net4cpc=false\n"
         "rtc=false\n"
@@ -238,6 +239,8 @@ int config_load(Config *cfg) {
                 else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "m4_path")) {
                 snprintf(cfg->m4_path, CONFIG_PATH_MAX, "%s", val);
+            } else if (!strcmp(key, "m4_image")) {
+                snprintf(cfg->m4_image, CONFIG_PATH_MAX, "%s", val);
             } else if (!strcmp(key, "ulifac")) {
                 if (parse_bool(val, &b)) cfg->ulifac = b;
                 else { fprintf(stderr, "1984.conf:%d: ulifac must be true/false\n", lineno); rc = -1; }
@@ -328,6 +331,7 @@ int config_save(const Config *cfg) {
         "dd1=%s\n"
         "m4=%s\n"
         "m4_path=%s\n"
+        "m4_image=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n"
         "rtc=%s\n"
@@ -342,6 +346,7 @@ int config_save(const Config *cfg) {
         cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
         cfg->m4_path,
+        cfg->m4_image,
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc          ? "true" : "false",
         cfg->rtc              ? "true" : "false",
