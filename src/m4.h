@@ -38,10 +38,15 @@ typedef struct {
     u8      cmd_buf[M4_CMD_BUF];
     int     cmd_len;
 
-    /* SD card root: host filesystem directory mapped as the SD card */
+    /* SD card root: host directory mapped as SD card (file-API mode)
+     * OR path to a raw FAT image file (image mode — enables C_SDREAD/WRITE). */
     char    root[M4_PATH_MAX];
-    /* Current working directory within the SD card (always starts with '/') */
+    /* Current working directory within the SD card (file-API mode only) */
     char    cwd[M4_PATH_MAX];
+    /* Disk image mode: when root points to a regular file, this fd is opened
+     * and C_SDREAD/C_SDWRITE address it as a raw block device. NULL means
+     * directory mode (root is a host directory). */
+    FILE   *image_fp;
 
     /* File descriptors (1-indexed: fd=1 → fds[0]) */
     M4Fd    fds[M4_MAX_FDS];

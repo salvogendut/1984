@@ -46,6 +46,8 @@
 #define C_COPYFILE    0x432A
 #define C_ROMLIST     0x432C
 #define C_DSKEXT      0x4330
+#define C_SDREAD      0x4314
+#define C_SDWRITE     0x4315
 #define C_NETSOCKET   0x4331
 #define C_NETCONNECT  0x4332
 #define C_NETCLOSE    0x4333
@@ -199,6 +201,18 @@ static bool valid_fd(const M4 *m, u8 fd) {
 
 /* ---- Public API ---- */
 
+/* If root points to a regular file, open it as a raw disk image (read-write).
+ * Returns true if the image was opened successfully. */
+static bool m4_open_image_if_file(M4 *m) {
+    if (m->image_fp) { fclose(m->image_fp); m->image_fp = NULL; }
+    if (!m->root[0]) return false;
+    struct stat st;
+    if (stat(m->root, &st) != 0 || !S_ISREG(st.st_mode)) return false;
+    m->image_fp = fopen(m->root, "r+b");
+    if (!m->image_fp) m->image_fp = fopen(m->root, "rb");  /* read-only fallback */
+    return m->image_fp != NULL;
+}
+
 void m4_init(M4 *m, const char *root) {
     memset(m, 0, sizeof(*m));
     m->nmi_enabled = false;  /* ROM enables NMI explicitly via C_NMION after init */
@@ -206,6 +220,7 @@ void m4_init(M4 *m, const char *root) {
     if (root && root[0])
         snprintf(m->root, sizeof(m->root), "%s", root);
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
+    m4_open_image_if_file(m);
 }
 
 void m4_reset(M4 *m) {
@@ -220,6 +235,8 @@ void m4_reset(M4 *m) {
     m->cmd_len = 0;
     snprintf(m->cwd, sizeof(m->cwd), "/");
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
+    /* Re-open image fd if root points to an image file */
+    m4_open_image_if_file(m);
     m->nmi_enabled = false;
 }
 
@@ -367,12 +384,15 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_READDIR: {
-        if (!m->dir_dp) { err = M4_ERR_EOF; break; }
+        /* M4ROM's catalog loop checks rom_response+0 == 2 for EOF, so the
+         * EOF marker for THIS command is fixed at 2 regardless of our
+         * generic error map. */
+        if (!m->dir_dp) { err = 2; break; }
 
         struct dirent *de = NULL;
         for (;;) {
             de = readdir(m->dir_dp);
-            if (!de) { err = M4_ERR_EOF; goto readdir_done; }
+            if (!de) { err = 2; goto readdir_done; }
             if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
                 continue;
             if (fnmatch(m->dir_filter, de->d_name,
@@ -661,6 +681,68 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         if (sz < 0) { err = M4_ERR_IO; break; }
         err = M4_OK;
         resp_u32le(m, &roff, (u32)sz);
+        break;
+    }
+
+    case C_SDREAD: {
+        /* Raw block read from the SD card image.
+         * Request:  data[0..3]=LBA (little-endian 32-bit), data[4]=num sectors
+         * Response: resp+3 = status (0=OK, 3=not ready, 4=invalid param)
+         *           resp+4 onwards = sector data (512 bytes per sector)
+         * Only works in image mode; directory mode has no underlying sectors. */
+        if (!m->image_fp || plen < 5) {
+            resp_u8(m, &roff, 3); /* not ready */
+            err = M4_OK;
+            break;
+        }
+        u32 lba   = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+        u8  nsec  = p[4];
+        if (nsec == 0 || nsec > 4) {
+            resp_u8(m, &roff, 4); /* invalid parameter */
+            err = M4_OK;
+            break;
+        }
+        if (fseek(m->image_fp, (long)lba * 512, SEEK_SET) != 0) {
+            resp_u8(m, &roff, 1); /* R/W error */
+            err = M4_OK;
+            break;
+        }
+        resp_u8(m, &roff, 0); /* success */
+        size_t want = (size_t)nsec * 512;
+        size_t got  = fread(&m->bus_mem[roff], 1, want, m->image_fp);
+        roff = (u16)(roff + want);
+        for (size_t i = got; i < want; i++)
+            m->bus_mem[roff - want + i] = 0; /* pad past-EOF with zeros */
+        err = M4_OK;
+        break;
+    }
+
+    case C_SDWRITE: {
+        /* Raw block write to the SD card image.
+         * Request:  data[0..3]=LBA, data[4]=num sectors, data[5..]=sector data
+         * Response: resp+3 = status (0=OK, 1=R/W err, 2=write-protected). */
+        if (!m->image_fp || plen < 5) {
+            resp_u8(m, &roff, 3);
+            err = M4_OK;
+            break;
+        }
+        u32 lba  = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+        u8  nsec = p[4];
+        if (nsec == 0 || nsec > 4 || plen < 5 + (int)nsec * 512) {
+            resp_u8(m, &roff, 4);
+            err = M4_OK;
+            break;
+        }
+        if (fseek(m->image_fp, (long)lba * 512, SEEK_SET) != 0
+                || fwrite(&p[5], 1, (size_t)nsec * 512, m->image_fp)
+                   != (size_t)nsec * 512) {
+            resp_u8(m, &roff, 1);
+            err = M4_OK;
+            break;
+        }
+        fflush(m->image_fp);
+        resp_u8(m, &roff, 0);
+        err = M4_OK;
         break;
     }
 
