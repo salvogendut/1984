@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <dirent.h>
 
+#define M4_ROM_SLOT  6     /* expansion slot for M4ROM — official recommendation; AMSDOS stays at slot 7 */
 #define M4_MAX_FDS   8     /* file descriptors, 1-indexed */
 #define M4_CMD_BUF   512
 #define M4_PATH_MAX  512

@@ -1,4 +1,5 @@
 #include "config.h"
+#include "m4.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -278,6 +279,8 @@ int config_save(const Config *cfg) {
 
     fprintf(f, "\n[expansion_roms]\n");
     for (int i = 0; i < ROM_EXT_COUNT; i++) {
+        /* M4_ROM_SLOT is managed automatically when M4 is enabled — don't persist it */
+        if (i == M4_ROM_SLOT && cfg->m4) continue;
         if (cfg->rom_ext[i][0])
             fprintf(f, "slot_%d=%s\n", i, cfg->rom_ext[i]);
     }

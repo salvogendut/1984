@@ -179,8 +179,16 @@ int main(int argc, char *argv[]) {
 
     /* Load expansion ROMs into slots 0-31 (from config) */
     for (int s = 0; s < ROM_EXT_COUNT; s++) {
+        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
+        if (s == M4_ROM_SLOT && cfg.m4) continue;
         if (cfg.rom_ext[s][0])
             mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+    }
+    /* Load M4ROM into its dedicated slot when M4 is enabled */
+    if (cfg.m4) {
+        char m4rom[512];
+        config_default_m4rom(m4rom, sizeof(m4rom));
+        mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
     }
 
     /* Apply --rom-slot=N:PATH overrides from CLI */
@@ -404,8 +412,14 @@ int main(int argc, char *argv[]) {
             else if (!cfg.dd1 && cpc.model == MODEL_464)
                 mem_unload_amsdos(&cpc.mem);
             for (int s = 0; s < ROM_EXT_COUNT; s++) {
+                if (s == M4_ROM_SLOT && cfg.m4) continue;
                 if (cfg.rom_ext[s][0])
                     mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+            }
+            if (cfg.m4) {
+                char m4rom[512];
+                config_default_m4rom(m4rom, sizeof(m4rom));
+                mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
             }
             const char *title = (cpc.model == MODEL_464)
                 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;

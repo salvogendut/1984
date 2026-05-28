@@ -266,17 +266,12 @@ static void activate_item(Overlay *ov) {
                 SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
                     ov->cpc ? ov->cpc->display.window : NULL, NULL, false);
             } else {
-                /* Disable: clear flag (keep path so re-enabling is easy) */
+                /* Disable: clear flag and unload M4ROM from its slot */
                 ov->cfg->m4 = false;
                 if (ov->cpc) ov->cpc->m4 = false;
-                /* Restore slot 7 to AMSDOS (or clear it if 6128 with no dd1) */
-                ov->cfg->rom_ext[7][0] = '\0';
-                char amsdos[CONFIG_PATH_MAX];
-                config_default_amsdos(amsdos, sizeof(amsdos));
-                if (ov->cpc) {
-                    mem_unload_rom_ext(&ov->cpc->mem, 7);
-                    mem_load_rom_ext(&ov->cpc->mem, 7, amsdos);
-                }
+                ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
+                if (ov->cpc)
+                    mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
                 ov->dirty = true;
             }
             break;
@@ -442,11 +437,11 @@ void overlay_tick(Overlay *ov) {
         /* Load M4ROM into slot 7, overriding AMSDOS */
         char m4rom[CONFIG_PATH_MAX];
         config_default_m4rom(m4rom, sizeof(m4rom));
-        snprintf(ov->cfg->rom_ext[7], CONFIG_PATH_MAX, "%s", m4rom);
+        snprintf(ov->cfg->rom_ext[M4_ROM_SLOT], CONFIG_PATH_MAX, "%s", m4rom);
         if (ov->cpc) {
             ov->cpc->m4 = true;
             snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->dialog_path);
-            mem_load_rom_ext(&ov->cpc->mem, 7, m4rom);
+            mem_load_rom_ext(&ov->cpc->mem, M4_ROM_SLOT, m4rom);
         }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {

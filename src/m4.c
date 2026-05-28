@@ -144,7 +144,7 @@ static bool valid_fd(const M4 *m, u8 fd) {
 
 void m4_init(M4 *m, const char *root) {
     memset(m, 0, sizeof(*m));
-    m->nmi_enabled = true;
+    m->nmi_enabled = false;  /* ROM enables NMI explicitly via C_NMION after init */
     snprintf(m->cwd, sizeof(m->cwd), "/");
     if (root && root[0])
         snprintf(m->root, sizeof(m->root), "%s", root);
@@ -163,7 +163,7 @@ void m4_reset(M4 *m) {
     m->cmd_len = 0;
     snprintf(m->cwd, sizeof(m->cwd), "/");
     snprintf(m->dir_filter, sizeof(m->dir_filter), "*");
-    m->nmi_enabled = true;
+    m->nmi_enabled = false;
 }
 
 void m4_dataport_write(M4 *m, u8 val) {
