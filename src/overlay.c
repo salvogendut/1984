@@ -282,6 +282,7 @@ static void activate_item(Overlay *ov) {
                 ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
                 if (ov->cpc)
                     mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
+                ov->needs_cold_boot = true;
                 ov->dirty = true;
             }
             break;
@@ -472,6 +473,7 @@ void overlay_tick(Overlay *ov) {
                    &ov->cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
                    sizeof(ov->cpc->m4_card.cfg_mem));
         }
+        ov->needs_cold_boot = true;
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ROMSLOT && ov->dialog_slot >= 0) {
         int slot = ov->dialog_slot;
