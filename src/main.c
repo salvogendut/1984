@@ -35,6 +35,7 @@ static void usage(const char *prog, int code) {
         "  --464               Boot as CPC 464 (overrides config)\n"
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
+        "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
@@ -73,6 +74,7 @@ int main(int argc, char *argv[]) {
     bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
+    int         memory_override  = 0;             /* 0 = no override */
 
     /* --rom-slot=N:PATH pairs collected from CLI */
     struct { int slot; const char *path; } rom_slots[ROM_EXT_COUNT];
@@ -115,6 +117,13 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_6128;
         } else if (strcmp(argv[i], "--dd1") == 0) {
             dd1_override = true;
+        } else if (strncmp(argv[i], "--memory=", 9) == 0 && argv[i][9] != '\0') {
+            int kb = atoi(argv[i] + 9);
+            if (kb != 64 && kb != 128 && kb != 256 && kb != 512 && kb != 576) {
+                fprintf(stderr, "%s: --memory=KB must be 64, 128, 256, 512 or 576\n", argv[0]);
+                return 2;
+            }
+            memory_override = kb;
         } else if (strcmp(argv[i], "--monitor-pty") == 0) {
             monitor_pty = true;
         } else if (strcmp(argv[i], "--trace-io") == 0) {
@@ -144,6 +153,8 @@ int main(int argc, char *argv[]) {
 
     if (model_override != (CpcModel)-1)
         config_set_model(&cfg, model_override);
+    if (memory_override)
+        cfg.memory_kb = memory_override;
     if (dd1_override)
         config_apply_dd1(&cfg, true);
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
