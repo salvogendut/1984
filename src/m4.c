@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <time.h>
 #include <errno.h>
+#include <ctype.h>
 #include <libgen.h>
 
 /* M4 command IDs (from m4cmds.i) */
@@ -277,12 +278,16 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_FREE: {
-        if (!m->root[0]) { err = M4_ERR_IO; break; }
-        struct statvfs sv;
-        if (statvfs(m->root, &sv) != 0) { err = M4_ERR_IO; break; }
-        u32 free_kb = (u32)((u64)sv.f_bavail * sv.f_bsize / 1024);
+        u32 free_kb = 0;
+        if (m->root[0]) {
+            struct statvfs sv;
+            if (statvfs(m->root, &sv) == 0)
+                free_kb = (u32)((u64)sv.f_bavail * sv.f_bsize / 1024);
+        }
+        char buf[40];
+        snprintf(buf, sizeof(buf), "\r\n%uK free\r\n\r\n", (unsigned)free_kb);
         err = M4_OK;
-        resp_u32le(mem, &roff, free_kb);
+        resp_str(mem, &roff, buf);
         break;
     }
 
@@ -312,10 +317,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         for (;;) {
             de = readdir(m->dir_dp);
             if (!de) { err = M4_ERR_EOF; goto readdir_done; }
-            /* Skip hidden dot entries, keep . and .. only if no filter */
             if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
                 continue;
-            /* Apply filter */
             if (fnmatch(m->dir_filter, de->d_name,
                         FNM_NOESCAPE | FNM_CASEFOLD) != 0)
                 continue;
@@ -329,37 +332,55 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         struct stat st;
         bool is_dir = false;
         u32  fsize  = 0;
-        u16  fdate  = 0, ftime = 0;
         if (stat(hostpath, &st) == 0) {
             is_dir = S_ISDIR(st.st_mode);
             fsize  = is_dir ? 0 : (u32)st.st_size;
-            struct tm *tm = localtime(&st.st_mtime);
-            if (tm) {
-                int yr = tm->tm_year + 1900 - 1980;
-                if (yr < 0) yr = 0;
-                fdate = (u16)(((yr & 0x7F) << 9) |
-                              (((tm->tm_mon + 1) & 0x0F) << 5) |
-                              (tm->tm_mday & 0x1F));
-                ftime = (u16)(((tm->tm_hour & 0x1F) << 11) |
-                              ((tm->tm_min  & 0x3F) << 5) |
-                              ((tm->tm_sec / 2) & 0x1F));
+        }
+
+        /* Format as 8.3 for display.
+         * Layout consumed by M4ROM's direntry_workbuf:
+         *   bytes 0-7:   name (space-padded, uppercase)
+         *   byte  8:     '.' (dot — even for directories)
+         *   bytes 9-11:  extension (space-padded, uppercase)
+         *   bytes 12-16: 5 chars ASCII size (right-aligned, e.g. "    6")
+         *   byte  17:    '\0' terminator
+         *   bytes 18-19: binary file size (little-endian, low 16 bits)
+         * Directories are prefixed with '>' per M4 board convention. */
+        char name8[9] = "        ";
+        char ext3[4]  = "   ";
+        const char *src = de->d_name;
+        if (is_dir) {
+            name8[0] = '>';
+            for (int i = 1; i < 8 && src[i-1]; i++)
+                name8[i] = (char)toupper((unsigned char)src[i-1]);
+        } else {
+            const char *dot = strrchr(src, '.');
+            int nlen = dot ? (int)(dot - src) : (int)strlen(src);
+            if (nlen > 8) nlen = 8;
+            for (int i = 0; i < nlen; i++)
+                name8[i] = (char)toupper((unsigned char)src[i]);
+            if (dot) {
+                const char *e = dot + 1;
+                for (int i = 0; i < 3 && e[i]; i++)
+                    ext3[i] = (char)toupper((unsigned char)e[i]);
             }
         }
 
-        /* Name: 13 bytes (8.3 max), null-terminated, padded with spaces */
-        char name13[13];
-        memset(name13, ' ', 12);
-        name13[12] = '\0';
-        strncpy(name13, de->d_name, 12);
-        name13[12] = '\0';
-
         err = M4_OK;
-        for (int i = 0; i < 13; i++)
-            resp_u8(mem, &roff, (u8)name13[i]);
-        resp_u8(mem,  &roff, is_dir ? 0x10 : 0x20); /* attr */
-        resp_u32le(mem, &roff, fsize);
-        resp_u16le(mem, &roff, fdate);
-        resp_u16le(mem, &roff, ftime);
+        for (int i = 0; i < 8; i++) resp_u8(mem, &roff, (u8)name8[i]);
+        resp_u8(mem, &roff, '.');
+        for (int i = 0; i < 3; i++) resp_u8(mem, &roff, (u8)ext3[i]);
+        /* 5-char right-aligned size (or "  DIR" for directories) */
+        char szbuf[6];
+        if (is_dir) {
+            snprintf(szbuf, sizeof(szbuf), "  DIR");
+        } else {
+            snprintf(szbuf, sizeof(szbuf), "%5u",
+                     (unsigned)(fsize > 99999 ? 99999 : fsize));
+        }
+        for (int i = 0; i < 5; i++) resp_u8(mem, &roff, (u8)szbuf[i]);
+        resp_u8(mem, &roff, 0x00);                      /* terminator */
+        resp_u16le(mem, &roff, (u16)(fsize & 0xFFFF));  /* binary size */
         readdir_done:;
         break;
     }
