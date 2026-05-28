@@ -391,7 +391,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     /* ---- File I/O ---- */
 
     case C_OPEN: {
-        /* ROM reads: resp+3 = fd, resp+4 = 0 means success / non-zero means error */
+        /* M4 board protocol:
+         *   mode without FA_REALMODE (0x80): AMSDOS-compat — always fd=1 for
+         *     read (FA_READ=0x01), fd=2 for write (FA_WRITE=0x02). M4ROM hardcodes
+         *     these fds (e.g. _cas_in_open's fread uses fd=1 literally).
+         *   mode with FA_REALMODE: dynamic fd from a pool (fds 3..M4_MAX_FDS).
+         * Response: resp+3 = fd, resp+4 = 0 on success, non-zero error otherwise. */
         u8 open_fd = 0xFF, open_err = M4_ERR_IO;
         if (m->root[0] && plen >= 2) {
             u8 mode = p[0];
@@ -401,7 +406,20 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 open_err = M4_ERR_NOFILE;
             } else {
                 const char *fmode = (mode & 0x02) ? "wb" : (mode & 0x30) ? "ab" : "rb";
-                int idx = alloc_fd(m);
+                int idx;
+                if (mode & 0x80) {                  /* real-mode dynamic alloc (3..N) */
+                    idx = -1;
+                    for (int i = 2; i < M4_MAX_FDS; i++)
+                        if (!m->fds[i].in_use) { idx = i + 1; break; }
+                } else {                            /* AMSDOS-compat fixed fd */
+                    idx = (mode & 0x02) ? 2 : 1;
+                    /* Force-close any stale fd left over from a prior session */
+                    if (m->fds[idx - 1].in_use && m->fds[idx - 1].fp) {
+                        fclose(m->fds[idx - 1].fp);
+                        m->fds[idx - 1].fp = NULL;
+                        m->fds[idx - 1].in_use = false;
+                    }
+                }
                 if (idx < 0) {
                     open_err = M4_ERR_FULL;
                 } else {
@@ -418,8 +436,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             }
         }
         err = open_err;
-        resp_u8(m, &roff, open_fd);  /* fd at resp+3 */
-        resp_u8(m, &roff, open_err); /* error indicator at resp+4 (ROM checks this: 0=OK) */
+        resp_u8(m, &roff, open_fd);
+        resp_u8(m, &roff, open_err);
         break;
     }
 
