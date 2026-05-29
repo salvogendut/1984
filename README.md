@@ -8,6 +8,8 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32), and SYMBiFACE II PS/2 mouse work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
 
+**M4 board emulation is unstable.** The M4ROM signature, file API over FAT, single-image SAVE/LOAD/CAT, DNS resolution, TCP socket open/connect, and the cpc-sdcc network examples (TCPTEST, NTP, TELNET) all work. SymbOS's `netd-m4c.exe` network daemon launches, shows "Online", and can resolve hosts and open connections — but TCP sessions stall shortly after the initial server banner because the daemon's per-socket translation table appears to be corrupted between commands in a way we haven't fully diagnosed yet. A pragmatic `last_tcp_sock` workaround keeps single-socket flows partially alive. Multi-socket scenarios and long-running interactive telnet sessions are not yet reliable.
+
 ## Requirements
 
 - GCC (C11)
@@ -86,7 +88,11 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 
 [hardware]
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
-m4=false          # [unimplemented]
+m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE:
+                  # cpc-sdcc network apps and basic SD file ops work; SymbOS's
+                  # netd-m4c.exe daemon can connect but TCP sessions stall after
+                  # the initial banner due to a not-yet-understood SymbOS/M4
+                  # state interaction. See "Status" section.
 ulifac=false      # [unimplemented]
 net4cpc=false
 rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)

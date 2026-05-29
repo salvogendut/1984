@@ -42,6 +42,7 @@ static void usage(const char *prog, int code) {
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
+        "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
