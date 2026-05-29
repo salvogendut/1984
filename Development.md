@@ -313,6 +313,22 @@ The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-onl
 
 ---
 
+## Net4CPC W5100S Ethernet (`src/net4cpc.c`)
+
+The Net4CPC expansion exposes a WIZnet **W5100S** at four CPC I/O ports (`0xFD20`–`0xFD23`) in indirect-bus mode. The driver implements the full 64 KB W5100S register/buffer space (`regs[65536]`), four hardware sockets with their own 2 KB TX and 2 KB RX ring buffers, and the chip-level commands `OPEN`, `CONNECT`, `LISTEN`, `SEND`, `RECV`, `DISCON`, `CLOSE`. Socket operations are backed by host POSIX sockets.
+
+**Port map and indirect addressing.** The host accesses the chip via two registers — `IDM_ARH` / `IDM_ARL` form a 16-bit address pointer, and `IDM_DR` reads or writes the data byte at that address. When MR bit 1 (AI, Address Auto-Increment) is set, `idm_ar` increments after every `IDM_DR` access — that's the only way to write multi-byte registers like `SHAR` (MAC, 6 bytes) or `SIPR` (4 bytes) without doing six separate `IDM_AR` writes.
+
+**Software reset (MR.RST).** Writing `0x80` to `MR` (either via the direct shortcut at `0xFD20` or through `IDM_DR` with `idm_ar = 0x0000`) triggers a soft reset: every socket is closed (host-side `close(2)`), the entire register space is zeroed, then `MR` is set back to `0x03` (IND + AI). The post-reset MR value matters: real silicon mirrors the `BUS_SEL` pin's "indirect" state and leaves AI on by default, so the host can immediately write multi-byte registers afterwards. SymbOS's N4C daemon issues a soft reset as its first step and then polls `MR` until bit 7 clears; if we left `MR` at `0x00` after reset, every subsequent multi-byte write would silently clobber the same address (SHAR becomes `??:??:??:??:??:??` with only the last byte stored).
+
+**Socket OPEN binds correctly.** SymbOS configures `Sn_PORT` (the local port) before issuing `OPEN`. The OPEN handler binds the host socket to `(SIPR or INADDR_ANY, Sn_PORT)`, sets `SO_REUSEADDR` so we can coexist with the host's own services if there's an overlap, and sets `SO_BROADCAST` on UDP sockets so `sendto(255.255.255.255)` is permitted (required for DHCP DISCOVER). Bind failures fall back to ephemeral port 0 rather than killing the socket.
+
+**Limitations — no DHCP.** Because the emulator runs as a regular user-space process accessing the network through POSIX sockets rather than a raw L2 interface, broadcast DHCP exchanges cannot fully complete. We can *send* DHCP DISCOVER (with `SO_BROADCAST`), but server replies addressed to the emulated MAC and offered IP land at the host kernel, which silently drops them — the kernel doesn't own that IP. Use a **static IP configuration** with the N4C daemon (and any other Net4CPC consumer) until TUN/TAP support is added. With static config, DNS lookups over UDP, TCP connects, TCP send/receive, and HTTP fetches all work — verified end-to-end against `time.akamai.com` from SymbOS.
+
+**Tracing.** `--trace-net4cpc` enables `net4cpc_trace = 1`. Every register access is logged with its decoded name (`MR`, `SHAR`, `SIPR`, `Sn_MR`, `Sn_DIPR`, etc.) and socket index where applicable. Socket commands are logged with mnemonic (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`). TX/RX ring-buffer accesses are summarised as `burst R/W [start..end] N bytes` to avoid spamming one line per byte. The MR shortcut read at `0xFD20` and `MR.RST` events get their own labelled lines.
+
+---
+
 ## Albireo CH376 USB host (`src/ch376.c`)
 
 The Albireo CPC expansion exposes a WCH **CH376** USB host controller. It is enabled via `albireo=true` in `1984.conf` (or Advanced → Albireo in the overlay). Enabling it from the overlay opens a file picker to choose a FAT16/FAT32 image; the path is stored in `albireo_image`. The backend is `src/fat.c` (shared with the M4 file API), so directory enumeration, open/read/write/seek, and free-space queries all go through the same FAT layer.
