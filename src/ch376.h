@@ -82,6 +82,13 @@ typedef struct {
     char     enum_parent[256];   /* parent path used to open dir */
     u8       last_dir_entry[32]; /* served by DIR_INFO_READ */
     bool     have_dir_entry;
+
+    /* Albireo USB HID mouse state — accumulated SDL deltas + button state.
+     * Drained by an ISSUE_TKN_X (0x4E) with parameters (TOKEN, 0x19)
+     * (read, endpoint 1, boot-protocol mouse). */
+    int   mouse_dx;
+    int   mouse_dy;
+    u8    mouse_buttons;        /* bit0=left, bit1=right, bit2=middle */
 } CH376;
 
 extern int ch376_trace;
@@ -93,3 +100,7 @@ void ch376_close(CH376 *ch);
 
 u8   ch376_read(CH376 *ch, u8 reg);   /* reg: 0=DATA, 1=STATUS */
 void ch376_write(CH376 *ch, u8 reg, u8 val);
+
+/* USB HID mouse plumbing (Albireo emulates a USB mouse on endpoint 1). */
+void ch376_mouse_move(CH376 *ch, int dx, int dy);
+void ch376_mouse_button(CH376 *ch, int btn, bool pressed);  /* 0=L 1=R 2=M */

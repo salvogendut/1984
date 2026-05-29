@@ -311,17 +311,21 @@ int main(int argc, char *argv[]) {
                 if (ev.type == SDL_EVENT_MOUSE_MOTION) {
                     if (cpc.symbiface_mouse)
                         mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
+                    if (cpc.albireo)
+                        ch376_mouse_move(&cpc.ch376, (int)ev.motion.xrel, (int)ev.motion.yrel);
                     continue;
                 }
                 if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                     ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                    if (cpc.symbiface_mouse) {
-                        int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
-                                  (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
-                                  (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                        if (btn >= 0)
-                            mouse_button(&cpc.mouse, btn,
-                                         ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
+                              (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
+                              (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
+                    bool pressed = (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    if (btn >= 0) {
+                        if (cpc.symbiface_mouse)
+                            mouse_button(&cpc.mouse, btn, pressed);
+                        if (cpc.albireo)
+                            ch376_mouse_button(&cpc.ch376, btn, pressed);
                     }
                     continue;
                 }
@@ -340,8 +344,11 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Click in emulator window captures mouse when mouse support is enabled */
-            if (!mouse_captured && cpc.symbiface_mouse && !overlay.visible &&
+            /* Click in emulator window captures mouse when any mouse path is
+             * active (SYMBiFACE II PS/2 at 0xFD10 or Albireo USB HID at
+             * 0xFE80/0xFE81). Ctrl+Enter releases capture for either. */
+            if (!mouse_captured && (cpc.symbiface_mouse || cpc.albireo) &&
+                !overlay.visible &&
                 ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
                 set_mouse_capture(cpc.display.window, true,
@@ -350,8 +357,10 @@ int main(int argc, char *argv[]) {
                 int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
                           (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
                           (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                if (btn >= 0)
-                    mouse_button(&cpc.mouse, btn, true);
+                if (btn >= 0) {
+                    if (cpc.symbiface_mouse) mouse_button(&cpc.mouse, btn, true);
+                    if (cpc.albireo)         ch376_mouse_button(&cpc.ch376, btn, true);
+                }
                 continue;
             }
 

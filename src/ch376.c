@@ -1,5 +1,6 @@
 #include "ch376.h"
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@ int ch376_trace = 0;
  * Result codes (subset). */
 #define USB_INT_SUCCESS    0x14
 #define USB_INT_CONNECT    0x15
+#define USB_INT_DISCONNECT 0x16
 #define USB_INT_DISK_READ  0x1D
 #define USB_INT_DISK_WRITE 0x1E
 #define USB_INT_DISK_ERR   0x1F
@@ -120,6 +122,35 @@ static void split_path(const char *path, char *parent, size_t psz,
 
 static bool name_has_wildcard(const char *s) {
     return strchr(s, '*') || strchr(s, '?');
+}
+
+/* Collapse the padded 8.3 form UNIDOS hands us ("TCPTEST .BAS",
+ * "SYM     .   ") into the compact form fat_open expects
+ * ("TCPTEST.BAS", "SYM"). Operates on the *leaf* portion only;
+ * parent directories should already be normal. */
+static void compact_8_3_leaf(char *leaf) {
+    char *dot = strchr(leaf, '.');
+    if (!dot) {
+        /* Trim trailing spaces in a dot-less name. */
+        size_t n = strlen(leaf);
+        while (n > 0 && leaf[n - 1] == ' ') leaf[--n] = '\0';
+        return;
+    }
+    /* Trim trailing spaces in the base name (before the dot). */
+    char *p = dot;
+    while (p > leaf && p[-1] == ' ') p--;
+    /* Trim trailing spaces in the extension (after the dot). */
+    char *ext_end = dot + 1 + strlen(dot + 1);
+    while (ext_end > dot + 1 && ext_end[-1] == ' ') ext_end--;
+    if (ext_end == dot + 1) {
+        /* Extension is empty/all spaces — drop the dot too. */
+        *p = '\0';
+    } else {
+        size_t ext_len = (size_t)(ext_end - (dot + 1));
+        *p++ = '.';
+        memmove(p, dot + 1, ext_len);
+        p[ext_len] = '\0';
+    }
 }
 
 /* Glob-match 8.3 filename against pattern. Both already uppercased. */
@@ -231,6 +262,23 @@ static u8 do_file_open(CH376 *ch) {
     if (!f) return ERR_MISS_FILE;
     ch->file = f;
     ch->bytes_remaining = 0;
+
+    /* Populate last_dir_entry so a subsequent DIR_INFO_READ — which UNIDOS
+     * calls right after FILE_OPEN to fetch size/attributes — returns the
+     * 32-byte FAT entry instead of ERR_MISS_FILE. Walk the parent directory
+     * once and match the leaf name (case-insensitive, matching fat.c's lookup). */
+    FatDir *d = fat_opendir(&ch->vol, parent);
+    if (d) {
+        char ename[16]; u32 esize; bool eis_dir;
+        while (fat_readdir(d, ename, sizeof(ename), &esize, &eis_dir)) {
+            if (strcasecmp(ename, leaf) == 0) {
+                make_dir_entry(ch->last_dir_entry, ename, esize, eis_dir);
+                ch->have_dir_entry = true;
+                break;
+            }
+        }
+        fat_closedir(d);
+    }
     return USB_INT_SUCCESS;
 }
 
@@ -302,6 +350,8 @@ void ch376_reset(CH376 *ch) {
     ch->bytes_remaining = 0;
     ch->reading = ch->writing = false;
     ch->filename[0] = '\0';
+    ch->mouse_dx = ch->mouse_dy = 0;
+    ch->mouse_buttons = 0;
 }
 
 void ch376_open(CH376 *ch, const char *path) {
@@ -356,6 +406,9 @@ static int param_count_for(u8 cmd) {
     case 0x3D: return 0;   /* BYTE_WR_GO */
     case 0x3E: return 0;   /* DISK_CAPACITY */
     case 0x3F: return 0;   /* DISK_QUERY */
+    case 0x45: return 1;   /* SET_ADDRESS — 1 byte */
+    case 0x49: return 1;   /* SET_CONFIG  — 1 byte */
+    case 0x4E: return 2;   /* ISSUE_TKN_X — token + endpoint */
     default:   return 0;
     }
 }
@@ -422,6 +475,10 @@ static void execute(CH376 *ch) {
     case 0x2F: { /* SET_FILE_NAME */
         ch->params[ch->param_count] = 0;
         normalise_path((char *)ch->params, ch->filename, sizeof(ch->filename));
+        /* UNIDOS sends padded 8.3 names ("TCPTEST .BAS"); compact the leaf so
+         * fat_open's case-insensitive lookup matches the real on-disk name. */
+        char *slash = strrchr(ch->filename, '/');
+        compact_8_3_leaf(slash ? slash + 1 : ch->filename);
         break;
     }
 
@@ -540,6 +597,34 @@ static void execute(CH376 *ch) {
         break;
     }
 
+    case 0x45: /* SET_ADDRESS — accept USB device address from host */
+    case 0x49: /* SET_CONFIG  — accept configuration */
+        raise_int(ch, USB_INT_SUCCESS);
+        break;
+
+    case 0x4E: { /* ISSUE_TKN_X — params: (token, endpoint+pid).
+                  * SymbOS / Albireo HID mouse path uses endpoint 0x19
+                  * (read endpoint 1) with token DATA0/DATA1 alternating.
+                  * Stage a 3-byte boot-mouse report (buttons, dx, dy). */
+        u8 endpoint = p[1];
+        if ((endpoint & 0x0F) == 0x09 && (endpoint & 0xF0) == 0x10) {
+            /* IN token on endpoint 1 — return mouse HID report. */
+            int dx = ch->mouse_dx;
+            int dy = ch->mouse_dy;
+            if (dx >  127) dx =  127; else if (dx < -128) dx = -128;
+            if (dy >  127) dy =  127; else if (dy < -128) dy = -128;
+            ch->mouse_dx -= dx;
+            ch->mouse_dy -= dy;
+            u8 v[4] = { 3, ch->mouse_buttons, (u8)(s8)dx, (u8)(s8)dy };
+            set_response(ch, v, 4);
+            raise_int(ch, USB_INT_SUCCESS);
+        } else {
+            /* Anything else on the USB token path — nothing to emulate. */
+            raise_int(ch, USB_INT_DISCONNECT);
+        }
+        break;
+    }
+
     default:
         /* Unknown command — leave status reflecting disk error so software
          * doesn't hang on a missing interrupt. */
@@ -597,6 +682,20 @@ void ch376_write(CH376 *ch, u8 reg, u8 val) {
             }
         }
     }
+}
+
+void ch376_mouse_move(CH376 *ch, int dx, int dy) {
+    ch->mouse_dx += dx;
+    /* Albireo / boot-protocol HID mice report Y as "positive = down".
+     * SDL's relative motion is also "positive = down", so no flip needed. */
+    ch->mouse_dy += dy;
+}
+
+void ch376_mouse_button(CH376 *ch, int btn, bool pressed) {
+    if (btn < 0 || btn > 2) return;
+    u8 mask = (u8)(1 << btn);
+    if (pressed) ch->mouse_buttons |= mask;
+    else         ch->mouse_buttons &= (u8)~mask;
 }
 
 u8 ch376_read(CH376 *ch, u8 reg) {
