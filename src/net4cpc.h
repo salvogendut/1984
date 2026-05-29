@@ -12,6 +12,8 @@
 #pragma once
 #include "types.h"
 
+extern int net4cpc_trace;            /* set by --trace-net4cpc */
+
 void net4cpc_reset(void);
 u8   net4cpc_in(u8 reg_sel);         /* reg_sel = port_low & 0x03 */
 void net4cpc_out(u8 reg_sel, u8 val);

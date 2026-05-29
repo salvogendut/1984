@@ -128,6 +128,7 @@ fullscreen=false
 | `--trace-input` | Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down) |
 | `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable — see Status) |
 | `--trace-albireo` | Log every Albireo (CH376) command/response to stderr |
+| `--trace-net4cpc` | Log every Net4CPC (W5100S) register read/write and socket command to stderr |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
@@ -211,7 +212,11 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 | 0xFD22 | IDM_ARL | Low byte of the 16-bit indirect address register |
 | 0xFD23 | IDM_DR | Data register — read/write to the W5100S register space at the current address; auto-increments when MR bit 1 (AI) is set |
 
-Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library. The toggle triggers a cold boot on save.
+Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library and with the SymbOS N4C network daemon. The toggle triggers a cold boot on save.
+
+**Use a static IP — DHCP does not work.** Because the emulator runs as a regular host process and accesses the network through ordinary POSIX sockets rather than a raw L2 interface, broadcast DHCP exchanges cannot fully complete: a `DHCPDISCOVER` to `255.255.255.255` is sent (`SO_BROADCAST` is enabled), but server `DHCPOFFER` replies are addressed to the emulated MAC + offered IP — addresses the host kernel doesn't own and therefore silently drops. Configure the SymbOS daemon (or any other Net4CPC consumer) with a fixed IP, subnet mask, gateway, and DNS server. Proper DHCP support would require TUN/TAP networking so the emulator can present its own L2 interface to the host — planned as a future enhancement.
+
+For debugging, `--trace-net4cpc` logs every W5100S register read/write (decoded with register names and socket index), every socket command (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`), and TX/RX buffer access summaries.
 
 **RTC** (Advanced → RTC): enables emulation of a DS12887 real-time clock compatible with the Cyboard and Symbiface II add-on boards. Time is sourced from the host OS via `localtime()` and is always current. Two I/O ports are exposed at:
 

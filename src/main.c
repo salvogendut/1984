@@ -43,6 +43,7 @@ static void usage(const char *prog, int code) {
         "                      May be specified multiple times\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
+        "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
         "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
@@ -139,6 +140,8 @@ int main(int argc, char *argv[]) {
             m4_trace = 1;
         } else if (strcmp(argv[i], "--trace-albireo") == 0) {
             ch376_trace = 1;
+        } else if (strcmp(argv[i], "--trace-net4cpc") == 0) {
+            net4cpc_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');

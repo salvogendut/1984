@@ -22,10 +22,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+int net4cpc_trace = 0;
 
 /* ---------------------------------------------------------------------------
  * W5100S register-space constants
@@ -214,15 +217,34 @@ static void handle_command(int s, u8 cmd) {
             int flags = fcntl(sock_fd[s], F_GETFL, 0);
             fcntl(sock_fd[s], F_SETFL, flags | O_NONBLOCK);
 
-            /* Bind to the source IP the CPC configured in SIPR (0x000F–0x0012) */
+            /* SO_REUSEADDR so two sockets can share the local port if
+             * needed (the host may already have its own DHCP client on
+             * port 68 etc. — at least don't error out instantly). */
+            int one = 1;
+            setsockopt(sock_fd[s], SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+            /* SO_BROADCAST so UDP sendto(255.255.255.255) is permitted —
+             * required for DHCP DISCOVER/REQUEST. */
+            if (mode == SMODE_UDP)
+                setsockopt(sock_fd[s], SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
+
+            /* Bind to (SIPR, Sn_PORT). SymbOS configures Sn_PORT before
+             * OPEN — DHCP client uses port 68, NTP uses an ephemeral
+             * client port, etc. Binding to that port lets server replies
+             * actually reach our socket. */
             u32 sipr = ((u32)regs[0x000F] << 24) | ((u32)regs[0x0010] << 16) |
                        ((u32)regs[0x0011] <<  8) |  (u32)regs[0x0012];
-            if (sipr != 0) {
-                struct sockaddr_in src;
-                memset(&src, 0, sizeof(src));
-                src.sin_family      = AF_INET;
-                src.sin_port        = 0;
-                src.sin_addr.s_addr = htonl(sipr);
+            u16 sport = get16(SOCK_BASE[s] + 0x04);   /* Sn_PORT */
+            struct sockaddr_in src;
+            memset(&src, 0, sizeof(src));
+            src.sin_family      = AF_INET;
+            src.sin_port        = htons(sport);
+            src.sin_addr.s_addr = sipr ? htonl(sipr) : INADDR_ANY;
+            /* Best-effort: if the host already owns this port, fall back
+             * to a random one rather than killing the socket. */
+            if (bind(sock_fd[s], (struct sockaddr *)&src, sizeof(src)) < 0 &&
+                    sport != 0) {
+                src.sin_port = 0;
                 bind(sock_fd[s], (struct sockaddr *)&src, sizeof(src));
             }
 
@@ -317,26 +339,166 @@ static void handle_command(int s, u8 cmd) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Trace helpers
+ * ------------------------------------------------------------------------- */
+
+/* Decode the W5100S internal address to a human-readable register name plus
+ * an optional socket index. Returns a pointer to a static string. */
+static const char *reg_name(u16 addr, int *sock_out) {
+    *sock_out = -1;
+    /* Common register block (0x0000-0x002F) */
+    switch (addr) {
+    case 0x0000: return "MR";
+    case 0x0001: case 0x0002: case 0x0003: case 0x0004: return "GAR";
+    case 0x0005: case 0x0006: case 0x0007: case 0x0008: return "SUBR";
+    case 0x0009: case 0x000A: case 0x000B: case 0x000C: case 0x000D: case 0x000E: return "SHAR";
+    case 0x000F: case 0x0010: case 0x0011: case 0x0012: return "SIPR";
+    case 0x0015: return "IR";
+    case 0x0016: return "IMR";
+    case 0x0017: case 0x0018: return "RTR";
+    case 0x0019: return "RCR";
+    case 0x001A: return "RMSR";
+    case 0x001B: return "TMSR";
+    }
+    /* Socket registers (0x0400-0x07FF) */
+    for (int s = 0; s < 4; s++) {
+        if (addr >= SOCK_BASE[s] && addr < SOCK_BASE[s] + 0x100) {
+            *sock_out = s;
+            u16 off = (u16)(addr - SOCK_BASE[s]);
+            switch (off) {
+            case 0x00: return "Sn_MR";
+            case 0x01: return "Sn_CR";
+            case 0x02: return "Sn_IR";
+            case 0x03: return "Sn_SR";
+            case 0x04: case 0x05: return "Sn_PORT";
+            case 0x06: case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B: return "Sn_DHAR";
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F: return "Sn_DIPR";
+            case 0x10: case 0x11: return "Sn_DPORT";
+            case 0x12: case 0x13: return "Sn_MSSR";
+            case 0x15: return "Sn_TOS";
+            case 0x16: return "Sn_TTL";
+            case 0x20: case 0x21: return "Sn_TX_FSR";
+            case 0x22: case 0x23: return "Sn_TX_RD";
+            case 0x24: case 0x25: return "Sn_TX_WR";
+            case 0x26: case 0x27: return "Sn_RX_RSR";
+            case 0x28: case 0x29: return "Sn_RX_RD";
+            }
+            return "Sn_?";
+        }
+    }
+    /* TX / RX buffer regions */
+    for (int s = 0; s < 4; s++) {
+        if (addr >= TX_BASE[s] && addr < TX_BASE[s] + 0x800) { *sock_out = s; return "TX_buf"; }
+        if (addr >= RX_BASE[s] && addr < RX_BASE[s] + 0x800) { *sock_out = s; return "RX_buf"; }
+    }
+    return "?";
+}
+
+static const char *scmd_name(u8 cmd) {
+    switch (cmd) {
+    case SCMD_OPEN:    return "OPEN";
+    case SCMD_CONNECT: return "CONNECT";
+    case SCMD_DISCON:  return "DISCON";
+    case SCMD_CLOSE:   return "CLOSE";
+    case SCMD_SEND:    return "SEND";
+    case SCMD_RECV:    return "RECV";
+    case 0x02:         return "LISTEN";
+    default:           return "?";
+    }
+}
+
+/* Coalesce TX/RX buffer accesses — log the start of each burst rather than
+ * every byte. A "burst" is a run of consecutive addresses inside the same
+ * buffer region. */
+static u16 burst_first;
+static int burst_len;
+static char burst_kind;   /* 'R' = read, 'W' = write, 0 = idle */
+
+static void burst_flush(void) {
+    if (burst_kind && burst_len > 0)
+        fprintf(stderr, "[net4cpc] burst %c [%04X..%04X] %d bytes\n",
+                burst_kind, burst_first,
+                (u16)(burst_first + burst_len - 1), burst_len);
+    burst_kind = 0;
+    burst_len = 0;
+}
+
+static bool is_buffer_addr(u16 addr) {
+    return addr >= 0x4000 && addr < 0x8000;
+}
+
+static void trace_access(u16 addr, u8 val, bool is_write) {
+    if (is_buffer_addr(addr)) {
+        char kind = is_write ? 'W' : 'R';
+        if (burst_kind == kind && burst_first + burst_len == addr)
+            burst_len++;
+        else {
+            burst_flush();
+            burst_kind = kind;
+            burst_first = addr;
+            burst_len = 1;
+        }
+        return;
+    }
+    burst_flush();
+    int s; const char *n = reg_name(addr, &s);
+    if (s >= 0) {
+        if (is_write && (addr & 0xFF) == SR_CR)
+            fprintf(stderr, "[net4cpc] S%d CMD=%02X (%s)\n", s, val, scmd_name(val));
+        else
+            fprintf(stderr, "[net4cpc] %s %04X %s/S%d = %02X\n",
+                    is_write ? "W" : "R", addr, n, s, val);
+    } else {
+        fprintf(stderr, "[net4cpc] %s %04X %s = %02X\n",
+                is_write ? "W" : "R", addr, n, val);
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Register read/write with side-effects
  * ------------------------------------------------------------------------- */
 
 static u8 reg_read(u16 addr) {
+    u8 val;
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
             poll_connect(s);
-            return regs[addr];
+            val = regs[addr];
+            if (net4cpc_trace) trace_access(addr, val, false);
+            return val;
         }
         /* Reading either byte of RX_RSR triggers a receive poll */
         if (addr == SOCK_BASE[s] + SR_RX_RSR ||
             addr == (u16)(SOCK_BASE[s] + SR_RX_RSR + 1)) {
             poll_rx(s);
-            return regs[addr];
+            val = regs[addr];
+            if (net4cpc_trace) trace_access(addr, val, false);
+            return val;
         }
     }
-    return regs[addr];
+    val = regs[addr];
+    if (net4cpc_trace) trace_access(addr, val, false);
+    return val;
 }
 
 static void reg_write(u16 addr, u8 val) {
+    if (net4cpc_trace) trace_access(addr, val, true);
+    /* MR.RST (bit 7): software reset. Real silicon clears all regs and
+     * the RST bit auto-clears within ~10us. The Net4CPC board ties the
+     * BUS_SEL pin to indirect-bus mode, so MR comes back as 0x03 (IND +
+     * AI). Clearing MR to 0x00 here disables auto-increment, which
+     * breaks every multi-byte register write SymbOS makes afterward. */
+    if (addr == 0x0000 && (val & 0x80)) {
+        for (int s = 0; s < 4; s++) {
+            close_sock(s);
+            rx_wr[s] = 0;
+        }
+        memset(regs, 0, sizeof(regs));
+        regs[0x0000] = 0x03;
+        if (net4cpc_trace)
+            fprintf(stderr, "[net4cpc]     soft reset complete; MR -> 03 (IND+AI)\n");
+        return;
+    }
     regs[addr] = val;
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_CR && val != 0) {
@@ -363,23 +525,29 @@ void net4cpc_reset(void) {
 }
 
 u8 net4cpc_in(u8 reg_sel) {
+    u8 val;
     switch (reg_sel & 0x03) {
-    case 0: return regs[0x0000];           /* MR direct shortcut */
+    case 0:
+        val = regs[0x0000];                /* MR direct shortcut at port 0xFD20 */
+        if (net4cpc_trace)
+            fprintf(stderr, "[net4cpc] IN  FD20 MR_shortcut = %02X\n", val);
+        return val;
     case 1: return (u8)(idm_ar >> 8);      /* IDM_ARH */
     case 2: return (u8)(idm_ar & 0xFF);    /* IDM_ARL */
-    case 3: {                              /* IDM_DR */
-        u8 val = reg_read(idm_ar);
+    case 3:                                /* IDM_DR */
+        val = reg_read(idm_ar);
         if (regs[0x0000] & 0x02) idm_ar++;
         return val;
-    }
     default: return 0xFF;
     }
 }
 
 void net4cpc_out(u8 reg_sel, u8 val) {
     switch (reg_sel & 0x03) {
-    case 0:                                /* MR */
-        regs[0x0000] = val;
+    case 0:                                /* MR (direct shortcut) */
+        if (net4cpc_trace)
+            fprintf(stderr, "[net4cpc] OUT FD20 MR = %02X\n", val);
+        reg_write(0x0000, val);            /* shares MR.RST handling */
         break;
     case 1:                                /* IDM_ARH */
         idm_ar = (u16)((idm_ar & 0x00FFu) | ((u16)val << 8));
