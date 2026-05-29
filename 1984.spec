@@ -20,7 +20,9 @@ with SDL3. It emulates the Z80 CPU, MC6845 CRTC, AY-3-8912 PSG
 (audio), µPD765 FDC (disk), and the Gate Array. Keyboard, joystick,
 and gamepad input are supported.
 
-ROM images are not included and must be supplied separately.
+CPC firmware ROMs (OS/BASIC/AMSDOS), the open-source M4ROM, and the
+Amstrad diagnostics ROM are bundled and installed under
+%{_datadir}/%{name}/roms/.
 
 %prep
 %autosetup
@@ -37,6 +39,7 @@ autoreconf -fiv
 %license LICENSE
 %doc README.md
 %{_bindir}/%{name}
+%{_datadir}/%{name}/roms/
 
 %changelog
 * Tue May 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.3.0-1

@@ -24,12 +24,17 @@ typedef struct {
     /* [hardware] */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
+    char m4_path[CONFIG_PATH_MAX];   /* host directory for M4 file API (cat/load/save) */
+    char m4_image[CONFIG_PATH_MAX];  /* optional raw FAT32 image for C_SDREAD/C_SDWRITE */
     bool ulifac;
     bool net4cpc;
     bool rtc;
     bool symbiface_ide;
     char ide_image[CONFIG_PATH_MAX];
     bool symbiface_mouse;
+    bool symbnet;     /* 1984 emulator synthetic SymbOS network port (0xFD30/31) */
+    bool albireo;
+    char albireo_image[CONFIG_PATH_MAX];
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
@@ -56,4 +61,5 @@ void config_apply_dd1(Config *cfg, bool enabled);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(char *out, size_t sz);
+void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);

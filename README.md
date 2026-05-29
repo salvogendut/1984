@@ -6,13 +6,14 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 ## Status
 
-Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32), and SYMBiFACE II PS/2 mouse work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+Boots to Locomotive BASIC. Keyboard, disk (DSK images via µPD765 FDC), AMSDOS file loading, audio (AY-3-8912 / PSG with tone, noise, envelope), joystick/gamepad (USB, Bluetooth, hot-plug), DS12887 real-time clock, SYMBiFACE II / Cyboard compatible IDE (raw disk images, FAT16/FAT32), SYMBiFACE II PS/2 mouse, and Albireo USB mass-storage (CH376 host controller, accessed via the UNIDOS ROM against a FAT image) work. Commercial games and standard software run well. Software, like demos, that relies on undocumented hardware behaviour or cycle-exact CRTC tricks is untested and may not work correctly.
+
+**M4 board emulation is unstable.** The M4ROM signature, file API over FAT, single-image SAVE/LOAD/CAT, DNS resolution, TCP socket open/connect, and the cpc-sdcc network examples (TCPTEST, NTP, TELNET) all work. SymbOS's `netd-m4c.exe` network daemon launches, shows "Online", and can resolve hosts and open connections — but TCP sessions stall shortly after the initial server banner because the daemon's per-socket translation table appears to be corrupted between commands in a way we haven't fully diagnosed yet. A pragmatic `last_tcp_sock` workaround keeps single-socket flows partially alive. Multi-socket scenarios and long-running interactive telnet sessions are not yet reliable.
 
 ## Requirements
 
 - GCC (C11)
 - SDL3
-- CPC ROM images (not included — dump your own or source from the web)
 
 ## Build
 
@@ -47,16 +48,24 @@ The spec file handles `autoreconf`, `./configure`, and `make install` automatica
 
 ## ROM files
 
-Place ROM images in the `roms/` directory with these exact names:
+The required CPC firmware ROMs and the open-source M4ROM / Amstrad
+diagnostics ROM are bundled in the `roms/` directory and installed to
+`$(datadir)/1984/roms/` by `make install` (e.g. `/usr/share/1984/roms/`).
 
 | File | Contents |
 |------|----------|
-| `roms/OS_464.ROM` | CPC 464 OS ROM (16 KB) |
-| `roms/BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
-| `roms/OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
-| `roms/BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
-| `roms/AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
-| `roms/AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |
+| `OS_464.ROM` | CPC 464 OS ROM (16 KB) |
+| `BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
+| `OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
+| `BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
+| `AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
+| `M4ROM.ROM` | M4 board firmware (16 KB) — open source ([M4Duke/m4rom](https://github.com/M4Duke/m4rom)); enables the SD-card emulation when M4 is toggled on |
+| `AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |
+
+At runtime, ROMs are looked up in this order:
+1. `~/.config/1984/roms/<file>` (user override)
+2. `$(datadir)/1984/roms/<file>` (system install)
+3. `./roms/<file>` (dev tree)
 
 ## Configuration
 
@@ -79,13 +88,19 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 
 [hardware]
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
-m4=false          # [unimplemented]
+m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE:
+                  # cpc-sdcc network apps and basic SD file ops work; SymbOS's
+                  # netd-m4c.exe daemon can connect but TCP sessions stall after
+                  # the initial banner due to a not-yet-understood SymbOS/M4
+                  # state interaction. See "Status" section.
 ulifac=false      # [unimplemented]
 net4cpc=false
 rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)
 symbiface_ide=false
 ide_image=        # path to a raw FAT16/FAT32 disk image (.img)
 symbiface_mouse=false
+albireo=false     # Albireo CPC expansion (CH376 USB host controller)
+albireo_image=    # Path to FAT16/FAT32 image used as the USB drive backing
 
 [display]
 scale=2           # 1, 2, or 3
@@ -111,6 +126,8 @@ fullscreen=false
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 | `--monitor-pty` | Open a PTY for the memory monitor (`minicom -b 9600 -D <path>`) |
 | `--trace-input` | Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down) |
+| `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable — see Status) |
+| `--trace-albireo` | Log every Albireo (CH376) command/response to stderr |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
@@ -233,9 +250,25 @@ The port returns a variable-length burst of packets terminated by `0x00` (no mor
 | `0xC0`–`0xDF` | Button state: bit0=left, bit1=right, bit2=middle |
 | `0xE0`–`0xFF` | Scroll wheel offset, signed 5-bit |
 
-**SYMBiFACE II/Cyboard** (Advanced → SYMBiFACE II/Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
+**Albireo** (Advanced → Albireo): enables emulation of the Albireo CPC expansion board, which exposes a WCH **CH376** USB host controller at I/O ports `0xFE80` (data) and `0xFE81` (command/status). The backend is a FAT16/FAT32 image file mounted via `src/fat.c`; the chip's built-in file-system command set is emulated against that image, so guest software talks to the chip exactly as it would to a real Albireo with a USB drive plugged in. Enabling the option opens a file picker to select the image; the path is saved to `albireo_image` in `1984.conf`.
 
-Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, or SYMBiFACE IDE trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
+Albireo is **mutually exclusive with the M4 board** — both expansions decode the `0xFExx` port range — so enabling one disables the other and clears its image path.
+
+Albireo is primarily designed to be driven by the [UNIDOS](https://unidos.cpcscene.net/) ROM (and its `Albireo.rom` DOS node). Minimum install:
+
+| ROM slot | ROM |
+|----------|-----|
+| 7 | `UNIDOS.ROM` (replaces AMSDOS — load it into slot 7 via the ROM Slots overlay so the firmware sees it first) |
+| 8 | `ALBIREO.ROM` (the Albireo DOS node) |
+| 9 | `UNITOOLS.ROM` (optional but recommended; provides `|U`, `|DRIVE`, etc.) |
+
+ROM files distributed as AMSDOS-headed binaries (16384 + 128 bytes = 16512 bytes) are auto-stripped on load — no need to remove the header manually. This applies to **every** ROM loaded by the emulator (OS, BASIC, AMSDOS, expansion slots), not just Albireo, so Cyboard, M4, SYMBiFACE, etc. all benefit. With the above setup, `|DRIVE` shows the SD/USB drives, `|A` activates a drive letter, and `CAT` lists the FAT image's directory. NVRAM (the Albireo's SC16C650B-backed storage that UNIDOS uses) is currently emulated as a regular file (`!UNIDOS!.NVM`) at the FAT root, so UNIDOS reports "no NVRAM, degraded mode" but file operations work.
+
+Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_MODE`, `GET_STATUS`, `RD_USB_DATA0`, `WR_REQ_DATA`, `SET_FILE_NAME`, `DISK_CONNECT`, `DISK_MOUNT`, `FILE_OPEN` (incl. wildcard enumeration), `FILE_ENUM_GO`, `FILE_CREATE`, `FILE_CLOSE`, `DIR_INFO_READ`, `BYTE_LOCATE`, `BYTE_READ` / `BYTE_RD_GO`, `BYTE_WRITE` / `BYTE_WR_GO`, `DISK_CAPACITY`, `DISK_QUERY`. Not implemented (yet): `FILE_ERASE`, `DIR_INFO_SAVE`, the SC16C650B UART side at `0xFEB0–7`, and CH376 interrupts routed to NMI (UNIDOS polls the status register, so this is fine).
+
+**Cyboard** (Advanced → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
+
+Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ### Memory monitor / debugger (F8)
 
@@ -282,6 +315,8 @@ data flow, Z80 disassembler design, PTY interface, and key source file map.
 - **[llopis/amstrad-diagnostics](https://github.com/llopis/amstrad-diagnostics)** — Amstrad Diagnostics ROM used as an optional lower-ROM override for hardware testing (Diag Cart toggle in the options overlay).
 - **[salafek/Net4CPC](https://github.com/salafek/Net4CPC)** — Net4CPC Ethernet add-on hardware design and W5100S interface reference; the emulated I/O ports (0xFD20–0xFD23) and register map in `src/net4cpc.c` follow this hardware specification.
 - **[salafek/cyboard-for-cpc](https://github.com/salafek/cyboard-for-cpc)** — Cyboard hardware design; source of the DS12887 I/O port mapping (0xFD14/0xFD15) implemented in `src/rtc.c`.
+- **[PulkoMandy's Albireo documentation](https://pulkomandy.github.io/shinra.github.io/albireo.html)** — CH376 / SC16C650B port map and command-flow notes used as the spec for `src/ch376.c`.
+- **[UNIDOS](https://unidos.cpcscene.net/)** (OffseT/Futurs') — DOS-node ROM the Albireo emulation is verified against; `src/ch376.c` follows the CH376 command sequence in UNIDOS's `Albireo.rom` source (`LowLevel.a` / `DOSNode.a`).
 - **[Prodatron's SymbOS](https://www.symbos.org/)** — multitasking operating system for Z80 machines; a key test target and reference for CPC system-level behaviour and expanded memory use.
 
 ## License

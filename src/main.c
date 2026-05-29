@@ -35,11 +35,15 @@ static void usage(const char *prog, int code) {
         "  --464               Boot as CPC 464 (overrides config)\n"
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
+        "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
+        "  --trace-m4          Log every M4 board command and response to stderr\n"
+        "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
+        "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
@@ -73,6 +77,7 @@ int main(int argc, char *argv[]) {
     bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
+    int         memory_override  = 0;             /* 0 = no override */
 
     /* --rom-slot=N:PATH pairs collected from CLI */
     struct { int slot; const char *path; } rom_slots[ROM_EXT_COUNT];
@@ -115,6 +120,13 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_6128;
         } else if (strcmp(argv[i], "--dd1") == 0) {
             dd1_override = true;
+        } else if (strncmp(argv[i], "--memory=", 9) == 0 && argv[i][9] != '\0') {
+            int kb = atoi(argv[i] + 9);
+            if (kb != 64 && kb != 128 && kb != 256 && kb != 512 && kb != 576) {
+                fprintf(stderr, "%s: --memory=KB must be 64, 128, 256, 512 or 576\n", argv[0]);
+                return 2;
+            }
+            memory_override = kb;
         } else if (strcmp(argv[i], "--monitor-pty") == 0) {
             monitor_pty = true;
         } else if (strcmp(argv[i], "--trace-io") == 0) {
@@ -123,6 +135,10 @@ int main(int argc, char *argv[]) {
             cpc_trace_palette = 1;
         } else if (strcmp(argv[i], "--trace-input") == 0) {
             cpc_trace_input = 1;
+        } else if (strcmp(argv[i], "--trace-m4") == 0) {
+            m4_trace = 1;
+        } else if (strcmp(argv[i], "--trace-albireo") == 0) {
+            ch376_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
@@ -144,6 +160,8 @@ int main(int argc, char *argv[]) {
 
     if (model_override != (CpcModel)-1)
         config_set_model(&cfg, model_override);
+    if (memory_override)
+        cfg.memory_kb = memory_override;
     if (dd1_override)
         config_apply_dd1(&cfg, true);
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
@@ -167,8 +185,22 @@ int main(int argc, char *argv[]) {
     cpc.rtc             = cfg.rtc;
     cpc.symbiface_ide   = cfg.symbiface_ide;
     cpc.symbiface_mouse = cfg.symbiface_mouse;
+    cpc.m4              = cfg.m4;
+    cpc.symbnet         = cfg.symbnet;
+    if (cfg.m4 && cfg.m4_path[0])
+        snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
+    if (cfg.m4)
+        m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
+    cpc.albireo = cfg.albireo;
+    if (cfg.albireo && cfg.albireo_image[0])
+        ch376_open(&cpc.ch376, cfg.albireo_image);
+    /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
+    if (cpc.albireo && cpc.m4) {
+        cpc.m4 = false;
+        cfg.m4 = false;
+    }
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -176,8 +208,22 @@ int main(int argc, char *argv[]) {
 
     /* Load expansion ROMs into slots 0-31 (from config) */
     for (int s = 0; s < ROM_EXT_COUNT; s++) {
+        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
+        if (s == M4_ROM_SLOT && cfg.m4) continue;
         if (cfg.rom_ext[s][0])
             mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+    }
+    /* Load M4ROM into its dedicated slot when M4 is enabled */
+    if (cfg.m4) {
+        char m4rom[512];
+        config_default_m4rom(m4rom, sizeof(m4rom));
+        mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
+        /* Seed the M4 board's config buffer (read via bus bypass at 0xF400)
+         * with the ROM's default contents so reads return valid pointers
+         * (e.g. runfile_ptr → autoexec_fn) before any C_CONFIG write. */
+        memcpy(cpc.m4_card.cfg_mem,
+               &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+               sizeof(cpc.m4_card.cfg_mem));
     }
 
     /* Apply --rom-slot=N:PATH overrides from CLI */
@@ -265,17 +311,21 @@ int main(int argc, char *argv[]) {
                 if (ev.type == SDL_EVENT_MOUSE_MOTION) {
                     if (cpc.symbiface_mouse)
                         mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
+                    if (cpc.albireo)
+                        ch376_mouse_move(&cpc.ch376, (int)ev.motion.xrel, (int)ev.motion.yrel);
                     continue;
                 }
                 if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                     ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                    if (cpc.symbiface_mouse) {
-                        int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
-                                  (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
-                                  (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                        if (btn >= 0)
-                            mouse_button(&cpc.mouse, btn,
-                                         ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
+                              (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
+                              (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
+                    bool pressed = (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+                    if (btn >= 0) {
+                        if (cpc.symbiface_mouse)
+                            mouse_button(&cpc.mouse, btn, pressed);
+                        if (cpc.albireo)
+                            ch376_mouse_button(&cpc.ch376, btn, pressed);
                     }
                     continue;
                 }
@@ -294,8 +344,11 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Click in emulator window captures mouse when mouse support is enabled */
-            if (!mouse_captured && cpc.symbiface_mouse && !overlay.visible &&
+            /* Click in emulator window captures mouse when any mouse path is
+             * active (SYMBiFACE II PS/2 at 0xFD10 or Albireo USB HID at
+             * 0xFE80/0xFE81). Ctrl+Enter releases capture for either. */
+            if (!mouse_captured && (cpc.symbiface_mouse || cpc.albireo) &&
+                !overlay.visible &&
                 ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
                 set_mouse_capture(cpc.display.window, true,
@@ -304,8 +357,10 @@ int main(int argc, char *argv[]) {
                 int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
                           (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
                           (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                if (btn >= 0)
-                    mouse_button(&cpc.mouse, btn, true);
+                if (btn >= 0) {
+                    if (cpc.symbiface_mouse) mouse_button(&cpc.mouse, btn, true);
+                    if (cpc.albireo)         ch376_mouse_button(&cpc.ch376, btn, true);
+                }
                 continue;
             }
 
@@ -401,8 +456,17 @@ int main(int argc, char *argv[]) {
             else if (!cfg.dd1 && cpc.model == MODEL_464)
                 mem_unload_amsdos(&cpc.mem);
             for (int s = 0; s < ROM_EXT_COUNT; s++) {
+                if (s == M4_ROM_SLOT && cfg.m4) continue;
                 if (cfg.rom_ext[s][0])
                     mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+            }
+            if (cfg.m4) {
+                char m4rom[512];
+                config_default_m4rom(m4rom, sizeof(m4rom));
+                mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
+                memcpy(cpc.m4_card.cfg_mem,
+                       &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+                       sizeof(cpc.m4_card.cfg_mem));
             }
             const char *title = (cpc.model == MODEL_464)
                 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;
@@ -411,9 +475,23 @@ int main(int argc, char *argv[]) {
             cpc.rtc              = cfg.rtc;
             cpc.symbiface_ide    = cfg.symbiface_ide;
             cpc.symbiface_mouse  = cfg.symbiface_mouse;
+            cpc.m4               = cfg.m4;
+            cpc.symbnet          = cfg.symbnet;
+            if (cfg.m4 && cfg.m4_path[0])
+                snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
+            if (cfg.m4)
+                m4_set_image(&cpc.m4_card, cfg.m4_image);
             ide_close(&cpc.ide_chip);
             if (cfg.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
+            cpc.albireo = cfg.albireo;
+            ch376_close(&cpc.ch376);
+            if (cfg.albireo && cfg.albireo_image[0])
+                ch376_open(&cpc.ch376, cfg.albireo_image);
+            if (cpc.albireo && cpc.m4) {
+                cpc.m4 = false;
+                cfg.m4 = false;
+            }
             /* Release mouse capture on cold boot */
             if (mouse_captured)
                 set_mouse_capture(cpc.display.window, false,

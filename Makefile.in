@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -96,13 +97,13 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(am__DIST_COMMON)
+	$(am__configure_deps) $(dist_roms_DATA) $(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)"
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(romsdir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
@@ -114,7 +115,10 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
-	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) src/1984-mouse.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
+	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
+	src/1984-mouse.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -135,16 +139,19 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
-	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-crtc.Po \
-	src/$(DEPDIR)/1984-disk.Po src/$(DEPDIR)/1984-display.Po \
+am__depfiles_remade = src/$(DEPDIR)/1984-ch376.Po \
+	src/$(DEPDIR)/1984-config.Po src/$(DEPDIR)/1984-cpc.Po \
+	src/$(DEPDIR)/1984-crtc.Po src/$(DEPDIR)/1984-disk.Po \
+	src/$(DEPDIR)/1984-display.Po src/$(DEPDIR)/1984-fat.Po \
 	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-gate_array.Po \
-	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
+	src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-joy.Po \
+	src/$(DEPDIR)/1984-kbd.Po src/$(DEPDIR)/1984-m4.Po \
 	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
-	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-net4cpc.Po \
-	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-mouse.Po src/$(DEPDIR)/1984-z80.Po \
+	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-mouse.Po \
+	src/$(DEPDIR)/1984-net4cpc.Po src/$(DEPDIR)/1984-overlay.Po \
+	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-ppi.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-rtc.Po \
+	src/$(DEPDIR)/1984-symbnet.Po src/$(DEPDIR)/1984-z80.Po \
 	src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -170,6 +177,33 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
+am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
+am__vpath_adj = case $$p in \
+    $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
+    *) f=$$p;; \
+  esac;
+am__strip_dir = f=`echo $$p | sed -e 's|^.*/||'`;
+am__install_max = 40
+am__nobase_strip_setup = \
+  srcdirstrip=`echo "$(srcdir)" | sed 's/[].[^$$\\*|]/\\\\&/g'`
+am__nobase_strip = \
+  for p in $$list; do echo "$$p"; done | sed -e "s|$$srcdirstrip/||"
+am__nobase_list = $(am__nobase_strip_setup); \
+  for p in $$list; do echo "$$p $$p"; done | \
+  sed "s| $$srcdirstrip/| |;"' / .*\//!s/ .*/ ./; s,\( .*\)/[^/]*$$,\1,' | \
+  $(AWK) 'BEGIN { files["."] = "" } { files[$$2] = files[$$2] " " $$1; \
+    if (++n[$$2] == $(am__install_max)) \
+      { print $$2, files[$$2]; n[$$2] = 0; files[$$2] = "" } } \
+    END { for (dir in files) print dir, files[dir] }'
+am__base_list = \
+  sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
+  sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
+am__uninstall_files_from_dir = { \
+  { test ! -d "$$dir" && test ! -f "$$dir" && test ! -r "$$dir"; } \
+  || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
+       $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
+  }
+DATA = $(dist_roms_DATA)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -332,10 +366,30 @@ top_srcdir = @top_srcdir@
 	src/psg.c \
 	src/rtc.c \
 	src/ide.c \
+	src/fat.c \
+	src/ch376.c \
+	src/m4.c \
+	src/symbnet.c \
+	src/mouse.c \
 	src/z80.c
 
-1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra
+1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
+               -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
+
 1984_LDADD = $(SDL3_LIBS) -lm
+
+# Bundled ROM images installed to $(datadir)/1984/roms/
+# (CPC firmware are freely redistributable for emulator use; M4ROM and
+# Amstrad diagnostics ROM are open source.)
+romsdir = $(pkgdatadir)/roms
+dist_roms_DATA = roms/AMSDOS.ROM \
+                 roms/BASIC_1.0.ROM \
+                 roms/BASIC_1.1.ROM \
+                 roms/M4ROM.ROM \
+                 roms/OS_464.ROM \
+                 roms/OS_6128.ROM \
+                 roms/AmstradDiagLower.rom
+
 
 # Keep the hand-written Makefile usable alongside autotools
 EXTRA_DIST = Makefile
@@ -464,6 +518,14 @@ src/1984-rtc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-ide.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-fat.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-ch376.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-m4.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-symbnet.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-mouse.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-z80.$(OBJEXT): src/$(am__dirstamp) \
@@ -480,26 +542,30 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ch376.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-config.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-cpc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-crtc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-disk.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-display.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-fat.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-fdc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-gate_array.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ide.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-joy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-kbd.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-m4.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-main.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mem.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-monitor.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mouse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-net4cpc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-overlay.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-paste.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ppi.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-psg.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-rtc.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ide.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mouse.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-symbnet.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-z80.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-z80dis.Po@am__quote@ # am--include-marker
 
@@ -805,6 +871,62 @@ src/1984-ide.obj: src/ide.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ide.obj `if test -f 'src/ide.c'; then $(CYGPATH_W) 'src/ide.c'; else $(CYGPATH_W) '$(srcdir)/src/ide.c'; fi`
 
+src/1984-fat.o: src/fat.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-fat.o -MD -MP -MF src/$(DEPDIR)/1984-fat.Tpo -c -o src/1984-fat.o `test -f 'src/fat.c' || echo '$(srcdir)/'`src/fat.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-fat.Tpo src/$(DEPDIR)/1984-fat.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/fat.c' object='src/1984-fat.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-fat.o `test -f 'src/fat.c' || echo '$(srcdir)/'`src/fat.c
+
+src/1984-fat.obj: src/fat.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-fat.obj -MD -MP -MF src/$(DEPDIR)/1984-fat.Tpo -c -o src/1984-fat.obj `if test -f 'src/fat.c'; then $(CYGPATH_W) 'src/fat.c'; else $(CYGPATH_W) '$(srcdir)/src/fat.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-fat.Tpo src/$(DEPDIR)/1984-fat.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/fat.c' object='src/1984-fat.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-fat.obj `if test -f 'src/fat.c'; then $(CYGPATH_W) 'src/fat.c'; else $(CYGPATH_W) '$(srcdir)/src/fat.c'; fi`
+
+src/1984-ch376.o: src/ch376.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ch376.o -MD -MP -MF src/$(DEPDIR)/1984-ch376.Tpo -c -o src/1984-ch376.o `test -f 'src/ch376.c' || echo '$(srcdir)/'`src/ch376.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ch376.Tpo src/$(DEPDIR)/1984-ch376.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/ch376.c' object='src/1984-ch376.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ch376.o `test -f 'src/ch376.c' || echo '$(srcdir)/'`src/ch376.c
+
+src/1984-ch376.obj: src/ch376.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ch376.obj -MD -MP -MF src/$(DEPDIR)/1984-ch376.Tpo -c -o src/1984-ch376.obj `if test -f 'src/ch376.c'; then $(CYGPATH_W) 'src/ch376.c'; else $(CYGPATH_W) '$(srcdir)/src/ch376.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ch376.Tpo src/$(DEPDIR)/1984-ch376.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/ch376.c' object='src/1984-ch376.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ch376.obj `if test -f 'src/ch376.c'; then $(CYGPATH_W) 'src/ch376.c'; else $(CYGPATH_W) '$(srcdir)/src/ch376.c'; fi`
+
+src/1984-m4.o: src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-m4.o -MD -MP -MF src/$(DEPDIR)/1984-m4.Tpo -c -o src/1984-m4.o `test -f 'src/m4.c' || echo '$(srcdir)/'`src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-m4.Tpo src/$(DEPDIR)/1984-m4.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/m4.c' object='src/1984-m4.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-m4.o `test -f 'src/m4.c' || echo '$(srcdir)/'`src/m4.c
+
+src/1984-m4.obj: src/m4.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-m4.obj -MD -MP -MF src/$(DEPDIR)/1984-m4.Tpo -c -o src/1984-m4.obj `if test -f 'src/m4.c'; then $(CYGPATH_W) 'src/m4.c'; else $(CYGPATH_W) '$(srcdir)/src/m4.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-m4.Tpo src/$(DEPDIR)/1984-m4.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/m4.c' object='src/1984-m4.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-m4.obj `if test -f 'src/m4.c'; then $(CYGPATH_W) 'src/m4.c'; else $(CYGPATH_W) '$(srcdir)/src/m4.c'; fi`
+
+src/1984-symbnet.o: src/symbnet.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-symbnet.o -MD -MP -MF src/$(DEPDIR)/1984-symbnet.Tpo -c -o src/1984-symbnet.o `test -f 'src/symbnet.c' || echo '$(srcdir)/'`src/symbnet.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-symbnet.Tpo src/$(DEPDIR)/1984-symbnet.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/symbnet.c' object='src/1984-symbnet.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-symbnet.o `test -f 'src/symbnet.c' || echo '$(srcdir)/'`src/symbnet.c
+
+src/1984-symbnet.obj: src/symbnet.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-symbnet.obj -MD -MP -MF src/$(DEPDIR)/1984-symbnet.Tpo -c -o src/1984-symbnet.obj `if test -f 'src/symbnet.c'; then $(CYGPATH_W) 'src/symbnet.c'; else $(CYGPATH_W) '$(srcdir)/src/symbnet.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-symbnet.Tpo src/$(DEPDIR)/1984-symbnet.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/symbnet.c' object='src/1984-symbnet.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-symbnet.obj `if test -f 'src/symbnet.c'; then $(CYGPATH_W) 'src/symbnet.c'; else $(CYGPATH_W) '$(srcdir)/src/symbnet.c'; fi`
+
 src/1984-mouse.o: src/mouse.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-mouse.o -MD -MP -MF src/$(DEPDIR)/1984-mouse.Tpo -c -o src/1984-mouse.o `test -f 'src/mouse.c' || echo '$(srcdir)/'`src/mouse.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-mouse.Tpo src/$(DEPDIR)/1984-mouse.Po
@@ -832,6 +954,27 @@ src/1984-z80.obj: src/z80.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/z80.c' object='src/1984-z80.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-z80.obj `if test -f 'src/z80.c'; then $(CYGPATH_W) 'src/z80.c'; else $(CYGPATH_W) '$(srcdir)/src/z80.c'; fi`
+install-dist_romsDATA: $(dist_roms_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_roms_DATA)'; test -n "$(romsdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(romsdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(romsdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(romsdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(romsdir)" || exit $$?; \
+	done
+
+uninstall-dist_romsDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_roms_DATA)'; test -n "$(romsdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(romsdir)'; $(am__uninstall_files_from_dir)
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -1072,9 +1215,9 @@ distcleancheck: distclean
 	       exit 1; } >&2
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS)
+all-am: Makefile $(PROGRAMS) $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(romsdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1115,26 +1258,30 @@ clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
+	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po
 	-rm -f src/$(DEPDIR)/1984-disk.Po
 	-rm -f src/$(DEPDIR)/1984-display.Po
+	-rm -f src/$(DEPDIR)/1984-fat.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
+	-rm -f src/$(DEPDIR)/1984-ide.Po
 	-rm -f src/$(DEPDIR)/1984-joy.Po
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
+	-rm -f src/$(DEPDIR)/1984-m4.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
 	-rm -f src/$(DEPDIR)/1984-monitor.Po
+	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
-	-rm -f src/$(DEPDIR)/1984-ide.Po
-	-rm -f src/$(DEPDIR)/1984-mouse.Po
+	-rm -f src/$(DEPDIR)/1984-symbnet.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
@@ -1153,7 +1300,7 @@ info: info-am
 
 info-am:
 
-install-data-am:
+install-data-am: install-dist_romsDATA
 
 install-dvi: install-dvi-am
 
@@ -1184,24 +1331,30 @@ installcheck-am:
 maintainer-clean: maintainer-clean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
+	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po
 	-rm -f src/$(DEPDIR)/1984-disk.Po
 	-rm -f src/$(DEPDIR)/1984-display.Po
+	-rm -f src/$(DEPDIR)/1984-fat.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
+	-rm -f src/$(DEPDIR)/1984-ide.Po
 	-rm -f src/$(DEPDIR)/1984-joy.Po
 	-rm -f src/$(DEPDIR)/1984-kbd.Po
+	-rm -f src/$(DEPDIR)/1984-m4.Po
 	-rm -f src/$(DEPDIR)/1984-main.Po
 	-rm -f src/$(DEPDIR)/1984-mem.Po
 	-rm -f src/$(DEPDIR)/1984-monitor.Po
+	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
+	-rm -f src/$(DEPDIR)/1984-symbnet.Po
 	-rm -f src/$(DEPDIR)/1984-z80.Po
 	-rm -f src/$(DEPDIR)/1984-z80dis.Po
 	-rm -f Makefile
@@ -1219,7 +1372,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS
+uninstall-am: uninstall-binPROGRAMS uninstall-dist_romsDATA
 
 .MAKE: install-am install-strip
 
@@ -1231,14 +1384,15 @@ uninstall-am: uninstall-binPROGRAMS
 	distclean-generic distclean-tags distcleancheck distdir \
 	distuninstallcheck dvi dvi-am html html-am info info-am \
 	install install-am install-binPROGRAMS install-data \
-	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-compile \
-	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am uninstall-binPROGRAMS
+	install-data-am install-dist_romsDATA install-dvi \
+	install-dvi-am install-exec install-exec-am install-html \
+	install-html-am install-info install-info-am install-man \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS \
+	uninstall-dist_romsDATA
 
 .PRECIOUS: Makefile
 

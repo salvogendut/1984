@@ -13,6 +13,9 @@
 #include "rtc.h"
 #include "ide.h"
 #include "mouse.h"
+#include "m4.h"
+#include "symbnet.h"
+#include "ch376.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -37,6 +40,12 @@ typedef struct {
     IDE        ide_chip;
     bool       symbiface_mouse; /* SYMBiFACE II / Cyboard PS/2 mouse present */
     Mouse      mouse;
+    bool       m4;             /* M4 board hardware present */
+    M4         m4_card;
+    bool       symbnet;        /* 1984 emulator synthetic SymbOS network port */
+    SymbNet    symbnet_card;
+    bool       albireo;        /* Albireo USB host add-on (CH376) */
+    CH376      ch376;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */
@@ -59,6 +68,7 @@ typedef struct {
 
 extern int cpc_trace_io;      /* set to 1 to log CRTC/GA writes to stderr */
 extern int cpc_trace_palette; /* set to 1 to log palette buffer state when B7F7=0xFF */
+extern int m4_trace;          /* set to 1 to log M4 commands, responses, NMI state */
 extern int cpc_trace_input;   /* set to 1 to log keyboard row 9 (joystick) scans */
 extern int cpc_frame_count;   /* incremented by cpc_frame(); used by trace helpers */
 

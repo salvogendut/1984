@@ -1,9 +1,11 @@
 #include "config.h"
+#include "m4.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
@@ -12,15 +14,50 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 #define ROM_FILE_OS_6128    "OS_6128.ROM"
 #define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
 #define ROM_FILE_AMSDOS     "AMSDOS.ROM"
+#define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
-/* Build a full path: ~/.config/1984/roms/<file> → out[size] */
+/* Build a path to a bundled ROM file.
+ * Priority:
+ *   1. ~/.config/1984/roms/<file>      — user override
+ *   2. $(pkgdatadir)/roms/<file>       — system install (from autotools)
+ *   3. ./roms/<file>                   — dev tree / cwd fallback
+ * The first path that exists is returned; otherwise the user-config path
+ * (so a "file not found" error names the location the user is expected
+ * to populate). */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
+    char user[512], system_[512];
     const char *home = getenv("HOME");
+
+    user[0] = '\0';
     if (home)
-        snprintf(out, size, "%s/.config/1984/roms/%s", home, file);
-    else
-        snprintf(out, size, "roms/%s", file);  /* fallback if HOME unset */
+        snprintf(user, sizeof(user), "%s/.config/1984/roms/%s", home, file);
+
+    if (user[0] && access(user, R_OK) == 0) {
+        snprintf(out, size, "%s", user);
+        return;
+    }
+#ifdef ROM_INSTALL_DIR
+    snprintf(system_, sizeof(system_), "%s/%s", ROM_INSTALL_DIR, file);
+    if (access(system_, R_OK) == 0) {
+        snprintf(out, size, "%s", system_);
+        return;
+    }
+#else
+    (void)system_;
+#endif
+    if (access("roms", R_OK) == 0) {
+        char dev_[512];
+        snprintf(dev_, sizeof(dev_), "roms/%s", file);
+        if (access(dev_, R_OK) == 0) {
+            snprintf(out, size, "%s", dev_);
+            return;
+        }
+    }
+    /* Nothing found — return the user-config path so any error message
+     * points the user at the location they should populate. */
+    snprintf(out, size, "%s",
+             user[0] ? user : (const char *)file);
 }
 
 void config_defaults(Config *cfg) {
@@ -102,12 +139,17 @@ static void config_create_default(const char *path, const char *home) {
         "dd1=false\n"
         "# Optional expansion hardware (not yet implemented)\n"
         "m4=false\n"
+        "m4_path=\n"
+        "m4_image=\n"
         "ulifac=false\n"
         "net4cpc=false\n"
         "rtc=false\n"
         "symbiface_ide=false\n"
         "ide_image=\n"
         "symbiface_mouse=false\n"
+        "symbnet=false\n"
+        "albireo=false\n"
+        "albireo_image=\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -198,6 +240,10 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "m4")) {
                 if (parse_bool(val, &b)) cfg->m4 = b;
                 else { fprintf(stderr, "1984.conf:%d: m4 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "m4_path")) {
+                snprintf(cfg->m4_path, CONFIG_PATH_MAX, "%s", val);
+            } else if (!strcmp(key, "m4_image")) {
+                snprintf(cfg->m4_image, CONFIG_PATH_MAX, "%s", val);
             } else if (!strcmp(key, "ulifac")) {
                 if (parse_bool(val, &b)) cfg->ulifac = b;
                 else { fprintf(stderr, "1984.conf:%d: ulifac must be true/false\n", lineno); rc = -1; }
@@ -215,6 +261,14 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "symbiface_mouse")) {
                 if (parse_bool(val, &b)) cfg->symbiface_mouse = b;
                 else { fprintf(stderr, "1984.conf:%d: symbiface_mouse must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "symbnet")) {
+                if (parse_bool(val, &b)) cfg->symbnet = b;
+                else { fprintf(stderr, "1984.conf:%d: symbnet must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "albireo")) {
+                if (parse_bool(val, &b)) cfg->albireo = b;
+                else { fprintf(stderr, "1984.conf:%d: albireo must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "albireo_image")) {
+                if (val[0]) expand_path(val, cfg->albireo_image, sizeof(cfg->albireo_image));
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -274,6 +328,8 @@ int config_save(const Config *cfg) {
 
     fprintf(f, "\n[expansion_roms]\n");
     for (int i = 0; i < ROM_EXT_COUNT; i++) {
+        /* M4_ROM_SLOT is managed automatically when M4 is enabled — don't persist it */
+        if (i == M4_ROM_SLOT && cfg->m4) continue;
         if (cfg->rom_ext[i][0])
             fprintf(f, "slot_%d=%s\n", i, cfg->rom_ext[i]);
     }
@@ -285,12 +341,17 @@ int config_save(const Config *cfg) {
         "[hardware]\n"
         "dd1=%s\n"
         "m4=%s\n"
+        "m4_path=%s\n"
+        "m4_image=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n"
         "rtc=%s\n"
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
-        "symbiface_mouse=%s\n\n"
+        "symbiface_mouse=%s\n"
+        "symbnet=%s\n"
+        "albireo=%s\n"
+        "albireo_image=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -298,12 +359,17 @@ int config_save(const Config *cfg) {
         cfg->disk_b,
         cfg->dd1     ? "true" : "false",
         cfg->m4      ? "true" : "false",
+        cfg->m4_path,
+        cfg->m4_image,
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc          ? "true" : "false",
         cfg->rtc              ? "true" : "false",
         cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,
         cfg->symbiface_mouse  ? "true" : "false",
+        cfg->symbnet          ? "true" : "false",
+        cfg->albireo          ? "true" : "false",
+        cfg->albireo_image,
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );
@@ -347,6 +413,10 @@ void config_default_basic(CpcModel model, char *out, size_t sz) {
 
 void config_default_amsdos(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
+}
+
+void config_default_m4rom(char *out, size_t sz) {
+    rom_cfg_path(ROM_FILE_M4ROM, out, sz);
 }
 
 void config_default_diag(char *out, size_t sz) {

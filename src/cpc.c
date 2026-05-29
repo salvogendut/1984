@@ -17,6 +17,43 @@ int cpc_trace_input = 0;
 
 static u8 bus_mem_read(void *ctx, u16 addr) {
     CPC *cpc = ctx;
+    /* M4 board maps its own response/config buffers on the expansion bus when
+     * M4ROM is the active upper ROM. Reads return from the M4 board's RAM,
+     * not CPC RAM — this is critical because CPC screen memory lives at
+     * 0xC000-0xFFFF and we'd otherwise corrupt the display.
+     *   0xE800-0xF3FF → m4_card.bus_mem (rom_response, 0xC00 bytes — large
+     *                   enough for 2KB C_READ payload starting at resp+4)
+     *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count)
+     *   0xFE00-0xFE4F → m4_card.sock_mem (sock_info: 5 × 16 bytes for NETAPI) */
+    /* Bus bypass: triggers either with M4ROM paged in (slot 6) or while
+     * the M4 board is in "RAM mode" (set only by network-class commands —
+     * see m4_ackport_write). ram_mode auto-clears via a small frame timer
+     * driven from m4_tick.
+     *
+     * Under ram_mode we also redirect upper-ROM code fetches at
+     * 0xC000-0xE7FF to M4ROM bytes regardless of which slot the CPU has
+     * selected — that's how real hardware lets the SymbOS daemon
+     * "out (0xDF00), 0" then "JP <m4 helper>" and still reach the helper
+     * code that lives in M4ROM. */
+    bool bypass_slot = cpc->mem.upper_rom_enabled
+                       && cpc->mem.upper_rom_select == M4_ROM_SLOT;
+    if (cpc->m4 && (bypass_slot || cpc->m4_card.ram_mode)) {
+        u8 v = 0; bool hit = true;
+        if (addr >= 0xE800 && addr < 0xF400)
+            v = cpc->m4_card.bus_mem[addr - 0xE800];
+        else if (addr >= 0xF400 && addr < 0xF500)
+            v = cpc->m4_card.cfg_mem[addr - 0xF400];
+        else if (addr >= 0xFE00 && addr < 0xFE50)
+            v = cpc->m4_card.sock_mem[addr - 0xFE00];
+        else
+            hit = false;
+        if (hit) {
+            if (!bypass_slot && cpc->m4_card.ram_mode
+                    && --cpc->m4_card.ram_mode_reads <= 0)
+                cpc->m4_card.ram_mode = false;
+            return v;
+        }
+    }
     return mem_read(&cpc->mem, addr);
 }
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
@@ -54,6 +91,14 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    else if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+        result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
+    }
+    /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
+    else if (cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
+        result = m4_dataport_read(&cpc->m4_card);
+    }
     /* hi=0xFD: Mouse (0xFD10), IDE (0xFD06,0xFD08-0xFD0F), RTC (0xFD14), Net4CPC (0xFD20-0xFD23) */
     else if (hi == 0xFD) {
         u8 lo = port & 0xFF;
@@ -65,6 +110,8 @@ static u8 bus_io_read(void *ctx, u16 port) {
             result = rtc_read_data(&cpc->rtc_chip);
         else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
             result = net4cpc_in(lo & 0x03);
+        else if (cpc->symbnet && (lo == 0x30 || lo == 0x31))
+            result = symbnet_port_read(&cpc->symbnet_card, lo);
         else
             result = 0xFF;
     }
@@ -117,7 +164,10 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         return;
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
-    if ((hi & 0xE0) == 0xC0) { cpc->mem.upper_rom_select = val; return; }
+    if ((hi & 0xE0) == 0xC0) {
+        cpc->mem.upper_rom_select = val;
+        return;
+    }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
         ppi_write(&cpc->ppi, hi & 0x03, val);
@@ -136,6 +186,21 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+        ch376_write(&cpc->ch376, (u8)(port & 0x01), val);
+        return;
+    }
+    /* M4 DATAPORT: hi=0xFE or 0xFF — accumulate command byte */
+    if (cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
+        m4_dataport_write(&cpc->m4_card, val); return;
+    }
+    /* M4 ACKPORT: hi=0xFC — trigger command execution */
+    if (cpc->m4 && hi == 0xFC) {
+        if (m4_ackport_write(&cpc->m4_card, &cpc->mem))
+            z80_nmi(&cpc->cpu);
+        return;
+    }
     /* FDC motor: hi=0xFA, write */
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
     /* FDC data: hi=0xFB, write */
@@ -152,6 +217,54 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
             net4cpc_out(lo & 0x03, val);
+        if (cpc->symbnet && (lo == 0x30 || lo == 0x31))
+            symbnet_port_write(&cpc->symbnet_card, lo, val);
+        /* "1984 compatibility shim" helper traps. The patched M4ROM
+         * helper table points the SymbOS daemon's m4crcv into bus_mem;
+         * the stub there is "LD BC, 0xFD3F ; OUT (C), A". When we see
+         * that OUT, we run the equivalent bank-aware bulk copy in C and
+         * jump PC to IX (the return address the daemon passed). */
+        if (cpc->m4 && (lo == 0x3E || lo == 0x3F)) {
+            u16 src    = cpc->cpu.hl;
+            u16 dest   = cpc->cpu.de;
+            u16 length = ((cpc->cpu.iy >> 8) << 8) | cpc->cpu.c;
+            u8  dest_bank   = cpc->cpu.a;
+            u8  source_bank = (u8)(cpc->cpu.iy & 0xFF);
+            u16 retaddr     = cpc->cpu.ix;
+            u8  saved_bank  = cpc->mem.ram_bank;
+
+            if ((dest_bank & 0xC0) == 0xC0)
+                cpc->mem.ram_bank = dest_bank & 0x3F;
+
+            for (u16 i = 0; i < length; i++) {
+                u8 b;
+                u16 sa = (u16)(src + i);
+                u16 da = (u16)(dest + i);
+                if (lo == 0x3F) {
+                    /* hreceive: M4 buffer → application memory */
+                    if (sa >= 0xE800 && sa < 0xF400)
+                        b = cpc->m4_card.bus_mem[sa - 0xE800];
+                    else
+                        b = mem_read(&cpc->mem, sa);
+                    mem_write(&cpc->mem, da, b);
+                } else {
+                    /* hsend: application memory → M4 buffer */
+                    b = mem_read(&cpc->mem, sa);
+                    if (da >= 0xE800 && da < 0xF400)
+                        cpc->m4_card.bus_mem[da - 0xE800] = b;
+                    else
+                        mem_write(&cpc->mem, da, b);
+                }
+            }
+
+            if ((source_bank & 0xC0) == 0xC0)
+                cpc->mem.ram_bank = source_bank & 0x3F;
+            else
+                cpc->mem.ram_bank = saved_bank;
+
+            cpc->cpu.pc = cpc->cpu.ix;
+            (void)retaddr;
+        }
         return;
     }
 }
@@ -183,6 +296,9 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     rtc_init(&cpc->rtc_chip);
     ide_init(&cpc->ide_chip);
     mouse_init(&cpc->mouse);
+    m4_init(&cpc->m4_card, "");
+    symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
+    ch376_init(&cpc->ch376);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -217,6 +333,8 @@ void cpc_reset(CPC *cpc) {
     rtc_init(&cpc->rtc_chip);
     ide_reset(&cpc->ide_chip);  /* keeps image file open across warm reset */
     mouse_init(&cpc->mouse);    /* clear accumulated deltas; capture state managed by main */
+    m4_reset(&cpc->m4_card);
+    ch376_reset(&cpc->ch376);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -232,6 +350,7 @@ void cpc_destroy(CPC *cpc) {
     disk_eject(&cpc->drive[0]);
     disk_eject(&cpc->drive[1]);
     ide_close(&cpc->ide_chip);
+    ch376_close(&cpc->ch376);
     display_destroy(&cpc->display);
 }
 
@@ -409,6 +528,11 @@ void cpc_frame(CPC *cpc) {
 
     cpc->cycle_debt = stop_early ? 0 : (done - target);
     cpc_frame_count++;
+
+    /* Drive M4 sockets so non-blocking TCP work makes progress while CPC
+     * code polls sock_info between commands. */
+    if (cpc->m4) m4_tick(&cpc->m4_card);
+    if (cpc->symbnet) symbnet_tick(&cpc->symbnet_card);
 
     /* Fallback palette flush — CPC 6128.
      * The 6128 firmware ink routine writes 0xFF to 0xB7F7 and stores the new
