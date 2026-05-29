@@ -357,6 +357,9 @@ void ch376_reset(CH376 *ch) {
     ch->filename[0] = '\0';
     ch->mouse_dx = ch->mouse_dy = 0;
     ch->mouse_buttons = 0;
+    ch->sec_reading = ch->sec_writing = false;
+    ch->sec_remaining = 0;
+    ch->sec_pos = 0;
 }
 
 void ch376_open(CH376 *ch, const char *path) {
@@ -393,6 +396,7 @@ static int param_count_for(u8 cmd) {
     case 0x22: return 0;   /* GET_STATUS */
     case 0x27: return 0;   /* RD_USB_DATA0 — rewind resp */
     case 0x28: return 1;   /* WR_REQ_DATA — accept N bytes (test/host write) */
+    case 0x2C: return -3;  /* WR_HOST_DATA — 1 length byte + length data bytes */
     case 0x2D: return 0;   /* WR_REQ_DATA (file write) */
     case 0x2E: return -2;  /* WR_OFS_DATA — 2 fixed bytes + length-determined tail */
     case 0x2F: return -1;  /* SET_FILE_NAME (NUL-terminated) */
@@ -415,6 +419,10 @@ static int param_count_for(u8 cmd) {
     case 0x45: return 1;   /* SET_ADDRESS — 1 byte */
     case 0x49: return 1;   /* SET_CONFIG  — 1 byte */
     case 0x4E: return 2;   /* ISSUE_TKN_X — token + endpoint */
+    case 0x54: return 5;   /* DISK_READ  — LBA[4] + count[1] */
+    case 0x55: return 0;   /* DISK_RD_GO */
+    case 0x56: return 5;   /* DISK_WRITE — LBA[4] + count[1] */
+    case 0x57: return 0;   /* DISK_WR_GO */
     default:   return 0;
     }
 }
@@ -468,11 +476,11 @@ static void execute(CH376 *ch) {
         break;
     }
 
-    case 0x2D: { /* WR_REQ_DATA (file write) — host asks for max accept */
+    case 0x2D: { /* WR_REQ_DATA — host asks for max accept (UNIDOS file write) */
         u32 want = ch->bytes_remaining;
         if (want > CH_CHUNK) want = CH_CHUNK;
         u8 v = (u8)want;
-        set_response(ch, &v, 1);
+        set_oneshot(ch, v);
         ch->wbuf_len = (int)want;
         ch->wbuf_pos = 0;
         break;
@@ -629,6 +637,116 @@ static void execute(CH376 *ch) {
         raise_int(ch, USB_INT_SUCCESS);
         break;
 
+    case 0x54: { /* DISK_READ — start raw sector read.
+                  * Params: LBA[4] LE + count[1]. After this, host loops
+                  * RD_USB_DATA0 (64 bytes) + DISK_RD_GO until status=SUCCESS. */
+        u32 lba = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+        u8  count = p[4];
+        if (!ch->fp || count == 0) { raise_int(ch, USB_INT_DISK_ERR); break; }
+        ch->sec_lba = lba;
+        ch->sec_remaining = count;
+        ch->sec_pos = 0;
+        ch->sec_reading = true;
+        if (fseek(ch->fp, (long)lba * 512, SEEK_SET) != 0 ||
+            fread(ch->sec_buf, 1, 512, ch->fp) == 0) {
+            ch->sec_reading = false;
+            raise_int(ch, USB_INT_DISK_ERR);
+            break;
+        }
+        /* Stage first 64-byte chunk. */
+        ch->resp[0] = 64;
+        memcpy(&ch->resp[1], &ch->sec_buf[0], 64);
+        ch->resp_len = 65;
+        ch->resp_pos = 0;
+        ch->sec_pos = 64;
+        raise_int(ch, USB_INT_DISK_READ);
+        break;
+    }
+
+    case 0x55: { /* DISK_RD_GO — next 64-byte chunk */
+        if (!ch->sec_reading) { raise_int(ch, USB_INT_DISK_ERR); break; }
+        if (ch->sec_pos >= 512) {
+            /* Sector consumed — advance. */
+            ch->sec_remaining--;
+            if (ch->sec_remaining == 0) {
+                ch->sec_reading = false;
+                raise_int(ch, USB_INT_SUCCESS);
+                break;
+            }
+            ch->sec_lba++;
+            if (fseek(ch->fp, (long)ch->sec_lba * 512, SEEK_SET) != 0 ||
+                fread(ch->sec_buf, 1, 512, ch->fp) == 0) {
+                ch->sec_reading = false;
+                raise_int(ch, USB_INT_DISK_ERR);
+                break;
+            }
+            ch->sec_pos = 0;
+        }
+        int chunk = (ch->sec_pos + 64 <= 512) ? 64 : (512 - ch->sec_pos);
+        ch->resp[0] = (u8)chunk;
+        memcpy(&ch->resp[1], &ch->sec_buf[ch->sec_pos], chunk);
+        ch->resp_len = chunk + 1;
+        ch->resp_pos = 0;
+        ch->sec_pos += chunk;
+        raise_int(ch, USB_INT_DISK_READ);
+        break;
+    }
+
+    case 0x56: { /* DISK_WRITE — start raw sector write.
+                  * Params: LBA[4] + count[1]. Host then loops WR_REQ_DATA
+                  * (asks how many bytes accepted) + data writes + DISK_WR_GO
+                  * to commit chunks. */
+        u32 lba = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+        u8  count = p[4];
+        if (!ch->fp || count == 0) { raise_int(ch, USB_INT_DISK_ERR); break; }
+        ch->sec_lba = lba;
+        ch->sec_remaining = count;
+        ch->sec_pos = 0;
+        ch->sec_writing = true;
+        memset(ch->sec_buf, 0, 512);
+        raise_int(ch, USB_INT_DISK_WRITE);
+        break;
+    }
+
+    case 0x2C: { /* WR_HOST_DATA — push N bytes into the chip's host TX buffer.
+                  * SymbOS uses this as the data-deposit step for raw sector
+                  * writes; the bytes accumulate into sec_buf at sec_pos. */
+        u8 length = p[0];
+        if (ch->sec_writing) {
+            int take = (int)length;
+            if (ch->sec_pos + take > 512) take = 512 - ch->sec_pos;
+            if (take > 0) {
+                memcpy(&ch->sec_buf[ch->sec_pos], &p[1], take);
+                ch->sec_pos += take;
+            }
+        }
+        raise_int(ch, USB_INT_SUCCESS);
+        break;
+    }
+
+    case 0x57: /* DISK_WR_GO — commit when sec_buf is full, request next chunk */
+        if (!ch->sec_writing) { raise_int(ch, USB_INT_DISK_ERR); break; }
+        if (ch->sec_pos >= 512) {
+            if (fseek(ch->fp, (long)ch->sec_lba * 512, SEEK_SET) != 0 ||
+                fwrite(ch->sec_buf, 1, 512, ch->fp) != 512) {
+                ch->sec_writing = false;
+                raise_int(ch, USB_INT_DISK_ERR);
+                break;
+            }
+            fflush(ch->fp);
+            ch->sec_remaining--;
+            ch->sec_lba++;
+            ch->sec_pos = 0;
+            memset(ch->sec_buf, 0, 512);
+            if (ch->sec_remaining == 0) {
+                ch->sec_writing = false;
+                raise_int(ch, USB_INT_SUCCESS);
+                break;
+            }
+        }
+        raise_int(ch, USB_INT_DISK_WRITE);
+        break;
+
     case 0x4E: { /* ISSUE_TKN_X — params: (token, endpoint+pid).
                   * SymbOS / Albireo HID mouse path uses endpoint 0x19
                   * (read endpoint 1) with token DATA0/DATA1 alternating.
@@ -692,6 +810,15 @@ void ch376_write(CH376 *ch, u8 reg, u8 val) {
                 ch->params[ch->param_count++] = val;
             if (ch->param_count >= 2 &&
                     ch->param_count >= 2 + (int)ch->params[1]) {
+                execute(ch);
+                clear_pending(ch);
+            }
+        } else if (ch->param_needed == -3) {
+            /* WR_HOST_DATA: 1 length byte then `length` data bytes. */
+            if (ch->param_count < (int)sizeof(ch->params))
+                ch->params[ch->param_count++] = val;
+            if (ch->param_count >= 1 &&
+                    ch->param_count >= 1 + (int)ch->params[0]) {
                 execute(ch);
                 clear_pending(ch);
             }

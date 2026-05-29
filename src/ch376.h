@@ -88,6 +88,17 @@ typedef struct {
     u16      dir_entry_offset;
     bool     dir_entry_writable;
 
+    /* Sector-level USB Bulk-Only Transport (used by SymbOS — its FAT driver
+     * reads/writes raw LBAs through the CH376 rather than the chip's
+     * built-in FS commands UNIDOS uses). Buffer holds the current sector;
+     * 64-byte sub-chunks are served via RD_USB_DATA0. */
+    u8    sec_buf[512];
+    u32   sec_lba;
+    int   sec_remaining;     /* sectors still to transfer (read or write) */
+    int   sec_pos;           /* byte offset within sec_buf */
+    bool  sec_reading;
+    bool  sec_writing;
+
     /* Albireo USB HID mouse state — accumulated SDL deltas + button state.
      * Drained by an ISSUE_TKN_X (0x4E) with parameters (TOKEN, 0x19)
      * (read, endpoint 1, boot-protocol mouse). */
