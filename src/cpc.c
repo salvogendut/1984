@@ -91,6 +91,10 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    else if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+        result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
+    }
     /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
     else if (cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
         result = m4_dataport_read(&cpc->m4_card);
@@ -180,6 +184,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
                 fprintf(stderr, "[input] kbd scan row9 = %02X  (matrix=%02X)\n",
                         cpc->ppi.port_a, cpc->kbd.matrix[9]);
         }
+        return;
+    }
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+        ch376_write(&cpc->ch376, (u8)(port & 0x01), val);
         return;
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF — accumulate command byte */
@@ -289,6 +298,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     mouse_init(&cpc->mouse);
     m4_init(&cpc->m4_card, "");
     symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
+    ch376_init(&cpc->ch376);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -324,6 +334,7 @@ void cpc_reset(CPC *cpc) {
     ide_reset(&cpc->ide_chip);  /* keeps image file open across warm reset */
     mouse_init(&cpc->mouse);    /* clear accumulated deltas; capture state managed by main */
     m4_reset(&cpc->m4_card);
+    ch376_reset(&cpc->ch376);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -339,6 +350,7 @@ void cpc_destroy(CPC *cpc) {
     disk_eject(&cpc->drive[0]);
     disk_eject(&cpc->drive[1]);
     ide_close(&cpc->ide_chip);
+    ch376_close(&cpc->ch376);
     display_destroy(&cpc->display);
 }
 

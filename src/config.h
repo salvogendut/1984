@@ -33,6 +33,8 @@ typedef struct {
     char ide_image[CONFIG_PATH_MAX];
     bool symbiface_mouse;
     bool symbnet;     /* 1984 emulator synthetic SymbOS network port (0xFD30/31) */
+    bool albireo;
+    char albireo_image[CONFIG_PATH_MAX];
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */

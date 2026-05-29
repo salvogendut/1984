@@ -22,6 +22,7 @@ bin_PROGRAMS = 1984
 	src/rtc.c \
 	src/ide.c \
 	src/fat.c \
+	src/ch376.c \
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \

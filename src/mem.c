@@ -2,6 +2,17 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Read a 16 KB ROM image into `dest`, transparently skipping a 128-byte
+ * AMSDOS header if the file size indicates one is present (16384+128 bytes). */
+static int read_rom_image(FILE *f, u8 *dest) {
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz == ROM_BASIC_SIZE + 128)
+        fseek(f, 128, SEEK_SET);
+    return (int)fread(dest, 1, ROM_BASIC_SIZE, f);
+}
+
 void mem_init(Mem *m) {
     memset(m->ram, 0, sizeof(m->ram));
     memset(m->rom_os, 0, sizeof(m->rom_os));
@@ -20,7 +31,7 @@ void mem_init(Mem *m) {
 int mem_load_os(Mem *m, const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open OS ROM: %s\n", path); return -1; }
-    fread(m->rom_os, 1, ROM_OS_SIZE, f);
+    read_rom_image(f, m->rom_os);
     fclose(f);
     return 0;
 }
@@ -30,12 +41,12 @@ int mem_load_rom(Mem *m, const char *os_path, const char *basic_path) {
 
     f = fopen(os_path, "rb");
     if (!f) { fprintf(stderr, "Cannot open OS ROM: %s\n", os_path); return -1; }
-    fread(m->rom_os, 1, ROM_OS_SIZE, f);
+    read_rom_image(f, m->rom_os);
     fclose(f);
 
     f = fopen(basic_path, "rb");
     if (!f) { fprintf(stderr, "Cannot open BASIC ROM: %s\n", basic_path); return -1; }
-    fread(m->rom_basic, 1, ROM_BASIC_SIZE, f);
+    read_rom_image(f, m->rom_basic);
     fclose(f);
 
     return 0;
@@ -45,7 +56,7 @@ int mem_load_amsdos(Mem *m, const char *path) {
     if (!path || !path[0]) return -1;
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open AMSDOS ROM: %s\n", path); return -1; }
-    fread(m->rom_amsdos, 1, ROM_BASIC_SIZE, f);
+    read_rom_image(f, m->rom_amsdos);
     fclose(f);
     m->amsdos_present = true;
     return 0;
@@ -61,7 +72,7 @@ int mem_load_rom_ext(Mem *m, int slot, const char *path) {
     if (!path || !path[0]) return -1;
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "Cannot open ROM slot %d: %s\n", slot, path); return -1; }
-    fread(m->rom_ext[slot], 1, ROM_BASIC_SIZE, f);
+    read_rom_image(f, m->rom_ext[slot]);
     fclose(f);
     m->rom_ext_present[slot] = true;
     return 0;

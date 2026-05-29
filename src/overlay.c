@@ -27,7 +27,7 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Storage", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 12 };
 
 /* ---- Drawing helpers ---- */
 
@@ -199,12 +199,22 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "SYMBiFACE Mouse");
             snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
             break;
-        case 10: {
+        case 10:
+            snprintf(lbl, lsz, "Albireo");
+            if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->albireo_image);
+                trunc_path(basename(tmp), val, vsz);
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->albireo ? "enabled" : "disabled");
+            }
+            break;
+        case 11: {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
                         !ov->cfg->symbiface_ide && !ov->cfg->symbiface_mouse;
-            snprintf(lbl, lsz, "SYMBiFACE II/Cyboard");
+            snprintf(lbl, lsz, "Cyboard");
             snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
             break;
         }
@@ -261,6 +271,15 @@ static void activate_item(Overlay *ov) {
         }
         case 1:
             if (!ov->cfg->m4) {
+                /* Mutually exclusive with Albireo (both claim port 0xFExx). */
+                if (ov->cfg->albireo) {
+                    ov->cfg->albireo = false;
+                    ov->cfg->albireo_image[0] = '\0';
+                    if (ov->cpc) {
+                        ov->cpc->albireo = false;
+                        ch376_close(&ov->cpc->ch376);
+                    }
+                }
                 /* Enable: open file picker to select SD card image (raw FAT) */
                 ov->dialog_kind  = DIALOG_M4_IMAGE;
                 ov->dialog_ready = false;
@@ -347,7 +366,40 @@ static void activate_item(Overlay *ov) {
             ov->cfg->symbiface_mouse = !ov->cfg->symbiface_mouse;
             ov->dirty = true;
             break;
-        case 10: {
+        case 10:
+            if (!ov->cfg->albireo) {
+                /* Mutually exclusive with M4 (both claim port 0xFExx). */
+                if (ov->cfg->m4) {
+                    ov->cfg->m4 = false;
+                    ov->cfg->m4_image[0] = '\0';
+                    ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
+                    if (ov->cpc) {
+                        ov->cpc->m4 = false;
+                        m4_set_image(&ov->cpc->m4_card, "");
+                        mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
+                    }
+                    ov->needs_cold_boot = true;
+                }
+                ov->dialog_kind  = DIALOG_ALBIREO;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter alb_filters[] = {
+                    { "USB drive images", "img;IMG;bin;BIN;raw;RAW;iso;ISO" },
+                    { "All files",        "*"                                },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    alb_filters, 2, NULL, false);
+            } else {
+                ov->cfg->albireo = false;
+                ov->cfg->albireo_image[0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->albireo = false;
+                    ch376_close(&ov->cpc->ch376);
+                }
+                ov->dirty = true;
+            }
+            break;
+        case 11: {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool enable = !all;
@@ -442,6 +494,15 @@ void overlay_tick(Overlay *ov) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->cfg->symbiface_ide = true;
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_ALBIREO) {
+        snprintf(ov->cfg->albireo_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->cfg->albireo = true;
+        if (ov->cpc) {
+            ov->cpc->albireo = true;
+            ch376_close(&ov->cpc->ch376);
+            ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
+        }
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
         /* User picked an SD card image — enable M4, load its ROM, and seed
          * the M4 board's config buffer from the ROM defaults.
@@ -520,6 +581,8 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
                         strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||
+                        (ov->cfg->albireo       != ov->saved.albireo)       ||
+                        strcmp(ov->cfg->albireo_image, ov->saved.albireo_image) ||
                         strcmp(ov->cfg->rom_os,    ov->saved.rom_os);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {

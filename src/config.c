@@ -148,6 +148,8 @@ static void config_create_default(const char *path, const char *home) {
         "ide_image=\n"
         "symbiface_mouse=false\n"
         "symbnet=false\n"
+        "albireo=false\n"
+        "albireo_image=\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -262,6 +264,11 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "symbnet")) {
                 if (parse_bool(val, &b)) cfg->symbnet = b;
                 else { fprintf(stderr, "1984.conf:%d: symbnet must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "albireo")) {
+                if (parse_bool(val, &b)) cfg->albireo = b;
+                else { fprintf(stderr, "1984.conf:%d: albireo must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "albireo_image")) {
+                if (val[0]) expand_path(val, cfg->albireo_image, sizeof(cfg->albireo_image));
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -342,7 +349,9 @@ int config_save(const Config *cfg) {
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
         "symbiface_mouse=%s\n"
-        "symbnet=%s\n\n"
+        "symbnet=%s\n"
+        "albireo=%s\n"
+        "albireo_image=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n",
@@ -359,6 +368,8 @@ int config_save(const Config *cfg) {
         cfg->ide_image,
         cfg->symbiface_mouse  ? "true" : "false",
         cfg->symbnet          ? "true" : "false",
+        cfg->albireo          ? "true" : "false",
+        cfg->albireo_image,
         cfg->scale,
         cfg->fullscreen ? "true" : "false"
     );

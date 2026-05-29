@@ -24,6 +24,7 @@ Each source file maps to one hardware component:
 | `src/rtc.c` / `rtc.h` | DS12887 RTC — register read/write, NVRAM, time from host `localtime()` |
 | `src/ide.c` / `ide.h` | ATA PIO IDE — SYMBiFACE II / Cyboard port mapping, raw disk image backend, IDENTIFY/READ/WRITE |
 | `src/mouse.c` / `mouse.h` | SYMBiFACE II PS/2 mouse — port 0xFD10, variable-length burst protocol, SDL relative mouse capture |
+| `src/ch376.c` / `ch376.h` | Albireo CH376 USB host controller — ports 0xFE80/0xFE81, file-system command set backed by `src/fat.c`; mutually exclusive with M4 (shared 0xFExx decode) |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -79,6 +80,8 @@ Two bytes are fetched per character clock and decoded according to the Gate Arra
 
 RAM is configurable from 64 KB (464 minimum) up to 576 KB (DK'tronics ceiling) via the options overlay. The physical array in `Mem` is always 576 KB; `Mem.ram_size` (set from `config.memory_kb * 1024`) controls how much of it is accessible. Accesses beyond `ram_size` return 0xFF and writes are silently dropped.
 
+**AMSDOS-headed ROMs.** All ROM loaders (`mem_load_os`, `mem_load_rom`, `mem_load_amsdos`, `mem_load_rom_ext`) go through a `read_rom_image()` helper. If the file is exactly `ROM_BASIC_SIZE + 128` bytes (16512), the 128-byte AMSDOS header is skipped and only the 16384-byte ROM body is loaded. This handles ROMs distributed in DSK-extracted form (e.g. UNIDOS, UNITOOLS, Albireo) transparently — no per-device unwrapping needed.
+
 **Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command. `Mem.ram_bank` stores bits[5:0] of that byte. Both the 464 and 6128 honour this command; on real hardware only the 6128 supports it, but the emulator enables banking on the 464 as well when RAM is expanded beyond 64 KB.
 
 The 8 banking modes (bits[2:0]) use a fixed page-to-region lookup table (not a raw page index). Bits[5:3] select a 64 KB expansion bank for DK'tronics-compatible expansion. The standard DK'tronics hardware supports up to 576 KB: 64 KB base (romb0–3) + 8 expansion banks × 64 KB (RAM_bank 0–7, where bank 0 is the standard 6128 extra 64 KB).
@@ -110,6 +113,8 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | hi=0xFD, lo=0x14 | RTC data (DS12887) | 0xFD14 |
 | hi=0xFD, lo=0x15 | RTC address (DS12887) | 0xFD15 |
 | hi=0xFD, lo=0x20–0x23 | Net4CPC W5100S | 0xFD20–0xFD23 |
+| hi=0xFE, lo=0x80/0x81 | Albireo CH376 data / command-status | 0xFE80 / 0xFE81 |
+| hi=0xFE or 0xFF (M4 only) | M4 data port (broad decode, takes precedence over Albireo only when Albireo is disabled) | 0xFExx / 0xFFxx |
 
 ---
 
@@ -198,7 +203,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 |-----|------|
 | General | Model, OS ROM path, BASIC ROM path |
 | Storage | Drive A, Drive B |
-| Advanced | Memory, M4 [unimplemented], UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Cyboard |
+| Advanced | Memory, M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
@@ -308,9 +313,39 @@ The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-onl
 
 ---
 
+## Albireo CH376 USB host (`src/ch376.c`)
+
+The Albireo CPC expansion exposes a WCH **CH376** USB host controller. It is enabled via `albireo=true` in `1984.conf` (or Advanced → Albireo in the overlay). Enabling it from the overlay opens a file picker to choose a FAT16/FAT32 image; the path is stored in `albireo_image`. The backend is `src/fat.c` (shared with the M4 file API), so directory enumeration, open/read/write/seek, and free-space queries all go through the same FAT layer.
+
+**Port map.** The CPC sees the chip at two I/O ports:
+
+| Address | Direction | Purpose |
+|---------|-----------|---------|
+| `0xFE80` | r/w | DATA — command parameters and response payload |
+| `0xFE81` | w   | COMMAND — start a command |
+| `0xFE81` | r   | STATUS — bit7 = !INT (0 = interrupt pending), bit4 = BUSY (always 0 in emulation) |
+
+**M4 mutex.** The real M4 board decodes the whole `0xFExx` / `0xFFxx` range as its data port, which would collide with the CH376 ports. In the emulator we route `0xFE80`/`0xFE81` to the CH376 first when `cpc->albireo` is set, but to keep configuration honest the overlay (and the boot-time config wiring in `main.c`) enforces mutual exclusion: enabling either Albireo or M4 disables the other and clears the corresponding image path. If a hand-edited config has both `albireo=true` and `m4=true`, Albireo wins.
+
+**Command/response state machine.** The chip is driven by writing a command byte to `0xFE81`, then zero or more parameter bytes to `0xFE80`. Each command has a known fixed parameter count, or `-1` for variable-length (NUL-terminated) parameters used by `SET_FILE_NAME`. Once all parameters arrive, `execute()` runs.
+
+Most commands raise an "interrupt" by setting `int_pending = true` and stashing a status code in `int_status`. The host polls `0xFE81` for bit 7 to clear, then issues `GET_STATUS` (0x22) which surfaces the status code on the data port and clears `int_pending`. Some commands (`CHECK_EXIST`, `GET_IC_VER`, `SET_USB_MODE`) return their result directly on the data port with no interrupt — UNIDOS's `CheckAlbireo` / `MountDevice` rely on the latter.
+
+**One-shot byte vs. payload buffer.** Reads from `0xFE80` consult a one-shot single-byte register first (`oneshot` + `oneshot_valid`); commands like `GET_STATUS`, `CHECK_EXIST`, `GET_IC_VER`, and `SET_USB_MODE` write there. The `resp[]` buffer holds longer length-prefixed payloads such as the chunk from `BYTE_READ`, the 32-byte FAT directory entry served by `FILE_OPEN`/`FILE_ENUM_GO`/`DIR_INFO_READ`, the 4-byte `DISK_CAPACITY`, and the 9-byte `DISK_QUERY`. Separating the two prevents `GET_STATUS` from clobbering a pending chunk — without that split, UNIDOS's `BYTE_RD_GO` loop never terminates because the cached chunk length keeps coming back from the data port.
+
+**File operations.** `SET_FILE_NAME` accumulates bytes until the NUL terminator, normalises backslashes to slashes and the path to uppercase, then stores it as the working filename. `FILE_OPEN` either opens an exact file via `fat_open` or, if the leaf contains `*`/`?`, starts an enumeration using `fat_opendir` + `fat_readdir` with a glob match. Each matched entry is composed into a synthetic 32-byte FAT8.3 directory entry (`make_dir_entry`) — the chip's built-in FAT layer presents these to the host even when the underlying disk uses long filenames. `BYTE_READ`/`BYTE_RD_GO` chunk reads through `do_byte_read`, always refreshing the length byte at `resp[0]` so an end-of-stream is signalled as length 0. `BYTE_WRITE`/`WR_REQ_DATA`/`BYTE_WR_GO` mirror the same flow for writes, flushing the host-supplied chunk to the FAT layer in `BYTE_WR_GO`.
+
+**Disk introspection.** `DISK_CAPACITY` returns a length-prefixed 4-byte total-sector count. `DISK_QUERY` returns a length-prefixed 9-byte payload (`total_sectors[4] + free_sectors[4] + fs_type[1]`) — exactly the format UNIDOS's `GetDiskFreeSpace` expects (it asserts the length byte equals 9 and then `in`s the nine bytes via `inira`).
+
+**Not implemented (yet):** `FILE_ERASE`, `DIR_INFO_SAVE`, the SC16C650B UART side at `0xFEB0–7`, and CH376 interrupts routed to NMI. UNIDOS polls the status register instead of relying on NMI delivery, so this last one is invisible to the guest.
+
+**Tracing.** `--trace-albireo` enables `ch376_trace = 1`; every command is logged with its mnemonic and parameter bytes (or the filename for `SET_FILE_NAME`), and every interrupt status code is logged on the next line. This is the primary debugging aid for diagnosing UNIDOS command-flow regressions — most bugs found during development surfaced as either an unexpected status code or a payload mismatch visible in the trace.
+
+---
+
 ## Cyboard master toggle
 
-The **Cyboard** overlay item (Advanced → Cyboard, row 10) is a UI-only convenience; it writes to the four existing config flags rather than introducing a new one. Activating it when all four peripherals (Net4CPC, RTC, SYMBiFACE IDE, SYMBiFACE Mouse) are enabled disables all of them (and clears `ide_image`); activating it when any of the four is off enables all of them. The displayed value is `enabled` / `disabled` / `partial` depending on the combination.
+The **Cyboard** overlay item (Advanced → Cyboard, row 11) is a UI-only convenience; it writes to the four existing config flags rather than introducing a new one. Activating it when all four peripherals (Net4CPC, RTC, SYMBiFACE IDE, SYMBiFACE Mouse) are enabled disables all of them (and clears `ide_image`); activating it when any of the four is off enables all of them. The displayed value is `enabled` / `disabled` / `partial` depending on the combination.
 
 ---
 

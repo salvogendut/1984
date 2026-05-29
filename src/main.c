@@ -42,6 +42,7 @@ static void usage(const char *prog, int code) {
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
+        "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
         "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
@@ -136,6 +137,8 @@ int main(int argc, char *argv[]) {
             cpc_trace_input = 1;
         } else if (strcmp(argv[i], "--trace-m4") == 0) {
             m4_trace = 1;
+        } else if (strcmp(argv[i], "--trace-albireo") == 0) {
+            ch376_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
@@ -190,6 +193,14 @@ int main(int argc, char *argv[]) {
         m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
+    cpc.albireo = cfg.albireo;
+    if (cfg.albireo && cfg.albireo_image[0])
+        ch376_open(&cpc.ch376, cfg.albireo_image);
+    /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
+    if (cpc.albireo && cpc.m4) {
+        cpc.m4 = false;
+        cfg.m4 = false;
+    }
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -464,6 +475,14 @@ int main(int argc, char *argv[]) {
             ide_close(&cpc.ide_chip);
             if (cfg.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
+            cpc.albireo = cfg.albireo;
+            ch376_close(&cpc.ch376);
+            if (cfg.albireo && cfg.albireo_image[0])
+                ch376_open(&cpc.ch376, cfg.albireo_image);
+            if (cpc.albireo && cpc.m4) {
+                cpc.m4 = false;
+                cfg.m4 = false;
+            }
             /* Release mouse capture on cold boot */
             if (mouse_captured)
                 set_mouse_capture(cpc.display.window, false,

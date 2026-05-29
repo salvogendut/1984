@@ -116,9 +116,9 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
 	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
-	src/1984-fat.$(OBJEXT) src/1984-m4.$(OBJEXT) \
-	src/1984-symbnet.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
-	src/1984-z80.$(OBJEXT)
+	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
+	src/1984-mouse.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -139,19 +139,20 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = src/$(DEPDIR)/1984-config.Po \
-	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-crtc.Po \
-	src/$(DEPDIR)/1984-disk.Po src/$(DEPDIR)/1984-display.Po \
-	src/$(DEPDIR)/1984-fat.Po src/$(DEPDIR)/1984-fdc.Po \
-	src/$(DEPDIR)/1984-gate_array.Po src/$(DEPDIR)/1984-ide.Po \
-	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
-	src/$(DEPDIR)/1984-m4.Po src/$(DEPDIR)/1984-main.Po \
-	src/$(DEPDIR)/1984-mem.Po src/$(DEPDIR)/1984-monitor.Po \
-	src/$(DEPDIR)/1984-mouse.Po src/$(DEPDIR)/1984-net4cpc.Po \
-	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-symbnet.Po \
-	src/$(DEPDIR)/1984-z80.Po src/$(DEPDIR)/1984-z80dis.Po
+am__depfiles_remade = src/$(DEPDIR)/1984-ch376.Po \
+	src/$(DEPDIR)/1984-config.Po src/$(DEPDIR)/1984-cpc.Po \
+	src/$(DEPDIR)/1984-crtc.Po src/$(DEPDIR)/1984-disk.Po \
+	src/$(DEPDIR)/1984-display.Po src/$(DEPDIR)/1984-fat.Po \
+	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-gate_array.Po \
+	src/$(DEPDIR)/1984-ide.Po src/$(DEPDIR)/1984-joy.Po \
+	src/$(DEPDIR)/1984-kbd.Po src/$(DEPDIR)/1984-m4.Po \
+	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
+	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-mouse.Po \
+	src/$(DEPDIR)/1984-net4cpc.Po src/$(DEPDIR)/1984-overlay.Po \
+	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-ppi.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-rtc.Po \
+	src/$(DEPDIR)/1984-symbnet.Po src/$(DEPDIR)/1984-z80.Po \
+	src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -366,6 +367,7 @@ top_srcdir = .
 	src/rtc.c \
 	src/ide.c \
 	src/fat.c \
+	src/ch376.c \
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \
@@ -518,6 +520,8 @@ src/1984-ide.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-fat.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-ch376.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-m4.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-symbnet.$(OBJEXT): src/$(am__dirstamp) \
@@ -538,6 +542,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+include src/$(DEPDIR)/1984-ch376.Po # am--include-marker
 include src/$(DEPDIR)/1984-config.Po # am--include-marker
 include src/$(DEPDIR)/1984-cpc.Po # am--include-marker
 include src/$(DEPDIR)/1984-crtc.Po # am--include-marker
@@ -879,6 +884,20 @@ src/1984-fat.obj: src/fat.c
 #	$(AM_V_CC)source='src/fat.c' object='src/1984-fat.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-fat.obj `if test -f 'src/fat.c'; then $(CYGPATH_W) 'src/fat.c'; else $(CYGPATH_W) '$(srcdir)/src/fat.c'; fi`
+
+src/1984-ch376.o: src/ch376.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ch376.o -MD -MP -MF src/$(DEPDIR)/1984-ch376.Tpo -c -o src/1984-ch376.o `test -f 'src/ch376.c' || echo '$(srcdir)/'`src/ch376.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ch376.Tpo src/$(DEPDIR)/1984-ch376.Po
+#	$(AM_V_CC)source='src/ch376.c' object='src/1984-ch376.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ch376.o `test -f 'src/ch376.c' || echo '$(srcdir)/'`src/ch376.c
+
+src/1984-ch376.obj: src/ch376.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ch376.obj -MD -MP -MF src/$(DEPDIR)/1984-ch376.Tpo -c -o src/1984-ch376.obj `if test -f 'src/ch376.c'; then $(CYGPATH_W) 'src/ch376.c'; else $(CYGPATH_W) '$(srcdir)/src/ch376.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ch376.Tpo src/$(DEPDIR)/1984-ch376.Po
+#	$(AM_V_CC)source='src/ch376.c' object='src/1984-ch376.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ch376.obj `if test -f 'src/ch376.c'; then $(CYGPATH_W) 'src/ch376.c'; else $(CYGPATH_W) '$(srcdir)/src/ch376.c'; fi`
 
 src/1984-m4.o: src/m4.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-m4.o -MD -MP -MF src/$(DEPDIR)/1984-m4.Tpo -c -o src/1984-m4.o `test -f 'src/m4.c' || echo '$(srcdir)/'`src/m4.c
@@ -1239,6 +1258,7 @@ clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
+	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po
@@ -1311,6 +1331,7 @@ installcheck-am:
 maintainer-clean: maintainer-clean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
+	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po

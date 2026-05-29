@@ -15,6 +15,7 @@
 #include "mouse.h"
 #include "m4.h"
 #include "symbnet.h"
+#include "ch376.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -43,6 +44,8 @@ typedef struct {
     M4         m4_card;
     bool       symbnet;        /* 1984 emulator synthetic SymbOS network port */
     SymbNet    symbnet_card;
+    bool       albireo;        /* Albireo USB host add-on (CH376) */
+    CH376      ch376;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */
