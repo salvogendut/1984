@@ -82,6 +82,11 @@ typedef struct {
     char     enum_parent[256];   /* parent path used to open dir */
     u8       last_dir_entry[32]; /* served by DIR_INFO_READ */
     bool     have_dir_entry;
+    /* On-disk location of last_dir_entry — written back by DIR_INFO_SAVE
+     * after the host edits it via WR_OFS_DATA (UNIDOS's rename path). */
+    u32      dir_entry_sector;
+    u16      dir_entry_offset;
+    bool     dir_entry_writable;
 
     /* Albireo USB HID mouse state — accumulated SDL deltas + button state.
      * Drained by an ISSUE_TKN_X (0x4E) with parameters (TOKEN, 0x19)

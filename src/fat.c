@@ -697,6 +697,17 @@ bool fat_seek(FatFile *f, u32 pos) {
 u32 fat_tell(FatFile *f)      { return f ? f->file_offset : 0; }
 u32 fat_file_size(FatFile *f) { return f ? f->file_size   : 0; }
 
+bool fat_write_dir_entry(FatVol *v, u32 sector, u16 byte_offset,
+                         const u8 entry[32]) {
+    if (!v || !v->fp || byte_offset + 32 > v->bytes_per_sector) return false;
+    u8 sec[512];
+    if (!sec_read(v, sector, sec)) return false;
+    memcpy(&sec[byte_offset], entry, 32);
+    if (!sec_write(v, sector, sec)) return false;
+    fat_flush_cache(v);
+    return true;
+}
+
 void fat_close(FatFile *f) {
     if (!f) return;
     if (f->write_mode && f->modified) {

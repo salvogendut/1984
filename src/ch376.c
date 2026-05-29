@@ -279,6 +279,11 @@ static u8 do_file_open(CH376 *ch) {
         }
         fat_closedir(d);
     }
+    /* The FatFile carries the on-disk location of its own directory entry —
+     * use that for WR_OFS_DATA / DIR_INFO_SAVE writes (UNIDOS's rename idiom). */
+    ch->dir_entry_sector   = ch->file->dir_sector;
+    ch->dir_entry_offset   = ch->file->dir_offset;
+    ch->dir_entry_writable = (ch->file->dir_sector != 0);
     return USB_INT_SUCCESS;
 }
 
@@ -389,6 +394,7 @@ static int param_count_for(u8 cmd) {
     case 0x27: return 0;   /* RD_USB_DATA0 — rewind resp */
     case 0x28: return 1;   /* WR_REQ_DATA — accept N bytes (test/host write) */
     case 0x2D: return 0;   /* WR_REQ_DATA (file write) */
+    case 0x2E: return -2;  /* WR_OFS_DATA — 2 fixed bytes + length-determined tail */
     case 0x2F: return -1;  /* SET_FILE_NAME (NUL-terminated) */
     case 0x30: return 0;   /* DISK_CONNECT */
     case 0x31: return 0;   /* DISK_MOUNT */
@@ -523,8 +529,29 @@ static void execute(CH376 *ch) {
         }
         break;
 
-    case 0x38: /* DIR_INFO_SAVE */
-        raise_int(ch, USB_INT_DISK_ERR);
+    case 0x2E: { /* WR_OFS_DATA — patch bytes in the chip's directory-info
+                  * buffer. Params: offset (1) + length (1) + length data
+                  * bytes. UNIDOS uses this to rewrite the file name fields
+                  * before issuing DIR_INFO_SAVE. */
+        u8 offset = p[0];
+        u8 length = p[1];
+        if ((int)offset + (int)length > 32 ||
+            ch->param_count < 2 + (int)length) {
+            raise_int(ch, USB_INT_DISK_ERR);
+            break;
+        }
+        memcpy(&ch->last_dir_entry[offset], &p[2], length);
+        raise_int(ch, USB_INT_SUCCESS);
+        break;
+    }
+
+    case 0x38: /* DIR_INFO_SAVE — write the 32-byte entry back to disk */
+        if (ch->have_dir_entry && ch->dir_entry_writable &&
+            fat_write_dir_entry(&ch->vol, ch->dir_entry_sector,
+                                ch->dir_entry_offset, ch->last_dir_entry))
+            raise_int(ch, USB_INT_SUCCESS);
+        else
+            raise_int(ch, USB_INT_DISK_ERR);
         break;
 
     case 0x39: { /* BYTE_LOCATE */
@@ -655,6 +682,16 @@ void ch376_write(CH376 *ch, u8 reg, u8 val) {
             if (ch->param_count < (int)sizeof(ch->params) - 1)
                 ch->params[ch->param_count++] = val;
             if (val == 0) {
+                execute(ch);
+                clear_pending(ch);
+            }
+        } else if (ch->param_needed == -2) {
+            /* WR_OFS_DATA: 2 prefix bytes (offset, length) then `length` data.
+             * Total expected = 2 + params[1] (once we've seen the second byte). */
+            if (ch->param_count < (int)sizeof(ch->params))
+                ch->params[ch->param_count++] = val;
+            if (ch->param_count >= 2 &&
+                    ch->param_count >= 2 + (int)ch->params[1]) {
                 execute(ch);
                 clear_pending(ch);
             }

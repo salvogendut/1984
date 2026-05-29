@@ -108,3 +108,10 @@ u32 fat_file_size(FatFile *f);
 
 /* Close (flushes the directory entry on writes). */
 void fat_close(FatFile *f);
+
+/* Overwrite a 32-byte FAT directory entry at (sector, byte_offset).
+ * Used by Albireo's CH376 DIR_INFO_SAVE command, which is how UNIDOS
+ * implements renames (it edits the name field of an existing entry).
+ * Returns false on I/O error. */
+bool fat_write_dir_entry(FatVol *v, u32 sector, u16 byte_offset,
+                         const u8 entry[32]);
