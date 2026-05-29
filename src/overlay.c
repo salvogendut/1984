@@ -135,7 +135,7 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "%d KB", ov->cfg->memory_kb);
             break;
         case 1:
-            snprintf(lbl, lsz, "M4");
+            snprintf(lbl, lsz, "M4 (unstable)");
             if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_image);
