@@ -65,6 +65,7 @@ typedef struct {
 
 extern int cpc_trace_io;      /* set to 1 to log CRTC/GA writes to stderr */
 extern int cpc_trace_palette; /* set to 1 to log palette buffer state when B7F7=0xFF */
+extern int m4_trace;          /* set to 1 to log M4 commands, responses, NMI state */
 extern int cpc_trace_input;   /* set to 1 to log keyboard row 9 (joystick) scans */
 extern int cpc_frame_count;   /* incremented by cpc_frame(); used by trace helpers */
 

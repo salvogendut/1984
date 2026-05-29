@@ -22,6 +22,8 @@
 #include <arpa/inet.h>
 #include <poll.h>
 
+int m4_trace = 0;
+
 /* M4 command IDs (from m4cmds.i) */
 #define C_OPEN        0x4301
 #define C_READ        0x4302
@@ -397,6 +399,14 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     u8  err     = M4_ERR_NOTSUP;
     u16 roff    = 3;                 /* response data written starting at RESP_BASE+3 (M4 protocol) */
 
+    if (m4_trace) {
+        extern int cpc_frame_count;
+        fprintf(stderr, "[m4 f%d] CMD %04X (%d args):", cpc_frame_count, cmd, plen);
+        for (int i = 0; i < plen && i < 16; i++) fprintf(stderr, " %02X", p[i]);
+        if (plen > 16) fprintf(stderr, " ...(+%d)", plen - 16);
+        fprintf(stderr, "\n");
+    }
+
     switch (cmd) {
 
     /* ---- System ---- */
@@ -439,6 +449,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_NMIOFF:
         m->nmi_enabled = (plen > 0) ? (p[0] == 0) : false;
+        if (m4_trace) fprintf(stderr, "[m4]      NMI -> %s\n",
+                              m->nmi_enabled ? "ENABLED" : "DISABLED");
         err = M4_OK;
         break;
 
@@ -1274,6 +1286,14 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     resp_err(m, err);
+    if (m4_trace) {
+        int rlen = (roff > 3) ? (roff - 3) : 0;
+        fprintf(stderr, "[m4]      RSP err=%02X (%d payload):", err, rlen);
+        for (int i = 0; i < rlen && i < 16; i++)
+            fprintf(stderr, " %02X", m->bus_mem[3 + i]);
+        if (rlen > 16) fprintf(stderr, " ...(+%d)", rlen - 16);
+        fprintf(stderr, "\n");
+    }
     m->cmd_len = 0;
     return m->nmi_enabled;
 }

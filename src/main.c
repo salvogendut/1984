@@ -41,6 +41,7 @@ static void usage(const char *prog, int code) {
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
+        "  --trace-m4          Log every M4 board command and response to stderr\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
@@ -132,6 +133,8 @@ int main(int argc, char *argv[]) {
             cpc_trace_palette = 1;
         } else if (strcmp(argv[i], "--trace-input") == 0) {
             cpc_trace_input = 1;
+        } else if (strcmp(argv[i], "--trace-m4") == 0) {
+            m4_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
