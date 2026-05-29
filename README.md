@@ -124,6 +124,7 @@ fullscreen=false
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
 | `--monitor-pty` | Open a PTY for the memory monitor (`minicom -b 9600 -D <path>`) |
 | `--trace-input` | Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down) |
+| `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable — see Status) |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1.
