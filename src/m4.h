@@ -79,6 +79,12 @@ typedef struct {
      * which ROM the CPC has paged in. The CPU code re-enters "ROM mode"
      * by calling KL_ROM_SELECT 6, which we detect via the ROM-select port. */
     bool    ram_mode;
+    int     ram_mode_reads;  /* bypassed-reads budget; auto-clears ram_mode
+                                once spent. Sized just for the daemon's
+                                m4cred (≤16-byte LDIR + a couple of probes)
+                                — kept tight so SymbOS screen-RAM reads
+                                that happen to land at 0xE800-0xFE4F right
+                                after a strobe aren't intercepted. */
     u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
 
     /* M4 board's own memory mapped on the expansion bus when M4ROM is paged in.
@@ -95,7 +101,21 @@ typedef struct {
 
     /* Network state — host POSIX sockets backing the M4's WiFi sockets. */
     M4Socket sockets[M4_NSOCKS];
+    /* SymbOS daemon workaround: under some conditions the daemon's
+     * m4cscktrn translation table drops back to 0 between CONNECT and the
+     * first RECV — root cause unidentified — and the daemon then issues
+     * TCP ops with sock=0 (which we'd otherwise reject as the DNS slot).
+     * We alias sock=0 on TCP commands to the most-recently-opened TCP
+     * socket so telnet etc. can still flow. */
+    int     last_tcp_sock;
 } M4;
+
+/* Trap ports for the "1984 compatibility shim" helper stubs that the
+ * patched M4ROM helper table points the daemon to. See m4.c for full
+ * notes. cpc.c's bus_io_write detects these and runs the bulk-copy /
+ * bank-aware-write in C, then sets PC = IX. */
+#define M4_HSEND_TRAP_PORT 0xFD3Eu
+#define M4_HRECV_TRAP_PORT 0xFD3Fu
 
 void m4_init(M4 *m, const char *root);
 void m4_set_image(M4 *m, const char *image_path);

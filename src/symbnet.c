@@ -15,9 +15,13 @@ static void execute(SymbNet *n) {
     n->m4->cmd_len = len;
     (void)m4_ackport_write(n->m4, NULL);
 
-    /* M4 dispatcher writes error code as bus_mem[0]. */
+    /* M4 dispatcher writes its err byte to bus_mem[0] and the command-
+     * specific payload starting at bus_mem[3] (matching real M4 firmware,
+     * which is what the SymbOS daemon assumes when it adds +3 to its
+     * cached response pointer). Skip the err/size header on the wire so
+     * the daemon sees payload bytes from FIFO offset 0. */
     n->last_error = (n->m4->bus_mem[0] != 0);
-    n->resp_pos   = 0;
+    n->resp_pos   = 3;
     n->resp_ready = true;
 }
 
@@ -56,7 +60,15 @@ u8 symbnet_port_read(SymbNet *n, u8 port_lo) {
 
 void symbnet_port_write(SymbNet *n, u8 port_lo, u8 val) {
     if (port_lo == 0x31) {
-        /* Strobe — no-op. Packets auto-execute when complete. */
+        /* Strobe: execute whatever the daemon has pushed so far. The M4
+         * SEND command writes a 6-byte header then a payload of variable
+         * length, so we can't auto-execute on byte-count — the daemon
+         * tells us when the packet is complete. */
+        (void)val;
+        if (n->cmd_len > 0) {
+            execute(n);
+            n->cmd_len = 0;
+        }
         return;
     }
     if (port_lo != 0x30) return;
@@ -69,14 +81,4 @@ void symbnet_port_write(SymbNet *n, u8 port_lo, u8 val) {
 
     if (n->cmd_len < (int)sizeof(n->cmd))
         n->cmd[n->cmd_len++] = val;
-
-    /* M4 wire format: first byte = count of bytes that follow. Trigger
-     * execution once we have all of them. */
-    if (n->cmd_len >= 1) {
-        int expected = 1 + n->cmd[0];
-        if (n->cmd_len >= expected) {
-            execute(n);
-            n->cmd_len = 0;
-        }
-    }
 }

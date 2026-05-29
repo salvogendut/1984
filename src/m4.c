@@ -341,6 +341,12 @@ void m4_tick(M4 *m) {
      * the status byte without sending any M4 commands. */
     for (int i = 0; i < M4_NSOCKS; i++)
         if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
+
+    /* Safety net: if the daemon's read never came (CPU was off doing
+     * other work), clear ram_mode after the frame so the bypass doesn't
+     * stay armed indefinitely. */
+    m->ram_mode = false;
+    m->ram_mode_reads = 0;
 }
 
 void m4_reset(M4 *m) {
@@ -376,12 +382,45 @@ u8 m4_dataport_read(M4 *m) {
 
 /* ---- Command dispatch ---- */
 
+/* "1984 compatibility shim": patch the M4ROM helper table to point at
+ * trap stubs we install in our own bus_mem. The daemon's banked m4crcv
+ * does a `JP <helper_recv_addr>` after selecting upper-ROM slot 0 — on
+ * real M4 hardware the board makes its own ROM code visible at that
+ * address regardless of slot. We can't replicate that without breaking
+ * SymbOS screen-RAM reads, so instead we route the JP into a spot we
+ * fully control: addresses inside bus_mem, which our bus bypass already
+ * serves whenever M4 is set up. The stub we install there is just a
+ * tiny `LD BC, 0xFD3F; OUT (C), A` — the emulator catches that port
+ * write and runs the bulk copy in C, then sets PC to IX (the return
+ * address the daemon passed) and continues. */
+#define M4_HSEND_TRAP_ADDR 0xF300u
+#define M4_HRECV_TRAP_ADDR 0xF310u
+
+static void m4_install_helper_shim(M4 *m, Mem *mem) {
+    if (!mem || !mem->rom_ext_present[M4_ROM_SLOT]) return;
+    u8 *rom = mem->rom_ext[M4_ROM_SLOT];
+    /* M4ROM helper-pointer table lives at 0xE430 (file offset 0x2430).
+     * Layout: helper_send (LE word), helper_recv (LE word). Daemon's
+     * m4crom copies 4 bytes from here into its own m4cromhsn/m4cromhrc. */
+    rom[0x2430] = M4_HSEND_TRAP_ADDR & 0xFF;
+    rom[0x2431] = M4_HSEND_TRAP_ADDR >> 8;
+    rom[0x2432] = M4_HRECV_TRAP_ADDR & 0xFF;
+    rom[0x2433] = M4_HRECV_TRAP_ADDR >> 8;
+
+    /* Stub at the trap address: LD BC, 0xFD3{E,F} ; OUT (C), A.
+     * After the OUT, the trap handler sets PC = IX, so we don't
+     * include any return instruction here. */
+    static const u8 hsend_stub[] = { 0x01, 0x3E, 0xFD, 0xED, 0x79 };
+    static const u8 hrecv_stub[] = { 0x01, 0x3F, 0xFD, 0xED, 0x79 };
+    memcpy(&m->bus_mem[M4_HSEND_TRAP_ADDR - 0xE800u], hsend_stub, sizeof(hsend_stub));
+    memcpy(&m->bus_mem[M4_HRECV_TRAP_ADDR - 0xE800u], hrecv_stub, sizeof(hrecv_stub));
+}
+
 bool m4_ackport_write(M4 *m, Mem *mem) {
-    /* Real M4 board enters "RAM mode" on every command strobe — its RAM
-     * (rom_response, sock_info, cfg) then wins reads at 0xE800/0xF400/0xFE00
-     * regardless of the CPU's upper ROM selection. The board re-enters ROM
-     * mode when the CPU calls KL_ROM_SELECT 6. We track that in m->ram_mode. */
-    m->ram_mode = true;
+    /* Install the helper-shim on first strobe (idempotent — safe to do
+     * unconditionally, but the trap stub addresses never move). */
+    m4_install_helper_shim(m, mem);
+
     /* Refresh sock_info for any sockets that were busy connecting or have
      * data waiting — the daemon polls sock_info between commands. */
     for (int i = 0; i < M4_NSOCKS; i++)
@@ -394,6 +433,33 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     u16 cmd = (u16)m->cmd_buf[1] | ((u16)m->cmd_buf[2] << 8);
+
+    /* Real M4 board enters "RAM mode" on every command strobe — its RAM
+     * (rom_response, sock_info, cfg) then wins reads at 0xE800/0xF400/0xFE00
+     * regardless of the CPU's upper ROM selection. We gate it to network
+     * opcodes only: file/config strobes from M4ROM init at boot would
+     * otherwise leave RAM mode stuck on and the firmware sees M4 buffers
+     * instead of CPC RAM at 0xE800-0xFE4F. Network responses are the only
+     * ones the SymbOS daemon polls via slot-0 reads, so that's where the
+     * trick actually has to work. */
+    /* C_READMEM is excluded on purpose: M4ROM's own init issues 43FD at boot
+     * and the bus bypass at 0xE800-0xFE4F would corrupt firmware reads of
+     * screen RAM there. Our own use of READMEM (1984-only daemon) reads the
+     * response via the FD30 FIFO, not bus_mem, so it doesn't need this. */
+    if (cmd == 0x4321 || (cmd >= 0x4331 && cmd <= 0x433C)) {
+        m->ram_mode = true;
+        /* The daemon's m4cred reads at most 16 bytes (sock_info ldir) plus
+         * a few header bytes (typically 3). 24 covers both with no margin
+         * for stray reads — important because the daemon's m4cscktrn
+         * translation table appears to live in its transfer area at an
+         * address inside our sock_mem bypass range, and any extra
+         * bypassed reads after the actual response read corrupt the
+         * daemon's view of m4cscktrn for subsequent commands. */
+        m->ram_mode_reads = 24;
+    } else {
+        m->ram_mode = false;
+        m->ram_mode_reads = 0;
+    }
     const u8 *p = m->cmd_buf + 3;   /* params */
     int plen    = m->cmd_len - 3;
     u8  err     = M4_ERR_NOTSUP;
@@ -1078,8 +1144,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
 
     case C_NETRSSI:
+        /* SymbOS daemon reads 2 bytes: low = RSSI level, high = wifi state.
+         * State 0 = connected/idle. Anything >0 maps in the daemon to error
+         * codes (1=connecting, 2=wrong password, ..., 6=unknown error). */
         err = M4_OK;
-        resp_u8(m, &roff, 50);
+        resp_u8(m, &roff, 0xB8);  /* signal level in the "good" band */
+        resp_u8(m, &roff, 0);     /* wifi state: connected */
         break;
 
     case C_WIFIPOW:
@@ -1105,6 +1175,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 m->sockets[idx].rx_count = 0;
                 sync_sock_mem(m, idx);
                 sid = (u8)idx;
+                m->last_tcp_sock = idx;
             }
         }
         err = M4_OK;
@@ -1116,6 +1187,17 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u8 ok = 0xFF;
         if (plen >= 7) {
             int s = p[0];
+            /* SymbOS daemon workaround: it appears to pass arbitrary garbage
+             * as the M4 socket on TCP_RECV calls (root cause TBD — looks like
+             * m4cscktrn gets clobbered between CONNECT and the first RECV
+             * after data starts arriving). Any value that doesn't resolve to
+             * a valid open TCP socket of ours is routed to the most-recently-
+             * opened one, which is unambiguous because we never open more
+             * than one concurrently in this flow. */
+            if ((s <= 0 || s >= M4_NSOCKS || m->sockets[s].fd < 0)
+                    && m->last_tcp_sock > 0
+                    && m->sockets[m->last_tcp_sock].fd >= 0)
+                s = m->last_tcp_sock;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
                 struct sockaddr_in sa = {0};
                 sa.sin_family = AF_INET;
@@ -1159,7 +1241,22 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETCLOSE: {
-        if (plen >= 1) net_close_socket(m, p[0]);
+        if (plen >= 1) {
+            int s = p[0];
+            /* SymbOS daemon workaround: it appears to pass arbitrary garbage
+             * as the M4 socket on TCP_RECV calls (root cause TBD — looks like
+             * m4cscktrn gets clobbered between CONNECT and the first RECV
+             * after data starts arriving). Any value that doesn't resolve to
+             * a valid open TCP socket of ours is routed to the most-recently-
+             * opened one, which is unambiguous because we never open more
+             * than one concurrently in this flow. */
+            if ((s <= 0 || s >= M4_NSOCKS || m->sockets[s].fd < 0)
+                    && m->last_tcp_sock > 0
+                    && m->sockets[m->last_tcp_sock].fd >= 0)
+                s = m->last_tcp_sock;
+            net_close_socket(m, s);
+            if (s == m->last_tcp_sock) m->last_tcp_sock = 0;
+        }
         err = M4_OK;
         resp_u8(m, &roff, 0);
         break;
@@ -1169,6 +1266,17 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         u8 ok = 0xFF;
         if (plen >= 3) {
             int s = p[0];
+            /* SymbOS daemon workaround: it appears to pass arbitrary garbage
+             * as the M4 socket on TCP_RECV calls (root cause TBD — looks like
+             * m4cscktrn gets clobbered between CONNECT and the first RECV
+             * after data starts arriving). Any value that doesn't resolve to
+             * a valid open TCP socket of ours is routed to the most-recently-
+             * opened one, which is unambiguous because we never open more
+             * than one concurrently in this flow. */
+            if ((s <= 0 || s >= M4_NSOCKS || m->sockets[s].fd < 0)
+                    && m->last_tcp_sock > 0
+                    && m->sockets[m->last_tcp_sock].fd >= 0)
+                s = m->last_tcp_sock;
             u16 sz = (u16)p[1] | ((u16)p[2] << 8);
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0
                     && (int)sz <= plen - 3) {
@@ -1185,15 +1293,29 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_NETRECV: {
         /* Response: resp+3 = result (0=OK), resp+4..5 = actual size,
-         *           resp+6..7 = reserved, resp+8.. = data (up to 2KB). */
+         *           resp+6.. = data (up to 2KB). Both cpc-sdcc's net_recv
+         *           and the SymbOS daemon's m4ctrx (which fetches from
+         *           m4crombuf+3+3 = resp+6 via m4crcv) expect the data
+         *           payload to start at offset 6 with no padding gap. */
         u16 actual = 0;
         u8  result = 0xFF;
         if (plen >= 3) {
             int s = p[0];
+            /* SymbOS daemon workaround: it appears to pass arbitrary garbage
+             * as the M4 socket on TCP_RECV calls (root cause TBD — looks like
+             * m4cscktrn gets clobbered between CONNECT and the first RECV
+             * after data starts arriving). Any value that doesn't resolve to
+             * a valid open TCP socket of ours is routed to the most-recently-
+             * opened one, which is unambiguous because we never open more
+             * than one concurrently in this flow. */
+            if ((s <= 0 || s >= M4_NSOCKS || m->sockets[s].fd < 0)
+                    && m->last_tcp_sock > 0
+                    && m->sockets[m->last_tcp_sock].fd >= 0)
+                s = m->last_tcp_sock;
             u16 want = (u16)p[1] | ((u16)p[2] << 8);
             if (want > 0x800) want = 0x800;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
-                ssize_t n = recv(m->sockets[s].fd, &m->bus_mem[8], want,
+                ssize_t n = recv(m->sockets[s].fd, &m->bus_mem[6], want,
                                  MSG_DONTWAIT);
                 if (n >= 0) {
                     actual = (u16)n;
@@ -1212,9 +1334,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         m->bus_mem[3] = result;
         m->bus_mem[4] = (u8)(actual & 0xFF);
         m->bus_mem[5] = (u8)(actual >> 8);
-        m->bus_mem[6] = 0;
-        m->bus_mem[7] = 0;
-        roff = (u16)(8 + actual);
+        roff = (u16)(6 + actual);
         err = M4_OK;
         break;
     }

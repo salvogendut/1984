@@ -25,14 +25,34 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
      *                   enough for 2KB C_READ payload starting at resp+4)
      *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count)
      *   0xFE00-0xFE4F → m4_card.sock_mem (sock_info: 5 × 16 bytes for NETAPI) */
-    if (cpc->m4 && cpc->mem.upper_rom_enabled
-            && cpc->mem.upper_rom_select == M4_ROM_SLOT) {
+    /* Bus bypass: triggers either with M4ROM paged in (slot 6) or while
+     * the M4 board is in "RAM mode" (set only by network-class commands —
+     * see m4_ackport_write). ram_mode auto-clears via a small frame timer
+     * driven from m4_tick.
+     *
+     * Under ram_mode we also redirect upper-ROM code fetches at
+     * 0xC000-0xE7FF to M4ROM bytes regardless of which slot the CPU has
+     * selected — that's how real hardware lets the SymbOS daemon
+     * "out (0xDF00), 0" then "JP <m4 helper>" and still reach the helper
+     * code that lives in M4ROM. */
+    bool bypass_slot = cpc->mem.upper_rom_enabled
+                       && cpc->mem.upper_rom_select == M4_ROM_SLOT;
+    if (cpc->m4 && (bypass_slot || cpc->m4_card.ram_mode)) {
+        u8 v = 0; bool hit = true;
         if (addr >= 0xE800 && addr < 0xF400)
-            return cpc->m4_card.bus_mem[addr - 0xE800];
-        if (addr >= 0xF400 && addr < 0xF500)
-            return cpc->m4_card.cfg_mem[addr - 0xF400];
-        if (addr >= 0xFE00 && addr < 0xFE50)
-            return cpc->m4_card.sock_mem[addr - 0xFE00];
+            v = cpc->m4_card.bus_mem[addr - 0xE800];
+        else if (addr >= 0xF400 && addr < 0xF500)
+            v = cpc->m4_card.cfg_mem[addr - 0xF400];
+        else if (addr >= 0xFE00 && addr < 0xFE50)
+            v = cpc->m4_card.sock_mem[addr - 0xFE00];
+        else
+            hit = false;
+        if (hit) {
+            if (!bypass_slot && cpc->m4_card.ram_mode
+                    && --cpc->m4_card.ram_mode_reads <= 0)
+                cpc->m4_card.ram_mode = false;
+            return v;
+        }
     }
     return mem_read(&cpc->mem, addr);
 }
@@ -190,6 +210,52 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
             net4cpc_out(lo & 0x03, val);
         if (cpc->symbnet && (lo == 0x30 || lo == 0x31))
             symbnet_port_write(&cpc->symbnet_card, lo, val);
+        /* "1984 compatibility shim" helper traps. The patched M4ROM
+         * helper table points the SymbOS daemon's m4crcv into bus_mem;
+         * the stub there is "LD BC, 0xFD3F ; OUT (C), A". When we see
+         * that OUT, we run the equivalent bank-aware bulk copy in C and
+         * jump PC to IX (the return address the daemon passed). */
+        if (cpc->m4 && (lo == 0x3E || lo == 0x3F)) {
+            u16 src    = cpc->cpu.hl;
+            u16 dest   = cpc->cpu.de;
+            u16 length = ((cpc->cpu.iy >> 8) << 8) | cpc->cpu.c;
+            u8  dest_bank   = cpc->cpu.a;
+            u8  source_bank = (u8)(cpc->cpu.iy & 0xFF);
+            u16 retaddr     = cpc->cpu.ix;
+            u8  saved_bank  = cpc->mem.ram_bank;
+
+            if ((dest_bank & 0xC0) == 0xC0)
+                cpc->mem.ram_bank = dest_bank & 0x3F;
+
+            for (u16 i = 0; i < length; i++) {
+                u8 b;
+                u16 sa = (u16)(src + i);
+                u16 da = (u16)(dest + i);
+                if (lo == 0x3F) {
+                    /* hreceive: M4 buffer → application memory */
+                    if (sa >= 0xE800 && sa < 0xF400)
+                        b = cpc->m4_card.bus_mem[sa - 0xE800];
+                    else
+                        b = mem_read(&cpc->mem, sa);
+                    mem_write(&cpc->mem, da, b);
+                } else {
+                    /* hsend: application memory → M4 buffer */
+                    b = mem_read(&cpc->mem, sa);
+                    if (da >= 0xE800 && da < 0xF400)
+                        cpc->m4_card.bus_mem[da - 0xE800] = b;
+                    else
+                        mem_write(&cpc->mem, da, b);
+                }
+            }
+
+            if ((source_bank & 0xC0) == 0xC0)
+                cpc->mem.ram_bank = source_bank & 0x3F;
+            else
+                cpc->mem.ram_bank = saved_bank;
+
+            cpc->cpu.pc = cpc->cpu.ix;
+            (void)retaddr;
+        }
         return;
     }
 }
