@@ -61,7 +61,9 @@ noinst_HEADERS = \
 
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
-1984_LDADD   = $(SDL3_LIBS) -lm $(WIN_LIBS)
+# $(WIN_SUBSYSTEM) (-mconsole) must come LAST so it wins over the -mwindows
+# that $(SDL3_LIBS) drags in.
+1984_LDADD   = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_SUBSYSTEM)
 
 # Bundled ROM images installed to $(datadir)/1984/roms/
 # (CPC firmware are freely redistributable for emulator use; M4ROM and

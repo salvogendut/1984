@@ -19,12 +19,17 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
-# Winsock on Windows hosts (sockets live in ws2_32, not libc)
+# Winsock on Windows hosts (sockets live in ws2_32, not libc).
+# Also force the console subsystem: SDL3's pkg-config adds -mwindows, which
+# detaches the process from the console and silently swallows stderr/stdout.
+# -mconsole (placed last on the link line, see Makefile.am) overrides it so
+# errors and --trace-io output are visible when run from cmd.exe.
 case $host_os in
-  mingw*|cygwin*|msys*) WIN_LIBS="-lws2_32" ;;
-  *)                    WIN_LIBS="" ;;
+  mingw*|cygwin*|msys*) WIN_LIBS="-lws2_32"; WIN_SUBSYSTEM="-mconsole" ;;
+  *)                    WIN_LIBS="";         WIN_SUBSYSTEM="" ;;
 esac
 AC_SUBST([WIN_LIBS])
+AC_SUBST([WIN_SUBSYSTEM])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
