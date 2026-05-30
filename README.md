@@ -243,7 +243,7 @@ Time and date registers (seconds, minutes, hours, day-of-week, day, month, year,
 
 Supported ATA commands: IDENTIFY DEVICE (0xEC), READ SECTORS (0x20/0x21), WRITE SECTORS (0x30/0x31), INITIALIZE DRIVE PARAMETERS (0x91), SET FEATURES (0xEF). Multi-sector transfers and software reset (SRST via Device Control) are supported. The open image file is preserved across warm resets (F5); only a cold boot closes and reopens it. Enabling, disabling, or changing the image triggers a cold boot.
 
-**SYMBiFACE Mouse** (Advanced → SYMBiFACE Mouse): enables emulation of the SYMBiFACE II PS/2 mouse interface at port 0xFD10. When enabled, clicking inside the emulator window captures the host mouse (cursor hidden, relative mode). While captured, host mouse movement and button presses drive the emulated PS/2 mouse. Press **Ctrl+Enter** to release the mouse; the window title shows the current capture state. The toggle does **not** trigger a cold boot. Immediately usable by SymbOS without any additional drivers.
+**SYMBiFACE Mouse** (Advanced → SYMBiFACE Mouse): enables emulation of the SYMBiFACE II PS/2 mouse interface at port 0xFD10. When enabled, clicking inside the emulator window captures the host mouse (cursor hidden, relative mode). While captured, host mouse movement and button presses drive the emulated PS/2 mouse. Press **Ctrl+Enter** to release the mouse; the window title shows the current capture state. The toggle triggers a cold boot on save so SymbOS's input drivers re-probe the hardware. Immediately usable by SymbOS without any additional drivers. Mouse capture is gated on this toggle — enabling Albireo on its own does not engage capture.
 
 The port returns a variable-length burst of packets terminated by `0x00` (no more data). Only fields that actually changed are included in each burst:
 
@@ -273,7 +273,7 @@ Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_M
 
 **Cyboard** (Advanced → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
-Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
+Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, SYMBiFACE Mouse, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ### Memory monitor / debugger (F8)
 

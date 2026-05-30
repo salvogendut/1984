@@ -293,7 +293,7 @@ The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cy
 
 ## SYMBiFACE II PS/2 Mouse (`src/mouse.c`)
 
-The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-only). It is enabled via `symbiface_mouse=true` in `1984.conf` (or Advanced → SYMBiFACE Mouse in the overlay). The toggle does not require a cold boot.
+The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-only). It is enabled via `symbiface_mouse=true` in `1984.conf` (or Advanced → SYMBiFACE Mouse in the overlay). The toggle triggers a cold boot on save — SymbOS's input drivers only re-probe the hardware at boot, so toggling without a reset would leave the guest unaware of the change.
 
 **Protocol.** The CPC reads port 0xFD10 in a tight polling loop until it receives `0x00` (no more data for this cycle). The port only emits packets for data that has actually changed since the last burst, which means a stationary mouse with no button activity returns `0x00` immediately.
 
@@ -310,6 +310,8 @@ The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-onl
 **SDL integration.** When captured, `SDL_EVENT_MOUSE_MOTION` delivers `xrel`/`yrel` (relative deltas; SDL Y is positive-downward, so Y is negated before storing). `SDL_EVENT_MOUSE_BUTTON_DOWN/UP` update the button state and set `btn_changed`. `SDL_EVENT_MOUSE_WHEEL` accumulates `wheel.y` into `dz`.
 
 **Capture flow.** Clicking the emulator window calls `SDL_SetWindowRelativeMouseMode(win, true)`, hides the cursor, and updates the window title. Pressing **Ctrl+Enter** releases capture. Opening the overlay (F9) also releases capture automatically before the overlay takes focus.
+
+**Capture gating.** Mouse capture engages only when `symbiface_mouse` is enabled. Albireo on its own does not arm the capture trigger — in the current build SymbOS's USB-HID enumeration on Albireo fails at the SETUP transfer (we return `USB_INT_DISCONNECT` since no real USB HID descriptor stack is emulated), so SymbOS falls back to its joystick-as-mouse driver. Capturing the host pointer for an Albireo-only setup would trap it without driving any guest mouse input.
 
 ---
 

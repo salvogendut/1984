@@ -347,23 +347,23 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Click in emulator window captures mouse when any mouse path is
-             * active (SYMBiFACE II PS/2 at 0xFD10 or Albireo USB HID at
-             * 0xFE80/0xFE81). Ctrl+Enter releases capture for either. */
-            if (!mouse_captured && (cpc.symbiface_mouse || cpc.albireo) &&
+            /* Click in emulator window captures mouse only when the
+             * SYMBiFACE II PS/2 mouse is enabled. Albireo on its own
+             * doesn't drive a usable mouse path in the current build
+             * (SymbOS abandons USB HID after SETUP returns DISCONNECT),
+             * so capturing for it would just trap the host pointer for
+             * nothing. Ctrl+Enter releases capture. */
+            if (!mouse_captured && cpc.symbiface_mouse &&
                 !overlay.visible &&
                 ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
                 set_mouse_capture(cpc.display.window, true,
                                   &mouse_captured, cpc.model);
-                /* Also feed this button press into the mouse state */
                 int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
                           (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
                           (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                if (btn >= 0) {
-                    if (cpc.symbiface_mouse) mouse_button(&cpc.mouse, btn, true);
-                    if (cpc.albireo)         ch376_mouse_button(&cpc.ch376, btn, true);
-                }
+                if (btn >= 0)
+                    mouse_button(&cpc.mouse, btn, true);
                 continue;
             }
 

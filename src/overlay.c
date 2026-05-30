@@ -580,6 +580,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->dd1           != ov->saved.dd1)           ||
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
+                        (ov->cfg->symbiface_mouse != ov->saved.symbiface_mouse) ||
                         strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||
                         (ov->cfg->albireo       != ov->saved.albireo)       ||
                         strcmp(ov->cfg->albireo_image, ov->saved.albireo_image) ||
