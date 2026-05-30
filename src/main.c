@@ -15,6 +15,7 @@
 #include "monitor.h"
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
+#include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
@@ -71,7 +72,10 @@ static void usage(const char *prog, int code) {
 
 int main(int argc, char *argv[]) {
 
+    SD_INIT();
+    SD_LOG("main() entered, argc=%d", argc);
     net_compat_init();   /* initialise Winsock (no-op on POSIX) */
+    SD_LOG("net_compat_init done");
 
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
@@ -163,9 +167,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    SD_LOG("args parsed, calling config_load");
     Config cfg;
-    if (config_load(&cfg) < 0)
+    if (config_load(&cfg) < 0) {
+        SD_LOG("config_load FAILED (returned <0)");
         return 1;
+    }
+    SD_LOG("config_load OK: model=%d mem=%d", (int)cfg.model, cfg.memory_kb);
+    SD_LOG("  rom_os=%s", cfg.rom_os);
+    SD_LOG("  rom_basic=%s", cfg.rom_basic);
+    SD_LOG("  rom_amsdos=%s [next: SDL_Init]", cfg.rom_amsdos);
 
     if (model_override != (CpcModel)-1)
         config_set_model(&cfg, model_override);
@@ -178,17 +189,22 @@ int main(int argc, char *argv[]) {
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    SD_LOG("calling SDL_Init(VIDEO|AUDIO|GAMEPAD)");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
+        SD_LOG("SDL_Init FAILED: %s", SDL_GetError());
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    SD_LOG("SDL_Init OK; calling cpc_init");
 
     CPC cpc;
     if (cpc_init(&cpc, cfg.model, cfg.rom_os, cfg.rom_basic) < 0) {
+        SD_LOG("cpc_init FAILED (rom_os=%s rom_basic=%s)", cfg.rom_os, cfg.rom_basic);
         fprintf(stderr, "Failed to initialise CPC (check ROM paths in ~/.config/1984/1984.conf)\n");
         SDL_Quit();
         return 1;
     }
+    SD_LOG("cpc_init OK");
     cpc.mem.ram_size    = cfg.memory_kb * 1024;
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
@@ -288,8 +304,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    SD_LOG("ROMs/disks loaded; calling overlay_init");
     Overlay overlay;
     overlay_init(&overlay, &cfg, &cpc);
+    SD_LOG("overlay_init OK");
 
     Monitor *monitor = monitor_create(&cpc);
     if (monitor_pty) {
@@ -322,6 +340,7 @@ int main(int argc, char *argv[]) {
 
     int  frame_count = 0;
     bool running = true;
+    SD_LOG("entering main loop — startup complete");
     while (running) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
