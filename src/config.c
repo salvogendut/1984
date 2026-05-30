@@ -101,6 +101,8 @@ static bool parse_bool(const char *val, bool *out) {
 
 static void config_create_default(const char *path, const char *home) {
     char dir[CONFIG_PATH_MAX];
+    snprintf(dir, sizeof(dir), "%s/.config", home);
+    mkdir(dir, 0755);   /* parent may not exist on fresh accounts (e.g. Haiku) */
     snprintf(dir, sizeof(dir), "%s/.config/1984", home);
     mkdir(dir, 0755);   /* no-op if already exists */
 
@@ -342,6 +344,10 @@ int config_save(const Config *cfg) {
     if (!home) return -1;
 
     char path[CONFIG_PATH_MAX];
+    snprintf(path, sizeof(path), "%s/.config", home);
+    mkdir(path, 0755);
+    snprintf(path, sizeof(path), "%s/.config/1984", home);
+    mkdir(path, 0755);
     snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
 
     FILE *f = fopen(path, "w");
