@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.3.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -12,16 +12,34 @@ BuildRequires:  make
 BuildRequires:  autoconf
 BuildRequires:  automake
 BuildRequires:  pkgconfig(sdl3)
-BuildRequires:  pkgconfig(libpng)
 
 %description
 1984 is a cycle-stepped Amstrad CPC 464/6128 emulator written in C
-with SDL3. It emulates the Z80 CPU, MC6845 CRTC, AY-3-8912 PSG
-(audio), µPD765 FDC (disk), and the Gate Array. Keyboard, joystick,
-and gamepad input are supported.
+with SDL3. The core machine — Z80 CPU (including undocumented
+IX/IY half-register opcodes), MC6845 CRTC, AY-3-8912 PSG audio,
+µPD765 FDC, Gate Array, keyboard, joystick/gamepad — runs commercial
+games and standard software at full speed.
 
-CPC firmware ROMs (OS/BASIC/AMSDOS), the open-source M4ROM, and the
-Amstrad diagnostics ROM are bundled and installed under
+Expansion peripherals emulated:
+  * DS12887 real-time clock (Cyboard / SYMBiFACE II compatible)
+  * SYMBiFACE II / Cyboard IDE (raw disk images, FAT16/FAT32)
+  * SYMBiFACE II PS/2 mouse
+  * Net4CPC W5100S Ethernet (TCP/UDP via host sockets, static IP)
+  * Albireo USB host (CH376 driven by UNIDOS for file ops, raw
+    USB Bulk-Only Transport for SymbOS storage)
+  * M4 board (file API + ESP8266-style networking) — currently
+    unstable for the SymbOS netd-m4c.exe daemon, otherwise usable
+
+DK'tronics-compatible RAM banking up to 576 KB and Yarek/RAM7
+extended banking to 1024 KB are both supported. The F8 memory
+monitor / disassembler with PTY interface, F9 options overlay
+(model, RAM, MX4 expansion bus, Roms Board, drive/tape images,
+all peripherals, ROM slots), F4 PPM screenshot with shutter
+sound, and a paste-from-clipboard helper round out the package.
+
+CPC firmware ROMs (OS_464, OS_6128, BASIC 1.0, BASIC 1.1,
+AMSDOS), the open-source M4ROM, and the open-source Amstrad
+Diagnostics ROM are bundled and installed under
 %{_datadir}/%{name}/roms/.
 
 %prep
@@ -39,9 +57,46 @@ autoreconf -fiv
 %license LICENSE
 %doc README.md
 %{_bindir}/%{name}
-%{_datadir}/%{name}/roms/
+%dir %{_datadir}/%{name}
+%dir %{_datadir}/%{name}/roms
+%{_datadir}/%{name}/roms/AMSDOS.ROM
+%{_datadir}/%{name}/roms/AmstradDiagLower.rom
+%{_datadir}/%{name}/roms/BASIC_1.0.ROM
+%{_datadir}/%{name}/roms/BASIC_1.1.ROM
+%{_datadir}/%{name}/roms/M4ROM.ROM
+%{_datadir}/%{name}/roms/OS_464.ROM
+%{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sat May 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.0-1
+- Add DS12887 real-time clock (Cyboard / SYMBiFACE II compatible)
+- Add SYMBiFACE II / Cyboard IDE (FAT16/FAT32 raw disk images)
+- Add SYMBiFACE II PS/2 mouse with SDL relative capture
+- Add Net4CPC W5100S Ethernet (TCP/UDP via host sockets, static IP;
+  DHCP not supported — requires TUN/TAP)
+- Add Albireo USB host emulation (CH376): full UNIDOS file-system
+  command set, raw USB Bulk-Only Transport for SymbOS storage,
+  USB HID mouse path
+- Add M4 board emulation: file API over FAT, BASIC SAVE/LOAD/CAT,
+  ESP8266-style TCP networking (UNSTABLE for SymbOS netd-m4c.exe;
+  cpc-sdcc TCPTEST/NTP/TELNET examples work)
+- Add memory monitor / disassembler (F8) with PTY interface
+- Overlay overhaul: General / Media / Extensions tabs;
+  new MX4 toggle gates the entire expansion bus;
+  new Roms Board toggle gates the 32-slot expansion ROM card;
+  OS ROM / BASIC ROM rows are now editable via file picker;
+  Media tab adds a Tape entry (.cdt picker, stub for now)
+- Add Yarek/RAM7 banking — RAM expansion to 1024 KB
+- Add F4 PPM screenshot with shutter sound; drop libpng dependency
+- Add trace flags: --trace-input, --trace-m4, --trace-albireo,
+  --trace-net4cpc, --trace-io, --trace-palette
+- Add ROM bundle — AMSDOS, BASIC 1.0/1.1, OS 464/6128, M4ROM,
+  AmstradDiagLower installed to %%{_datadir}/%%{name}/roms/
+- Add ROM auto-strip for 128-byte AMSDOS-headed files (16512 B)
+- Fix Spindizzy palette regression on 464 and 6128 via fallback
+  palette-flush gating
+- Fix SymbOS joystick/keyboard input and screen-stripes regression
+
 * Tue May 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.3.0-1
 - Add expansion ROM slots 0-31 configurable via options overlay
 - Add DDI-1 floppy interface option for CPC 464
