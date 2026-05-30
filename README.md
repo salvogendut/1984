@@ -25,7 +25,7 @@ make
 ```
 Output binary: `bin/1984`
 
-**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, …):**
+**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, Haiku, …):**
 ```bash
 ./configure
 make
@@ -45,6 +45,20 @@ A `1984.spec` file is included. Build an RPM with:
 rpmbuild -ba 1984.spec
 ```
 The spec file handles `autoreconf`, `./configure`, and `make install` automatically.
+
+**Haiku:**
+
+Install the modern GCC and SDL3 (the 32-bit nightly is tested):
+```bash
+pkgman install libsdl3_x86_devel pkgconfig autoconf automake
+setarch x86          # switch this shell to the modern GCC toolchain
+autoreconf -iv
+./configure
+make
+```
+`configure` auto-detects Haiku and finds SDL3's secondary-arch `.pc` file
+without any manual `PKG_CONFIG_PATH`. On 64-bit Haiku use `setarch x86_64`
+and the corresponding non-`_x86` package names.
 
 ## ROM files
 
