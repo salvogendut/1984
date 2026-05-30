@@ -25,6 +25,7 @@ Each source file maps to one hardware component:
 | `src/ide.c` / `ide.h` | ATA PIO IDE — SYMBiFACE II / Cyboard port mapping, raw disk image backend, IDENTIFY/READ/WRITE |
 | `src/mouse.c` / `mouse.h` | SYMBiFACE II PS/2 mouse — port 0xFD10, variable-length burst protocol, SDL relative mouse capture |
 | `src/ch376.c` / `ch376.h` | Albireo CH376 USB host controller — ports 0xFE80/0xFE81, file-system command set backed by `src/fat.c`; mutually exclusive with M4 (shared 0xFExx decode) |
+| `src/tape.c` / `tape.h` | Cassette / .cdt (TZX) tape decoder — drives PPI Port B bit 7, motor from PPI Port C bit 4, audio mixed into PSG output |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -202,7 +203,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 | Tab | Rows |
 |-----|------|
 | General | Model, Memory, MX4, Roms Board, OS ROM, BASIC ROM |
-| Media | Drive A, Drive B |
+| Media | Drive A, Drive B, Tape |
 | Extensions | M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
@@ -336,6 +337,24 @@ The Net4CPC expansion exposes a WIZnet **W5100S** at four CPC I/O ports (`0xFD20
 **Limitations — no DHCP.** Because the emulator runs as a regular user-space process accessing the network through POSIX sockets rather than a raw L2 interface, broadcast DHCP exchanges cannot fully complete. We can *send* DHCP DISCOVER (with `SO_BROADCAST`), but server replies addressed to the emulated MAC and offered IP land at the host kernel, which silently drops them — the kernel doesn't own that IP. Use a **static IP configuration** with the N4C daemon (and any other Net4CPC consumer) until TUN/TAP support is added. With static config, DNS lookups over UDP, TCP connects, TCP send/receive, and HTTP fetches all work — verified end-to-end against `time.akamai.com` from SymbOS.
 
 **Tracing.** `--trace-net4cpc` enables `net4cpc_trace = 1`. Every register access is logged with its decoded name (`MR`, `SHAR`, `SIPR`, `Sn_MR`, `Sn_DIPR`, etc.) and socket index where applicable. Socket commands are logged with mnemonic (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`). TX/RX ring-buffer accesses are summarised as `burst R/W [start..end] N bytes` to avoid spamming one line per byte. The MR shortcut read at `0xFD20` and `MR.RST` events get their own labelled lines.
+
+---
+
+## Cassette tape (`src/tape.c`)
+
+CDT (TZX) decoder, ported in compact form from Caprice32's `tape.cpp`. Drives the PPI Port B bit 7 (cassette data input) from the loaded image while the motor is on.
+
+**Block dispatch.** `tape_load()` reads the whole file into memory; if the first 8 bytes are the `"ZXTape!\x1A"` signature the block stream is taken to start at offset 10 (signature + version word), otherwise at byte 0. `next_block()` walks the stream, dispatching on the block-type byte: `0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x20` pause. Metadata-only blocks (`0x21`, `0x22`, `0x30`–`0x34`, `0x5A`) are skipped past. Unknown block types fall back to a generic skip using the "extension rule" — a 4-byte length immediately after the type byte tells the decoder how many bytes to jump.
+
+**Pulse cycle scaling.** TZX timings are expressed in Spectrum 3.5 MHz T-states. The CPC runs at 4 MHz, so a `CYCLE_SCALE()` macro multiplies by 40/35. A separate `MS_TO_CYCLES()` converts milliseconds (used for pause blocks) into CPU cycles at 4 MHz / kHz.
+
+**State machine.** `update_level()` runs per "tape tick" — the decoder maintains a `cycles_until_next` countdown driven by the Z80 step loop. Each call flips the cassette line level (`switch_level()`) and either re-arms with the next pulse-pair cycle count or advances to the next stage (pilot → sync → data → pause → next block). Data bits are pulled MSB-first from the block payload; each bit is two pulses, the cycle count picked from `zero_pulse_cycles` or `one_pulse_cycles` per the bit value.
+
+**Z80 step integration.** `cpc_frame()` calls `tape_step(&cpc->tape, t)` after every `z80_step` with the instruction's T-state count. `tape_step` subtracts that from `cycles_until_next` and, when it goes non-positive, runs `update_level()`. The motor (PPI Port C bit 4) gates the whole thing — when the motor is off the call is a no-op, and the level holds whatever it was last set to.
+
+**Audio mixing.** While the motor is on, the same step loop also samples the current tape level at audio rate (`cycles * AUDIO_SAMPLE_RATE >= cpu_clk_hz` ≈ 90.7 cycles per sample at 4 MHz / 44.1 kHz) and writes ±2500 into `cpc->tape_audio[]`. After PSG render produces a frame's worth of samples, that buffer is summed into the PSG output with saturating clamp before going to SDL — that's the loading-screech sound players expect.
+
+**Model wiring.** On the 464 the deck is built in, so the tape is always wired when `cfg.tape` is non-empty. The 6128 has no built-in deck — a `cfg.external_tape` toggle (General → External Tape, row only visible when model = 6128) controls whether the cassette is virtually plugged into the 6128's tape port. Both the boot path and the cold-boot path in `main.c` consult this when calling `tape_load`. Toggling `external_tape` or changing the tape image triggers a cold boot.
 
 ---
 

@@ -171,6 +171,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
         ppi_write(&cpc->ppi, hi & 0x03, val);
+        /* Cassette motor follows PPI port C bit 4. */
+        tape_set_motor(&cpc->tape, (cpc->ppi.port_c & 0x10) != 0);
         /* Route PSG control bits from PPI port C */
         u8 psg_ctrl = (cpc->ppi.port_c >> 6) & 0x03;
         if (psg_ctrl == 0x03) psg_select(&cpc->psg, cpc->ppi.port_a);
@@ -299,6 +301,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     m4_init(&cpc->m4_card, "");
     symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
     ch376_init(&cpc->ch376);
+    tape_init(&cpc->tape);
     net4cpc_reset();
 
     cpc->bus.mem_read  = bus_mem_read;
@@ -351,6 +354,7 @@ void cpc_destroy(CPC *cpc) {
     disk_eject(&cpc->drive[1]);
     ide_close(&cpc->ide_chip);
     ch376_close(&cpc->ch376);
+    tape_eject(&cpc->tape);
     display_destroy(&cpc->display);
 }
 
@@ -449,6 +453,19 @@ void cpc_frame(CPC *cpc) {
 
         int t = z80_step(&cpc->cpu, &cpc->bus);
         done += t;
+        /* Advance the cassette by this instruction's T-states and push
+         * the resulting level into the PPI's Port B bit 7 mirror. */
+        tape_step(&cpc->tape, t);
+        ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
+        /* Sample the cassette signal at audio rate (~90.7 cycles/sample
+         * for 4 MHz / 44.1 kHz) so it can be mixed into PSG output. */
+        cpc->tape_audio_cycles += t * AUDIO_SAMPLE_RATE;
+        while (cpc->tape_audio_cycles >= cpc->cpu_clk_hz &&
+               cpc->tape_audio_pos < AUDIO_SAMPLES_FRAME) {
+            cpc->tape_audio[cpc->tape_audio_pos++] =
+                (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+            cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
+        }
 
         /* CRTC ticks at 1 MHz = every 4 CPU cycles */
         for (int i = 0; i < t; i += 4) {
@@ -609,6 +626,18 @@ void cpc_frame(CPC *cpc) {
         s16 audio_buf[AUDIO_SAMPLES_FRAME];
         psg_render(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
                    PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
+        /* Mix in the cassette signal — captured per-sample inside the Z80
+         * step loop above. Saturating add so we don't wrap on s16 overflow. */
+        if (cpc->tape.present && cpc->tape.motor) {
+            for (int i = 0; i < cpc->tape_audio_pos; i++) {
+                int v = (int)audio_buf[i] + (int)cpc->tape_audio[i];
+                if (v >  32767) v =  32767;
+                if (v < -32768) v = -32768;
+                audio_buf[i] = (s16)v;
+            }
+        }
+        cpc->tape_audio_pos = 0;
+        cpc->tape_audio_cycles = 0;
         SDL_PutAudioStreamData(cpc->audio_stream,
                                audio_buf, (int)sizeof(audio_buf));
     }

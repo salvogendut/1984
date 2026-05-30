@@ -148,8 +148,10 @@ static void config_create_default(const char *path, const char *home) {
         "# Paths to .dsk floppy images (leave empty for no disk)\n"
         "drive_a=\n"
         "drive_b=\n"
-        "# .cdt tape image (stub — not yet wired to the PSG cassette input)\n"
+        "# .cdt tape image. Always wired on CPC 464; on CPC 6128 needs\n"
+        "# external_tape=true (below) so the deck is virtually plugged in.\n"
         "tape=\n"
+        "external_tape=false\n"
         "\n"
         "[hardware]\n"
         "# mx4: MX4 expansion bus — when false, all extension peripherals\n"
@@ -258,6 +260,11 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->disk_b, sizeof(cfg->disk_b));
             else if (!strcmp(key, "tape"))
                 expand_path(val, cfg->tape, sizeof(cfg->tape));
+            else if (!strcmp(key, "external_tape")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->external_tape = b;
+                else { fprintf(stderr, "1984.conf:%d: external_tape must be true/false\n", lineno); rc = -1; }
+            }
         } else if (!strcmp(section, "hardware")) {
             bool b;
             if (!strcmp(key, "mx4")) {
@@ -370,7 +377,8 @@ int config_save(const Config *cfg) {
         "\n[storage]\n"
         "drive_a=%s\n"
         "drive_b=%s\n"
-        "tape=%s\n\n"
+        "tape=%s\n"
+        "external_tape=%s\n\n"
         "[hardware]\n"
         "mx4=%s\n"
         "rom_board=%s\n"
@@ -393,6 +401,7 @@ int config_save(const Config *cfg) {
         cfg->disk_a,
         cfg->disk_b,
         cfg->tape,
+        cfg->external_tape ? "true" : "false",
         cfg->mx4        ? "true" : "false",
         cfg->rom_board  ? "true" : "false",
         cfg->dd1        ? "true" : "false",
