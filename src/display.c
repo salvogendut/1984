@@ -68,6 +68,11 @@ void display_upload(Display *d) {
     SDL_FRect dst = { (float)(ww - dst_w) / 2, (float)(wh - dst_h) / 2, (float)dst_w, (float)dst_h };
 
     SDL_UpdateTexture(d->texture, NULL, d->pixels, CPC_SCREEN_W * sizeof(u32));
+    /* Force the clear colour to opaque black before clearing — the overlay
+     * leaves whatever it last drew with (often a yellow text colour or a
+     * tab-highlight blue) as the renderer's draw colour, and an unset
+     * clear leaks that into the letterbox gutter in fullscreen. */
+    SDL_SetRenderDrawColor(d->renderer, 0, 0, 0, 255);
     SDL_RenderClear(d->renderer);
     SDL_RenderTexture(d->renderer, d->texture, NULL, &dst);
 }
