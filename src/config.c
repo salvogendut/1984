@@ -104,6 +104,16 @@ static void config_create_default(const char *path, const char *home) {
     snprintf(dir, sizeof(dir), "%s/.config/1984", home);
     mkdir(dir, 0755);   /* no-op if already exists */
 
+    /* Resolve the actual best path for each default ROM so the generated
+     * config matches what the binary would load. Without this, the file
+     * was hard-coded to paths under ~/.config/1984/roms/ — fine if the
+     * user has put ROMs there, broken on a fresh RPM install where the
+     * ROMs live under the system data dir. */
+    char os_path[CONFIG_PATH_MAX], basic_path[CONFIG_PATH_MAX], amsdos_path[CONFIG_PATH_MAX];
+    rom_cfg_path(ROM_FILE_OS_6128,    os_path,     sizeof(os_path));
+    rom_cfg_path(ROM_FILE_BASIC_6128, basic_path,  sizeof(basic_path));
+    rom_cfg_path(ROM_FILE_AMSDOS,     amsdos_path, sizeof(amsdos_path));
+
     FILE *f = fopen(path, "w");
     if (!f) {
         fprintf(stderr, "1984: could not create config file %s\n", path);
@@ -122,10 +132,13 @@ static void config_create_default(const char *path, const char *home) {
         "\n"
         "[roms]\n"
         "# Paths to ROM images. ~ is expanded to your home directory.\n"
-        "os=~/.config/1984/roms/OS_6128.ROM\n"
-        "basic=~/.config/1984/roms/BASIC_1.1.ROM\n"
-        "amsdos=~/.config/1984/roms/AMSDOS.ROM\n"
-        "\n"
+        "os=%s\n"
+        "basic=%s\n"
+        "amsdos=%s\n"
+        "\n",
+        os_path, basic_path, amsdos_path);
+
+    fprintf(f, "%s",
         "[expansion_roms]\n"
         "# Load extra ROMs into upper ROM slots 0-31.\n"
         "# slot_7 is AMSDOS by default; leave entries empty to use defaults.\n"
