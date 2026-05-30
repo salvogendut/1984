@@ -16,6 +16,7 @@
 
 
 
+
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
     false; \
@@ -97,7 +98,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(dist_roms_DATA) $(am__DIST_COMMON)
+	$(am__configure_deps) $(dist_roms_DATA) $(noinst_HEADERS) \
+	$(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
@@ -204,6 +206,7 @@ am__uninstall_files_from_dir = { \
        $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
   }
 DATA = $(dist_roms_DATA)
+HEADERS = $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -264,7 +267,7 @@ CPPFLAGS =
 CSCOPE = cscope
 CTAGS = ctags
 CYGPATH_W = echo
-DEFS = -DPACKAGE_NAME=\"1984\" -DPACKAGE_TARNAME=\"1984\" -DPACKAGE_VERSION=\"0.3.0\" -DPACKAGE_STRING=\"1984\ 0.3.0\" -DPACKAGE_BUGREPORT=\"\" -DPACKAGE_URL=\"\" -DPACKAGE=\"1984\" -DVERSION=\"0.3.0\" -DHAVE_LIBM=1
+DEFS = -DPACKAGE_NAME=\"1984\" -DPACKAGE_TARNAME=\"1984\" -DPACKAGE_VERSION=\"0.4.0\" -DPACKAGE_STRING=\"1984\ 0.4.0\" -DPACKAGE_BUGREPORT=\"\" -DPACKAGE_URL=\"\" -DPACKAGE=\"1984\" -DVERSION=\"0.4.0\" -DHAVE_LIBM=1
 DEPDIR = .deps
 ECHO_C = 
 ECHO_N = -n
@@ -286,10 +289,10 @@ OBJEXT = o
 PACKAGE = 1984
 PACKAGE_BUGREPORT = 
 PACKAGE_NAME = 1984
-PACKAGE_STRING = 1984 0.3.0
+PACKAGE_STRING = 1984 0.4.0
 PACKAGE_TARNAME = 1984
 PACKAGE_URL = 
-PACKAGE_VERSION = 0.3.0
+PACKAGE_VERSION = 0.4.0
 PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
@@ -299,7 +302,7 @@ SDL3_LIBS = -lSDL3
 SET_MAKE = 
 SHELL = /bin/sh
 STRIP = 
-VERSION = 0.3.0
+VERSION = 0.4.0
 abs_builddir = /var/home/salvogendut/Dev/1984
 abs_srcdir = /var/home/salvogendut/Dev/1984
 abs_top_builddir = /var/home/salvogendut/Dev/1984
@@ -373,6 +376,35 @@ top_srcdir = .
 	src/mouse.c \
 	src/z80.c
 
+noinst_HEADERS = \
+	src/ch376.h \
+	src/config.h \
+	src/cpc.h \
+	src/crtc.h \
+	src/disk.h \
+	src/display.h \
+	src/fat.h \
+	src/fdc.h \
+	src/gate_array.h \
+	src/ide.h \
+	src/joy.h \
+	src/kbd.h \
+	src/m4.h \
+	src/mem.h \
+	src/monitor.h \
+	src/mouse.h \
+	src/net4cpc.h \
+	src/overlay.h \
+	src/paste.h \
+	src/ppi.h \
+	src/psg.h \
+	src/rtc.h \
+	src/shutter_wav.h \
+	src/symbnet.h \
+	src/types.h \
+	src/z80.h \
+	src/z80dis.h
+
 1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
 
@@ -391,8 +423,9 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/AmstradDiagLower.rom
 
 
-# Keep the hand-written Makefile usable alongside autotools
-EXTRA_DIST = Makefile
+# Files shipped in the dist tarball but not built (license, hand-written
+# Makefile alternative, project docs).
+EXTRA_DIST = Makefile LICENSE Development.md
 all: all-am
 
 .SUFFIXES:
@@ -1215,7 +1248,7 @@ distcleancheck: distclean
 	       exit 1; } >&2
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS) $(DATA)
+all-am: Makefile $(PROGRAMS) $(DATA) $(HEADERS)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(romsdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \

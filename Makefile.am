@@ -28,6 +28,35 @@ bin_PROGRAMS = 1984
 	src/mouse.c \
 	src/z80.c
 
+noinst_HEADERS = \
+	src/ch376.h \
+	src/config.h \
+	src/cpc.h \
+	src/crtc.h \
+	src/disk.h \
+	src/display.h \
+	src/fat.h \
+	src/fdc.h \
+	src/gate_array.h \
+	src/ide.h \
+	src/joy.h \
+	src/kbd.h \
+	src/m4.h \
+	src/mem.h \
+	src/monitor.h \
+	src/mouse.h \
+	src/net4cpc.h \
+	src/overlay.h \
+	src/paste.h \
+	src/ppi.h \
+	src/psg.h \
+	src/rtc.h \
+	src/shutter_wav.h \
+	src/symbnet.h \
+	src/types.h \
+	src/z80.h \
+	src/z80dis.h
+
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
 1984_LDADD   = $(SDL3_LIBS) -lm
@@ -44,5 +73,6 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/OS_6128.ROM \
                  roms/AmstradDiagLower.rom
 
-# Keep the hand-written Makefile usable alongside autotools
-EXTRA_DIST = Makefile
+# Files shipped in the dist tarball but not built (license, hand-written
+# Makefile alternative, project docs).
+EXTRA_DIST = Makefile LICENSE Development.md
