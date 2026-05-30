@@ -17,16 +17,11 @@
  */
 
 #include "net4cpc.h"
+#include "compat_win.h"
 
-#include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 int net4cpc_trace = 0;
 
@@ -106,7 +101,7 @@ static void update_tx_fsr(int s) {
 
 static void close_sock(int s) {
     if (sock_fd[s] != -1) {
-        close(sock_fd[s]);
+        sock_close(sock_fd[s]);
         sock_fd[s] = -1;
     }
 }
@@ -214,8 +209,7 @@ static void handle_command(int s, u8 cmd) {
         sock_fd[s] = socket(AF_INET,
                             mode == SMODE_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (sock_fd[s] != -1) {
-            int flags = fcntl(sock_fd[s], F_GETFL, 0);
-            fcntl(sock_fd[s], F_SETFL, flags | O_NONBLOCK);
+            sock_set_nonblocking(sock_fd[s]);
 
             /* SO_REUSEADDR so two sockets can share the local port if
              * needed (the host may already have its own DHCP client on
@@ -273,7 +267,7 @@ static void handle_command(int s, u8 cmd) {
                                      ((u32)ip2 <<  8) |  (u32)ip3);
 
         int r = connect(sock_fd[s], (struct sockaddr *)&addr, sizeof(addr));
-        if (r == 0 || errno == EINPROGRESS) {
+        if (r == 0 || sock_in_progress()) {
             regs[SOCK_BASE[s] + SR_SR] = SSTAT_SYNSENT;
         } else {
             regs[SOCK_BASE[s] + SR_SR] = SSTAT_CLOSED;

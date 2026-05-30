@@ -2,6 +2,7 @@ AC_INIT([1984], [0.4.1], [], [1984])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
+AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE([foreign -Wall -Werror subdir-objects])
 
 # C compiler — require C11
@@ -17,6 +18,13 @@ PKG_PROG_PKG_CONFIG
 # Required libraries
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
+
+# Winsock on Windows hosts (sockets live in ws2_32, not libc)
+case $host_os in
+  mingw*|cygwin*|msys*) WIN_LIBS="-lws2_32" ;;
+  *)                    WIN_LIBS="" ;;
+esac
+AC_SUBST([WIN_LIBS])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

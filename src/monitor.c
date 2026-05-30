@@ -1,4 +1,6 @@
+#ifndef _WIN32
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
+#endif
 #include "monitor.h"
 #include "z80dis.h"
 #include <SDL3/SDL.h>
@@ -6,10 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-/* PTY / serial support */
+/* PTY / serial support (the PTY device layer is POSIX-only; stubbed on Windows) */
 #include <unistd.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <termios.h>
+#endif
 
 /* ---- Layout ---- */
 #define MON_COLS     80
@@ -687,6 +691,11 @@ void monitor_notify_step(Monitor *mon) {
 const char *monitor_pty_open(Monitor *mon) {
     if (!mon || mon->pty.fd >= 0) return NULL;
 
+#ifdef _WIN32
+    /* No pseudo-terminals on Windows; the PTY debug monitor is unavailable. */
+    (void)mon;
+    return NULL;
+#else
     int fd = posix_openpt(O_RDWR | O_NOCTTY);
     if (fd < 0) return NULL;
     if (grantpt(fd) < 0 || unlockpt(fd) < 0) { close(fd); return NULL; }
@@ -716,6 +725,7 @@ const char *monitor_pty_open(Monitor *mon) {
     pty_write(mon, ">_ ", 3);
 
     return mon->pty.slave;
+#endif  /* _WIN32 */
 }
 
 void monitor_pty_tick(Monitor *mon) {

@@ -1,26 +1,17 @@
 #define _GNU_SOURCE
+#include "compat_win.h"   /* sockets/fnmatch/statvfs shims; Winsock before windows.h */
 #include "m4.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
-#include <fnmatch.h>
 #include <limits.h>
 #include <time.h>
 #include <errno.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <libgen.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <poll.h>
 
 int m4_trace = 0;
 
@@ -302,7 +293,7 @@ static void net_poll_socket(M4 *m, int s) {
     /* Peek RX bytes available */
     if (sk->status == 0 || sk->status == 5) {
         int avail = 0;
-        if (ioctl(sk->fd, FIONREAD, &avail) == 0) {
+        if (sock_fionread(sk->fd, &avail) == 0) {
             if (avail < 0) avail = 0;
             if (avail > 0xFFFF) avail = 0xFFFF;
             sk->rx_count = (u16)avail;
@@ -577,9 +568,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         if (m4_use_fat(m)) {
             free_kb = fat_free_kb(&m->image_vol);
         } else if (m->root[0]) {
-            struct statvfs sv;
-            if (statvfs(m->root, &sv) == 0)
-                free_kb = (u32)((u64)sv.f_bavail * sv.f_bsize / 1024);
+            unsigned long long fb = compat_fs_free_bytes(m->root);
+            if (fb) free_kb = (u32)(fb / 1024);
         }
         char buf[40];
         snprintf(buf, sizeof(buf), "\r\n%uK free\r\n\r\n", (unsigned)free_kb);
@@ -1165,8 +1155,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         if (idx > 0) {
             int s = socket(AF_INET, SOCK_STREAM, 0);
             if (s >= 0) {
-                int fl = fcntl(s, F_GETFL, 0);
-                fcntl(s, F_SETFL, fl | O_NONBLOCK);
+                sock_set_nonblocking(s);
                 int one = 1;
                 setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
                 m->sockets[idx].fd      = s;
@@ -1207,11 +1196,11 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
                 m->sockets[s].lastcmd = 3;
                 int r = connect(m->sockets[s].fd, (struct sockaddr *)&sa, sizeof(sa));
-                int err_ = errno;
+                bool inprog = sock_in_progress();
                 if (r == 0) {
                     m->sockets[s].status = 0;  /* connected */
                     ok = 0;
-                } else if (err_ == EINPROGRESS) {
+                } else if (inprog) {
                     /* Real M4 firmware blocks inside C_NETCONNECT until the ESP8266
                      * has resolved the connect, so the host code sees status=IDLE
                      * (or an error) on the first sock[0] read after the strobe.
@@ -1320,7 +1309,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 if (n >= 0) {
                     actual = (u16)n;
                     result = 0;
-                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                } else if (sock_would_block()) {
                     actual = 0;
                     result = 0;
                 }

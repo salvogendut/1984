@@ -14,6 +14,7 @@
 #include "net4cpc.h"
 #include "monitor.h"
 #include "shutter_wav.h"
+#include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
@@ -69,6 +70,8 @@ static void usage(const char *prog, int code) {
 }
 
 int main(int argc, char *argv[]) {
+
+    net_compat_init();   /* initialise Winsock (no-op on POSIX) */
 
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;

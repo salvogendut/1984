@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "compat_win.h"   /* mkdir(mode) shim on Windows */
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
