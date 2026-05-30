@@ -212,6 +212,11 @@ int main(int argc, char *argv[]) {
         cpc.m4 = false;
         cfg.m4 = false;
     }
+    /* Cassette: always wired on 464, requires the external_tape toggle on 6128. */
+    if (cfg.tape[0] &&
+            (cpc.model == MODEL_464 ||
+             (cpc.model == MODEL_6128 && cfg.external_tape)))
+        tape_load(&cpc.tape, cfg.tape);
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
     if (cfg.rom_amsdos[0])
@@ -517,6 +522,11 @@ int main(int argc, char *argv[]) {
                 cpc.m4 = false;
                 cfg.m4 = false;
             }
+            tape_eject(&cpc.tape);
+            if (cfg.tape[0] &&
+                    (cpc.model == MODEL_464 ||
+                     (cpc.model == MODEL_6128 && cfg.external_tape)))
+                tape_load(&cpc.tape, cfg.tape);
             /* Release mouse capture on cold boot */
             if (mouse_captured)
                 set_mouse_capture(cpc.display.window, false,

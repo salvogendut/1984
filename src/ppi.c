@@ -34,9 +34,12 @@ u8 ppi_read(PPI *p, u8 port) {
     switch (port & 0x03) {
         case 0: return p->port_a;
         case 1: {
-            /* bit 6: printer not busy; bits 4-1: jumpers (0x1E = 50Hz PAL, no expansion); bit 0: VSYNC */
+            /* bit 7: cassette data input; bit 6: printer not busy;
+             * bits 4-1: jumpers (0x1E = 50Hz PAL, no expansion);
+             * bit 0: VSYNC */
             u8 b = 0x1E | 0x40;
             if (p->vsync_signal) b |= 0x01;
+            b |= (p->tape_level & 0x80);
             return b;
         }
         case 2: return p->port_c;
@@ -46,4 +49,8 @@ u8 ppi_read(PPI *p, u8 port) {
 
 void ppi_set_vsync(PPI *p, bool v) {
     p->vsync_signal = v;
+}
+
+void ppi_set_tape_level(PPI *p, u8 level) {
+    p->tape_level = level & 0x80;
 }

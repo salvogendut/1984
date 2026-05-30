@@ -20,7 +20,8 @@ typedef struct {
     /* [storage] */
     char disk_a[CONFIG_PATH_MAX];
     char disk_b[CONFIG_PATH_MAX];
-    char tape[CONFIG_PATH_MAX];   /* .cdt tape image — stub for now */
+    char tape[CONFIG_PATH_MAX];   /* .cdt tape image */
+    bool external_tape;           /* CPC 6128: emulate an external cassette deck */
 
     /* [hardware] */
     bool mx4;        /* MX4 expansion bus connected (gates all extension I/O) */

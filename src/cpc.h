@@ -16,6 +16,7 @@
 #include "m4.h"
 #include "symbnet.h"
 #include "ch376.h"
+#include "tape.h"
 
 typedef enum { MODEL_464, MODEL_6128 } CpcModel;
 
@@ -47,6 +48,13 @@ typedef struct {
     SymbNet    symbnet_card;
     bool       albireo;        /* Albireo USB host add-on (CH376) */
     CH376      ch376;
+    Tape       tape;           /* cassette / .cdt image */
+    /* Per-sample snapshot of the cassette data line, captured inside the
+     * Z80 step loop at audio rate. Mixed into the PSG output frame so the
+     * user hears the loading screeches. */
+    s16        tape_audio[882];
+    int        tape_audio_pos;
+    int        tape_audio_cycles;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */

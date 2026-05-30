@@ -18,9 +18,11 @@ typedef struct {
 
     u8 kbd_row;        /* keyboard matrix row selected by port C bits 0-3 */
     bool vsync_signal; /* fed from CRTC */
+    u8 tape_level;     /* cassette data input level, OR'd into Port B bit 7 */
 } PPI;
 
 void ppi_init(PPI *p);
 void ppi_write(PPI *p, u8 port, u8 val);   /* port 0-3 (A/B/C/ctrl) */
 u8   ppi_read(PPI *p, u8 port);
 void ppi_set_vsync(PPI *p, bool v);
+void ppi_set_tape_level(PPI *p, u8 level);   /* 0x00 or 0x80 */

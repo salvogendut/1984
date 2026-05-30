@@ -26,6 +26,7 @@ bin_PROGRAMS = 1984
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \
+	src/tape.c \
 	src/z80.c
 
 noinst_HEADERS = \
@@ -53,6 +54,7 @@ noinst_HEADERS = \
 	src/rtc.h \
 	src/shutter_wav.h \
 	src/symbnet.h \
+	src/tape.h \
 	src/types.h \
 	src/z80.h \
 	src/z80dis.h

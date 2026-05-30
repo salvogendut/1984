@@ -27,7 +27,15 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Media", "Extensions"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160 };
+/* General has 6 rows on CPC 464, 7 on 6128 (the extra one is the
+ * "External Tape" toggle, only meaningful on the 6128 since the 464 has
+ * the cassette deck built in). Other sections are fixed. */
 static const int sec_row_count[OV_SEC_COUNT] = { 6, 3, 11 };
+
+static int ov_section_rows(const Overlay *ov, OvSection s) {
+    if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 7;
+    return sec_row_count[s];
+}
 
 /* ---- Drawing helpers ---- */
 
@@ -79,8 +87,15 @@ static void item_text(const Overlay *ov, int row,
 
     switch (ov->section) {
 
-    case OV_GENERAL:
-        switch (row) {
+    case OV_GENERAL: {
+        bool is_6128 = (ov->cfg->model == MODEL_6128);
+        /* On 6128 the rows are: Model, Memory, MX4, Roms Board, External
+         * Tape, OS ROM, BASIC ROM. On 464 the External Tape row is
+         * hidden (464 has a built-in deck — always available); the ROM
+         * rows then shift up by one. */
+        int logical = row;
+        if (!is_6128 && row >= 4) logical = row + 1;   /* skip slot 4 */
+        switch (logical) {
         case 0:
             snprintf(lbl, lsz, "Model");
             snprintf(val, vsz, "%s",
@@ -98,14 +113,18 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Roms Board");
             snprintf(val, vsz, "%s", ov->cfg->rom_board ? "enabled" : "disabled");
             break;
-        case 4: {
+        case 4:
+            snprintf(lbl, lsz, "External Tape");
+            snprintf(val, vsz, "%s", ov->cfg->external_tape ? "enabled" : "disabled");
+            break;
+        case 5: {
             char tmp[CONFIG_PATH_MAX];
             snprintf(lbl, lsz, "OS ROM");
             snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
             trunc_path(basename(tmp), val, vsz);
             break;
         }
-        case 5: {
+        case 6: {
             char tmp[CONFIG_PATH_MAX];
             snprintf(lbl, lsz, "BASIC ROM");
             snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_basic);
@@ -114,6 +133,7 @@ static void item_text(const Overlay *ov, int row,
         }
         }
         break;
+    }
 
     case OV_STORAGE: {
         bool accessible = floppy_accessible(ov);
@@ -281,8 +301,11 @@ static void item_text(const Overlay *ov, int row,
 static void activate_item(Overlay *ov) {
     switch (ov->section) {
 
-    case OV_GENERAL:
-        switch (ov->row) {
+    case OV_GENERAL: {
+        bool is_6128 = (ov->cfg->model == MODEL_6128);
+        int logical = ov->row;
+        if (!is_6128 && ov->row >= 4) logical = ov->row + 1;   /* skip slot 4 (External Tape) */
+        switch (logical) {
         case 0: {
             CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
             config_set_model(ov->cfg, next);
@@ -304,23 +327,19 @@ static void activate_item(Overlay *ov) {
             break;
         }
         case 2:
-            /* MX4 expansion bus — toggles all extension peripherals on/off
-             * in one go. Cold-boot triggered on save so the CPC firmware
-             * re-probes the bus (the Extensions tab is also hidden when
-             * MX4 is off, since none of those options would do anything). */
             ov->cfg->mx4 = !ov->cfg->mx4;
             ov->dirty = true;
             break;
         case 3:
-            /* Roms Board — when off, only the model's three default ROMs
-             * (OS + BASIC + AMSDOS) load at boot; the cfg.rom_ext[] paths
-             * are kept untouched so re-enabling restores the old layout. */
             ov->cfg->rom_board = !ov->cfg->rom_board;
             ov->dirty = true;
             break;
-        case 4: {
-            /* OS ROM — file picker. Uses the same DIALOG_LOWER_ROM
-             * kind as the ROM Slots panel's lower-ROM entry. */
+        case 4:
+            /* External Tape — only reachable from this menu on the 6128. */
+            ov->cfg->external_tape = !ov->cfg->external_tape;
+            ov->dirty = true;
+            break;
+        case 5: {
             ov->dialog_kind  = DIALOG_LOWER_ROM;
             ov->dialog_ready = false;
             static const SDL_DialogFileFilter rom_filters[] = {
@@ -332,8 +351,7 @@ static void activate_item(Overlay *ov) {
                 rom_filters, 2, NULL, false);
             break;
         }
-        case 5: {
-            /* BASIC ROM — file picker. */
+        case 6: {
             ov->dialog_kind  = DIALOG_BASIC_ROM;
             ov->dialog_ready = false;
             static const SDL_DialogFileFilter rom_filters[] = {
@@ -347,6 +365,7 @@ static void activate_item(Overlay *ov) {
         }
         }
         break;
+    }
 
     case OV_STORAGE:
         if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
@@ -714,7 +733,9 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->albireo       != ov->saved.albireo)       ||
                         strcmp(ov->cfg->albireo_image, ov->saved.albireo_image) ||
                         strcmp(ov->cfg->rom_os,    ov->saved.rom_os)     ||
-                        strcmp(ov->cfg->rom_basic, ov->saved.rom_basic);
+                        strcmp(ov->cfg->rom_basic, ov->saved.rom_basic) ||
+                        (ov->cfg->external_tape != ov->saved.external_tape) ||
+                        strcmp(ov->cfg->tape, ov->saved.tape);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {
                     if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
@@ -827,11 +848,13 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         ov->row = 0;
         break;
     case SDL_SCANCODE_UP:
-        ov->row = (ov->row + sec_row_count[ov->section] - 1)
-                  % sec_row_count[ov->section];
+        {
+            int n = ov_section_rows(ov, ov->section);
+            ov->row = (ov->row + n - 1) % n;
+        }
         break;
     case SDL_SCANCODE_DOWN:
-        ov->row = (ov->row + 1) % sec_row_count[ov->section];
+        ov->row = (ov->row + 1) % ov_section_rows(ov, ov->section);
         break;
     case SDL_SCANCODE_RETURN:
     case SDL_SCANCODE_KP_ENTER:
@@ -944,7 +967,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     }
 
     /* ---- Dropdown ---- */
-    int nrows = sec_row_count[ov->section];
+    int nrows = ov_section_rows(ov, ov->section);
     float drop_h = nrows * ITEM_H + 4.0f;
     fill_rect(r, 0, BAR_H, lw, drop_h, 15, 15, 40, 245);
 
