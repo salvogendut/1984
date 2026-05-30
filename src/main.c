@@ -190,9 +190,13 @@ int main(int argc, char *argv[]) {
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
-    cpc.symbiface_ide   = cfg.symbiface_ide;
-    cpc.symbiface_mouse = cfg.symbiface_mouse;
-    cpc.m4              = cfg.m4;
+    /* These four expansions install their drivers as upper ROMs, so without
+     * the Roms Board fitted they can't run — force them off in the live CPC
+     * state while leaving the cfg values intact (re-enabling Roms Board
+     * restores them from cfg on the next cold boot). */
+    cpc.symbiface_ide   = cfg.symbiface_ide   && cfg.rom_board;
+    cpc.symbiface_mouse = cfg.symbiface_mouse && cfg.rom_board;
+    cpc.m4              = cfg.m4              && cfg.rom_board;
     cpc.symbnet         = cfg.symbnet;
     if (cfg.m4 && cfg.m4_path[0])
         snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
@@ -200,8 +204,8 @@ int main(int argc, char *argv[]) {
         m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
-    cpc.albireo = cfg.albireo;
-    if (cfg.albireo && cfg.albireo_image[0])
+    cpc.albireo = cfg.albireo && cfg.rom_board;
+    if (cpc.albireo && cfg.albireo_image[0])
         ch376_open(&cpc.ch376, cfg.albireo_image);
     /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
     if (cpc.albireo && cpc.m4) {
@@ -213,12 +217,17 @@ int main(int argc, char *argv[]) {
     if (cfg.rom_amsdos[0])
         mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
 
-    /* Load expansion ROMs into slots 0-31 (from config) */
-    for (int s = 0; s < ROM_EXT_COUNT; s++) {
-        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
-        if (s == M4_ROM_SLOT && cfg.m4) continue;
-        if (cfg.rom_ext[s][0])
-            mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+    /* Load expansion ROMs into slots 0-31 (from config) when the ROM Board
+     * is fitted. With rom_board=false the cfg paths are preserved but
+     * unused — re-enabling restores the prior layout from a single source
+     * of truth. */
+    if (cfg.rom_board) {
+        for (int s = 0; s < ROM_EXT_COUNT; s++) {
+            /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
+            if (s == M4_ROM_SLOT && cfg.m4) continue;
+            if (cfg.rom_ext[s][0])
+                mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+        }
     }
     /* Load M4ROM into its dedicated slot when M4 is enabled */
     if (cfg.m4) {
@@ -462,10 +471,17 @@ int main(int argc, char *argv[]) {
                 mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
             else if (!cfg.dd1 && cpc.model == MODEL_464)
                 mem_unload_amsdos(&cpc.mem);
-            for (int s = 0; s < ROM_EXT_COUNT; s++) {
-                if (s == M4_ROM_SLOT && cfg.m4) continue;
-                if (cfg.rom_ext[s][0])
-                    mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+            /* First unload every slot — covers the rom_board=true→false
+             * transition. The cfg.rom_ext paths stay intact so the next
+             * re-enable reloads them. */
+            for (int s = 0; s < ROM_EXT_COUNT; s++)
+                mem_unload_rom_ext(&cpc.mem, s);
+            if (cfg.rom_board) {
+                for (int s = 0; s < ROM_EXT_COUNT; s++) {
+                    if (s == M4_ROM_SLOT && cfg.m4) continue;
+                    if (cfg.rom_ext[s][0])
+                        mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
+                }
             }
             if (cfg.m4) {
                 char m4rom[512];
@@ -481,20 +497,21 @@ int main(int argc, char *argv[]) {
             cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
-            cpc.symbiface_ide    = cfg.symbiface_ide;
-            cpc.symbiface_mouse  = cfg.symbiface_mouse;
-            cpc.m4               = cfg.m4;
+            /* See boot-time comment: these four need the Roms Board. */
+            cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.rom_board;
+            cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.rom_board;
+            cpc.m4               = cfg.m4              && cfg.rom_board;
             cpc.symbnet          = cfg.symbnet;
-            if (cfg.m4 && cfg.m4_path[0])
+            if (cpc.m4 && cfg.m4_path[0])
                 snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
-            if (cfg.m4)
+            if (cpc.m4)
                 m4_set_image(&cpc.m4_card, cfg.m4_image);
             ide_close(&cpc.ide_chip);
-            if (cfg.symbiface_ide && cfg.ide_image[0])
+            if (cpc.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
-            cpc.albireo = cfg.albireo;
+            cpc.albireo = cfg.albireo && cfg.rom_board;
             ch376_close(&cpc.ch376);
-            if (cfg.albireo && cfg.albireo_image[0])
+            if (cpc.albireo && cfg.albireo_image[0])
                 ch376_open(&cpc.ch376, cfg.albireo_image);
             if (cpc.albireo && cpc.m4) {
                 cpc.m4 = false;

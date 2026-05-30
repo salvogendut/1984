@@ -24,7 +24,8 @@ typedef enum {
     DIALOG_IDE       = 4,
     DIALOG_M4_IMAGE  = 5,
     DIALOG_ALBIREO   = 6,
-    DIALOG_BASIC_ROM = 7
+    DIALOG_BASIC_ROM = 7,
+    DIALOG_TAPE      = 8
 } DialogKind;
 
 typedef struct {

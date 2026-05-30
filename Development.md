@@ -201,17 +201,21 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 
 | Tab | Rows |
 |-----|------|
-| General | Model, Memory, MX4, OS ROM, BASIC ROM |
-| Floppies | Drive A, Drive B |
+| General | Model, Memory, MX4, Roms Board, OS ROM, BASIC ROM |
+| Media | Drive A, Drive B |
 | Extensions | M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
 The **Memory** row (General tab, row 1) cycles through 64 → 128 → 256 → 512 → 576 → 768 → 1024 KB on Enter for both the 464 and 6128. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
+The **Roms Board** row (General tab, row 3) toggles `cfg.rom_board`. When false, `main.c`'s boot and cold-boot paths skip the loop that copies `cfg.rom_ext[]` into the upper ROM slots — only the model's default OS, BASIC, and AMSDOS ROMs are loaded. The `cfg.rom_ext[]` paths themselves are *not* cleared, so re-enabling the toggle restores the previous layout from a single source of truth. The Extensions → ROM Slots row is also rendered as `[disabled]` and its sub-panel is unreachable while `rom_board` is off. Triggers a cold boot on save.
+
+When `rom_board=false`, the four ROM-backed expansions (M4, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo) are forced off in the live CPC state at boot/cold-boot time — `cpc.m4 = cfg.m4 && cfg.rom_board`, and likewise for the others. The cfg values stay intact so re-enabling Roms Board restores them. In the overlay, those four rows (plus the Cyboard combo, which contains two ROM-backed peripherals) render as `[needs Roms Board]` and their `activate_item()` paths short-circuit early. Net4CPC and RTC are unaffected because they don't need a companion ROM driver.
+
 The **MX4** row (General tab, row 2) toggles `cfg.mx4`, which gates the expansion-bus dispatch in `cpc.c` — every `0xFDxx` / `0xFExx` / `0xFFxx` extension branch in `bus_io_read`/`bus_io_write` is conditional on `cpc->mx4`. When MX4 is off, the **Extensions** tab is hidden from the top bar entirely (the render loop skips `i == OV_ADVANCED`, and the `LEFT`/`RIGHT` navigation does a `do/while` that steps past `OV_ADVANCED`). Changing MX4 triggers a cold boot on save so the CPC firmware re-probes the bus.
 
-The **OS ROM** and **BASIC ROM** rows (General tab, rows 3 and 4) open `SDL_ShowOpenFileDialog` on Enter, with new dialog kinds `DIALOG_LOWER_ROM` (reused from the ROM Slots panel) and `DIALOG_BASIC_ROM`. The dialog callback writes the chosen path into `cfg.rom_os` / `cfg.rom_basic` and sets `needs_cold_boot` so the next save reloads the ROMs via `cpc_init`/`mem_load_rom`. The value column shows the basename only.
+The **OS ROM** and **BASIC ROM** rows (General tab, rows 4 and 5) open `SDL_ShowOpenFileDialog` on Enter, with new dialog kinds `DIALOG_LOWER_ROM` (reused from the ROM Slots panel) and `DIALOG_BASIC_ROM`. The dialog callback writes the chosen path into `cfg.rom_os` / `cfg.rom_basic` and sets `needs_cold_boot` so the next save reloads the ROMs via `cpc_init`/`mem_load_rom`. The value column shows the basename only.
 
 **ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Extensions → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
 

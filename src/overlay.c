@@ -24,10 +24,10 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
-    "General", "Floppies", "Extensions"
+    "General", "Media", "Extensions"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160 };
-static const int sec_row_count[OV_SEC_COUNT] = { 5, 2, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 6, 3, 11 };
 
 /* ---- Drawing helpers ---- */
 
@@ -94,14 +94,18 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "MX4");
             snprintf(val, vsz, "%s", ov->cfg->mx4 ? "enabled" : "disabled");
             break;
-        case 3: {
+        case 3:
+            snprintf(lbl, lsz, "Roms Board");
+            snprintf(val, vsz, "%s", ov->cfg->rom_board ? "enabled" : "disabled");
+            break;
+        case 4: {
             char tmp[CONFIG_PATH_MAX];
             snprintf(lbl, lsz, "OS ROM");
             snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
             trunc_path(basename(tmp), val, vsz);
             break;
         }
-        case 4: {
+        case 5: {
             char tmp[CONFIG_PATH_MAX];
             snprintf(lbl, lsz, "BASIC ROM");
             snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_basic);
@@ -121,8 +125,11 @@ static void item_text(const Overlay *ov, int row,
             if (!accessible) {
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
-            } else if (da && da->inserted && ov->cfg->disk_a[0])
-                trunc_path(ov->cfg->disk_a, val, vsz);
+            } else if (da && da->inserted && ov->cfg->disk_a[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->disk_a);
+                trunc_path(basename(tmp), val, vsz);
+            }
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
             break;
@@ -131,10 +138,23 @@ static void item_text(const Overlay *ov, int row,
             if (!accessible) {
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
-            } else if (db && db->inserted && ov->cfg->disk_b[0])
-                trunc_path(ov->cfg->disk_b, val, vsz);
+            } else if (db && db->inserted && ov->cfg->disk_b[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->disk_b);
+                trunc_path(basename(tmp), val, vsz);
+            }
             else
                 snprintf(val, vsz, "[empty]  Enter=load");
+            break;
+        case 2:
+            snprintf(lbl, lsz, "Tape");
+            if (ov->cfg->tape[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->tape);
+                trunc_path(basename(tmp), val, vsz);
+            } else {
+                snprintf(val, vsz, "[empty]  Enter=load");
+            }
             break;
         }
         break;
@@ -144,7 +164,10 @@ static void item_text(const Overlay *ov, int row,
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "M4 (unstable)");
-            if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_image);
                 trunc_path(basename(tmp), val, vsz);
@@ -176,7 +199,10 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 5:
             snprintf(lbl, lsz, "ROM Slots");
-            snprintf(val, vsz, "Enter to configure \xbb");
+            if (!ov->cfg->rom_board)
+                snprintf(val, vsz, "[disabled — see General \xbb Roms Board]");
+            else
+                snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
             break;
         case 6: {
@@ -195,7 +221,10 @@ static void item_text(const Overlay *ov, int row,
         }
         case 7:
             snprintf(lbl, lsz, "SYMBiFACE IDE");
-            if (ov->cfg->symbiface_ide && ov->cfg->ide_image[0]) {
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else if (ov->cfg->symbiface_ide && ov->cfg->ide_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->ide_image);
                 trunc_path(basename(tmp), val, vsz);
@@ -205,11 +234,19 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 8:
             snprintf(lbl, lsz, "SYMBiFACE Mouse");
-            snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
+            }
             break;
         case 9:
             snprintf(lbl, lsz, "Albireo");
-            if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->albireo_image);
                 trunc_path(basename(tmp), val, vsz);
@@ -218,12 +255,17 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 10: {
-            bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
-                       ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
-            bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
-                        !ov->cfg->symbiface_ide && !ov->cfg->symbiface_mouse;
             snprintf(lbl, lsz, "Cyboard");
-            snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else {
+                bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
+                           ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
+                bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
+                            !ov->cfg->symbiface_ide && !ov->cfg->symbiface_mouse;
+                snprintf(val, vsz, "%s", all ? "enabled" : none ? "disabled" : "partial");
+            }
             break;
         }
         }
@@ -269,7 +311,14 @@ static void activate_item(Overlay *ov) {
             ov->cfg->mx4 = !ov->cfg->mx4;
             ov->dirty = true;
             break;
-        case 3: {
+        case 3:
+            /* Roms Board — when off, only the model's three default ROMs
+             * (OS + BASIC + AMSDOS) load at boot; the cfg.rom_ext[] paths
+             * are kept untouched so re-enabling restores the old layout. */
+            ov->cfg->rom_board = !ov->cfg->rom_board;
+            ov->dirty = true;
+            break;
+        case 4: {
             /* OS ROM — file picker. Uses the same DIALOG_LOWER_ROM
              * kind as the ROM Slots panel's lower-ROM entry. */
             ov->dialog_kind  = DIALOG_LOWER_ROM;
@@ -283,7 +332,7 @@ static void activate_item(Overlay *ov) {
                 rom_filters, 2, NULL, false);
             break;
         }
-        case 4: {
+        case 5: {
             /* BASIC ROM — file picker. */
             ov->dialog_kind  = DIALOG_BASIC_ROM;
             ov->dialog_ready = false;
@@ -311,10 +360,30 @@ static void activate_item(Overlay *ov) {
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
                 filters, 2, NULL, false);
+        } else if (ov->row == 2) {
+            /* Tape — stub: file picker captures the .cdt path into
+             * cfg.tape, but nothing reads it yet. */
+            ov->dialog_kind  = DIALOG_TAPE;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter tape_filters[] = {
+                { "CDT tape images", "cdt;CDT" },
+                { "All files",       "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                tape_filters, 2, NULL, false);
         }
         break;
 
     case OV_ADVANCED:
+        /* Without the Roms Board fitted, every ROM-backed expansion is
+         * inert — block toggle on those rows. Net4CPC / RTC / DD1 / Diag
+         * Cart / ROM Slots have their own gating; the rest are nailed
+         * down here. */
+        if (!ov->cfg->rom_board &&
+            (ov->row == 0 || ov->row == 7 || ov->row == 8 ||
+             ov->row == 9 || ov->row == 10))
+            break;
         switch (ov->row) {
         case 0:
             if (!ov->cfg->m4) {
@@ -374,7 +443,8 @@ static void activate_item(Overlay *ov) {
             }
             break;
         case 5:
-            ov->state = OV_STATE_ROMSLOTS;
+            if (ov->cfg->rom_board)
+                ov->state = OV_STATE_ROMSLOTS;
             break;
         case 6: {
             char diag[CONFIG_PATH_MAX];
@@ -531,6 +601,10 @@ void overlay_tick(Overlay *ov) {
             }
         }
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_TAPE) {
+        /* Stub — just record the path. PSG cassette input not wired yet. */
+        snprintf(ov->cfg->tape, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_LOWER_ROM) {
         snprintf(ov->cfg->rom_os, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         if (ov->cpc)
@@ -631,6 +705,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             bool boot = (ov->cfg->model         != ov->saved.model)         ||
                         (ov->cfg->memory_kb     != ov->saved.memory_kb)     ||
                         (ov->cfg->mx4           != ov->saved.mx4)           ||
+                        (ov->cfg->rom_board     != ov->saved.rom_board)     ||
                         (ov->cfg->dd1           != ov->saved.dd1)           ||
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||

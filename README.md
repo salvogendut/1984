@@ -90,6 +90,9 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 mx4=true          # MX4 expansion bus — when false, every extension peripheral
                   # below (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) is
                   # disconnected and the Extensions overlay tab is hidden.
+rom_board=true    # Expansion ROM board fitted — when false, only OS + BASIC +
+                  # AMSDOS load at boot. slot_N entries above stay in the
+                  # config but are ignored until re-enabled.
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
 m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE:
                   # cpc-sdcc network apps and basic SD file ops work; SymbOS's
@@ -197,9 +200,13 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 
 **RAM size** (General → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
 
-**CPC 464 and DD1:** on the 464, the Floppies tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
+**CPC 464 and DD1:** on the 464, the Media tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
+
+**Roms Board** (General → Roms Board): toggles whether the 32 expansion ROM slots are populated at boot. When `enabled` (default), every non-empty `slot_N=` entry in `1984.conf` is loaded into the matching upper ROM slot and the Extensions → ROM Slots sub-panel is active. When `disabled`, only the three standard ROMs for the model — OS + BASIC + AMSDOS — are loaded; the `slot_N=` entries are kept in the config untouched, so re-enabling the toggle restores the previous layout from a single source of truth. Triggers a cold boot on save.
+
+Because **M4**, **SYMBiFACE IDE**, **SYMBiFACE Mouse**, and **Albireo** install their drivers as upper-ROM cartridges, they cannot function without the Roms Board. When Roms Board is `disabled`, those rows in the Extensions tab show `[needs Roms Board]` and refuse to toggle; the live CPC state forces them off too (their cfg values are preserved). **Net4CPC** and **RTC** are bare-hardware peripherals that don't need any companion ROM and remain available either way.
 
 **OS ROM / BASIC ROM** (General → OS ROM, General → BASIC ROM): press Enter on either row to open a file picker and select a different ROM image. Changing either triggers a cold boot on save so the new ROM is in effect from the next reset. The values shown next to each row are the basename of the currently-configured ROM.
 
