@@ -215,12 +215,12 @@ static void handle_command(int s, u8 cmd) {
              * needed (the host may already have its own DHCP client on
              * port 68 etc. — at least don't error out instantly). */
             int one = 1;
-            setsockopt(sock_fd[s], SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+            setsockopt(sock_fd[s], SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
 
             /* SO_BROADCAST so UDP sendto(255.255.255.255) is permitted —
              * required for DHCP DISCOVER/REQUEST. */
             if (mode == SMODE_UDP)
-                setsockopt(sock_fd[s], SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
+                setsockopt(sock_fd[s], SOL_SOCKET, SO_BROADCAST, (char *)&one, sizeof(one));
 
             /* Bind to (SIPR, Sn_PORT). SymbOS configures Sn_PORT before
              * OPEN — DHCP client uses port 68, NTP uses an ephemeral

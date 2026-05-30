@@ -285,7 +285,7 @@ static void net_poll_socket(M4 *m, int s) {
         int r = poll(&pfd, 1, 0);
         if (r > 0 && (pfd.revents & (POLLOUT | POLLERR | POLLHUP))) {
             int soerr = 0; socklen_t l = sizeof(soerr);
-            getsockopt(sk->fd, SOL_SOCKET, SO_ERROR, &soerr, &l);
+            getsockopt(sk->fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &l);
             sk->connecting = false;
             sk->status = soerr ? 240 : 0;  /* 0 = connected/idle, 240+ = error */
         }
@@ -1157,7 +1157,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             if (s >= 0) {
                 sock_set_nonblocking(s);
                 int one = 1;
-                setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+                setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one));
                 m->sockets[idx].fd      = s;
                 m->sockets[idx].status  = 0;
                 m->sockets[idx].lastcmd = 0;
@@ -1211,7 +1211,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                     int pr = poll(&pfd, 1, 5000);
                     if (pr > 0 && (pfd.revents & (POLLOUT | POLLERR | POLLHUP))) {
                         int soerr = 0; socklen_t l = sizeof(soerr);
-                        getsockopt(m->sockets[s].fd, SOL_SOCKET, SO_ERROR, &soerr, &l);
+                        getsockopt(m->sockets[s].fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &l);
                         m->sockets[s].status = soerr ? 240 : 0;
                         ok = soerr ? 0xFF : 0;
                     } else {
@@ -1269,7 +1269,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u16 sz = (u16)p[1] | ((u16)p[2] << 8);
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0
                     && (int)sz <= plen - 3) {
-                ssize_t n = send(m->sockets[s].fd, &p[3], sz, MSG_NOSIGNAL);
+                ssize_t n = send(m->sockets[s].fd, (const char *)&p[3], sz, MSG_NOSIGNAL);
                 if (n == (ssize_t)sz) ok = 0;
                 m->sockets[s].lastcmd = 1;
                 sync_sock_mem(m, s);
@@ -1304,7 +1304,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u16 want = (u16)p[1] | ((u16)p[2] << 8);
             if (want > 0x800) want = 0x800;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
-                ssize_t n = recv(m->sockets[s].fd, &m->bus_mem[6], want,
+                ssize_t n = recv(m->sockets[s].fd, (char *)&m->bus_mem[6], want,
                                  MSG_DONTWAIT);
                 if (n >= 0) {
                     actual = (u16)n;
