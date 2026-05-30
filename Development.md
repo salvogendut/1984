@@ -599,10 +599,8 @@ quirks to be aware of:
 2. **Secondary-arch pkg-config path.** On 32-bit Haiku the SDL3 package is
    `libsdl3_x86` / `libsdl3_x86_devel`, and its `sdl3.pc` lives under
    `/boot/system/develop/lib/x86/pkgconfig/`, which `pkg-config` does not search
-   by default. Export it before configuring:
-   ```sh
-   export PKG_CONFIG_PATH=/boot/system/develop/lib/x86/pkgconfig
-   ```
+   by default. `configure.ac` detects `host_os = haiku*` and prepends that
+   directory to `PKG_CONFIG_PATH` automatically.
 
 3. **Sockets are in `libnetwork`, not libc.** Handled automatically by the
    `AC_SEARCH_LIBS([socket], [network socket])` probes in `configure.ac`; no

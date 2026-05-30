@@ -3,6 +3,7 @@ AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror subdir-objects])
+AC_CANONICAL_HOST
 
 # C compiler — require C11
 AC_PROG_CC
@@ -12,6 +13,20 @@ AX_CHECK_COMPILE_FLAG([-std=c11],
 AC_SUBST([AM_CFLAGS])
 
 # pkg-config
+# On Haiku the SDL3 .pc file ships under a secondary-arch dir that
+# pkg-config does not search by default. Prepend it so PKG_CHECK_MODULES
+# below picks it up without the user setting PKG_CONFIG_PATH.
+case "$host_os" in
+  haiku*)
+    for d in /boot/system/develop/lib/x86/pkgconfig \
+             /boot/system/develop/lib/pkgconfig; do
+      if test -d "$d"; then
+        PKG_CONFIG_PATH="$d${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      fi
+    done
+    export PKG_CONFIG_PATH
+    ;;
+esac
 PKG_PROG_PKG_CONFIG
 
 # Required libraries
