@@ -87,6 +87,12 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 # Example: slot_5=~/.config/1984/roms/TOOLKIT.ROM
 
 [hardware]
+mx4=true          # MX4 expansion bus — when false, every extension peripheral
+                  # below (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) is
+                  # disconnected and the Extensions overlay tab is hidden.
+rom_board=true    # Expansion ROM board fitted — when false, only OS + BASIC +
+                  # AMSDOS load at boot. slot_N entries above stay in the
+                  # config but are ignored until re-enabled.
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
 m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE:
                   # cpc-sdcc network apps and basic SD file ops work; SymbOS's
@@ -192,11 +198,19 @@ The overlay lets you change the machine model, RAM size, ROM paths, and hardware
 
 Switching the model automatically sets the matching ROM paths and RAM size.
 
-**RAM size** (Advanced → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
+**RAM size** (General → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
 
-**CPC 464 and DD1:** on the 464, the Storage tab drives are greyed out by default. Enable **DD1** in the Advanced tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
+**CPC 464 and DD1:** on the 464, the Media tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
 
-**ROM Slots** (Advanced → ROM Slots) opens a sub-panel listing the lower ROM and all 32 upper ROM slots (0–31):
+**MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
+
+**Roms Board** (General → Roms Board): toggles whether the 32 expansion ROM slots are populated at boot. When `enabled` (default), every non-empty `slot_N=` entry in `1984.conf` is loaded into the matching upper ROM slot and the Extensions → ROM Slots sub-panel is active. When `disabled`, only the three standard ROMs for the model — OS + BASIC + AMSDOS — are loaded; the `slot_N=` entries are kept in the config untouched, so re-enabling the toggle restores the previous layout from a single source of truth. Triggers a cold boot on save.
+
+Because **M4**, **SYMBiFACE IDE**, **SYMBiFACE Mouse**, and **Albireo** install their drivers as upper-ROM cartridges, they cannot function without the Roms Board. When Roms Board is `disabled`, those rows in the Extensions tab show `[needs Roms Board]` and refuse to toggle; the live CPC state forces them off too (their cfg values are preserved). **Net4CPC** and **RTC** are bare-hardware peripherals that don't need any companion ROM and remain available either way.
+
+**OS ROM / BASIC ROM** (General → OS ROM, General → BASIC ROM): press Enter on either row to open a file picker and select a different ROM image. Changing either triggers a cold boot on save so the new ROM is in effect from the next reset. The values shown next to each row are the basename of the currently-configured ROM.
+
+**ROM Slots** (Extensions → ROM Slots) opens a sub-panel listing the lower ROM and all 32 upper ROM slots (0–31):
 
 | Entry | Default | Enter | Delete |
 |-------|---------|-------|--------|
@@ -205,9 +219,9 @@ Switching the model automatically sets the matching ROM paths and RAM size.
 | Slot 7 | AMSDOS ROM | Load expansion override | Clear override / restore default AMSDOS |
 | Slots 1–6, 8–31 | empty | Load ROM into slot | Clear slot |
 
-**Diagnostics Cartridge** (Advanced → Diag Cart): toggles the lower ROM between the model's default OS and `AmstradDiagLower.rom`. When ON, the machine boots into the Amstrad Diagnostics program. When OFF, the lower ROM reverts to the model's normal OS ROM. The toggle is greyed out if `AmstradDiagLower.rom` is not found in the ROMs directory. The change triggers a cold boot on save.
+**Diagnostics Cartridge** (Extensions → Diag Cart): toggles the lower ROM between the model's default OS and `AmstradDiagLower.rom`. When ON, the machine boots into the Amstrad Diagnostics program. When OFF, the lower ROM reverts to the model's normal OS ROM. The toggle is greyed out if `AmstradDiagLower.rom` is not found in the ROMs directory. The change triggers a cold boot on save.
 
-**Net4CPC** (Advanced → Net4CPC): enables emulation of the Net4CPC Ethernet add-on board based on the WIZnet W5100S chip. When enabled, four I/O ports are exposed at 0xFD20–0xFD23:
+**Net4CPC** (Extensions → Net4CPC): enables emulation of the Net4CPC Ethernet add-on board based on the WIZnet W5100S chip. When enabled, four I/O ports are exposed at 0xFD20–0xFD23:
 
 | Port | Name | Description |
 |------|------|-------------|
@@ -222,7 +236,7 @@ Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSI
 
 For debugging, `--trace-net4cpc` logs every W5100S register read/write (decoded with register names and socket index), every socket command (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`), and TX/RX buffer access summaries.
 
-**RTC** (Advanced → RTC): enables emulation of a DS12887 real-time clock compatible with the Cyboard and Symbiface II add-on boards. Time is sourced from the host OS via `localtime()` and is always current. Two I/O ports are exposed at:
+**RTC** (Extensions → RTC): enables emulation of a DS12887 real-time clock compatible with the Cyboard and Symbiface II add-on boards. Time is sourced from the host OS via `localtime()` and is always current. Two I/O ports are exposed at:
 
 | Port | Direction | Description |
 |------|-----------|-------------|
@@ -231,7 +245,7 @@ For debugging, `--trace-net4cpc` logs every W5100S register read/write (decoded 
 
 Time and date registers (seconds, minutes, hours, day-of-week, day, month, year, century) always reflect the current host time. Register B controls binary/BCD and 12h/24h format. The 114-byte NVRAM area (registers 0x0E–0x7F) is stored in RAM for the lifetime of the session. SymbOS detects the RTC via its `SYMBOS.INI` hardware flags byte (offset 0x240, bit 1) and reads the clock at boot using binary 24h mode. The toggle does **not** trigger a cold boot.
 
-**SYMBiFACE IDE** (Advanced → SYMBiFACE IDE): enables emulation of the SYMBiFACE II / Cyboard compatible IDE interface. The backend is a raw disk image file formatted with FAT16 or FAT32 (`.img`). Enabling the option opens a file picker to select the image; the path is saved to `ide_image` in `1984.conf`. The following I/O ports are emulated:
+**SYMBiFACE IDE** (Extensions → SYMBiFACE IDE): enables emulation of the SYMBiFACE II / Cyboard compatible IDE interface. The backend is a raw disk image file formatted with FAT16 or FAT32 (`.img`). Enabling the option opens a file picker to select the image; the path is saved to `ide_image` in `1984.conf`. The following I/O ports are emulated:
 
 | Port | Direction | Description |
 |------|-----------|-------------|
@@ -247,7 +261,7 @@ Time and date registers (seconds, minutes, hours, day-of-week, day, month, year,
 
 Supported ATA commands: IDENTIFY DEVICE (0xEC), READ SECTORS (0x20/0x21), WRITE SECTORS (0x30/0x31), INITIALIZE DRIVE PARAMETERS (0x91), SET FEATURES (0xEF). Multi-sector transfers and software reset (SRST via Device Control) are supported. The open image file is preserved across warm resets (F5); only a cold boot closes and reopens it. Enabling, disabling, or changing the image triggers a cold boot.
 
-**SYMBiFACE Mouse** (Advanced → SYMBiFACE Mouse): enables emulation of the SYMBiFACE II PS/2 mouse interface at port 0xFD10. When enabled, clicking inside the emulator window captures the host mouse (cursor hidden, relative mode). While captured, host mouse movement and button presses drive the emulated PS/2 mouse. Press **Ctrl+Enter** to release the mouse; the window title shows the current capture state. The toggle triggers a cold boot on save so SymbOS's input drivers re-probe the hardware. Immediately usable by SymbOS without any additional drivers. Mouse capture is gated on this toggle — enabling Albireo on its own does not engage capture.
+**SYMBiFACE Mouse** (Extensions → SYMBiFACE Mouse): enables emulation of the SYMBiFACE II PS/2 mouse interface at port 0xFD10. When enabled, clicking inside the emulator window captures the host mouse (cursor hidden, relative mode). While captured, host mouse movement and button presses drive the emulated PS/2 mouse. Press **Ctrl+Enter** to release the mouse; the window title shows the current capture state. The toggle triggers a cold boot on save so SymbOS's input drivers re-probe the hardware. Immediately usable by SymbOS without any additional drivers. Mouse capture is gated on this toggle — enabling Albireo on its own does not engage capture.
 
 The port returns a variable-length burst of packets terminated by `0x00` (no more data). Only fields that actually changed are included in each burst:
 
@@ -259,7 +273,7 @@ The port returns a variable-length burst of packets terminated by `0x00` (no mor
 | `0xC0`–`0xDF` | Button state: bit0=left, bit1=right, bit2=middle |
 | `0xE0`–`0xFF` | Scroll wheel offset, signed 5-bit |
 
-**Albireo** (Advanced → Albireo): enables emulation of the Albireo CPC expansion board, which exposes a WCH **CH376** USB host controller at I/O ports `0xFE80` (data) and `0xFE81` (command/status). The backend is a FAT16/FAT32 image file mounted via `src/fat.c`; the chip's built-in file-system command set is emulated against that image, so guest software talks to the chip exactly as it would to a real Albireo with a USB drive plugged in. Enabling the option opens a file picker to select the image; the path is saved to `albireo_image` in `1984.conf`.
+**Albireo** (Extensions → Albireo): enables emulation of the Albireo CPC expansion board, which exposes a WCH **CH376** USB host controller at I/O ports `0xFE80` (data) and `0xFE81` (command/status). The backend is a FAT16/FAT32 image file mounted via `src/fat.c`; the chip's built-in file-system command set is emulated against that image, so guest software talks to the chip exactly as it would to a real Albireo with a USB drive plugged in. Enabling the option opens a file picker to select the image; the path is saved to `albireo_image` in `1984.conf`.
 
 Albireo is **mutually exclusive with the M4 board** — both expansions decode the `0xFExx` port range — so enabling one disables the other and clears its image path.
 
@@ -275,7 +289,7 @@ ROM files distributed as AMSDOS-headed binaries (16384 + 128 bytes = 16512 bytes
 
 Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_MODE`, `GET_STATUS`, `RD_USB_DATA0`, `WR_REQ_DATA`, `SET_FILE_NAME`, `DISK_CONNECT`, `DISK_MOUNT`, `FILE_OPEN` (incl. wildcard enumeration), `FILE_ENUM_GO`, `FILE_CREATE`, `FILE_CLOSE`, `DIR_INFO_READ`, `BYTE_LOCATE`, `BYTE_READ` / `BYTE_RD_GO`, `BYTE_WRITE` / `BYTE_WR_GO`, `DISK_CAPACITY`, `DISK_QUERY`. Not implemented (yet): `FILE_ERASE`, `DIR_INFO_SAVE`, the SC16C650B UART side at `0xFEB0–7`, and CH376 interrupts routed to NMI (UNIDOS polls the status register, so this is fine).
 
-**Cyboard** (Advanced → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
+**Cyboard** (Extensions → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, SYMBiFACE Mouse, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 

@@ -92,15 +92,15 @@ static u8 bus_io_read(void *ctx, u16 port) {
         result = 0xFF;
     }
     /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
-    else if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+    else if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
-    else if (cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
+    else if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
         result = m4_dataport_read(&cpc->m4_card);
     }
     /* hi=0xFD: Mouse (0xFD10), IDE (0xFD06,0xFD08-0xFD0F), RTC (0xFD14), Net4CPC (0xFD20-0xFD23) */
-    else if (hi == 0xFD) {
+    else if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_mouse && lo == 0x10)
             result = mouse_read(&cpc->mouse);
@@ -187,16 +187,16 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         return;
     }
     /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
-    if (cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
+    if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         ch376_write(&cpc->ch376, (u8)(port & 0x01), val);
         return;
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF — accumulate command byte */
-    if (cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
+    if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
         m4_dataport_write(&cpc->m4_card, val); return;
     }
     /* M4 ACKPORT: hi=0xFC — trigger command execution */
-    if (cpc->m4 && hi == 0xFC) {
+    if (cpc->mx4 && cpc->m4 && hi == 0xFC) {
         if (m4_ackport_write(&cpc->m4_card, &cpc->mem))
             z80_nmi(&cpc->cpu);
         return;
@@ -206,7 +206,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     /* FDC data: hi=0xFB, write */
     if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
     /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14/0xFD15), Net4CPC (0xFD20-0xFD23) */
-    if (hi == 0xFD) {
+    if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
             ide_write(&cpc->ide_chip, lo, val); return;

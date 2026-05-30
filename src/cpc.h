@@ -33,6 +33,7 @@ typedef struct {
     SDL_AudioStream *audio_stream;
     Disk       drive[2];    /* drive[0]=A, drive[1]=B */
     FDC        fdc;
+    bool       mx4;           /* MX4 expansion bus (all extension I/O gated on this) */
     bool       net4cpc;       /* Net4CPC W5100S Ethernet add-on present */
     bool       rtc;           /* Real-time clock add-on present */
     RTC        rtc_chip;

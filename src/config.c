@@ -63,6 +63,8 @@ static void rom_cfg_path(const char *file, char *out, size_t size) {
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->scale     = 2;
+    cfg->mx4       = true;   /* expansion bus connected by default */
+    cfg->rom_board = true;   /* ROM Board fitted by default */
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -133,8 +135,17 @@ static void config_create_default(const char *path, const char *home) {
         "# Paths to .dsk floppy images (leave empty for no disk)\n"
         "drive_a=\n"
         "drive_b=\n"
+        "# .cdt tape image (stub — not yet wired to the PSG cassette input)\n"
+        "tape=\n"
         "\n"
         "[hardware]\n"
+        "# mx4: MX4 expansion bus — when false, all extension peripherals\n"
+        "# (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) are disconnected.\n"
+        "mx4=true\n"
+        "# rom_board: emulate the expansion ROM board (32 upper-ROM slots).\n"
+        "# When false, only OS + BASIC + AMSDOS are loaded; the slot_N entries\n"
+        "# below are remembered but ignored until re-enabled.\n"
+        "rom_board=true\n"
         "# dd1: CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS)\n"
         "dd1=false\n"
         "# Optional expansion hardware (not yet implemented)\n"
@@ -232,9 +243,17 @@ int config_load(Config *cfg) {
                 expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
             else if (!strcmp(key, "drive_b"))
                 expand_path(val, cfg->disk_b, sizeof(cfg->disk_b));
+            else if (!strcmp(key, "tape"))
+                expand_path(val, cfg->tape, sizeof(cfg->tape));
         } else if (!strcmp(section, "hardware")) {
             bool b;
-            if (!strcmp(key, "dd1")) {
+            if (!strcmp(key, "mx4")) {
+                if (parse_bool(val, &b)) cfg->mx4 = b;
+                else { fprintf(stderr, "1984.conf:%d: mx4 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "rom_board")) {
+                if (parse_bool(val, &b)) cfg->rom_board = b;
+                else { fprintf(stderr, "1984.conf:%d: rom_board must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "dd1")) {
                 if (parse_bool(val, &b)) cfg->dd1 = b;
                 else { fprintf(stderr, "1984.conf:%d: dd1 must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "m4")) {
@@ -337,8 +356,11 @@ int config_save(const Config *cfg) {
     fprintf(f,
         "\n[storage]\n"
         "drive_a=%s\n"
-        "drive_b=%s\n\n"
+        "drive_b=%s\n"
+        "tape=%s\n\n"
         "[hardware]\n"
+        "mx4=%s\n"
+        "rom_board=%s\n"
         "dd1=%s\n"
         "m4=%s\n"
         "m4_path=%s\n"
@@ -357,7 +379,10 @@ int config_save(const Config *cfg) {
         "fullscreen=%s\n",
         cfg->disk_a,
         cfg->disk_b,
-        cfg->dd1     ? "true" : "false",
+        cfg->tape,
+        cfg->mx4        ? "true" : "false",
+        cfg->rom_board  ? "true" : "false",
+        cfg->dd1        ? "true" : "false",
         cfg->m4      ? "true" : "false",
         cfg->m4_path,
         cfg->m4_image,

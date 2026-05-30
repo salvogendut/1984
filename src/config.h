@@ -20,8 +20,11 @@ typedef struct {
     /* [storage] */
     char disk_a[CONFIG_PATH_MAX];
     char disk_b[CONFIG_PATH_MAX];
+    char tape[CONFIG_PATH_MAX];   /* .cdt tape image — stub for now */
 
     /* [hardware] */
+    bool mx4;        /* MX4 expansion bus connected (gates all extension I/O) */
+    bool rom_board;  /* ROM Board fitted — when false, ignore rom_ext[] at boot */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
     char m4_path[CONFIG_PATH_MAX];   /* host directory for M4 file API (cat/load/save) */
