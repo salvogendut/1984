@@ -18,5 +18,10 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
+# Sockets live in libnetwork on Haiku, libsocket on Solaris/illumos,
+# and libc on Linux/BSD/macOS.
+AC_SEARCH_LIBS([socket], [network socket])
+AC_SEARCH_LIBS([getsockopt], [network socket])
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

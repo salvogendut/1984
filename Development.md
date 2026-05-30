@@ -584,3 +584,26 @@ IRQs do fire in the m4csct/m4ctrx critical path. Best hypotheses: SymbOS's ISR m
 - `src/m4.c` / `src/m4.h` — command dispatcher, socket state, helper shim install
 - `src/fat.c` / `src/fat.h` — minimal FAT16/FAT32 image accessor
 - `src/symbnet.c` / `src/symbnet.h` — synthetic SymbOS network port at `0xFD30/0xFD31`; routes guest-side bytes through the M4 dispatcher. Companion daemon source in `~/Dev/symsys-networkdaemon-1984/` (paused).
+
+## Building on Haiku
+
+1984 builds and runs on Haiku (tested on the 32-bit nightly). Three environment
+quirks to be aware of:
+
+1. **Use the modern GCC, not the legacy BeOS-compat one.** Haiku ships both
+   `gcc2` (binary-compat with BeOS R5) and a modern GCC 13 side by side. The
+   default `cc` may point to `gcc2`, which does not support C11. Switch shells
+   with `setarch x86` (or `setarch x86_64` on 64-bit Haiku) before running
+   `autoreconf`/`configure`/`make`.
+
+2. **Secondary-arch pkg-config path.** On 32-bit Haiku the SDL3 package is
+   `libsdl3_x86` / `libsdl3_x86_devel`, and its `sdl3.pc` lives under
+   `/boot/system/develop/lib/x86/pkgconfig/`, which `pkg-config` does not search
+   by default. Export it before configuring:
+   ```sh
+   export PKG_CONFIG_PATH=/boot/system/develop/lib/x86/pkgconfig
+   ```
+
+3. **Sockets are in `libnetwork`, not libc.** Handled automatically by the
+   `AC_SEARCH_LIBS([socket], [network socket])` probes in `configure.ac`; no
+   manual `LDFLAGS` needed.
