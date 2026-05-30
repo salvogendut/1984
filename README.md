@@ -118,13 +118,17 @@ fullscreen=false
 | `--464` | Boot as CPC 464 (overrides config) |
 | `--6128` | Boot as CPC 6128 (overrides config) |
 | `--dd1` | Enable DDI-1 floppy interface on CPC 464 (overrides config) |
+| `--memory=KB` | RAM size: 64, 128, 256, 512 or 576 (overrides config) |
 | `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
 | `--rom-slot=N:PATH` | Load a ROM image into upper ROM slot N (0-31); may be repeated |
 | `--rom-os=PATH` | Override the lower ROM (OS) with a custom image at PATH |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
 | `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter) |
+| `--screenshot-at=N:PATH` | Save a screenshot at frame N to PATH, then exit |
 | `--monitor-pty` | Open a PTY for the memory monitor (`minicom -b 9600 -D <path>`) |
+| `--trace-io` | Log CRTC and Gate Array register writes to stderr |
+| `--trace-palette` | Log palette writes and the firmware-flush fallback to stderr |
 | `--trace-input` | Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down) |
 | `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable — see Status) |
 | `--trace-albireo` | Log every Albireo (CH376) command/response to stderr |
