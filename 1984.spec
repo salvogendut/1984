@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.0
+Version:        0.4.1
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -17,8 +17,9 @@ BuildRequires:  pkgconfig(sdl3)
 1984 is a cycle-stepped Amstrad CPC 464/6128 emulator written in C
 with SDL3. The core machine — Z80 CPU (including undocumented
 IX/IY half-register opcodes), MC6845 CRTC, AY-3-8912 PSG audio,
-µPD765 FDC, Gate Array, keyboard, joystick/gamepad — runs commercial
-games and standard software at full speed.
+µPD765 FDC, Gate Array, keyboard, joystick/gamepad, cassette
+tape (.cdt/TZX images with loading screech mixed into PSG audio)
+— runs commercial games and standard software at full speed.
 
 Expansion peripherals emulated:
   * DS12887 real-time clock (Cyboard / SYMBiFACE II compatible)
@@ -68,6 +69,17 @@ autoreconf -fiv
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sat May 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.1-1
+- Add cassette tape support — .cdt (TZX) decoder, block types
+  0x10/11/12/13/14/20, audio mixed into PSG output (loading screech
+  on real hardware)
+- Add Media -> Tape file picker; tape is always wired on CPC 464,
+  CPC 6128 needs the new General -> External Tape toggle (visible
+  only when the 6128 model is selected)
+- Fix letterbox gutter in fullscreen sometimes drawn in overlay
+  colours (yellow / blue leaked when the renderer's draw colour was
+  left set by an overlay text or rect)
+
 * Sat May 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.0-1
 - Add DS12887 real-time clock (Cyboard / SYMBiFACE II compatible)
 - Add SYMBiFACE II / Cyboard IDE (FAT16/FAT32 raw disk images)
