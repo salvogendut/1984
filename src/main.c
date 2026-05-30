@@ -187,6 +187,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     cpc.mem.ram_size    = cfg.memory_kb * 1024;
+    cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
     cpc.symbiface_ide   = cfg.symbiface_ide;
@@ -477,6 +478,7 @@ int main(int argc, char *argv[]) {
             const char *title = (cpc.model == MODEL_464)
                 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;
             SDL_SetWindowTitle(cpc.display.window, title);
+            cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
             cpc.symbiface_ide    = cfg.symbiface_ide;

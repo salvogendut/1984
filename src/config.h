@@ -22,6 +22,7 @@ typedef struct {
     char disk_b[CONFIG_PATH_MAX];
 
     /* [hardware] */
+    bool mx4;      /* MX4 expansion bus connected (gates all extension I/O) */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;
     char m4_path[CONFIG_PATH_MAX];   /* host directory for M4 file API (cat/load/save) */

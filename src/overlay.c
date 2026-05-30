@@ -24,10 +24,10 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
-    "General", "Storage", "Advanced"
+    "General", "Floppies", "Extensions"
 };
-static const int sec_x[OV_SEC_COUNT] = { 8, 74, 140 };
-static const int sec_row_count[OV_SEC_COUNT] = { 3, 2, 12 };
+static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160 };
+static const int sec_row_count[OV_SEC_COUNT] = { 5, 2, 11 };
 
 /* ---- Drawing helpers ---- */
 
@@ -87,15 +87,27 @@ static void item_text(const Overlay *ov, int row,
                 ov->cfg->model == MODEL_464 ? "CPC 464" : "CPC 6128");
             break;
         case 1:
-            snprintf(lbl, lsz, "OS ROM");
-            trunc_path(ov->cfg->rom_os, val, vsz);
-            *readonly = true;
+            snprintf(lbl, lsz, "Memory");
+            snprintf(val, vsz, "%d KB", ov->cfg->memory_kb);
             break;
         case 2:
-            snprintf(lbl, lsz, "BASIC ROM");
-            trunc_path(ov->cfg->rom_basic, val, vsz);
-            *readonly = true;
+            snprintf(lbl, lsz, "MX4");
+            snprintf(val, vsz, "%s", ov->cfg->mx4 ? "enabled" : "disabled");
             break;
+        case 3: {
+            char tmp[CONFIG_PATH_MAX];
+            snprintf(lbl, lsz, "OS ROM");
+            snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_os);
+            trunc_path(basename(tmp), val, vsz);
+            break;
+        }
+        case 4: {
+            char tmp[CONFIG_PATH_MAX];
+            snprintf(lbl, lsz, "BASIC ROM");
+            snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_basic);
+            trunc_path(basename(tmp), val, vsz);
+            break;
+        }
         }
         break;
 
@@ -131,10 +143,6 @@ static void item_text(const Overlay *ov, int row,
     case OV_ADVANCED:
         switch (row) {
         case 0:
-            snprintf(lbl, lsz, "Memory");
-            snprintf(val, vsz, "%d KB", ov->cfg->memory_kb);
-            break;
-        case 1:
             snprintf(lbl, lsz, "M4 (unstable)");
             if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -144,20 +152,20 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->m4 ? "enabled" : "disabled");
             }
             break;
-        case 2:
+        case 1:
             snprintf(lbl, lsz, "UliFAC");
             snprintf(val, vsz, "[unimplemented]");
             *readonly = true;
             break;
-        case 3:
+        case 2:
             snprintf(lbl, lsz, "Net4CPC");
             snprintf(val, vsz, "%s", ov->cfg->net4cpc ? "enabled" : "disabled");
             break;
-        case 4:
+        case 3:
             snprintf(lbl, lsz, "RTC");
             snprintf(val, vsz, "%s", ov->cfg->rtc ? "enabled" : "disabled");
             break;
-        case 5:
+        case 4:
             snprintf(lbl, lsz, "DD1");
             if (ov->cfg->model == MODEL_6128) {
                 snprintf(val, vsz, "N/A (6128 has built-in FDC)");
@@ -166,12 +174,12 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->dd1 ? "enabled" : "disabled");
             }
             break;
-        case 6:
+        case 5:
             snprintf(lbl, lsz, "ROM Slots");
             snprintf(val, vsz, "Enter to configure \xbb");
             *readonly = true;
             break;
-        case 7: {
+        case 6: {
             char diag[CONFIG_PATH_MAX];
             config_default_diag(diag, sizeof(diag));
             bool available = (access(diag, R_OK) == 0);
@@ -185,7 +193,7 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         }
-        case 8:
+        case 7:
             snprintf(lbl, lsz, "SYMBiFACE IDE");
             if (ov->cfg->symbiface_ide && ov->cfg->ide_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -195,11 +203,11 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->symbiface_ide ? "enabled" : "disabled");
             }
             break;
-        case 9:
+        case 8:
             snprintf(lbl, lsz, "SYMBiFACE Mouse");
             snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
             break;
-        case 10:
+        case 9:
             snprintf(lbl, lsz, "Albireo");
             if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -209,7 +217,7 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s", ov->cfg->albireo ? "enabled" : "disabled");
             }
             break;
-        case 11: {
+        case 10: {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool none = !ov->cfg->net4cpc && !ov->cfg->rtc &&
@@ -232,12 +240,62 @@ static void activate_item(Overlay *ov) {
     switch (ov->section) {
 
     case OV_GENERAL:
-        if (ov->row == 0) {
+        switch (ov->row) {
+        case 0: {
             CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
             config_set_model(ov->cfg, next);
             if (next == MODEL_6128 && ov->cfg->memory_kb < 128)
                 ov->cfg->memory_kb = 128;
             ov->dirty = true;
+            break;
+        }
+        case 1: {
+            /* Memory — cycle through valid sizes for the current model. */
+            static const int sizes[] = { 64, 128, 256, 512, 576, 768, 1024 };
+            int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
+            int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
+            int cur = min_idx;
+            for (int i = min_idx; i < n; i++)
+                if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
+            ov->cfg->memory_kb = sizes[min_idx + (cur - min_idx + 1) % (n - min_idx)];
+            ov->dirty = true;
+            break;
+        }
+        case 2:
+            /* MX4 expansion bus — toggles all extension peripherals on/off
+             * in one go. Cold-boot triggered on save so the CPC firmware
+             * re-probes the bus (the Extensions tab is also hidden when
+             * MX4 is off, since none of those options would do anything). */
+            ov->cfg->mx4 = !ov->cfg->mx4;
+            ov->dirty = true;
+            break;
+        case 3: {
+            /* OS ROM — file picker. Uses the same DIALOG_LOWER_ROM
+             * kind as the ROM Slots panel's lower-ROM entry. */
+            ov->dialog_kind  = DIALOG_LOWER_ROM;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter rom_filters[] = {
+                { "ROM images", "rom;ROM" },
+                { "All files",  "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                rom_filters, 2, NULL, false);
+            break;
+        }
+        case 4: {
+            /* BASIC ROM — file picker. */
+            ov->dialog_kind  = DIALOG_BASIC_ROM;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter rom_filters[] = {
+                { "ROM images", "rom;ROM" },
+                { "All files",  "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                rom_filters, 2, NULL, false);
+            break;
+        }
         }
         break;
 
@@ -258,18 +316,7 @@ static void activate_item(Overlay *ov) {
 
     case OV_ADVANCED:
         switch (ov->row) {
-        case 0: {
-            static const int sizes[] = { 64, 128, 256, 512, 576, 768, 1024 };
-            int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
-            int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
-            int cur = min_idx;
-            for (int i = min_idx; i < n; i++)
-                if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
-            ov->cfg->memory_kb = sizes[min_idx + (cur - min_idx + 1) % (n - min_idx)];
-            ov->dirty = true;
-            break;
-        }
-        case 1:
+        case 0:
             if (!ov->cfg->m4) {
                 /* Mutually exclusive with Albireo (both claim port 0xFExx). */
                 if (ov->cfg->albireo) {
@@ -305,16 +352,16 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        /* case 2 (UliFAC) is unimplemented — Enter does nothing */
-        case 3:
+        /* case 1 (UliFAC) is unimplemented — Enter does nothing */
+        case 2:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
             break;
-        case 4:
+        case 3:
             ov->cfg->rtc = !ov->cfg->rtc;
             ov->dirty = true;
             break;
-        case 5:
+        case 4:
             if (ov->cfg->model == MODEL_464) {
                 config_apply_dd1(ov->cfg, !ov->cfg->dd1);
                 if (ov->cpc) {
@@ -326,10 +373,10 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        case 6:
+        case 5:
             ov->state = OV_STATE_ROMSLOTS;
             break;
-        case 7: {
+        case 6: {
             char diag[CONFIG_PATH_MAX];
             config_default_diag(diag, sizeof(diag));
             if (access(diag, R_OK) != 0) break;  /* greyed out — ROM missing */
@@ -343,7 +390,7 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         }
-        case 8:
+        case 7:
             if (!ov->cfg->symbiface_ide) {
                 /* Enabling: open file dialog to select a disk image */
                 ov->dialog_kind  = DIALOG_IDE;
@@ -362,11 +409,11 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        case 9:
+        case 8:
             ov->cfg->symbiface_mouse = !ov->cfg->symbiface_mouse;
             ov->dirty = true;
             break;
-        case 10:
+        case 9:
             if (!ov->cfg->albireo) {
                 /* Mutually exclusive with M4 (both claim port 0xFExx). */
                 if (ov->cfg->m4) {
@@ -399,7 +446,7 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        case 11: {
+        case 10: {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool enable = !all;
@@ -490,6 +537,12 @@ void overlay_tick(Overlay *ov) {
             mem_load_os(&ov->cpc->mem, ov->dialog_path);
         ov->needs_cold_boot = true;
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_BASIC_ROM) {
+        snprintf(ov->cfg->rom_basic, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        /* No live reloader for BASIC; the cold-boot triggered on Save
+         * by the rom_basic change reloads it via cpc_init/mem_load_rom. */
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_IDE) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         ov->cfg->symbiface_ide = true;
@@ -577,6 +630,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             /* cold boot needed if model, memory, DD1, or any ROM slot changed */
             bool boot = (ov->cfg->model         != ov->saved.model)         ||
                         (ov->cfg->memory_kb     != ov->saved.memory_kb)     ||
+                        (ov->cfg->mx4           != ov->saved.mx4)           ||
                         (ov->cfg->dd1           != ov->saved.dd1)           ||
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
@@ -584,7 +638,8 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||
                         (ov->cfg->albireo       != ov->saved.albireo)       ||
                         strcmp(ov->cfg->albireo_image, ov->saved.albireo_image) ||
-                        strcmp(ov->cfg->rom_os,    ov->saved.rom_os);
+                        strcmp(ov->cfg->rom_os,    ov->saved.rom_os)     ||
+                        strcmp(ov->cfg->rom_basic, ov->saved.rom_basic);
             if (!boot) {
                 for (int i = 0; i < ROM_EXT_COUNT; i++) {
                     if (strcmp(ov->cfg->rom_ext[i], ov->saved.rom_ext[i])) {
@@ -687,11 +742,13 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         try_close(ov);
         break;
     case SDL_SCANCODE_LEFT:
-        ov->section = (OvSection)((ov->section + OV_SEC_COUNT - 1) % OV_SEC_COUNT);
+        do { ov->section = (OvSection)((ov->section + OV_SEC_COUNT - 1) % OV_SEC_COUNT); }
+        while (ov->section == OV_ADVANCED && !ov->cfg->mx4);
         ov->row = 0;
         break;
     case SDL_SCANCODE_RIGHT:
-        ov->section = (OvSection)((ov->section + 1) % OV_SEC_COUNT);
+        do { ov->section = (OvSection)((ov->section + 1) % OV_SEC_COUNT); }
+        while (ov->section == OV_ADVANCED && !ov->cfg->mx4);
         ov->row = 0;
         break;
     case SDL_SCANCODE_UP:
@@ -796,6 +853,8 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     fill_rect(r, 0, 0, lw, BAR_H, 20, 20, 50, 230);
 
     for (int i = 0; i < OV_SEC_COUNT; i++) {
+        /* Extensions tab is hidden entirely when MX4 is disabled. */
+        if (i == OV_ADVANCED && !ov->cfg->mx4) continue;
         bool sel = (ov->section == (OvSection)i);
         float tx = sec_x[i];
         float ty = (BAR_H - FONT_H) / 2.0f;

@@ -201,15 +201,19 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 
 | Tab | Rows |
 |-----|------|
-| General | Model, OS ROM path, BASIC ROM path |
-| Storage | Drive A, Drive B |
-| Advanced | Memory, M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
+| General | Model, Memory, MX4, OS ROM, BASIC ROM |
+| Floppies | Drive A, Drive B |
+| Extensions | M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
-The **Memory** row (Advanced tab, row 0) cycles through 64 → 128 → 256 → 512 → 576 KB on Enter for both the 464 and 6128. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
+The **Memory** row (General tab, row 1) cycles through 64 → 128 → 256 → 512 → 576 → 768 → 1024 KB on Enter for both the 464 and 6128. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
-**ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Advanced → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
+The **MX4** row (General tab, row 2) toggles `cfg.mx4`, which gates the expansion-bus dispatch in `cpc.c` — every `0xFDxx` / `0xFExx` / `0xFFxx` extension branch in `bus_io_read`/`bus_io_write` is conditional on `cpc->mx4`. When MX4 is off, the **Extensions** tab is hidden from the top bar entirely (the render loop skips `i == OV_ADVANCED`, and the `LEFT`/`RIGHT` navigation does a `do/while` that steps past `OV_ADVANCED`). Changing MX4 triggers a cold boot on save so the CPC firmware re-probes the bus.
+
+The **OS ROM** and **BASIC ROM** rows (General tab, rows 3 and 4) open `SDL_ShowOpenFileDialog` on Enter, with new dialog kinds `DIALOG_LOWER_ROM` (reused from the ROM Slots panel) and `DIALOG_BASIC_ROM`. The dialog callback writes the chosen path into `cfg.rom_os` / `cfg.rom_basic` and sets `needs_cold_boot` so the next save reloads the ROMs via `cpc_init`/`mem_load_rom`. The value column shows the basename only.
+
+**ROM Slots sub-panel** (`OV_STATE_ROMSLOTS`) is opened from Extensions → ROM Slots. It shows the lower ROM and all 32 upper ROM slots (panel indices 0–32, where 0 = lower ROM and 1–32 = upper slots 0–31) with 10 entries visible at a time. Enter opens a file picker (`SDL_ShowOpenFileDialog`); Delete restores the slot to its compiled-in default (for Lower ROM, Slot 0, Slot 7) or clears it (all others). Any change sets `needs_cold_boot` on the overlay; `main.c` checks this flag after `overlay_tick()`, reloads the affected ROMs, and calls `cpc_reset()`.
 
 ---
 
@@ -225,7 +229,7 @@ The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0�
 
 ## DS12887 Real-Time Clock (`src/rtc.c`)
 
-The RTC emulates a DS12887 as used in the Cyboard and Symbiface II CPC add-ons. It is enabled via `rtc=true` in `1984.conf` (or the Advanced → RTC toggle in the overlay). The toggle does not require a cold boot.
+The RTC emulates a DS12887 as used in the Cyboard and Symbiface II CPC add-ons. It is enabled via `rtc=true` in `1984.conf` (or the Extensions → RTC toggle in the overlay). The toggle does not require a cold boot.
 
 **Port mapping:**
 
@@ -256,7 +260,7 @@ The RTC emulates a DS12887 as used in the Cyboard and Symbiface II CPC add-ons. 
 
 ## SYMBiFACE II / Cyboard IDE (`src/ide.c`)
 
-The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cyboard CPC add-ons. It is enabled via `symbiface_ide=true` in `1984.conf` (or Advanced → SYMBiFACE IDE in the overlay). The backend is a raw disk image opened with `fopen("r+b")`; the FAT filesystem is handled entirely by the guest OS driver.
+The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cyboard CPC add-ons. It is enabled via `symbiface_ide=true` in `1984.conf` (or Extensions → SYMBiFACE IDE in the overlay). The backend is a raw disk image opened with `fopen("r+b")`; the FAT filesystem is handled entirely by the guest OS driver.
 
 **Port mapping** (confirmed against HDCPM.ROM disassembly):
 
@@ -293,7 +297,7 @@ The IDE emulator implements ATA PIO mode compatible with the SYMBiFACE II and Cy
 
 ## SYMBiFACE II PS/2 Mouse (`src/mouse.c`)
 
-The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-only). It is enabled via `symbiface_mouse=true` in `1984.conf` (or Advanced → SYMBiFACE Mouse in the overlay). The toggle triggers a cold boot on save — SymbOS's input drivers only re-probe the hardware at boot, so toggling without a reset would leave the guest unaware of the change.
+The mouse emulator implements the SYMBiFACE II protocol at port 0xFD10 (read-only). It is enabled via `symbiface_mouse=true` in `1984.conf` (or Extensions → SYMBiFACE Mouse in the overlay). The toggle triggers a cold boot on save — SymbOS's input drivers only re-probe the hardware at boot, so toggling without a reset would leave the guest unaware of the change.
 
 **Protocol.** The CPC reads port 0xFD10 in a tight polling loop until it receives `0x00` (no more data for this cycle). The port only emits packets for data that has actually changed since the last burst, which means a stationary mouse with no button activity returns `0x00` immediately.
 
@@ -333,7 +337,7 @@ The Net4CPC expansion exposes a WIZnet **W5100S** at four CPC I/O ports (`0xFD20
 
 ## Albireo CH376 USB host (`src/ch376.c`)
 
-The Albireo CPC expansion exposes a WCH **CH376** USB host controller. It is enabled via `albireo=true` in `1984.conf` (or Advanced → Albireo in the overlay). Enabling it from the overlay opens a file picker to choose a FAT16/FAT32 image; the path is stored in `albireo_image`. The backend is `src/fat.c` (shared with the M4 file API), so directory enumeration, open/read/write/seek, and free-space queries all go through the same FAT layer.
+The Albireo CPC expansion exposes a WCH **CH376** USB host controller. It is enabled via `albireo=true` in `1984.conf` (or Extensions → Albireo in the overlay). Enabling it from the overlay opens a file picker to choose a FAT16/FAT32 image; the path is stored in `albireo_image`. The backend is `src/fat.c` (shared with the M4 file API), so directory enumeration, open/read/write/seek, and free-space queries all go through the same FAT layer.
 
 **Port map.** The CPC sees the chip at two I/O ports:
 
@@ -363,7 +367,7 @@ Most commands raise an "interrupt" by setting `int_pending = true` and stashing 
 
 ## Cyboard master toggle
 
-The **Cyboard** overlay item (Advanced → Cyboard, row 11) is a UI-only convenience; it writes to the four existing config flags rather than introducing a new one. Activating it when all four peripherals (Net4CPC, RTC, SYMBiFACE IDE, SYMBiFACE Mouse) are enabled disables all of them (and clears `ide_image`); activating it when any of the four is off enables all of them. The displayed value is `enabled` / `disabled` / `partial` depending on the combination.
+The **Cyboard** overlay item (Extensions → Cyboard, row 10) is a UI-only convenience; it writes to the four existing config flags rather than introducing a new one. Activating it when all four peripherals (Net4CPC, RTC, SYMBiFACE IDE, SYMBiFACE Mouse) are enabled disables all of them (and clears `ide_image`); activating it when any of the four is off enables all of them. The displayed value is `enabled` / `disabled` / `partial` depending on the combination.
 
 ---
 
