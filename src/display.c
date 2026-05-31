@@ -33,6 +33,12 @@ int display_init(Display *d, const char *title) {
     return 0;
 }
 
+void display_set_smoothing(Display *d, bool smooth) {
+    if (d->texture)
+        SDL_SetTextureScaleMode(d->texture,
+            smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+}
+
 void display_destroy(Display *d) {
     if (d->texture)  SDL_DestroyTexture(d->texture);
     if (d->renderer) SDL_DestroyRenderer(d->renderer);

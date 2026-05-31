@@ -66,6 +66,8 @@ void config_defaults(Config *cfg) {
     cfg->scale     = 2;
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->rom_board = true;   /* ROM Board fitted by default */
+    cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
+    cfg->tinker    = false;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -185,6 +187,12 @@ static void config_create_default(const char *path, const char *home) {
         "scale=2\n"
         "# Start in fullscreen mode: true or false\n"
         "fullscreen=false\n"
+        "# Smooth (linear) vs sharp (nearest) texture scaling\n"
+        "fullscreen_smoothing=true\n"
+        "\n"
+        "[advanced]\n"
+        "# Enable the Advanced overlay tab with low-level toggles\n"
+        "tinker=false\n"
     );
 
     fclose(f);
@@ -321,6 +329,16 @@ int config_load(Config *cfg) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->fullscreen = b;
                 else { fprintf(stderr, "1984.conf:%d: fullscreen must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "fullscreen_smoothing")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->fullscreen_smoothing = b;
+                else { fprintf(stderr, "1984.conf:%d: fullscreen_smoothing must be true/false\n", lineno); rc = -1; }
+            }
+        } else if (!strcmp(section, "advanced")) {
+            if (!strcmp(key, "tinker")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->tinker = b;
+                else { fprintf(stderr, "1984.conf:%d: tinker must be true/false\n", lineno); rc = -1; }
             }
         }
     }
@@ -413,7 +431,10 @@ int config_save(const Config *cfg) {
         "albireo_image=%s\n\n"
         "[display]\n"
         "scale=%d\n"
-        "fullscreen=%s\n",
+        "fullscreen=%s\n"
+        "fullscreen_smoothing=%s\n\n"
+        "[advanced]\n"
+        "tinker=%s\n",
         cfg->disk_a,
         cfg->disk_b,
         cfg->tape,
@@ -434,7 +455,9 @@ int config_save(const Config *cfg) {
         cfg->albireo          ? "true" : "false",
         cfg->albireo_image,
         cfg->scale,
-        cfg->fullscreen ? "true" : "false"
+        cfg->fullscreen ? "true" : "false",
+        cfg->fullscreen_smoothing ? "true" : "false",
+        cfg->tinker     ? "true" : "false"
     );
 
     fclose(f);
