@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.2
+Version:        0.4.3
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -79,6 +79,24 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sun May 31 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.3-1
+- Stabilise SymbOS networking on M4 — sock_info window extended to 16
+  slots with active TCP socket broadcast across all slots; wget HTTP
+  downloads via SymbOS netd-m4c.exe now complete end-to-end (interactive
+  telnet still stalls after the server banner; same behaviour reproduces
+  on real Net4CPC hardware)
+- Overlay: enforce M4 ↔ Cyboard / M4 ↔ Albireo mutual exclusion in both
+  directions; enabling M4 tears down the full Cyboard pack (Net4CPC,
+  RTC, IDE, Mouse) and clears every expansion ROM override; enabling
+  Cyboard or Albireo disables M4. All transitions trigger a cold boot.
+- Config: sanitise legacy configs on load — when m4=true together with
+  rtc/albireo=true, keep M4 and clear the conflicting peripherals.
+- Overlay label "M4 (unstable)" → "M4 (experimental)".
+- New per-expansion docs: M4.md, CYBOARD.md, ALBIREO.md (ROM-slot
+  layouts, cross-stack notes, SymbOS netd-m4c.exe autostart caveat).
+- Add macOS and OpenBSD to the supported-platforms table with
+  screenshots; INSTALL.md split accordingly.
+
 * Sun May 31 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.2-1
 - Port to Windows (MSYS2 / MinGW-w64) — full build, runs under Wine
   and on native Windows; .exe + SDL3.dll + ROMs published as a CI
