@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.1
+Version:        0.4.2
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -78,6 +78,22 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sun May 31 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.2-1
+- Port to Windows (MSYS2 / MinGW-w64) — full build, runs under Wine
+  and on native Windows; .exe + SDL3.dll + ROMs published as a CI
+  artifact on every push
+- Port to Haiku (32-bit nightly tested) — configure.ac auto-detects
+  the secondary-arch pkg-config path and links libnetwork for sockets
+- Document NetBSD build (pkgsrc deps, ACLOCAL_PATH, gmake) — no
+  source changes required
+- Add GitHub Actions build matrix (Fedora + MinGW) with package
+  caching; tagged pushes now auto-publish a GitHub Release with both
+  platforms' binaries attached
+- Fix "could not create config file" on fresh accounts where
+  ~/.config/ does not yet exist (mkdir the parent first)
+- Fix EXCEPTION_STACK_OVERFLOW at startup on Windows (move 1 MB CPC
+  struct from stack to BSS)
+
 * Sat May 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.1-1
 - Add cassette tape support — .cdt (TZX) decoder, block types
   0x10/11/12/13/14/20, audio mixed into PSG output (loading screech
