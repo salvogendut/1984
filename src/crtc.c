@@ -31,6 +31,13 @@ u8 crtc_read(CRTC *c) {
     return (c->selected >= 12 && c->selected <= 17) ? c->reg[c->selected] : 0;
 }
 
+u8 crtc_read_status(CRTC *c) {
+    /* Type 1/3/4 status register: bit 6 = LPEN strobe (unimplemented),
+     * bit 5 = VSYNC active. Demos poll this to time effects without the
+     * 2-line GA→PPI VSYNC delay. */
+    return (c->vsync ? 0x20 : 0x00);
+}
+
 void crtc_tick(CRTC *c) {
     /* Horizontal counter advances; MA tracks along the row */
     c->hcc++;
@@ -60,30 +67,53 @@ void crtc_tick(CRTC *c) {
                 c->vsync = false;
         }
 
-        /* Raster line within character row */
-        c->vlc++;
-        if (c->vlc > c->reg[9]) {
-            /* New character row: advance row start address */
-            c->vlc = 0;
-            c->vcc++;
-            c->ma_row_start += c->reg[1];
-
-            /* VSYNC trigger */
-            if (c->vcc == c->reg[7] && !c->vsync) {
-                c->vsync = true;
-                c->vsc = 0;
-            }
-
-            /* V total: new frame */
-            if (c->vcc > c->reg[4]) {
+        if (c->in_vadjust) {
+            /* Vertical-adjust period (R5 raster lines after the last char row).
+             * Per ACCC §6.1.1: when C5 reaches R5, the frame restarts with
+             * C4=C5=C9=0 and MA reloaded from R12/R13. */
+            c->vac++;
+            if (c->vac > c->reg[5]) {
+                c->in_vadjust = false;
+                c->vac = 0;
                 c->vcc = 0;
                 c->vlc = 0;
                 c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+            }
+        } else {
+            /* Raster line within character row */
+            c->vlc++;
+            if (c->vlc > c->reg[9]) {
+                /* New character row: advance row start address */
+                c->vlc = 0;
+                c->vcc++;
+                c->ma_row_start += c->reg[1];
+
+                /* V total reached: either enter R5 vertical-adjust or
+                 * restart the frame immediately if R5 is 0. */
+                if (c->vcc > c->reg[4]) {
+                    if (c->reg[5]) {
+                        c->in_vadjust = true;
+                        c->vac = 0;
+                    } else {
+                        c->vcc = 0;
+                        c->vlc = 0;
+                        c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                    }
+                }
             }
         }
 
         /* Reload MA to the row start for the next scan line */
         c->ma = c->ma_row_start;
+    }
+
+    /* Continuous R7 comparator: real CRTC starts VSYNC the moment C4
+     * matches R7, not only at the next row-boundary. Demos that re-time
+     * VSYNC by writing R7 mid-frame (HBL effects, second-VSYNC tricks)
+     * depend on this. */
+    if (c->vcc == c->reg[7] && !c->vsync) {
+        c->vsync = true;
+        c->vsc = 0;
     }
 
     c->display_enable = (c->hcc < c->reg[1]) && (c->vcc < c->reg[6]);
