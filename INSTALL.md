@@ -81,9 +81,13 @@ gmake
 
 `ACLOCAL_PATH` is required so `aclocal` finds pkg-config's `pkg.m4` (pkgsrc installs it under `/usr/pkg/share/aclocal/`, which is not on the default search path). Build with `gmake`, not BSD `make` — the automake-generated Makefile uses GNU-make-isms.
 
-### macOS / FreeBSD / OpenBSD
+### macOS / OpenBSD
 
-Should work with the standard `autoreconf -iv && ./configure && make`. Install SDL3 + autotools via Homebrew / pkg / ports. Not regularly tested — please open an issue if it doesn't.
+Builds and runs with the standard `autoreconf -iv && ./configure && make`. Install SDL3 + autotools via Homebrew (macOS) or `pkg_add` (OpenBSD).
+
+### FreeBSD
+
+Should work — the autotools build is portable. Not tested; please open an issue if it doesn't.
 
 ## ROM files
 

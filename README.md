@@ -27,8 +27,10 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 | Linux (x86_64) | Tested daily; Fedora RPM provided |
 | Windows (MinGW-w64) | Tested under Wine and on native Windows 7+; CI-built `.exe` bundle |
 | NetBSD | Builds and runs from pkgsrc |
+| OpenBSD | Builds and runs |
+| macOS | Builds and runs |
 | Haiku (32-bit nightly) | Builds and runs |
-| FreeBSD / OpenBSD / macOS | Should work — autotools build is portable; not regularly tested |
+| FreeBSD | Should work — autotools build is portable; not tested |
 
 Pre-built Linux and Windows binaries are attached to each [GitHub Release](https://github.com/salvogendut/1984/releases).
 
@@ -38,8 +40,12 @@ Pre-built Linux and Windows binaries are attached to each [GitHub Release](https
   <tr>
     <td align="center"><img src="screenshots/linux.png" width="280" alt="Linux"><br><sub>Linux</sub></td>
     <td align="center"><img src="screenshots/windows.png" width="280" alt="Windows"><br><sub>Windows</sub></td>
+    <td align="center"><img src="screenshots/macos.png" width="280" alt="macOS"><br><sub>macOS</sub></td>
+  </tr>
+  <tr>
     <td align="center"><img src="screenshots/haiku.png" width="280" alt="Haiku"><br><sub>Haiku</sub></td>
     <td align="center"><img src="screenshots/netbsd.png" width="280" alt="NetBSD"><br><sub>NetBSD</sub></td>
+    <td align="center"><img src="screenshots/openbsd.png" width="280" alt="OpenBSD"><br><sub>OpenBSD</sub></td>
   </tr>
 </table>
 
