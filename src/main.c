@@ -197,7 +197,10 @@ int main(int argc, char *argv[]) {
     }
     SD_LOG("SDL_Init OK; calling cpc_init");
 
-    CPC cpc;
+    /* static: the CPC struct embeds 1 MB of RAM plus ROMs and buffers,
+     * which exceeds the default 1 MB thread stack on Windows. BSS keeps
+     * the same scope without stack pressure or heap bookkeeping. */
+    static CPC cpc;
     if (cpc_init(&cpc, cfg.model, cfg.rom_os, cfg.rom_basic) < 0) {
         SD_LOG("cpc_init FAILED (rom_os=%s rom_basic=%s)", cfg.rom_os, cfg.rom_basic);
         fprintf(stderr, "Failed to initialise CPC (check ROM paths in ~/.config/1984/1984.conf)\n");

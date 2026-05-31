@@ -43,6 +43,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          cache: true
           install: >-
             base-devel
             mingw-w64-x86_64-gcc
