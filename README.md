@@ -25,7 +25,7 @@ make
 ```
 Output binary: `bin/1984`
 
-**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, Haiku, …):**
+**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, Haiku, Windows/MinGW, …):**
 ```bash
 ./configure
 make
@@ -59,6 +59,32 @@ make
 `configure` auto-detects Haiku and finds SDL3's secondary-arch `.pc` file
 without any manual `PKG_CONFIG_PATH`. On 64-bit Haiku use `setarch x86_64`
 and the corresponding non-`_x86` package names.
+
+**Windows (MSYS2 / MinGW-w64):**
+
+From an MSYS2 MinGW64 shell:
+```bash
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-pkgconf \
+                   mingw-w64-x86_64-sdl3 autoconf automake make
+autoreconf -iv
+./configure
+make
+```
+`configure` detects `host_os = mingw*` and links `-lws2_32` for sockets
+plus `-mconsole` so stderr/stdout reach `cmd.exe` (SDL3's pkg-config
+defaults to `-mwindows`, which detaches the process from the console).
+The output `1984.exe` needs `SDL3.dll` and the MinGW runtime DLLs from
+`/mingw64/bin/` alongside it to run.
+
+## Continuous integration
+
+Every push and pull request triggers a GitHub Actions build matrix
+(`.github/workflows/build.yml`) that produces ready-to-run binaries for
+both Linux (Fedora-built) and Windows (MinGW). The Windows job bundles
+`1984.exe` with `SDL3.dll`, the required MinGW runtime DLLs, and the
+ROM set into a single downloadable artifact. Grab them from the
+[Actions tab](https://github.com/salvogendut/1984/actions) of any
+recent run, no local toolchain required.
 
 ## ROM files
 

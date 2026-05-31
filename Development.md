@@ -605,3 +605,58 @@ quirks to be aware of:
 3. **Sockets are in `libnetwork`, not libc.** Handled automatically by the
    `AC_SEARCH_LIBS([socket], [network socket])` probes in `configure.ac`; no
    manual `LDFLAGS` needed.
+
+## Building on Windows (MinGW-w64)
+
+1984 builds and runs on Windows via the MSYS2 MinGW64 toolchain (verified
+under Wine on Linux). Four points worth knowing:
+
+1. **Socket library.** Winsock lives in `ws2_32`, not libc.
+   `configure.ac` detects `host_os = mingw*|cygwin*|msys*` and appends
+   `-lws2_32` via the `WIN_LIBS` substitution. The Haiku/Solaris
+   `AC_SEARCH_LIBS` probes are skipped on Windows for the same reason —
+   no `socket`/`getsockopt` symbol exists outside `ws2_32`.
+
+2. **Console subsystem.** SDL3's `sdl3.pc` adds `-mwindows` to the link
+   line, which marks the binary as a GUI app and silently swallows
+   `stderr`/`stdout` from `cmd.exe`. `configure.ac` appends `-mconsole`
+   *after* the pkg-config flags (`WIN_SUBSYSTEM` in `Makefile.am`) so
+   trace output and error messages remain visible. Cosmetically this
+   means launching `1984.exe` from Explorer flashes a console window;
+   that is acceptable for an emulator with developer-facing trace flags.
+
+3. **`CPC` instance lives in BSS, not on the stack.** `main()` declares
+   the CPC struct `static` rather than as an automatic. The struct
+   embeds 1 MB of guest RAM plus ROMs and buffers, which exceeds the
+   default 1 MB Windows thread stack. MinGW's GCC inserts `__chkstk_ms`
+   probes for any frame over 4 KB; on Windows those probes hit the
+   stack guard page and raise `EXCEPTION_STACK_OVERFLOW` before `main`
+   even reaches its first statement. Linux (8 MB stack with on-demand
+   growth) never noticed.
+
+4. **Compat shims.** `src/compat_win.h` provides small adapters for
+   POSIX APIs that MinGW does not ship verbatim: a single-arg
+   `mkdir(path)` macro (Windows `_mkdir` ignores mode bits), and PTY
+   stubs in `monitor.c` so `--monitor-pty` returns a clean "not
+   supported on Windows" message instead of failing to link. Socket
+   code in `m4.c`, `net4cpc.c`, and `monitor.c` casts buffer/optval
+   arguments to `char *` for Winsock's stricter prototypes.
+
+## Continuous integration
+
+`.github/workflows/build.yml` defines two jobs that run on every push
+to `main`/`windows-port` and on every PR to `main`:
+
+- **Linux** — runs inside a `fedora:41` container, installs the standard
+  build deps (`gcc make autoconf automake pkgconf SDL3-devel`), runs
+  `autoreconf -iv && ./configure && make`, uploads the `1984` ELF as the
+  `1984-linux-x86_64` artifact.
+- **Windows** — uses `msys2/setup-msys2@v2` with `MINGW64`, installs the
+  same toolchain plus `mingw-w64-x86_64-sdl3`, builds the same way, then
+  bundles `1984.exe` with the DLLs reported by `ldd` and the ROM set
+  into the `1984-windows-x86_64` artifact. `cache: true` keeps the
+  pacman package cache between runs so subsequent setups drop from ~8
+  minutes to ~30 seconds.
+
+No release pipeline yet — artifacts are downloadable from the Actions
+tab but not attached to GitHub Releases.
