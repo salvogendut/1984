@@ -1,0 +1,72 @@
+name: build
+
+on:
+  push:
+    branches: [main, windows-port]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux:
+    name: Linux (Fedora)
+    runs-on: ubuntu-latest
+    container: fedora:41
+    steps:
+      - name: Install build deps
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc make autoconf automake pkgconf-pkg-config \
+            SDL3-devel git
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: |
+          autoreconf -iv
+          ./configure
+      - name: Build
+        run: make -j$(nproc)
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1984-linux-x86_64
+          path: 1984
+
+  windows:
+    name: Windows (MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MSYS2 + MinGW + SDL3
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-SDL3
+            autoconf
+            automake
+      - name: Configure
+        run: |
+          autoreconf -iv
+          ./configure
+      - name: Build
+        run: make -j$(nproc)
+      - name: Stage binary + DLLs
+        run: |
+          mkdir dist
+          cp 1984.exe dist/
+          # Bundle the MinGW runtime + SDL3 DLLs the .exe needs to run
+          for dll in $(ldd dist/1984.exe | awk '/mingw64/ {print $3}'); do
+            cp "$dll" dist/
+          done
+          cp -r roms dist/
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1984-windows-x86_64
+          path: dist/
