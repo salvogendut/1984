@@ -76,7 +76,9 @@ static u8 bus_io_read(void *ctx, u16 port) {
     /* CRTC read: A14=0 (hi & ~0x40 → 0xBF area) */
     if (!(hi & 0x40)) {
         u8 func = (port >> 8) & 0x03;
-        result = (func == 0x03) ? crtc_read(&cpc->crtc) : 0xFF;
+        if (func == 0x03)      result = crtc_read(&cpc->crtc);
+        else if (func == 0x02) result = crtc_read_status(&cpc->crtc);
+        else                   result = 0xFF;
     }
     /* PPI: A11=0 selects PPI (0xF4xx/0xF5xx/0xF6xx/0xF7xx) */
     else if (!(hi & 0x08)) {
