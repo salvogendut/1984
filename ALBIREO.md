@@ -55,6 +55,12 @@ and cannot coexist. The overlay enforces this mutual exclusion:
   UNIDOS and any Albireo / Cyboard node ROMs — and disables both Albireo and
   Cyboard's RTC, restoring the stock BASIC and AMSDOS defaults.
 
+> **Note:** This Albireo ↔ M4 mutual exclusion is enforced only inside this
+> emulator, to keep the configuration clean while M4 support remains
+> experimental. It is not necessarily a real-hardware constraint — on actual
+> CPCs the boards may well coexist if the physical ROM slots and I/O ports
+> do not collide.
+
 ## Where to obtain the ROMs
 
 | ROM           | Source                                                |

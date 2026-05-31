@@ -47,6 +47,11 @@ and cannot coexist. The overlay enforces this mutual exclusion:
 So a switch from one stack to the other never requires editing the config file
 by hand: pick the option you want and the other side is torn down for you.
 
+> **Note:** This mutual exclusion is enforced only inside this emulator, to
+> keep the configuration clean while M4 support remains experimental. It is
+> not necessarily a real-hardware constraint — on actual CPCs the boards may
+> well coexist if the physical ROM slots and I/O ports do not collide.
+
 ## Where to obtain the ROMs
 
 | ROM             | Source                                               |
