@@ -47,7 +47,7 @@ jobs:
             base-devel
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-SDL3
+            mingw-w64-x86_64-sdl3
             autoconf
             automake
       - name: Configure
