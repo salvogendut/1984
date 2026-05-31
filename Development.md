@@ -1,7 +1,7 @@
 # 1984 CPC Emulator — Development Notes
 
 Architecture and implementation details for contributors.
-For usage see [README.md](README.md).
+For usage see [USAGE.md](USAGE.md); for installation see [INSTALL.md](INSTALL.md).
 
 ---
 
