@@ -97,7 +97,16 @@ typedef struct {
      *   0xF400-0xF4FF: rom_config — jump_vec, init_count, runfile_ptr, etc. */
     u8      bus_mem[0xC00]; /* covers 0xE800-0xF3FF — full rom_response area */
     u8      cfg_mem[0x100]; /* covers 0xF400-0xF4FF — rom_config area */
-    u8      sock_mem[0x50]; /* covers 0xFE00-0xFE4F — sock_info (5 × 16 bytes) */
+    /* 0xFE00-0xFEFF — sock_info. Real layout is 5 × 16 bytes, but the
+     * SymbOS netd-m4c.exe daemon's m4csct (socket-translation lookup)
+     * intermittently returns garbage in A; the caller m4csta does
+     * `add a *4 ; ld iy,(m4cromsoc); add iy,bc` and reads 16 bytes from
+     * an unintended slot, which the daemon then trusts. Extending the
+     * window to a full 16 slots and broadcasting the active TCP socket's
+     * bytes to every slot (see broadcast_sock_mem) keeps polling alive
+     * for any garbage A in 0..15. A >= 16 puts the read into plain CPC
+     * RAM and we can't intercept it. */
+    u8      sock_mem[0x100];
 
     /* Network state — host POSIX sockets backing the M4's WiFi sockets. */
     M4Socket sockets[M4_NSOCKS];

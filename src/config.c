@@ -337,6 +337,15 @@ int config_load(Config *cfg) {
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
+    /* M4ROM is incompatible with UNIDOS/Albireo tooling and with the
+     * Cyboard RTC. Older configs may have both enabled — keep M4 and
+     * disable the conflicting peripherals so the runtime starts in a
+     * clean scenario that matches the overlay's mutual-exclusion rule. */
+    if (cfg->m4) {
+        if (cfg->rtc)     cfg->rtc = false;
+        if (cfg->albireo) { cfg->albireo = false; cfg->albireo_image[0] = '\0'; }
+    }
+
     return rc;
 }
 

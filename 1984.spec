@@ -30,8 +30,9 @@ Expansion peripherals emulated:
   * Net4CPC W5100S Ethernet (TCP/UDP via host sockets, static IP)
   * Albireo USB host (CH376 driven by UNIDOS for file ops, raw
     USB Bulk-Only Transport for SymbOS storage)
-  * M4 board (file API + ESP8266-style networking) — currently
-    unstable for the SymbOS netd-m4c.exe daemon, otherwise usable
+  * M4 board (file API + ESP8266-style networking) — cpc-sdcc demos
+    and SymbOS HTTP downloads (wget) work; SymbOS interactive telnet
+    stalls after the server banner (same on real Net4CPC hardware)
 
 DK'tronics-compatible RAM banking up to 576 KB and Yarek/RAM7
 extended banking to 1024 KB are both supported. The F8 memory
