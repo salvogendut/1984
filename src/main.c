@@ -498,9 +498,12 @@ int main(int argc, char *argv[]) {
             cpc.model = cfg.model;
             cpc.mem.ram_size = cfg.memory_kb * 1024;
             mem_load_rom(&cpc.mem, cfg.rom_os, cfg.rom_basic);
-            if (cfg.rom_amsdos[0] && cfg.dd1)
+            /* AMSDOS is built-in on 6128 and supplied by DDI-1 on the 464;
+             * config_set_model / config_apply_dd1 already nail rom_amsdos
+             * to the right value, so just mirror it into the live ROM map. */
+            if (cfg.rom_amsdos[0])
                 mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
-            else if (!cfg.dd1 && cpc.model == MODEL_464)
+            else
                 mem_unload_amsdos(&cpc.mem);
             /* First unload every slot — covers the rom_board=true→false
              * transition. The cfg.rom_ext paths stay intact so the next
