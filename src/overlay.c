@@ -418,10 +418,34 @@ static void activate_item(Overlay *ov) {
                         ch376_close(&ov->cpc->ch376);
                     }
                 }
+                /* Tear down the full Cyboard pack (matches what
+                 * toggling Cyboard off does) — Net4CPC, RTC, IDE, Mouse. */
+                if (ov->cfg->net4cpc) ov->cfg->net4cpc = false;
                 if (ov->cfg->rtc) {
                     ov->cfg->rtc = false;
                     if (ov->cpc) ov->cpc->rtc = false;
                 }
+                if (ov->cfg->symbiface_ide) {
+                    ov->cfg->symbiface_ide = false;
+                    ov->cfg->ide_image[0]  = '\0';
+                }
+                if (ov->cfg->symbiface_mouse) ov->cfg->symbiface_mouse = false;
+                /* Drop every non-default expansion ROM so nothing
+                 * (UNIDOS, custom utilities, etc.) interferes with
+                 * M4ROM. Also restore the stock BASIC + AMSDOS so slots
+                 * 0 and 7 fall back to clean defaults. */
+                for (int i = 0; i < ROM_EXT_COUNT; i++) {
+                    if (!ov->cfg->rom_ext[i][0]) continue;
+                    ov->cfg->rom_ext[i][0] = '\0';
+                    if (ov->cpc) mem_unload_rom_ext(&ov->cpc->mem, i);
+                }
+                config_default_basic(ov->cfg->model,
+                                     ov->cfg->rom_basic, sizeof(ov->cfg->rom_basic));
+                if (!ov->cfg->rom_amsdos[0])
+                    config_default_amsdos(ov->cfg->rom_amsdos,
+                                          sizeof(ov->cfg->rom_amsdos));
+                if (ov->cpc)
+                    mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
                 /* Enable: open file picker to select SD card image (raw FAT) */
                 ov->dialog_kind  = DIALOG_M4_IMAGE;
                 ov->dialog_ready = false;
@@ -560,6 +584,20 @@ static void activate_item(Overlay *ov) {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool enable = !all;
+            /* Cyboard pack is incompatible with M4ROM — enabling forces
+             * a clean scenario by disabling M4 (mirrors the M4 enable
+             * path in case 0). */
+            if (enable && ov->cfg->m4) {
+                ov->cfg->m4 = false;
+                ov->cfg->m4_image[0] = '\0';
+                ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->m4 = false;
+                    m4_set_image(&ov->cpc->m4_card, "");
+                    mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
+                }
+                ov->needs_cold_boot = true;
+            }
             ov->cfg->net4cpc         = enable;
             ov->cfg->rtc             = enable;
             ov->cfg->symbiface_ide   = enable;
