@@ -16,10 +16,12 @@
 typedef struct {
     u8  ink[GA_NUM_INKS];    /* hardware colour index (0-31) */
     u8  selected_pen;        /* current pen register (bit 4 = border) */
-    u8  screen_mode;         /* 0/1/2 */
+    u8  screen_mode;         /* 0/1/2 — active mode (latched on HSYNC) */
+    u8  requested_mode;      /* mode written via ga_write; copied to screen_mode on next HSYNC */
     bool lower_rom;          /* OS ROM mapped at 0x0000 */
     bool upper_rom;          /* BASIC ROM mapped at 0xC000 */
     u8  interrupt_counter;   /* counts HSYNCs, fires IRQ at 52 */
+    u8  vsync_delay;         /* VSYNC→IRQ-resync countdown (2 HSYNCs); 0 = idle */
     bool interrupt_pending;
 } GateArray;
 
@@ -30,3 +32,5 @@ void ga_init(GateArray *ga);
 void ga_write(GateArray *ga, u8 val);   /* port 0x7F (A15=0) */
 u8   ga_mode(GateArray *ga);
 void ga_hsync(GateArray *ga);           /* called by CRTC on each HSYNC */
+void ga_vsync_start(GateArray *ga);     /* called on CRTC VSYNC rising edge */
+void ga_irq_ack(GateArray *ga);         /* called by Z80 on IRQ acknowledge */

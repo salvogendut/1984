@@ -19,6 +19,7 @@ void ga_init(GateArray *ga) {
     ga->lower_rom = true;
     ga->upper_rom = true;
     ga->screen_mode = 1;
+    ga->requested_mode = 1;
     /* Power-on default inks */
     for (int i = 0; i < GA_NUM_INKS; i++)
         ga->ink[i] = 0;
@@ -38,7 +39,11 @@ void ga_write(GateArray *ga, u8 val) {
             }
             break;
         case 0x02:   /* Screen mode + ROM control */
-            ga->screen_mode = val & 0x03;
+            /* Mode change is latched: real hardware only adopts the new mode
+             * at the next HSYNC, so mid-line writes don't tear the current
+             * character. Demos with raster mode-splits (and the firmware's
+             * mode-set sequence) rely on this to avoid flicker. */
+            ga->requested_mode = val & 0x03;
             ga->lower_rom   = !(val & 0x04);
             ga->upper_rom   = !(val & 0x08);
             if (val & 0x10) {
@@ -56,9 +61,33 @@ u8 ga_mode(GateArray *ga) {
 }
 
 void ga_hsync(GateArray *ga) {
+    /* Latch the requested mode at start of new scan line */
+    ga->screen_mode = ga->requested_mode;
     ga->interrupt_counter++;
     if (ga->interrupt_counter >= 52) {
         ga->interrupt_counter = 0;
         ga->interrupt_pending = true;
     }
+    /* VSYNC IRQ resync: 2 HSYNCs after VSYNC begins, if counter >= 32 raise a
+     * compensating IRQ, then reset counter. Locks the 300 Hz raster IRQ to
+     * VSYNC so the firmware's frame-flyback ticker (INK/BORDER flashing,
+     * SOUND queue, etc.) advances at a steady cadence. */
+    if (ga->vsync_delay) {
+        if (--ga->vsync_delay == 0) {
+            if (ga->interrupt_counter >= 32)
+                ga->interrupt_pending = true;
+            ga->interrupt_counter = 0;
+        }
+    }
+}
+
+void ga_vsync_start(GateArray *ga) {
+    ga->vsync_delay = 2;
+}
+
+void ga_irq_ack(GateArray *ga) {
+    /* On IRQ acknowledge the GA clears bit 5 of the line counter, so a value
+     * of ≥32 at ack time drops below the next-IRQ threshold and the firmware
+     * gets one IRQ per request instead of two. */
+    ga->interrupt_counter &= 0x1F;
 }

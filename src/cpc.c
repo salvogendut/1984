@@ -491,6 +491,7 @@ void cpc_frame(CPC *cpc) {
             /* VSYNC rising edge → start of new frame */
             if (new_vsync && !cpc->prev_vsync) {
                 cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
+                ga_vsync_start(&cpc->ga);
                 display_upload(&cpc->display);
             }
 
@@ -529,6 +530,7 @@ void cpc_frame(CPC *cpc) {
         /* Deliver pending Gate Array interrupt */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
+            ga_irq_ack(&cpc->ga);
             z80_interrupt(&cpc->cpu);
         }
 
