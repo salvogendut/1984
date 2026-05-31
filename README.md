@@ -25,7 +25,7 @@ make
 ```
 Output binary: `bin/1984`
 
-**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, OpenBSD, Haiku, Windows/MinGW, …):**
+**Autoconf/Automake (cross-platform — Linux, macOS, FreeBSD, NetBSD, OpenBSD, Haiku, Windows/MinGW, …):**
 ```bash
 ./configure
 make
@@ -59,6 +59,21 @@ make
 `configure` auto-detects Haiku and finds SDL3's secondary-arch `.pc` file
 without any manual `PKG_CONFIG_PATH`. On 64-bit Haiku use `setarch x86_64`
 and the corresponding non-`_x86` package names.
+
+**NetBSD (pkgsrc):**
+
+```sh
+sudo pkgin install pkgconf autoconf automake gmake SDL3
+export ACLOCAL_PATH=/usr/pkg/share/aclocal
+autoreconf -iv
+./configure
+gmake
+```
+
+`ACLOCAL_PATH` is required so `aclocal` finds pkg-config's `pkg.m4` (pkgsrc
+installs it under `/usr/pkg/share/aclocal/`, which is not on the default
+search path). Build with `gmake`, not BSD `make` — the automake-generated
+Makefile uses GNU-make-isms.
 
 **Windows (MSYS2 / MinGW-w64):**
 

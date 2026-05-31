@@ -606,6 +606,25 @@ quirks to be aware of:
    `AC_SEARCH_LIBS([socket], [network socket])` probes in `configure.ac`; no
    manual `LDFLAGS` needed.
 
+## Building on NetBSD (pkgsrc)
+
+1984 builds and runs on NetBSD with no source-level changes. Only two
+environment quirks:
+
+1. **`aclocal` does not search pkgsrc paths by default.** pkg-config's
+   `pkg.m4` (and any other macros installed via pkgsrc) live under
+   `/usr/pkg/share/aclocal/`, which is outside `aclocal`'s built-in
+   search path. Without it, `PKG_CHECK_MODULES` fails to expand and
+   `autoreconf` complains about *unrelated* macros being undefined
+   (`AC_MSG_ERROR` is the usual misleading scapegoat). Export
+   `ACLOCAL_PATH=/usr/pkg/share/aclocal` before running `autoreconf`.
+
+2. **Use `gmake`, not BSD `make`.** automake emits GNU-make-flavoured
+   rules. The pkgsrc package is `gmake`; it does not replace
+   `/usr/bin/make`.
+
+Required pkgsrc packages: `pkgconf autoconf automake gmake SDL3`.
+
 ## Building on Windows (MinGW-w64)
 
 1984 builds and runs on Windows via the MSYS2 MinGW64 toolchain (verified
