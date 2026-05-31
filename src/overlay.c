@@ -183,7 +183,7 @@ static void item_text(const Overlay *ov, int row,
     case OV_ADVANCED:
         switch (row) {
         case 0:
-            snprintf(lbl, lsz, "M4 (unstable)");
+            snprintf(lbl, lsz, "M4 (experimental)");
             if (!ov->cfg->rom_board) {
                 snprintf(val, vsz, "[needs Roms Board]");
                 *readonly = true;
@@ -406,7 +406,10 @@ static void activate_item(Overlay *ov) {
         switch (ov->row) {
         case 0:
             if (!ov->cfg->m4) {
-                /* Mutually exclusive with Albireo (both claim port 0xFExx). */
+                /* Mutually exclusive with Albireo (both claim port 0xFExx)
+                 * and with the Cyboard RTC — M4ROM is incompatible with
+                 * UNIDOS/Albireo tooling, so enabling M4 forces a clean
+                 * scenario by disabling both. */
                 if (ov->cfg->albireo) {
                     ov->cfg->albireo = false;
                     ov->cfg->albireo_image[0] = '\0';
@@ -414,6 +417,10 @@ static void activate_item(Overlay *ov) {
                         ov->cpc->albireo = false;
                         ch376_close(&ov->cpc->ch376);
                     }
+                }
+                if (ov->cfg->rtc) {
+                    ov->cfg->rtc = false;
+                    if (ov->cpc) ov->cpc->rtc = false;
                 }
                 /* Enable: open file picker to select SD card image (raw FAT) */
                 ov->dialog_kind  = DIALOG_M4_IMAGE;
@@ -447,6 +454,20 @@ static void activate_item(Overlay *ov) {
             break;
         case 3:
             ov->cfg->rtc = !ov->cfg->rtc;
+            /* Cyboard RTC is incompatible with M4ROM — enabling RTC
+             * disables M4 for a clean scenario (mirrors the reverse
+             * forced by case 0). */
+            if (ov->cfg->rtc && ov->cfg->m4) {
+                ov->cfg->m4 = false;
+                ov->cfg->m4_image[0] = '\0';
+                ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->m4 = false;
+                    m4_set_image(&ov->cpc->m4_card, "");
+                    mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
+                }
+                ov->needs_cold_boot = true;
+            }
             ov->dirty = true;
             break;
         case 4:
