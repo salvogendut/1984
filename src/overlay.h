@@ -7,7 +7,8 @@ typedef enum {
     OV_GENERAL  = 0,
     OV_STORAGE  = 1,
     OV_ADVANCED = 2,
-    OV_SEC_COUNT = 3
+    OV_TINKER   = 3,
+    OV_SEC_COUNT = 4
 } OvSection;
 
 typedef enum {

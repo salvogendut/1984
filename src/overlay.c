@@ -24,16 +24,17 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
-    "General", "Media", "Extensions"
+    "General", "Media", "Extensions", "Advanced"
 };
-static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160 };
-/* General has 6 rows on CPC 464, 7 on 6128 (the extra one is the
+static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
+/* General has 7 rows on CPC 464, 8 on 6128 (the extra one is the
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
- * the cassette deck built in). Other sections are fixed. */
-static const int sec_row_count[OV_SEC_COUNT] = { 6, 3, 11 };
+ * the cassette deck built in). Other sections are fixed.
+ * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 1 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
-    if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 7;
+    if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
     return sec_row_count[s];
 }
 
@@ -131,6 +132,10 @@ static void item_text(const Overlay *ov, int row,
             trunc_path(basename(tmp), val, vsz);
             break;
         }
+        case 7:
+            snprintf(lbl, lsz, "Tinker");
+            snprintf(val, vsz, "%s", ov->cfg->tinker ? "enabled" : "disabled");
+            break;
         }
         break;
     }
@@ -291,6 +296,16 @@ static void item_text(const Overlay *ov, int row,
         }
         break;
 
+    case OV_TINKER:
+        switch (row) {
+        case 0:
+            snprintf(lbl, lsz, "Smoothing");
+            snprintf(val, vsz, "%s",
+                     ov->cfg->fullscreen_smoothing ? "smooth" : "sharp");
+            break;
+        }
+        break;
+
     default:
         break;
     }
@@ -363,6 +378,15 @@ static void activate_item(Overlay *ov) {
                 rom_filters, 2, NULL, false);
             break;
         }
+        case 7:
+            ov->cfg->tinker = !ov->cfg->tinker;
+            /* Don't leave the cursor parked on a tab that just disappeared. */
+            if (!ov->cfg->tinker && ov->section == OV_TINKER) {
+                ov->section = OV_GENERAL;
+                ov->row = 0;
+            }
+            ov->dirty = true;
+            break;
         }
         break;
     }
@@ -622,6 +646,18 @@ static void activate_item(Overlay *ov) {
             }
             break;
         }
+        }
+        break;
+
+    case OV_TINKER:
+        switch (ov->row) {
+        case 0:
+            ov->cfg->fullscreen_smoothing = !ov->cfg->fullscreen_smoothing;
+            if (ov->cpc)
+                display_set_smoothing(&ov->cpc->display,
+                                      ov->cfg->fullscreen_smoothing);
+            ov->dirty = true;
+            break;
         }
         break;
 
@@ -898,12 +934,14 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         break;
     case SDL_SCANCODE_LEFT:
         do { ov->section = (OvSection)((ov->section + OV_SEC_COUNT - 1) % OV_SEC_COUNT); }
-        while (ov->section == OV_ADVANCED && !ov->cfg->mx4);
+        while ((ov->section == OV_ADVANCED && !ov->cfg->mx4) ||
+               (ov->section == OV_TINKER   && !ov->cfg->tinker));
         ov->row = 0;
         break;
     case SDL_SCANCODE_RIGHT:
         do { ov->section = (OvSection)((ov->section + 1) % OV_SEC_COUNT); }
-        while (ov->section == OV_ADVANCED && !ov->cfg->mx4);
+        while ((ov->section == OV_ADVANCED && !ov->cfg->mx4) ||
+               (ov->section == OV_TINKER   && !ov->cfg->tinker));
         ov->row = 0;
         break;
     case SDL_SCANCODE_UP:
@@ -1009,20 +1047,23 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     /* ---- Top bar ---- */
     fill_rect(r, 0, 0, lw, BAR_H, 20, 20, 50, 230);
 
+    /* Tabs are laid out left-to-right; hidden tabs collapse the gap. */
+    float tx = (float)sec_x[0];
     for (int i = 0; i < OV_SEC_COUNT; i++) {
         /* Extensions tab is hidden entirely when MX4 is disabled. */
         if (i == OV_ADVANCED && !ov->cfg->mx4) continue;
+        if (i == OV_TINKER   && !ov->cfg->tinker) continue;
         bool sel = (ov->section == (OvSection)i);
-        float tx = sec_x[i];
         float ty = (BAR_H - FONT_H) / 2.0f;
+        float lw_tab = strlen(sec_labels[i]) * FONT_W;
 
         if (sel) {
-            float hw = strlen(sec_labels[i]) * FONT_W + 4.0f;
-            fill_rect(r, tx - 2, 1, hw, BAR_H - 2, 70, 90, 200, 255);
+            fill_rect(r, tx - 2, 1, lw_tab + 4.0f, BAR_H - 2, 70, 90, 200, 255);
             draw_text(r, tx, ty, sec_labels[i], 255, 255, 255);
         } else {
             draw_text(r, tx, ty, sec_labels[i], 150, 150, 175);
         }
+        tx += lw_tab + 16.0f;   /* gutter between tabs */
     }
 
     /* ---- Dropdown ---- */

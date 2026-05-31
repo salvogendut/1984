@@ -43,6 +43,10 @@ typedef struct {
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
     bool fullscreen;
+    bool fullscreen_smoothing; /* linear (smooth) vs nearest (sharp) texture scale */
+
+    /* [advanced] */
+    bool tinker;             /* enable Advanced overlay tab with low-level toggles */
 } Config;
 
 /* Load ~/.config/1984/1984.conf into cfg. Missing file = silent defaults.

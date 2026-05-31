@@ -330,6 +330,7 @@ int main(int argc, char *argv[]) {
 
     bool fullscreen     = cfg.fullscreen;
     bool mouse_captured = false;
+    display_set_smoothing(&cpc.display, cfg.fullscreen_smoothing);
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
