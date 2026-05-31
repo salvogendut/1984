@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=1984
+GenericName=Amstrad CPC Emulator
+Comment=Amstrad CPC 464/6128 emulator
+Exec=1984 %F
+Icon=io.github.salvogendut.Emulator1984
+Terminal=false
+Categories=Game;Emulator;
+Keywords=amstrad;cpc;emulator;retro;z80;

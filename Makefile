@@ -98,14 +98,22 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(dist_roms_DATA) $(noinst_HEADERS) \
-	$(am__DIST_COMMON)
+	$(am__configure_deps) $(dist_desktop_DATA) \
+	$(dist_icon128_DATA) $(dist_icon16_DATA) $(dist_icon256_DATA) \
+	$(dist_icon32_DATA) $(dist_icon48_DATA) $(dist_icon512_DATA) \
+	$(dist_icon64_DATA) $(dist_metainfo_DATA) $(dist_roms_DATA) \
+	$(noinst_HEADERS) $(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(romsdir)"
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(desktopdir)" \
+	"$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" \
+	"$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" \
+	"$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" \
+	"$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" \
+	"$(DESTDIR)$(romsdir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
@@ -206,7 +214,10 @@ am__uninstall_files_from_dir = { \
   || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
        $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
   }
-DATA = $(dist_roms_DATA)
+DATA = $(dist_desktop_DATA) $(dist_icon128_DATA) $(dist_icon16_DATA) \
+	$(dist_icon256_DATA) $(dist_icon32_DATA) $(dist_icon48_DATA) \
+	$(dist_icon512_DATA) $(dist_icon64_DATA) $(dist_metainfo_DATA) \
+	$(dist_roms_DATA)
 HEADERS = $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
@@ -329,22 +340,22 @@ htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
 install_sh = ${SHELL} /var/home/salvogendut/Dev/1984/build-aux/install-sh
-libdir = ${exec_prefix}/lib
+libdir = ${exec_prefix}/lib64
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
-localstatedir = ${prefix}/var
+localstatedir = /var
 mandir = ${datarootdir}/man
 mkdir_p = $(MKDIR_P)
 oldincludedir = /usr/include
 pdfdir = ${docdir}
-prefix = /usr/local
+prefix = /usr
 program_transform_name = s,x,x,
 psdir = ${docdir}
 runstatedir = ${localstatedir}/run
 sbindir = ${exec_prefix}/sbin
-sharedstatedir = ${prefix}/com
+sharedstatedir = /var
 srcdir = .
-sysconfdir = ${prefix}/etc
+sysconfdir = /etc
 target_alias = 
 top_build_prefix = 
 top_builddir = .
@@ -425,6 +436,26 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/OS_6128.ROM \
                  roms/AmstradDiagLower.rom
 
+
+# Desktop integration: .desktop launcher, AppStream metainfo, hicolor icons.
+desktopdir = $(datadir)/applications
+dist_desktop_DATA = io.github.salvogendut.Emulator1984.desktop
+metainfodir = $(datadir)/metainfo
+dist_metainfo_DATA = io.github.salvogendut.Emulator1984.metainfo.xml
+icon16dir = $(datadir)/icons/hicolor/16x16/apps
+dist_icon16_DATA = icons/16x16/apps/io.github.salvogendut.Emulator1984.png
+icon32dir = $(datadir)/icons/hicolor/32x32/apps
+dist_icon32_DATA = icons/32x32/apps/io.github.salvogendut.Emulator1984.png
+icon48dir = $(datadir)/icons/hicolor/48x48/apps
+dist_icon48_DATA = icons/48x48/apps/io.github.salvogendut.Emulator1984.png
+icon64dir = $(datadir)/icons/hicolor/64x64/apps
+dist_icon64_DATA = icons/64x64/apps/io.github.salvogendut.Emulator1984.png
+icon128dir = $(datadir)/icons/hicolor/128x128/apps
+dist_icon128_DATA = icons/128x128/apps/io.github.salvogendut.Emulator1984.png
+icon256dir = $(datadir)/icons/hicolor/256x256/apps
+dist_icon256_DATA = icons/256x256/apps/io.github.salvogendut.Emulator1984.png
+icon512dir = $(datadir)/icons/hicolor/512x512/apps
+dist_icon512_DATA = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
@@ -1007,6 +1038,195 @@ src/1984-z80.obj: src/z80.c
 #	$(AM_V_CC)source='src/z80.c' object='src/1984-z80.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-z80.obj `if test -f 'src/z80.c'; then $(CYGPATH_W) 'src/z80.c'; else $(CYGPATH_W) '$(srcdir)/src/z80.c'; fi`
+install-dist_desktopDATA: $(dist_desktop_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_desktop_DATA)'; test -n "$(desktopdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(desktopdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(desktopdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(desktopdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(desktopdir)" || exit $$?; \
+	done
+
+uninstall-dist_desktopDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_desktop_DATA)'; test -n "$(desktopdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(desktopdir)'; $(am__uninstall_files_from_dir)
+install-dist_icon128DATA: $(dist_icon128_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon128_DATA)'; test -n "$(icon128dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon128dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon128dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon128dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon128dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon128DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon128_DATA)'; test -n "$(icon128dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon128dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon16DATA: $(dist_icon16_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon16_DATA)'; test -n "$(icon16dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon16dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon16dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon16dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon16dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon16DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon16_DATA)'; test -n "$(icon16dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon16dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon256DATA: $(dist_icon256_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon256_DATA)'; test -n "$(icon256dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon256dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon256dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon256dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon256dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon256DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon256_DATA)'; test -n "$(icon256dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon256dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon32DATA: $(dist_icon32_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon32_DATA)'; test -n "$(icon32dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon32dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon32dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon32dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon32dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon32DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon32_DATA)'; test -n "$(icon32dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon32dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon48DATA: $(dist_icon48_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon48_DATA)'; test -n "$(icon48dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon48dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon48dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon48dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon48dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon48DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon48_DATA)'; test -n "$(icon48dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon48dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon512DATA: $(dist_icon512_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon512_DATA)'; test -n "$(icon512dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon512dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon512dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon512dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon512dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon512DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon512_DATA)'; test -n "$(icon512dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon512dir)'; $(am__uninstall_files_from_dir)
+install-dist_icon64DATA: $(dist_icon64_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_icon64_DATA)'; test -n "$(icon64dir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(icon64dir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(icon64dir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(icon64dir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(icon64dir)" || exit $$?; \
+	done
+
+uninstall-dist_icon64DATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_icon64_DATA)'; test -n "$(icon64dir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(icon64dir)'; $(am__uninstall_files_from_dir)
+install-dist_metainfoDATA: $(dist_metainfo_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_metainfo_DATA)'; test -n "$(metainfodir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(metainfodir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(metainfodir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(metainfodir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(metainfodir)" || exit $$?; \
+	done
+
+uninstall-dist_metainfoDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_metainfo_DATA)'; test -n "$(metainfodir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(metainfodir)'; $(am__uninstall_files_from_dir)
 install-dist_romsDATA: $(dist_roms_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(dist_roms_DATA)'; test -n "$(romsdir)" || list=; \
@@ -1270,7 +1490,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(DATA) $(HEADERS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(romsdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1354,7 +1574,11 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dist_romsDATA
+install-data-am: install-dist_desktopDATA install-dist_icon128DATA \
+	install-dist_icon16DATA install-dist_icon256DATA \
+	install-dist_icon32DATA install-dist_icon48DATA \
+	install-dist_icon512DATA install-dist_icon64DATA \
+	install-dist_metainfoDATA install-dist_romsDATA
 
 install-dvi: install-dvi-am
 
@@ -1427,7 +1651,12 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS uninstall-dist_romsDATA
+uninstall-am: uninstall-binPROGRAMS uninstall-dist_desktopDATA \
+	uninstall-dist_icon128DATA uninstall-dist_icon16DATA \
+	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
+	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
+	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
+	uninstall-dist_romsDATA
 
 .MAKE: install-am install-strip
 
@@ -1439,14 +1668,23 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_romsDATA
 	distclean-generic distclean-tags distcleancheck distdir \
 	distuninstallcheck dvi dvi-am html html-am info info-am \
 	install install-am install-binPROGRAMS install-data \
-	install-data-am install-dist_romsDATA install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS \
+	install-data-am install-dist_desktopDATA \
+	install-dist_icon128DATA install-dist_icon16DATA \
+	install-dist_icon256DATA install-dist_icon32DATA \
+	install-dist_icon48DATA install-dist_icon512DATA \
+	install-dist_icon64DATA install-dist_metainfoDATA \
+	install-dist_romsDATA install-dvi install-dvi-am install-exec \
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-binPROGRAMS uninstall-dist_desktopDATA \
+	uninstall-dist_icon128DATA uninstall-dist_icon16DATA \
+	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
+	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
+	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
 	uninstall-dist_romsDATA
 
 .PRECIOUS: Makefile

@@ -77,6 +77,28 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/OS_6128.ROM \
                  roms/AmstradDiagLower.rom
 
+# Desktop integration: .desktop launcher, AppStream metainfo, hicolor icons.
+desktopdir         = $(datadir)/applications
+dist_desktop_DATA  = io.github.salvogendut.Emulator1984.desktop
+
+metainfodir        = $(datadir)/metainfo
+dist_metainfo_DATA = io.github.salvogendut.Emulator1984.metainfo.xml
+
+icon16dir          = $(datadir)/icons/hicolor/16x16/apps
+dist_icon16_DATA   = icons/16x16/apps/io.github.salvogendut.Emulator1984.png
+icon32dir          = $(datadir)/icons/hicolor/32x32/apps
+dist_icon32_DATA   = icons/32x32/apps/io.github.salvogendut.Emulator1984.png
+icon48dir          = $(datadir)/icons/hicolor/48x48/apps
+dist_icon48_DATA   = icons/48x48/apps/io.github.salvogendut.Emulator1984.png
+icon64dir          = $(datadir)/icons/hicolor/64x64/apps
+dist_icon64_DATA   = icons/64x64/apps/io.github.salvogendut.Emulator1984.png
+icon128dir         = $(datadir)/icons/hicolor/128x128/apps
+dist_icon128_DATA  = icons/128x128/apps/io.github.salvogendut.Emulator1984.png
+icon256dir         = $(datadir)/icons/hicolor/256x256/apps
+dist_icon256_DATA  = icons/256x256/apps/io.github.salvogendut.Emulator1984.png
+icon512dir         = $(datadir)/icons/hicolor/512x512/apps
+dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
+
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
 EXTRA_DIST = Makefile LICENSE Development.md

@@ -13,20 +13,43 @@ AX_CHECK_COMPILE_FLAG([-std=c11],
 AC_SUBST([AM_CFLAGS])
 
 # pkg-config
+# On Haiku the SDL3 .pc file ships under a secondary-arch dir that
+# pkg-config does not search by default. Prepend it so PKG_CHECK_MODULES
+# below picks it up without the user setting PKG_CONFIG_PATH.
+case "$host_os" in
+  haiku*)
+    for d in /boot/system/develop/lib/x86/pkgconfig \
+             /boot/system/develop/lib/pkgconfig; do
+      if test -d "$d"; then
+        PKG_CONFIG_PATH="$d${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      fi
+    done
+    export PKG_CONFIG_PATH
+    ;;
+esac
 PKG_PROG_PKG_CONFIG
 
 # Required libraries
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
-# Winsock on Windows hosts (sockets live in ws2_32, not libc).
-# Also force the console subsystem: SDL3's pkg-config adds -mwindows, which
-# detaches the process from the console and silently swallows stderr/stdout.
-# -mconsole (placed last on the link line, see Makefile.am) overrides it so
-# errors and --trace-io output are visible when run from cmd.exe.
+# Platform-specific socket linkage.
+#   - Windows (MinGW): sockets live in ws2_32; also force -mconsole so
+#     SDL3's -mwindows does not swallow stderr/stdout from cmd.exe.
+#   - Haiku: sockets live in libnetwork.
+#   - Solaris/illumos: sockets live in libsocket.
+#   - Linux / *BSD / macOS: sockets are in libc; nothing extra needed.
 case $host_os in
-  mingw*|cygwin*|msys*) WIN_LIBS="-lws2_32"; WIN_SUBSYSTEM="-mconsole" ;;
-  *)                    WIN_LIBS="";         WIN_SUBSYSTEM="" ;;
+  mingw*|cygwin*|msys*)
+    WIN_LIBS="-lws2_32"
+    WIN_SUBSYSTEM="-mconsole"
+    ;;
+  *)
+    WIN_LIBS=""
+    WIN_SUBSYSTEM=""
+    AC_SEARCH_LIBS([socket],     [network socket])
+    AC_SEARCH_LIBS([getsockopt], [network socket])
+    ;;
 esac
 AC_SUBST([WIN_LIBS])
 AC_SUBST([WIN_SUBSYSTEM])

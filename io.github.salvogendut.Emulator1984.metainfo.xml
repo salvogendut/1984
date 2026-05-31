@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.salvogendut.Emulator1984</id>
+  <name>1984</name>
+  <summary>Amstrad CPC 464/6128 emulator</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-only</project_license>
+  <developer id="io.github.salvogendut">
+    <name>Salvatore Bognanni</name>
+  </developer>
+  <description>
+    <p>
+      1984 is a cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
+      The core machine — Z80 CPU, MC6845 CRTC, AY-3-8912 PSG, uPD765 FDC, Gate
+      Array, keyboard, joystick/gamepad and cassette tape — runs commercial
+      games and standard software at full speed.
+    </p>
+    <p>Expansion peripherals emulated:</p>
+    <ul>
+      <li>DS12887 real-time clock (Cyboard / SYMBiFACE II compatible)</li>
+      <li>SYMBiFACE II / Cyboard IDE (raw disk images, FAT16/FAT32)</li>
+      <li>SYMBiFACE II PS/2 mouse</li>
+      <li>Net4CPC W5100S Ethernet</li>
+      <li>Albireo USB host (CH376) for UNIDOS and SymbOS</li>
+      <li>M4 board (file API + ESP8266-style networking)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.salvogendut.Emulator1984.desktop</launchable>
+  <url type="homepage">https://github.com/salvogendut/1984</url>
+  <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.4.1" date="2026-05-30">
+      <description>
+        <p>Cassette tape support (.cdt/TZX) with loading screech mixed into PSG audio; fullscreen letterbox gutter colour fix.</p>
+      </description>
+    </release>
+  </releases>
+</component>
