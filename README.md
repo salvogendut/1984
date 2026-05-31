@@ -8,7 +8,7 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 Boots to Locomotive BASIC. Commercial games and standard software run well. Demos and other software that rely on undocumented hardware behaviour or cycle-exact CRTC tricks are untested and may not work correctly.
 
-**M4 board emulation is unstable.** The ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, and TCP connect plus the cpc-sdcc network examples (TCPTEST, NTP, TELNET) all work. SymbOS's `netd-m4c.exe` launches and resolves hosts but TCP sessions stall shortly after the initial server banner — multi-socket scenarios and long telnet sessions are not yet reliable.
+**M4 board emulation is partial.** The ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, and TCP connect plus the cpc-sdcc network examples (TCPTEST, NTP, TELNET, WGET) all work. SymbOS's `netd-m4c.exe` launches, resolves hosts, and HTTP downloads via `wget` complete end-to-end. SymbOS interactive telnet sessions stall shortly after the initial server banner — the same stall is observed on real Net4CPC hardware, so this appears to be a SymbOS-side limitation rather than an emulator bug.
 
 ## Features
 

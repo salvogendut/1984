@@ -43,7 +43,7 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
             v = cpc->m4_card.bus_mem[addr - 0xE800];
         else if (addr >= 0xF400 && addr < 0xF500)
             v = cpc->m4_card.cfg_mem[addr - 0xF400];
-        else if (addr >= 0xFE00 && addr < 0xFE50)
+        else if (addr >= 0xFE00 && addr < 0xFF00)
             v = cpc->m4_card.sock_mem[addr - 0xFE00];
         else
             hit = false;

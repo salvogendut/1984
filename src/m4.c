@@ -263,6 +263,24 @@ static void sync_sock_mem(M4 *m, int s) {
     memcpy(&p[4], m->sockets[s].peer_ip, 4);
     p[8]  = (u8)(m->sockets[s].peer_port & 0xFF);
     p[9]  = (u8)(m->sockets[s].peer_port >> 8);
+
+    /* SymbOS netd-m4c.exe workaround: when only one TCP socket is open,
+     * mirror its 16-byte sock_info into every other slot (5..15) so the
+     * daemon's wrong-slot reads (caused by m4csct returning garbage A in
+     * 0..15) still see correct status/rx_count and keep polling. */
+    int active = -1;
+    for (int i = 1; i < M4_NSOCKS; i++) {
+        if (m->sockets[i].fd < 0) continue;
+        if (active >= 0) { active = -1; break; }  /* >1 open: don't broadcast */
+        active = i;
+    }
+    if (active >= 0) {
+        u8 *src = &m->sock_mem[active * 16];
+        for (int slot = 0; slot < 16; slot++) {
+            if (slot == active) continue;
+            memcpy(&m->sock_mem[slot * 16], src, 16);
+        }
+    }
 }
 
 static void net_close_socket(M4 *m, int s) {
