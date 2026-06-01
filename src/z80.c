@@ -511,16 +511,23 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         /* DAA */
         case 0x27: {
             u8 a = cpu->a; bool n=(cpu->f&Z80_FLAG_N), h=(cpu->f&Z80_FLAG_H), c=(cpu->f&Z80_FLAG_C);
-            bool co = c;
-            if (!n) {
-                if (h || (a & 0x0F) > 9)  a += 0x06;
-                if (c || a > 0x99) { a += 0x60; co = true; }
-            } else {
-                if (h || (a & 0x0F) > 9)  a -= 0x06;
-                if (c || cpu->a > 0x99)   { a -= 0x60; co = true; }
-            }
+            /* Both adjustments decided from the ORIGINAL A. Previously the
+             * second check used the already-+6'd value, which mis-handled
+             * cases like A=0xFF (used by BASIC's HEX$ routine: it does
+             * OR 0xF0 then DAA to fold a nibble into hex-letter digits).
+             * Real Z80 fires both +0x06 and +0x60 for that input. */
+            u8 diff = 0;
+            bool new_c;
+            if (h || (a & 0x0F) > 9) diff |= 0x06;
+            if (c || a > 0x99)       { diff |= 0x60; new_c = true; } else new_c = c;
+            if (n) a -= diff; else a += diff;
+            /* New H: bit-4 carry/borrow of the adjustment vs. original A */
+            bool new_h = ((cpu->a ^ a) & 0x10) != 0;
             cpu->a = a;
-            cpu->f = (cpu->f & Z80_FLAG_N) | sz(a) | par(a) | (co ? Z80_FLAG_C : 0);
+            cpu->f = (cpu->f & Z80_FLAG_N)
+                   | sz(a) | par(a)
+                   | (new_h ? Z80_FLAG_H : 0)
+                   | (new_c ? Z80_FLAG_C : 0);
             return 4;
         }
 
