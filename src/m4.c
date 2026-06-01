@@ -897,7 +897,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         }
         size_p[0] = n & 0xFF;
         size_p[1] = n >> 8;
-        if (n == 0) *status_p = 20;  /* EOF */
+        /* Partial reads (n < count) imply we hit EOF mid-block. AMSDOS
+         * and BASIC's ASCII-tokenise loop both rely on the EOF status
+         * to stop processing — without it BASIC continues reading the
+         * uninitialised tail of the buffer and raises a spurious BREAK
+         * after each ASCII .BAS load. */
+        if (n < count) *status_p = 20;  /* EOF */
         err = M4_OK;
         break;
     }
