@@ -82,3 +82,40 @@ After enabling Albireo, loading the two ROMs, and booting:
 If `|HELP` shows only the standard AMSDOS commands, the UNIDOS ROM did not load
 — double-check the slot 7 entry and confirm the file exists at the configured
 path.
+
+## Known issue: SymbOS text rendering vs app loading
+
+SymbOS booted off the Albireo path currently cannot work fully in this
+emulator. Either on-screen text (icon labels, menu items) is correct *or*
+applications launch — never both at once. UNIDOS / BASIC use is unaffected.
+
+The CH376 raw-sector `DISK_READ` path is needed by the SymbOS-side FAT driver
+to load apps. With it enabled (default), all on-screen text gets corrupted
+into a "first-character-repeated" pattern (e.g. `S S S S S S` under what
+should be `Sym-Commander`). Chunk-level traces show our emulation delivers
+byte-perfect data to the right memory bank at the documented icon-name offset
+— the rendering bug is downstream, in a part of the SymbOS desktop manager we
+cannot currently isolate from this side of the chip.
+
+Disabling raw `DISK_READ` makes SymbOS fall back to the chip's built-in FS
+(`FILE_OPEN` / `BYTE_READ`) which renders text correctly but cannot load any
+application (every launch fails with "disc error" code 26 from
+[symbos.org/err.htm#026](https://symbos.org/err.htm#026)). The same trade-off
+appears in ACE-DL when configured with a host-directory drive — that backend
+also exposes only the chip-FS path.
+
+Real Albireo hardware exhibits neither failure mode, so this is an emulator
+bug that has not yet been root-caused.
+
+### Workaround toggle
+
+`~/.config/1984/1984.conf`, under `[hardware]`:
+
+```ini
+albireo_disable_disk_read=false   # default — apps launch, text broken
+albireo_disable_disk_read=true    # text correct, apps fail with disc error
+```
+
+The toggle gates only CH376 cmd `0x54` and has no effect when Albireo is
+disabled. Toggle into "text correct" mode when using SymbOS purely as a
+desktop; leave at the default for app/development work.
