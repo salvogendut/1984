@@ -99,6 +99,12 @@ typedef struct {
     bool  sec_reading;
     bool  sec_writing;
 
+    /* Partition offset: real CH376 auto-translates filesystem-LBAs into
+     * disk-LBAs after DISK_MOUNT. For an image with an MBR, this is the
+     * partition's start sector (read from the partition table at LBA 0).
+     * For a raw FAT image with no MBR, this stays zero. */
+    u32   partition_offset;
+
     /* Albireo USB HID mouse state — accumulated SDL deltas + button state.
      * Drained by an ISSUE_TKN_X (0x4E) with parameters (TOKEN, 0x19)
      * (read, endpoint 1, boot-protocol mouse). */
