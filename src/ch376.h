@@ -115,6 +115,11 @@ typedef struct {
 
 extern int ch376_trace;
 
+/* When set, DISK_READ (cmd 0x54) returns DISK_ERR so SymbOS falls back to
+ * the chip's FS path via FILE_OPEN/BYTE_READ. Workaround for a rendering
+ * regression where SymbOS-FAT-on-raw-DISK_READ corrupts on-screen text. */
+extern int ch376_disable_disk_read;
+
 void ch376_init(CH376 *ch);
 void ch376_reset(CH376 *ch);
 void ch376_open(CH376 *ch, const char *path);

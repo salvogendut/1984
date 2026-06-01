@@ -39,6 +39,12 @@ typedef struct {
     bool symbnet;     /* 1984 emulator synthetic SymbOS network port (0xFD30/31) */
     bool albireo;
     char albireo_image[CONFIG_PATH_MAX];
+    /* If true, the CH376 emulation refuses raw-sector DISK_READ commands so
+     * SymbOS falls back to the chip's built-in FS via FILE_OPEN/BYTE_READ.
+     * Works around a current rendering bug where SymbOS-FAT-driver-via-raw-
+     * DISK_READ corrupts on-screen text (icon labels, menus). The fallback
+     * path renders correctly but apps fail to load with "disc error". */
+    bool albireo_disable_disk_read;
 
     /* [display] */
     int  scale;             /* 1, 2, or 3 */
