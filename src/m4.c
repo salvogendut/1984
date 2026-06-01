@@ -1138,7 +1138,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         cfg[120]=192; cfg[121]=168; cfg[122]=1; cfg[123]=1;   /* gw */
         cfg[124]=8;   cfg[125]=8;   cfg[126]=8;   cfg[127]=8; /* dns1 */
         cfg[128]=8;   cfg[129]=8;   cfg[130]=4;   cfg[131]=4; /* dns2 */
-        cfg[132]=1;                                            /* dhcp */
+        cfg[132]=0;                                            /* dhcp off (static IP, we provide one) */
         err = M4_OK;
         for (size_t i = 0; i < sizeof(cfg); i++) resp_u8(m, &roff, cfg[i]);
         break;
@@ -1151,11 +1151,19 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_NETRSSI:
         /* SymbOS daemon reads 2 bytes: low = RSSI level, high = wifi state.
-         * State 0 = connected/idle. Anything >0 maps in the daemon to error
-         * codes (1=connecting, 2=wrong password, ..., 6=unknown error). */
+         * Per the daemon source: 0=idle, 1=connecting, 2=wrong pw,
+         * 3=no AP, 4=connection failed, 5=connected and got IP,
+         * 6=unknown error. We always emulate "connected with IP" so the
+         * Network daemon's status window shows the right thing. */
         err = M4_OK;
         resp_u8(m, &roff, 0xB8);  /* signal level in the "good" band */
-        resp_u8(m, &roff, 0);     /* wifi state: connected */
+        resp_u8(m, &roff, 5);     /* wifi state: connected and got IP */
+        /* Snapshot the two payload bytes so a subsequent C_TIME (or any
+         * other command) that lands between this ACK and the daemon's
+         * m4cred LDIR doesn't replace them with its own response. */
+        m->rssi_resp_save[0] = 0xB8;
+        m->rssi_resp_save[1] = 5;
+        m->rssi_resp_pending = true;
         break;
 
     case C_WIFIPOW:
@@ -1411,6 +1419,10 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     resp_err(m, err);
+    /* Track how many bytes this command's caller is expected to read so
+     * we know when it's safe to restore a pending RSSI snapshot (see
+     * bus_mem_read in cpc.c). */
+    m->last_resp_len = (roff > 3) ? (int)(roff - 3) : 0;
     if (m4_trace) {
         int rlen = (roff > 3) ? (roff - 3) : 0;
         fprintf(stderr, "[m4]      RSP err=%02X (%d payload):", err, rlen);

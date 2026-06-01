@@ -48,8 +48,23 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
         if (is_stack_pop) {
             hit = false;
         }
-        else if (addr >= 0xE800 && addr < 0xF400)
+        else if (addr >= 0xE800 && addr < 0xF400) {
+            /* Each read in the response area decrements the current
+             * command's expected-byte counter. When it hits zero we know
+             * the caller has consumed its response, so if a pending
+             * C_NETRSSI snapshot exists (because that prior RSSI ACK was
+             * clobbered before the netd daemon could read it), restore
+             * bus_mem[3..4] now so the daemon's later read still finds
+             * the RSSI bytes. */
+            if (addr >= 0xE803 && cpc->m4_card.last_resp_len > 0)
+                cpc->m4_card.last_resp_len--;
+            if (cpc->m4_card.last_resp_len == 0 && cpc->m4_card.rssi_resp_pending) {
+                cpc->m4_card.bus_mem[3] = cpc->m4_card.rssi_resp_save[0];
+                cpc->m4_card.bus_mem[4] = cpc->m4_card.rssi_resp_save[1];
+                cpc->m4_card.rssi_resp_pending = false;
+            }
             v = cpc->m4_card.bus_mem[addr - 0xE800];
+        }
         else if (addr >= 0xF400 && addr < 0xF500)
             v = cpc->m4_card.cfg_mem[addr - 0xF400];
         else if (addr >= 0xFE00 && addr < 0xFF00)
