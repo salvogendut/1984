@@ -229,6 +229,7 @@ int main(int argc, char *argv[]) {
     cpc.albireo = cfg.albireo && cfg.rom_board;
     if (cpc.albireo && cfg.albireo_image[0])
         ch376_open(&cpc.ch376, cfg.albireo_image);
+    ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
     /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
     if (cpc.albireo && cpc.m4) {
         cpc.m4 = false;
@@ -554,6 +555,7 @@ int main(int argc, char *argv[]) {
             ch376_close(&cpc.ch376);
             if (cpc.albireo && cfg.albireo_image[0])
                 ch376_open(&cpc.ch376, cfg.albireo_image);
+            ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
             if (cpc.albireo && cpc.m4) {
                 cpc.m4 = false;
                 cfg.m4 = false;

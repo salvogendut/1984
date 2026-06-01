@@ -181,6 +181,7 @@ static void config_create_default(const char *path, const char *home) {
         "symbnet=false\n"
         "albireo=false\n"
         "albireo_image=\n"
+        "albireo_disable_disk_read=false\n"
         "\n"
         "[display]\n"
         "# Window scale factor: 1, 2, or 3\n"
@@ -319,6 +320,9 @@ int config_load(Config *cfg) {
                 else { fprintf(stderr, "1984.conf:%d: albireo must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "albireo_image")) {
                 if (val[0]) expand_path(val, cfg->albireo_image, sizeof(cfg->albireo_image));
+            } else if (!strcmp(key, "albireo_disable_disk_read")) {
+                if (parse_bool(val, &b)) cfg->albireo_disable_disk_read = b;
+                else { fprintf(stderr, "1984.conf:%d: albireo_disable_disk_read must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
@@ -428,7 +432,8 @@ int config_save(const Config *cfg) {
         "symbiface_mouse=%s\n"
         "symbnet=%s\n"
         "albireo=%s\n"
-        "albireo_image=%s\n\n"
+        "albireo_image=%s\n"
+        "albireo_disable_disk_read=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n"
@@ -454,6 +459,7 @@ int config_save(const Config *cfg) {
         cfg->symbnet          ? "true" : "false",
         cfg->albireo          ? "true" : "false",
         cfg->albireo_image,
+        cfg->albireo_disable_disk_read ? "true" : "false",
         cfg->scale,
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",

@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 int ch376_trace = 0;
+int ch376_disable_disk_read = 0;
 
 /* CH376 USB host controller — partial emulation for Albireo.
  *
@@ -664,6 +665,10 @@ static void execute(CH376 *ch) {
     case 0x54: { /* DISK_READ — start raw sector read.
                   * Params: LBA[4] LE + count[1]. After this, host loops
                   * RD_USB_DATA0 (64 bytes) + DISK_RD_GO until status=SUCCESS. */
+        if (ch376_disable_disk_read) {
+            raise_int(ch, USB_INT_DISK_ERR);
+            break;
+        }
         u32 lba = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
         u8  count = p[4];
         if (!ch->fp || count == 0) { raise_int(ch, USB_INT_DISK_ERR); break; }
