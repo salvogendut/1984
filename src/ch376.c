@@ -501,8 +501,32 @@ static void execute(CH376 *ch) {
         break;
 
     case 0x31: { /* DISK_MOUNT */
-        if (!ch->mounted && ch->fp)
+        if (!ch->mounted && ch->fp) {
+            /* Real CH376 auto-detects partitioned vs raw-FAT disks. Check
+             * for an MBR partition table at LBA 0: signature 0x55/0xAA at
+             * offset 510, and a non-trivial first-partition LBA. */
+            ch->partition_offset = 0;
+            u8 mbr[512];
+            if (fseek(ch->fp, 0, SEEK_SET) == 0 &&
+                fread(mbr, 1, 512, ch->fp) == 512 &&
+                mbr[510] == 0x55 && mbr[511] == 0xAA) {
+                /* Partition table entry 1 is at offset 0x1BE; LBA-start at
+                 * +8 (4 bytes LE). Only treat it as a partition if the
+                 * type byte (+4) is a known FAT type and the start LBA is
+                 * non-zero — otherwise this is a raw FAT volume that just
+                 * happens to carry the boot signature. */
+                u8 ptype = mbr[0x1BE + 4];
+                u32 plba  = (u32)mbr[0x1BE + 8]
+                          | ((u32)mbr[0x1BE + 9]  << 8)
+                          | ((u32)mbr[0x1BE + 10] << 16)
+                          | ((u32)mbr[0x1BE + 11] << 24);
+                if (plba > 0 && (ptype == 0x01 || ptype == 0x04 ||
+                                 ptype == 0x06 || ptype == 0x0B ||
+                                 ptype == 0x0C || ptype == 0x0E))
+                    ch->partition_offset = plba;
+            }
             ch->mounted = fat_mount(&ch->vol, ch->fp);
+        }
         raise_int(ch, ch->mounted ? USB_INT_SUCCESS : USB_INT_DISK_ERR);
         break;
     }
@@ -647,7 +671,7 @@ static void execute(CH376 *ch) {
         ch->sec_remaining = count;
         ch->sec_pos = 0;
         ch->sec_reading = true;
-        if (fseek(ch->fp, (long)lba * 512, SEEK_SET) != 0 ||
+        if (fseek(ch->fp, (long)(lba + ch->partition_offset) * 512, SEEK_SET) != 0 ||
             fread(ch->sec_buf, 1, 512, ch->fp) == 0) {
             ch->sec_reading = false;
             raise_int(ch, USB_INT_DISK_ERR);
@@ -674,7 +698,7 @@ static void execute(CH376 *ch) {
                 break;
             }
             ch->sec_lba++;
-            if (fseek(ch->fp, (long)ch->sec_lba * 512, SEEK_SET) != 0 ||
+            if (fseek(ch->fp, (long)(ch->sec_lba + ch->partition_offset) * 512, SEEK_SET) != 0 ||
                 fread(ch->sec_buf, 1, 512, ch->fp) == 0) {
                 ch->sec_reading = false;
                 raise_int(ch, USB_INT_DISK_ERR);
@@ -727,7 +751,7 @@ static void execute(CH376 *ch) {
     case 0x57: /* DISK_WR_GO — commit when sec_buf is full, request next chunk */
         if (!ch->sec_writing) { raise_int(ch, USB_INT_DISK_ERR); break; }
         if (ch->sec_pos >= 512) {
-            if (fseek(ch->fp, (long)ch->sec_lba * 512, SEEK_SET) != 0 ||
+            if (fseek(ch->fp, (long)(ch->sec_lba + ch->partition_offset) * 512, SEEK_SET) != 0 ||
                 fwrite(ch->sec_buf, 1, 512, ch->fp) != 512) {
                 ch->sec_writing = false;
                 raise_int(ch, USB_INT_DISK_ERR);
