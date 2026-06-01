@@ -129,6 +129,13 @@ typedef struct {
 void m4_init(M4 *m, const char *root);
 void m4_set_image(M4 *m, const char *image_path);
 void m4_reset(M4 *m);
+
+/* Install the helper-shim trap stubs into M4ROM + bus_mem. Must be called
+ * after M4ROM is loaded into an upper-ROM slot, before any CPU code reads
+ * the helper-pointer table — otherwise daemons that copy the unpatched
+ * addresses (e.g. SymbOS netd-m4c.exe's m4crom step) will bypass our
+ * trap entirely and the bulk transfers will go nowhere. */
+void m4_install_helper_shim(M4 *m, Mem *mem);
 /* Called once per frame: refreshes sock_info for any in-flight TCP work
  * (non-blocking connect completion, byte counts, remote-close detection). */
 void m4_tick(M4 *m);

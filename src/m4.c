@@ -405,7 +405,7 @@ u8 m4_dataport_read(M4 *m) {
 #define M4_HSEND_TRAP_ADDR 0xF300u
 #define M4_HRECV_TRAP_ADDR 0xF310u
 
-static void m4_install_helper_shim(M4 *m, Mem *mem) {
+void m4_install_helper_shim(M4 *m, Mem *mem) {
     if (!mem || !mem->rom_ext_present[M4_ROM_SLOT]) return;
     u8 *rom = mem->rom_ext[M4_ROM_SLOT];
     /* M4ROM helper-pointer table lives at 0xE430 (file offset 0x2430).
@@ -457,13 +457,6 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
      * response via the FD30 FIFO, not bus_mem, so it doesn't need this. */
     if (cmd == 0x4321 || (cmd >= 0x4331 && cmd <= 0x433C)) {
         m->ram_mode = true;
-        /* The daemon's m4cred reads at most 16 bytes (sock_info ldir) plus
-         * a few header bytes (typically 3). 24 covers both with no margin
-         * for stray reads — important because the daemon's m4cscktrn
-         * translation table appears to live in its transfer area at an
-         * address inside our sock_mem bypass range, and any extra
-         * bypassed reads after the actual response read corrupt the
-         * daemon's view of m4cscktrn for subsequent commands. */
         m->ram_mode_reads = 24;
     } else {
         m->ram_mode = false;
