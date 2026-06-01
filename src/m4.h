@@ -117,6 +117,20 @@ typedef struct {
      * We alias sock=0 on TCP commands to the most-recently-opened TCP
      * socket so telnet etc. can still flow. */
     int     last_tcp_sock;
+
+    /* Race protection for SymbOS netd-m4c.exe: m4csig issues C_NETRSSI then
+     * reads the 2-byte response via m4cred LDIR. Between ACK and LDIR the
+     * daemon's `rst #28` may re-enable IRQs, letting SymbOS's 1 Hz clock
+     * task fire C_TIME in the gap. C_TIME overwrites bus_mem[3..] with the
+     * time string, and the daemon then reads garbage → state=6 (UNKNOWN
+     * ERROR). We snapshot the RSSI payload at its ACK and, after the
+     * intervening command's caller has consumed its response, write the
+     * snapshot back into bus_mem[3..4] so the daemon's pending read still
+     * finds its data. last_resp_len tracks how many of the new command's
+     * bytes are still expected to be read. */
+    u8      rssi_resp_save[2];
+    bool    rssi_resp_pending;
+    int     last_resp_len;     /* bytes of the current response left to consume */
 } M4;
 
 /* Trap ports for the "1984 compatibility shim" helper stubs that the
