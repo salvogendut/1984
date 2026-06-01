@@ -267,6 +267,12 @@ int main(int argc, char *argv[]) {
         memcpy(cpc.m4_card.cfg_mem,
                &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
                sizeof(cpc.m4_card.cfg_mem));
+        /* Patch M4ROM's helper-pointer table NOW so SymbOS netd-m4c.exe's
+         * m4crom routine picks up our trap addresses on its first read.
+         * Without this the daemon copies the original M4ROM helper entries
+         * and bypasses our trap, breaking the bulk transfer needed by
+         * GETNETWORK and every TCP send/recv. */
+        m4_install_helper_shim(&cpc.m4_card, &cpc.mem);
     }
 
     /* Apply --rom-slot=N:PATH overrides from CLI */
@@ -524,6 +530,7 @@ int main(int argc, char *argv[]) {
                 memcpy(cpc.m4_card.cfg_mem,
                        &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
                        sizeof(cpc.m4_card.cfg_mem));
+                m4_install_helper_shim(&cpc.m4_card, &cpc.mem);
             }
             const char *title = (cpc.model == MODEL_464)
                 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;

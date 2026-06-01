@@ -39,7 +39,16 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
                        && cpc->mem.upper_rom_select == M4_ROM_SLOT;
     if (cpc->m4 && (bypass_slot || cpc->m4_card.ram_mode)) {
         u8 v = 0; bool hit = true;
-        if (addr >= 0xE800 && addr < 0xF400)
+        /* Skip the bypass for likely stack POP/RET reads (addr matches SP
+         * or SP+1). The SymbOS netd-m4c.exe daemon places its stack at
+         * ~0xF076 — inside our bus_mem mapping — and without this guard
+         * RET would pop bus_mem bytes (zeros / response garbage) instead
+         * of the real return address, derailing m4cred/m4crcv. */
+        bool is_stack_pop = (addr == cpc->cpu.sp) || (addr == (u16)(cpc->cpu.sp + 1));
+        if (is_stack_pop) {
+            hit = false;
+        }
+        else if (addr >= 0xE800 && addr < 0xF400)
             v = cpc->m4_card.bus_mem[addr - 0xE800];
         else if (addr >= 0xF400 && addr < 0xF500)
             v = cpc->m4_card.cfg_mem[addr - 0xF400];
