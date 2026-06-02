@@ -1,11 +1,12 @@
 #include "display.h"
+#include "leds.h"
 #include <string.h>
 #include <stdio.h>
 
 int display_init(Display *d, const char *title) {
     memset(d, 0, sizeof(*d));
 
-    d->window = SDL_CreateWindow(title, WINDOW_W, WINDOW_H, SDL_WINDOW_RESIZABLE);
+    d->window = SDL_CreateWindow(title, WINDOW_W, WINDOW_H_TOTAL, SDL_WINDOW_RESIZABLE);
     if (!d->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         return -1;
@@ -64,14 +65,28 @@ void display_vsync(Display *d) {
 void display_upload(Display *d) {
     int ww, wh;
     SDL_GetWindowSize(d->window, &ww, &wh);
-    /* Fit 768×272 into the window maintaining 4:3 (WINDOW_W:WINDOW_H) ratio */
+
+    /* Reserve a fixed-pixel strip at the bottom for the drive-activity LED
+     * bar. The bar is not scaled with the window — it just sits under the
+     * CPC area. */
+    int bar_h = LED_BAR_HEIGHT;
+    if (bar_h > wh / 4) bar_h = wh / 4;          /* sanity cap for tiny windows */
+    int cpc_area_h = wh - bar_h;
+    if (cpc_area_h < 1) cpc_area_h = 1;
+
+    /* Fit 768×272 into (ww × cpc_area_h) maintaining 4:3 (WINDOW_W:WINDOW_H) */
     int dst_w = ww;
-    int dst_h = wh;
+    int dst_h = cpc_area_h;
     if (dst_w * WINDOW_H > dst_h * WINDOW_W)
         dst_w = dst_h * WINDOW_W / WINDOW_H;
     else
         dst_h = dst_w * WINDOW_H / WINDOW_W;
-    SDL_FRect dst = { (float)(ww - dst_w) / 2, (float)(wh - dst_h) / 2, (float)dst_w, (float)dst_h };
+    SDL_FRect dst = {
+        (float)(ww - dst_w) / 2,
+        (float)(cpc_area_h - dst_h) / 2,
+        (float)dst_w,
+        (float)dst_h
+    };
 
     SDL_UpdateTexture(d->texture, NULL, d->pixels, CPC_SCREEN_W * sizeof(u32));
     /* Force the clear colour to opaque black before clearing — the overlay
@@ -81,6 +96,7 @@ void display_upload(Display *d) {
     SDL_SetRenderDrawColor(d->renderer, 0, 0, 0, 255);
     SDL_RenderClear(d->renderer);
     SDL_RenderTexture(d->renderer, d->texture, NULL, &dst);
+    leds_render(d->renderer, 0, wh - bar_h, ww, bar_h);
 }
 
 void display_flip(Display *d) {

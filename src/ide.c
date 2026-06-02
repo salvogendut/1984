@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
 #define _FILE_OFFSET_BITS 64
 #include "ide.h"
+#include "leds.h"
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -29,6 +30,7 @@ static bool load_sector(IDE *ide, u32 lba) {
         set_error(ide, IDE_ERR_ABRT);
         return false;
     }
+    leds_ping(LED_IDE);
     return true;
 }
 
@@ -43,6 +45,7 @@ static bool flush_sector(IDE *ide, u32 lba) {
         return false;
     }
     fflush(ide->fp);
+    leds_ping(LED_IDE);
     return true;
 }
 

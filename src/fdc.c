@@ -1,4 +1,5 @@
 #include "fdc.h"
+#include "leds.h"
 #include <string.h>
 
 /* Command byte counts (total bytes including the command byte itself).
@@ -136,6 +137,7 @@ static void exec_cmd(FDC *fdc) {
     case 0x06:
     case 0x0C: {
         int      drv  = fdc->cmd[1] & 0x01;
+        leds_ping(drv ? LED_FDC_B : LED_FDC_A);
         int      side = (fdc->cmd[1] >> 2) & 0x01;
         uint8_t  C    = fdc->cmd[2];
         uint8_t  H    = fdc->cmd[3];
@@ -231,6 +233,7 @@ static void exec_cmd(FDC *fdc) {
     case 0x05:
     case 0x09: {
         int drv  = fdc->cmd[1] & 0x01;
+        leds_ping(drv ? LED_FDC_B : LED_FDC_A);
         int side = (fdc->cmd[1] >> 2) & 0x01;
         uint8_t C = fdc->cmd[2], H = fdc->cmd[3];
         uint8_t R = fdc->cmd[4], N = fdc->cmd[5];

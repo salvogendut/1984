@@ -14,6 +14,8 @@
 #define CPC_SCREEN_H    272
 #define WINDOW_W        768   /* 4:3 display width */
 #define WINDOW_H        576   /* 4:3 display height (768 × 3/4) */
+#define LED_BAR_HEIGHT  22    /* drive-activity LED strip below the CPC area */
+#define WINDOW_H_TOTAL  (WINDOW_H + LED_BAR_HEIGHT)
 
 typedef struct {
     SDL_Window   *window;

@@ -23,6 +23,7 @@ bin_PROGRAMS = 1984
 	src/ide.c \
 	src/fat.c \
 	src/ch376.c \
+	src/leds.c \
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \
@@ -42,6 +43,7 @@ noinst_HEADERS = \
 	src/ide.h \
 	src/joy.h \
 	src/kbd.h \
+	src/leds.h \
 	src/m4.h \
 	src/mem.h \
 	src/monitor.h \
