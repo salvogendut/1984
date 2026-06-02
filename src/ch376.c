@@ -1,4 +1,5 @@
 #include "ch376.h"
+#include "leds.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -600,11 +601,13 @@ static void execute(CH376 *ch) {
         u32 n = (u32)p[0] | ((u32)p[1] << 8);
         ch->bytes_remaining = n;
         ch->reading = true;
+        leds_ping(LED_USB);
         raise_int(ch, do_byte_read(ch));
         break;
     }
 
     case 0x3B: /* BYTE_RD_GO */
+        leds_ping(LED_USB);
         raise_int(ch, do_byte_read(ch));
         break;
 
@@ -612,6 +615,7 @@ static void execute(CH376 *ch) {
         u32 n = (u32)p[0] | ((u32)p[1] << 8);
         ch->bytes_remaining = n;
         ch->writing = true;
+        leds_ping(LED_USB);
         if (!ch->file) raise_int(ch, USB_INT_DISK_ERR);
         else           raise_int(ch, USB_INT_DISK_WRITE);
         break;
@@ -688,12 +692,14 @@ static void execute(CH376 *ch) {
         ch->resp_len = 65;
         ch->resp_pos = 0;
         ch->sec_pos = 64;
+        leds_ping(LED_USB);
         raise_int(ch, USB_INT_DISK_READ);
         break;
     }
 
     case 0x55: { /* DISK_RD_GO — next 64-byte chunk */
         if (!ch->sec_reading) { raise_int(ch, USB_INT_DISK_ERR); break; }
+        leds_ping(LED_USB);
         if (ch->sec_pos >= 512) {
             /* Sector consumed — advance. */
             ch->sec_remaining--;
@@ -733,6 +739,7 @@ static void execute(CH376 *ch) {
         ch->sec_pos = 0;
         ch->sec_writing = true;
         memset(ch->sec_buf, 0, 512);
+        leds_ping(LED_USB);
         raise_int(ch, USB_INT_DISK_WRITE);
         break;
     }

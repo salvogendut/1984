@@ -13,9 +13,22 @@
 #include "joy.h"
 #include "net4cpc.h"
 #include "monitor.h"
+#include "leds.h"
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
+
+static void apply_led_enables(const Config *cfg) {
+    /* Floppies: shown when an FDC is wired (6128 has it built-in; 464 needs DDI-1). */
+    bool fdc_present = (cfg->model == MODEL_6128) || cfg->dd1;
+    leds_set_enabled(LED_FDC_A, fdc_present);
+    leds_set_enabled(LED_FDC_B, fdc_present);
+    /* MX4 expansions need both rom_board and the expansion toggle. */
+    bool mx4 = cfg->rom_board;
+    leds_set_enabled(LED_IDE, mx4 && cfg->symbiface_ide);
+    leds_set_enabled(LED_USB, mx4 && cfg->albireo);
+    leds_set_enabled(LED_SD,  mx4 && cfg->m4);
+}
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
@@ -235,6 +248,7 @@ int main(int argc, char *argv[]) {
         cpc.m4 = false;
         cfg.m4 = false;
     }
+    apply_led_enables(&cfg);
     /* Cassette: always wired on 464, requires the external_tape toggle on 6128. */
     if (cfg.tape[0] &&
             (cpc.model == MODEL_464 ||
@@ -560,6 +574,7 @@ int main(int argc, char *argv[]) {
                 cpc.m4 = false;
                 cfg.m4 = false;
             }
+            apply_led_enables(&cfg);
             tape_eject(&cpc.tape);
             if (cfg.tape[0] &&
                     (cpc.model == MODEL_464 ||
