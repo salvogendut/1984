@@ -171,7 +171,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
          * selector for RAM above 576 KB. Port 0x7Fxx = bank_high 0 (DK'tronics
          * compatible); 0x7Exx = 1, 0x7Dxx = 2, 0x7Cxx = 3. bank_high is packed
          * into ram_bank bits[7:6] so banked_ram_offset() can read it. */
-        if ((val & 0xC0) == 0xC0) {
+        if ((val & 0xC0) == 0xC0 && cpc->mem.ram_size > 0x10000) {
             u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
             cpc->mem.ram_bank = (u8)((bank_high << 6) | (val & 0x3F));
         }
