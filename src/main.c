@@ -595,6 +595,19 @@ int main(int argc, char *argv[]) {
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {
+            /* Debug hook: ONE_K_DUMP_RAM=/path/to/file writes physical RAM
+             * to a file at every breakpoint pause (overwrites). Lets us
+             * diff our RAM against WinAPE .sna byte-for-byte. */
+            const char *dump_path = getenv("ONE_K_DUMP_RAM");
+            if (dump_path) {
+                FILE *fp = fopen(dump_path, "wb");
+                if (fp) {
+                    fwrite(cpc.mem.ram, 1, cpc.mem.ram_size, fp);
+                    fclose(fp);
+                    fprintf(stderr, "[ONE_K_DUMP_RAM] wrote %u bytes to %s at PC=%04X\n",
+                            cpc.mem.ram_size, dump_path, cpc.cpu.pc);
+                }
+            }
             monitor_open(monitor);
             monitor_notify_break(monitor);
         } else if (was_stepping && cpc.paused) {
