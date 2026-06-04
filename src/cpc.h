@@ -60,6 +60,7 @@ typedef struct {
     int  cpu_clk_hz;      /* 4 MHz */
     int  cycles_per_frame;
     int  cycle_debt;      /* leftover cycles from previous frame */
+    int  crtc_cycle_acc;  /* accumulated cycles for CRTC tick (4-cycle alignment) */
 
     /* Raster position (in character-clock units; 16 output pixels each) */
     int  raster_x;        /* 0 = first char after hsync end */

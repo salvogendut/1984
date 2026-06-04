@@ -31,6 +31,14 @@ uint8_t fdc_read_status(FDC *fdc) {
         /* idle or mid-command: ready to accept bytes */
         return FDC_MSR_RQM | (fdc->cmd_pos > 0 ? FDC_MSR_BUSY : 0);
     case FDC_PHASE_EXEC:
+        /* First status read after a read/write command returns BUSY without
+         * RQM (matches Caprice32 / real µPD765A behaviour: the FDC needs one
+         * status poll worth of "settling" before signalling data ready).
+         * The Amstrad CP/M 2.2 boot relies on seeing this pre-EXEC BUSY. */
+        if (fdc->read_status_delay) {
+            fdc->read_status_delay--;
+            return FDC_MSR_BUSY;
+        }
         if (!fdc->exec_write)   /* FDC → CPU */
             return FDC_MSR_RQM | FDC_MSR_DIO | FDC_MSR_NDM | FDC_MSR_BUSY;
         else                    /* CPU → FDC */
@@ -193,8 +201,14 @@ static void exec_cmd(FDC *fdc) {
                 last_R = EOT;
             }
             fdc->phase = FDC_PHASE_EXEC;
-            /* store result for after exec */
-            fdc->result[0] = (uint8_t)(FDC_ST0_IC_OK | drv);
+            fdc->read_status_delay = 1;
+            /* store result for after exec. Match Caprice32 / µPD765 behavior:
+             * when a READ DATA terminates at EOT (single-sector or multi-sector),
+             * ST0.AT (0x40) is also set along with ST1.EN. Many CPC boot loaders
+             * (including Amstrad CP/M 2.2's |cpm) test ST0 bits 6:7 (interrupt
+             * code field) to distinguish "more sectors to read" from "end of
+             * track reached". */
+            fdc->result[0] = (uint8_t)(FDC_ST0_IC_AT | drv);
             fdc->result[1] = st1;
             fdc->result[2] = st2;
             fdc->result[3] = last_C;

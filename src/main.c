@@ -355,8 +355,8 @@ int main(int argc, char *argv[]) {
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
-    /* Frames to wait before injecting autostart text; 200 ≈ 4 s at 50 Hz */
-    int autostart_countdown = (autostart || paste_arg) ? 200 : 0;
+    /* Frames to wait before injecting autostart text (matches caprice32 timing) */
+    int autostart_countdown = (autostart || paste_arg) ? 42 : 0;
 
     /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
      * VSync is off; we sleep for any leftover time in each 20 ms budget. */

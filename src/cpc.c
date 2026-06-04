@@ -231,8 +231,12 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* FDC motor: hi=0xFA, write */
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
-    /* FDC data: hi=0xFB, write */
-    if (hi == 0xFB) { fdc_write_data(&cpc->fdc, val); return; }
+    /* FDC data: hi=0xFB, lo bit 7 = 0, write */
+    if (hi == 0xFB) {
+        u8 lo = port & 0xFF;
+        if (!(lo & 0x80)) fdc_write_data(&cpc->fdc, val);
+        return;
+    }
     /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14/0xFD15), Net4CPC (0xFD20-0xFD23) */
     if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
@@ -493,15 +497,20 @@ void cpc_frame(CPC *cpc) {
             cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
         }
 
-        /* CRTC ticks at 1 MHz = every 4 CPU cycles */
-        for (int i = 0; i < t; i += 4) {
+        /* CRTC ticks at 1 MHz = every 4 CPU cycles. Track leftover cycles so we
+         * don't over-tick across instructions whose cycle count isn't a multiple
+         * of 4 (Caprice32 uses CPC-rounded cycles per opcode; we use raw Z80
+         * cycle counts and accumulate the remainder here). */
+        cpc->crtc_cycle_acc += t;
+        while (cpc->crtc_cycle_acc >= 4) {
+            cpc->crtc_cycle_acc -= 4;
             crtc_tick(&cpc->crtc);
 
             bool new_hsync = crtc_hsync(&cpc->crtc);
             bool new_vsync = crtc_vsync(&cpc->crtc);
 
-            /* GA interrupt counter on hsync rising edge */
-            if (new_hsync && !cpc->prev_hsync)
+            /* GA interrupt counter on hsync falling edge (matches Caprice32) */
+            if (!new_hsync && cpc->prev_hsync)
                 ga_hsync(&cpc->ga);
 
             ppi_set_vsync(&cpc->ppi, new_vsync);
