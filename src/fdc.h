@@ -63,6 +63,7 @@ typedef struct {
     bool     seek_done;     /* pending result for SENSE INTERRUPT STATUS */
 
     bool     motor;
+    int      read_status_delay;  /* first status read after data-ready returns BUSY (matches Caprice32) */
 
     Disk    *drive[2];      /* drive[0]=A, drive[1]=B */
 } FDC;
