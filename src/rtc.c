@@ -1,5 +1,6 @@
 #include "rtc.h"
 #include <time.h>
+#include <stdlib.h>
 #include <string.h>
 
 void rtc_init(RTC *r) {
@@ -35,8 +36,25 @@ u8 rtc_read_data(RTC *r) {
     bool binary = (r->regb >> 2) & 1;
     bool h24    = (r->regb >> 1) & 1;
 
+    /* Debug aid: set ONE_K_FAKE_RTC=1 to freeze the clock at a fixed
+     * deterministic instant (2024-01-01 12:00:00, Monday). Useful for
+     * reproducing HDCPM/CP/M+ boot bugs whose path depends on RTC reads. */
+    struct tm fake_tm;
     time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
+    struct tm *tm;
+    if (getenv("ONE_K_FAKE_RTC")) {
+        memset(&fake_tm, 0, sizeof(fake_tm));
+        fake_tm.tm_sec  = 0;
+        fake_tm.tm_min  = 0;
+        fake_tm.tm_hour = 12;
+        fake_tm.tm_mday = 1;
+        fake_tm.tm_mon  = 0;       /* January */
+        fake_tm.tm_year = 124;     /* 2024 */
+        fake_tm.tm_wday = 1;       /* Monday */
+        tm = &fake_tm;
+    } else {
+        tm = localtime(&t);
+    }
 
     u8 result;
     switch (r->addr) {
