@@ -4,7 +4,14 @@
 
 void rtc_init(RTC *r) {
     memset(r, 0, sizeof(*r));
-    r->regb = 0x02; /* 24h mode, BCD — avoids PM-bit confusion on first read */
+    /* Register B default: bit2=DM (1=binary), bit1=24h (1=24-hour).
+     * 0x06 = binary, 24-hour.  The Symbiface software ecosystem (SymbOS and
+     * the HDCPM ROM's |TIME/|DATE commands) expects the clock registers in
+     * binary form — HDCPM double-dabbles each byte binary->BCD for display
+     * and computes the year as century*100+year, both of which only work in
+     * binary mode.  Defaulting to BCD here made |TIME/|DATE print garbage on
+     * a cold boot until SymbOS reprogrammed register B to binary. */
+    r->regb = 0x06; /* binary, 24-hour */
 }
 
 void rtc_write_addr(RTC *r, u8 addr) {
