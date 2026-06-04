@@ -254,7 +254,10 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         default:
-            fprintf(stderr, "Unimplemented ED %02X at PC=%04X\n", op, cpu->pc - 1);
+            /* All undefined ED-prefix opcodes are documented to behave as
+             * 2-byte 8-T-state NOPs on real Z80 hardware. CP/M+ kernels
+             * (and some compilers) emit them deliberately as padding or
+             * cross-version stubs — don't log, just NOP. */
             return 8;
     }
 }

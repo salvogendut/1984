@@ -173,7 +173,22 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
          * into ram_bank bits[7:6] so banked_ram_offset() can read it. */
         if ((val & 0xC0) == 0xC0 && cpc->mem.ram_size > 0x10000) {
             u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
-            cpc->mem.ram_bank = (u8)((bank_high << 6) | (val & 0x3F));
+            u8 mode  = val & 0x07;
+            u8 group = (val >> 3) & 0x07;
+            /* Caprice32 ga_memory_manager() quirk: when the selected
+             * expansion group would point past installed RAM, force
+             * group=0 (fall back to the first 64K extension bank).
+             * Without this, CP/M+ and other software that probes more
+             * banks than physically exist see 0xFF reads where real
+             * hardware mirrors to group 0. Materially affects smaller
+             * configs (128/192/256/384/448K); a no-op at 576K/1024K
+             * where all standard groups fit. */
+            u32 full_bg = (u32)bank_high * 8u + (u32)group;
+            if (((full_bg + 2u) * 64u * 1024u) > (u32)cpc->mem.ram_size) {
+                group     = 0;
+                bank_high = 0;
+            }
+            cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
         }
         return;
     }
