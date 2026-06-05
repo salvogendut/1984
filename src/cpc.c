@@ -1,5 +1,6 @@
 #include "cpc.h"
 #include "net4cpc.h"
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -130,8 +131,12 @@ static u8 bus_io_read(void *ctx, u16 port) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_mouse && lo == 0x10)
             result = mouse_read(&cpc->mouse);
-        else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F)))
+        else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
             result = ide_read(&cpc->ide_chip, lo);
+            if (getenv("ONE_K_TRACE_IDE_R") && lo != 0x08) {
+                fprintf(stderr, "[IDE R] port=FD%02X -> %02X PC=%04X\n", lo, result, cpc->cpu.pc);
+            }
+        }
         else if (cpc->rtc && lo == 0x14)
             result = rtc_read_data(&cpc->rtc_chip);
         else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
@@ -189,6 +194,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
                 bank_high = 0;
             }
             cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
+            if (getenv("ONE_K_TRACE_BANK"))
+                fprintf(stderr, "[BANK] ram_bank=%02X (group=%u mode=%u bank_high=%u) PC=%04X\n",
+                        cpc->mem.ram_bank, group, mode, bank_high, cpc->cpu.pc);
         }
         return;
     }
@@ -206,6 +214,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
     if ((hi & 0xE0) == 0xC0) {
+        if (getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
+            fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n", cpc->cpu.pc);
+        }
         cpc->mem.upper_rom_select = val;
         return;
     }
@@ -256,6 +267,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
+            if (getenv("ONE_K_TRACE_IDE")) {
+                fprintf(stderr, "[IDE W] port=FD%02X val=%02X PC=%04X\n", lo, val, cpc->cpu.pc);
+            }
             ide_write(&cpc->ide_chip, lo, val); return;
         }
         if (cpc->rtc) {
@@ -496,6 +510,25 @@ void cpc_frame(CPC *cpc) {
         u8   cur_ra = cpc->crtc.vlc;
         bool cur_de = cpc->crtc.display_enable;
 
+        if (getenv("ONE_K_TRACE_LDIR_BANK")) {
+            static int hit = 0;
+            if (!hit && cpc->cpu.pc == 0xC636 && cpc->cpu.de == 0x7600
+                && cpc->mem.upper_rom_enabled && cpc->mem.upper_rom_select == 0x01) {
+                hit = 1;
+                fprintf(stderr, "[LDIR2 START] DE=7600 BC=%04X HL=%04X ram_bank=%02X upper_rom_enabled=%d lower_rom_enabled=%d upper_rom_select=%02X\n",
+                        cpc->cpu.bc, cpc->cpu.hl, cpc->mem.ram_bank,
+                        cpc->mem.upper_rom_enabled, cpc->mem.lower_rom_enabled, cpc->mem.upper_rom_select);
+            }
+            static int hit_end = 0;
+            if (!hit_end && cpc->cpu.pc == 0xC638 && cpc->cpu.de >= 0x79F0
+                && cpc->mem.upper_rom_enabled && cpc->mem.upper_rom_select == 0x01) {
+                hit_end = 1;
+                fprintf(stderr, "[LDIR2 END] DE=%04X BC=%04X HL=%04X ram_bank=%02X RAM[0x7600..7607]=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+                        cpc->cpu.de, cpc->cpu.bc, cpc->cpu.hl, cpc->mem.ram_bank,
+                        cpc->mem.ram[0x7600], cpc->mem.ram[0x7601], cpc->mem.ram[0x7602], cpc->mem.ram[0x7603],
+                        cpc->mem.ram[0x7604], cpc->mem.ram[0x7605], cpc->mem.ram[0x7606], cpc->mem.ram[0x7607]);
+            }
+        }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         done += t;
         /* Advance the cassette by this instruction's T-states and push

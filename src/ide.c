@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
+#include <stdlib.h>
 
 /* ---- Helpers ---- */
 
@@ -102,6 +103,17 @@ static void exec_cmd(IDE *ide, u8 cmd) {
     ide->cmd     = cmd;
     ide->error   = 0;
     ide->buf_pos = 0;
+
+    if (getenv("ONE_K_TRACE_LBA")) {
+        u32 lba = lba_addr(ide);
+        u32 cnt = ide->sector_count ? (u32)ide->sector_count : 256;
+        static int n = 0; n++;
+        fprintf(stderr, "[IDE CMD #%d] cmd=%02X LBA=%07X cnt=%u dev=%02X\n",
+                n, cmd, lba, cnt, ide->device);
+        if (getenv("ONE_K_STOP_AT_LOOP") && lba == 0x83758 && n > 200) {
+            fprintf(stderr, "[STOP] At repeating LBA 0x83758 — would dump state here\n");
+        }
+    }
 
     switch (cmd) {
     case 0x91:  /* INITIALIZE DRIVE PARAMETERS */
