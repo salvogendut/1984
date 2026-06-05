@@ -68,6 +68,7 @@ static void usage(const char *prog, int code) {
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
         "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
+        "  --save-sna-at-ide=N:PATH  Save a .sna snapshot when the Nth ATA command is issued (for cross-emulator bisection)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  -h, --help          Show this help and exit\n"
@@ -103,6 +104,8 @@ int main(int argc, char *argv[]) {
     const char *screenshot_path  = NULL;
     int         save_sna_frame   = -1;
     const char *save_sna_path    = NULL;
+    int         save_sna_ide_cmd = -1;
+    const char *save_sna_ide_path = NULL;
     bool        trace_io         = false;
     bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
@@ -191,6 +194,15 @@ int main(int argc, char *argv[]) {
             }
             save_sna_frame = atoi(arg);
             save_sna_path  = colon + 1;
+        } else if (strncmp(argv[i], "--save-sna-at-ide=", 18) == 0 && argv[i][18] != '\0') {
+            const char *arg = argv[i] + 18;
+            char *colon = strchr(arg, ':');
+            if (!colon || colon == arg || colon[1] == '\0') {
+                fprintf(stderr, "%s: --save-sna-at-ide requires N:PATH format\n", argv[0]);
+                usage(argv[0], 1);
+            }
+            save_sna_ide_cmd = atoi(arg);
+            save_sna_ide_path = colon + 1;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
             usage(argv[0], 1);
@@ -672,6 +684,13 @@ int main(int argc, char *argv[]) {
              * want both. If they want to exit after the snapshot they can use
              * a screenshot-at at the same frame, or rely on --exit-after. */
             save_sna_frame = -1;
+        }
+        if (save_sna_ide_cmd >= 0) {
+            extern u32 ide_cmd_count_for_crash_trace;
+            if ((int)ide_cmd_count_for_crash_trace >= save_sna_ide_cmd) {
+                snapshot_save(&cpc, save_sna_ide_path);
+                save_sna_ide_cmd = -1;
+            }
         }
 
         /* Sleep for whatever is left of the 20 ms frame budget */

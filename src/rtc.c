@@ -1,5 +1,6 @@
 #include "rtc.h"
 #include <time.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -44,9 +45,14 @@ u8 rtc_read_data(RTC *r) {
     struct tm *tm;
     if (getenv("ONE_K_FAKE_RTC")) {
         memset(&fake_tm, 0, sizeof(fake_tm));
-        fake_tm.tm_sec  = 0;
-        fake_tm.tm_min  = 0;
-        fake_tm.tm_hour = 12;
+        /* Allow tweaking via env to test which RTC values trigger the
+         * HDCPM stability race. ONE_K_FAKE_RTC_TIME=HH:MM:SS overrides. */
+        const char *t_env = getenv("ONE_K_FAKE_RTC_TIME");
+        int h = 12, m = 0, s = 0;
+        if (t_env) sscanf(t_env, "%d:%d:%d", &h, &m, &s);
+        fake_tm.tm_sec  = s;
+        fake_tm.tm_min  = m;
+        fake_tm.tm_hour = h;
         fake_tm.tm_mday = 1;
         fake_tm.tm_mon  = 0;       /* January */
         fake_tm.tm_year = 124;     /* 2024 */
