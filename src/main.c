@@ -67,6 +67,7 @@ static void usage(const char *prog, int code) {
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
+        "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  -h, --help          Show this help and exit\n"
@@ -100,6 +101,8 @@ int main(int argc, char *argv[]) {
     const char *rom_os_arg      = NULL;
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
+    int         save_sna_frame   = -1;
+    const char *save_sna_path    = NULL;
     bool        trace_io         = false;
     bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
@@ -179,6 +182,15 @@ int main(int argc, char *argv[]) {
             }
             screenshot_frame = atoi(arg);
             screenshot_path  = colon + 1;
+        } else if (strncmp(argv[i], "--save-sna-at=", 14) == 0 && argv[i][14] != '\0') {
+            const char *arg = argv[i] + 14;
+            char *colon = strchr(arg, ':');
+            if (!colon || colon == arg || colon[1] == '\0') {
+                fprintf(stderr, "%s: --save-sna-at requires N:PATH format\n", argv[0]);
+                usage(argv[0], 1);
+            }
+            save_sna_frame = atoi(arg);
+            save_sna_path  = colon + 1;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
             usage(argv[0], 1);
@@ -653,6 +665,13 @@ int main(int argc, char *argv[]) {
         if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
             display_save_ppm(&cpc.display, screenshot_path);
             running = false;
+        }
+        if (save_sna_frame >= 0 && frame_count == save_sna_frame) {
+            snapshot_save(&cpc, save_sna_path);
+            /* Don't exit — let the user combine with --screenshot-at if they
+             * want both. If they want to exit after the snapshot they can use
+             * a screenshot-at at the same frame, or rely on --exit-after. */
+            save_sna_frame = -1;
         }
 
         /* Sleep for whatever is left of the 20 ms frame budget */
