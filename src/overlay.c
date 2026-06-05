@@ -3,6 +3,7 @@
 #include "m4.h"
 #include "disk.h"
 #include "mem.h"
+#include "snapshot.h"
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
@@ -31,7 +32,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 2 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 4 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -306,6 +307,16 @@ static void item_text(const Overlay *ov, int row,
         case 1:
             snprintf(lbl, lsz, "Real CRT");
             snprintf(val, vsz, "[unimplemented]");
+            *readonly = true;
+            break;
+        case 2:
+            snprintf(lbl, lsz, "Load Snapshot");
+            snprintf(val, vsz, "[Enter to pick .sna]");
+            *readonly = true;
+            break;
+        case 3:
+            snprintf(lbl, lsz, "Save Snapshot");
+            snprintf(val, vsz, "[Enter to save .sna]");
             *readonly = true;
             break;
         }
@@ -663,6 +674,32 @@ static void activate_item(Overlay *ov) {
                                       ov->cfg->fullscreen_smoothing);
             ov->dirty = true;
             break;
+        case 2: {
+            /* Load Snapshot — open file picker for .sna */
+            ov->dialog_kind  = DIALOG_SNAPSHOT_LOAD;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter sna_filters[] = {
+                { "SNA snapshots", "sna;SNA" },
+                { "All files",     "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                sna_filters, 2, NULL, false);
+            break;
+        }
+        case 3: {
+            /* Save Snapshot — open save dialog */
+            ov->dialog_kind  = DIALOG_SNAPSHOT_SAVE;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter sna_filters[] = {
+                { "SNA snapshots", "sna;SNA" },
+                { "All files",     "*"       },
+            };
+            SDL_ShowSaveFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                sna_filters, 2, NULL);
+            break;
+        }
         }
         break;
 
@@ -749,6 +786,20 @@ void overlay_tick(Overlay *ov) {
             ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
         }
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_SNAPSHOT_LOAD) {
+        if (ov->cpc && ov->dialog_path[0])
+            snapshot_load(ov->cpc, ov->dialog_path);
+    } else if (ov->dialog_kind == DIALOG_SNAPSHOT_SAVE) {
+        if (ov->cpc && ov->dialog_path[0]) {
+            /* Auto-append .sna if user didn't give an extension */
+            char path[512];
+            snprintf(path, sizeof(path), "%s", ov->dialog_path);
+            char *dot = strrchr(path, '.');
+            char *slash = strrchr(path, '/');
+            if (!dot || (slash && dot < slash))
+                strncat(path, ".sna", sizeof(path) - strlen(path) - 1);
+            snapshot_save(ov->cpc, path);
+        }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
         /* User picked an SD card image — enable M4, load its ROM, and seed
          * the M4 board's config buffer from the ROM defaults.

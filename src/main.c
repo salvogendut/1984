@@ -13,6 +13,7 @@
 #include "joy.h"
 #include "net4cpc.h"
 #include "monitor.h"
+#include "snapshot.h"
 #include "leds.h"
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
@@ -65,6 +66,7 @@ static void usage(const char *prog, int code) {
         "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
+        "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  -h, --help          Show this help and exit\n"
@@ -92,6 +94,7 @@ int main(int argc, char *argv[]) {
 
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
+    const char *load_sna_arg    = NULL;
     const char *disk_a_arg      = NULL;
     const char *disk_b_arg      = NULL;
     const char *rom_os_arg      = NULL;
@@ -114,6 +117,8 @@ int main(int argc, char *argv[]) {
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
             paste_arg = argv[i] + 8;
+        else if (strncmp(argv[i], "--load-sna=", 11) == 0 && argv[i][11] != '\0')
+            load_sna_arg = argv[i] + 11;
         else if (strncmp(argv[i], "--disk-a=", 9) == 0 && argv[i][9] != '\0')
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
@@ -348,6 +353,17 @@ int main(int argc, char *argv[]) {
 
     Joy joy;
     joy_init(&joy);
+
+    /* Load a snapshot AFTER all machine init (ROMs, IDE, Albireo, joysticks
+     * etc.) is done — the snapshot overrides only the CPU + GA + CRTC + PPI
+     * + RAM state. Suppress autostart/paste so a typed sequence doesn't fight
+     * the loaded snapshot's PC. */
+    if (load_sna_arg) {
+        if (snapshot_load(&cpc, load_sna_arg) == 0) {
+            autostart = NULL;
+            paste_arg = NULL;
+        }
+    }
 
     bool fullscreen     = cfg.fullscreen;
     bool mouse_captured = false;

@@ -27,6 +27,7 @@ bin_PROGRAMS = 1984
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \
+	src/snapshot.c \
 	src/tape.c \
 	src/z80.c
 
@@ -55,6 +56,7 @@ noinst_HEADERS = \
 	src/psg.h \
 	src/rtc.h \
 	src/shutter_wav.h \
+	src/snapshot.h \
 	src/symbnet.h \
 	src/tape.h \
 	src/types.h \

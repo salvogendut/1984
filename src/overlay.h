@@ -26,7 +26,9 @@ typedef enum {
     DIALOG_M4_IMAGE  = 5,
     DIALOG_ALBIREO   = 6,
     DIALOG_BASIC_ROM = 7,
-    DIALOG_TAPE      = 8
+    DIALOG_TAPE      = 8,
+    DIALOG_SNAPSHOT_LOAD = 9,
+    DIALOG_SNAPSHOT_SAVE = 10
 } DialogKind;
 
 typedef struct {
