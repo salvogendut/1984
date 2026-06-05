@@ -672,11 +672,19 @@ void cpc_frame(CPC *cpc) {
             cur_de = cpc->crtc.display_enable;
         }
 
-        /* Deliver pending Gate Array interrupt */
+        /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
+         * wait until the Z80 actually accepts the IRQ (IFF1=1, not in EI delay)
+         * — otherwise we'd reset the GA's scanline counter prematurely when
+         * IRQs are masked, throwing off the 300 Hz IRQ cadence the firmware
+         * (and HDCPM/CP/M+ kernel) depend on. konCePCja/Caprice32 ack inside
+         * the CPU IRQ-acceptance path; we mirror that via int_accepted. */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
-            ga_irq_ack(&cpc->ga);
             z80_interrupt(&cpc->cpu);
+        }
+        if (cpc->cpu.int_accepted) {
+            cpc->cpu.int_accepted = false;
+            ga_irq_ack(&cpc->ga);
         }
 
         /* Breakpoint check */

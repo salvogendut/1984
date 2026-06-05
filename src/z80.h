@@ -29,6 +29,10 @@ typedef struct {
     u8   im;           /* interrupt mode 0/1/2 */
     bool halted;
     bool pending_irq;
+    /* Set true by z80_step in the cycle it ACCEPTS a maskable interrupt
+     * (so the caller can ack the IRQ source, e.g. clear GA bit 5).
+     * Caller is expected to consume by clearing back to false. */
+    bool int_accepted;
 
     int cycles;        /* T-states consumed this step */
 } Z80;

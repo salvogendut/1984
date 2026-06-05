@@ -224,7 +224,12 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         }
         case 0x45: case 0x55: case 0x65: case 0x75: /* RETN */
             cpu->iff1 = cpu->iff2; cpu->pc = pop16(cpu, bus); return 14;
-        case 0x4D: cpu->pc = pop16(cpu, bus); return 14; /* RETI */
+        case 0x4D: /* RETI — match konCePCja/Caprice32: restore IFF1 from IFF2 like RETN.
+                   * Standard Z80 docs say RETI only restores PC, but real-world
+                   * emulators (Caprice32, WinAPE, MAME, FUSE) all restore IFF1
+                   * too — software (notably the Amstrad firmware ISR) relies on
+                   * IRQs being re-enabled after RETI without an explicit EI. */
+            cpu->iff1 = cpu->iff2; cpu->pc = pop16(cpu, bus); return 14;
         case 0x46: case 0x4E: case 0x66: case 0x6E: cpu->im = 0; return 8;
         case 0x56: case 0x76: cpu->im = 1; return 8;
         case 0x5E: case 0x7E: cpu->im = 2; return 8;
@@ -397,6 +402,7 @@ void z80_reset(Z80 *cpu) {
     cpu->im = 0;
     cpu->halted = false;
     cpu->pending_irq = false;
+    cpu->int_accepted = false;
 }
 
 void z80_interrupt(Z80 *cpu) {
@@ -414,6 +420,7 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         cpu->pending_irq = false;
         cpu->halted = false;
         cpu->iff1 = cpu->iff2 = false;
+        cpu->int_accepted = true;
         cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
         push16(cpu, bus, cpu->pc);
         switch (cpu->im) {
