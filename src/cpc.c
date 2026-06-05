@@ -6,6 +6,8 @@
 
 /* Set to 1 at runtime to trace CRTC/GA writes to stderr */
 int cpc_trace_io = 0;
+/* Counter incremented by ide_write on each command, used by crash trace arming */
+u32 ide_cmd_count_for_crash_trace = 0;
 int cpc_trace_palette = 0;
 int cpc_frame_count = 0;
 int cpc_trace_input = 0;
@@ -509,6 +511,66 @@ void cpc_frame(CPC *cpc) {
         u16  cur_ma = cpc->crtc.ma;
         u8   cur_ra = cpc->crtc.vlc;
         bool cur_de = cpc->crtc.display_enable;
+
+        if (getenv("ONE_K_TRACE_CRASH")) {
+            /* Wider ring buffer + capture SP, BC, HL too */
+            static u16 pcs[8192], sps[8192], bcs[8192], hls[8192];
+            static u32 idx = 0;
+            static int dumped = 0;
+            static int zero_visits = 0;
+            static int prev_was_nonzero = 0;
+            extern u32 ide_cmd_count_for_crash_trace;
+            /* Only arm the trigger AFTER divergence point (IDE cmd > 200) */
+            int armed = ide_cmd_count_for_crash_trace > 200;
+            static int armed_zero_visits = 0;
+            pcs[idx & 8191] = cpc->cpu.pc;
+            sps[idx & 8191] = cpc->cpu.sp;
+            bcs[idx & 8191] = cpc->cpu.bc;
+            /* Pack lower_rom + upper_rom_select into hls slot for compactness */
+            hls[idx & 8191] = (u16)((cpc->mem.lower_rom_enabled ? 0x8000 : 0) |
+                                    (cpc->mem.upper_rom_enabled ? 0x4000 : 0) |
+                                    (cpc->mem.upper_rom_select));
+            idx++;
+            /* True firmware reset: PC=0 with lower ROM enabled.
+             * CP/M+ uses PC=0 for warm boot but with lower ROM DISABLED. */
+            int real_reset = (cpc->cpu.pc == 0x0000) && cpc->mem.lower_rom_enabled;
+            if (real_reset) {
+                if (prev_was_nonzero) {
+                    zero_visits++;
+                    if (armed) armed_zero_visits++;
+                }
+                prev_was_nonzero = 0;
+            } else {
+                prev_was_nonzero = 1;
+            }
+            if (!dumped && armed_zero_visits >= 1) {
+                dumped = 1;
+                fprintf(stderr, "[CRASH] reset (PC=0 visit #2) — full ring buffer (newest last):\n");
+                /* Walk forward from oldest, suppressing runs of same PC */
+                u32 start = idx & 8191;
+                u32 last_pc = 0xFFFF;
+                int run = 0;
+                int shown = 0;
+                for (int i = 0; i < 8192; i++) {
+                    u32 j = (start + i) & 8191;
+                    u16 pc = pcs[j];
+                    if (pc == 0 && i < 1000) continue;  /* skip leading zeros (unfilled) */
+                    if (pc == last_pc) { run++; continue; }
+                    if (run > 0) fprintf(stderr, "        (x%d more)\n", run);
+                    run = 0;
+                    last_pc = pc;
+                    {
+                        u16 r = hls[j];
+                        fprintf(stderr, "  PC=%04X SP=%04X BC=%04X %s%s rom=%02X\n",
+                                pc, sps[j], bcs[j],
+                                (r & 0x8000) ? "LROM " : "lram ",
+                                (r & 0x4000) ? "UROM " : "uram ",
+                                (u8)(r & 0xFF));
+                    }
+                    if (++shown > 5000) { fprintf(stderr, "  ... (truncated)\n"); break; }
+                }
+            }
+        }
 
         if (getenv("ONE_K_TRACE_LDIR_BANK")) {
             static int hit = 0;

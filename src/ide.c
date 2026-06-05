@@ -104,6 +104,10 @@ static void exec_cmd(IDE *ide, u8 cmd) {
     ide->error   = 0;
     ide->buf_pos = 0;
 
+    {
+        extern u32 ide_cmd_count_for_crash_trace;
+        ide_cmd_count_for_crash_trace++;
+    }
     if (getenv("ONE_K_TRACE_LBA")) {
         u32 lba = lba_addr(ide);
         u32 cnt = ide->sector_count ? (u32)ide->sector_count : 256;
