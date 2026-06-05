@@ -8,6 +8,8 @@ A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
 
 Boots to Locomotive BASIC. Commercial games and standard software run well. Demos and other software that rely on undocumented hardware behaviour or cycle-exact CRTC tricks are untested and may not work correctly.
 
+**HDCPM / CP/M+ boots from FAT-formatted SYMBiFACE II / Cyboard IDE drives**, mounting up to four `CPMDSKxx.IMG` images as CP/M drives A–D with the M: ramdisk, ZCPR shell, and SYMBiFACE RTC sync. **SymbOS desktop runs on both Albireo (USB / CH376) and Cyboard (Net4CPC + RTC + SYMBiFACE IDE).**
+
 **M4 board emulation is partial.** The ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, and TCP connect plus the cpc-sdcc network examples (TCPTEST, NTP, TELNET, WGET) all work. SymbOS's `netd-m4c.exe` launches, resolves hosts, and HTTP downloads via `wget` complete end-to-end. SymbOS interactive telnet sessions stall shortly after the initial server banner — the same stall is observed on real Net4CPC hardware, so this appears to be a SymbOS-side limitation rather than an emulator bug.
 
 ## Features
@@ -64,6 +66,7 @@ Per-expansion guides:
 ## Acknowledgements
 
 - **[ColinPitrat/caprice32](https://github.com/ColinPitrat/caprice32)** — well-maintained CPC emulator used extensively as a behavioural reference. Hardware colour palette RGB values in `src/gate_array.c` were derived from Caprice32's colour table; the µPD765 FDC semantics in `src/fdc.c` (status register layout per phase, ST0.AT/ST1.EN on EOT termination, settling delay on first EXEC MSR read, port 0xFB lo-byte bit-7 gating) and several Z80/Gate Array timing details (hsync falling-edge interrupt counter advance, CRTC tick cycle accumulator) follow Caprice32's implementation.
+- **[ikari-pl/konCePCja](https://github.com/ikari-pl/konCePCja)** — Caprice32 fork by Cezar "ikari" Pokorski with a documented SYMBiFACE II implementation, IPC-controllable debugger and headless mode. Used as the gold-standard reference for the HDCPM / CP/M+ boot path: a byte-by-byte LBA-sequence comparison with konCePCja isolated the divergence point that led to the GA-interrupt acknowledge timing fix (deferring `ga_irq_ack()` until the Z80 actually accepts the maskable interrupt, plus restoring `IFF1` from `IFF2` on RETI — both behaviours mirroring konCePCja / Caprice32).
 - **[CPCWIKI](https://www.cpcwiki.eu/)** — primary reference for CPC hardware documentation: CRTC registers and timing, Gate Array behaviour, memory map, I/O port decoding, and keyboard matrix.
 - **[The Undocumented Z80 Documented](http://www.z80.info/zip/z80-documented.pdf)** (Sean Young) — reference for flag behaviour, undocumented opcodes (IX/IY bit instructions, DDCB/FDCB prefixes), and interrupt modes.
 - **[µPD765 FDC Application Note](https://www.nec.com/)** and Amstrad CPC service manual — reference for the FDC command set and DSK image format used in `src/fdc.c` and `src/disk.c`.

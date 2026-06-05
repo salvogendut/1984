@@ -1,10 +1,13 @@
 #include "cpc.h"
 #include "net4cpc.h"
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 /* Set to 1 at runtime to trace CRTC/GA writes to stderr */
 int cpc_trace_io = 0;
+/* Counter incremented by ide_write on each command, used by crash trace arming */
+u32 ide_cmd_count_for_crash_trace = 0;
 int cpc_trace_palette = 0;
 int cpc_frame_count = 0;
 int cpc_trace_input = 0;
@@ -130,8 +133,12 @@ static u8 bus_io_read(void *ctx, u16 port) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_mouse && lo == 0x10)
             result = mouse_read(&cpc->mouse);
-        else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F)))
+        else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
             result = ide_read(&cpc->ide_chip, lo);
+            if (getenv("ONE_K_TRACE_IDE_R") && lo != 0x08) {
+                fprintf(stderr, "[IDE R] port=FD%02X -> %02X PC=%04X\n", lo, result, cpc->cpu.pc);
+            }
+        }
         else if (cpc->rtc && lo == 0x14)
             result = rtc_read_data(&cpc->rtc_chip);
         else if (cpc->net4cpc && lo >= 0x20 && lo <= 0x23)
@@ -171,9 +178,27 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
          * selector for RAM above 576 KB. Port 0x7Fxx = bank_high 0 (DK'tronics
          * compatible); 0x7Exx = 1, 0x7Dxx = 2, 0x7Cxx = 3. bank_high is packed
          * into ram_bank bits[7:6] so banked_ram_offset() can read it. */
-        if ((val & 0xC0) == 0xC0) {
+        if ((val & 0xC0) == 0xC0 && cpc->mem.ram_size > 0x10000) {
             u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
-            cpc->mem.ram_bank = (u8)((bank_high << 6) | (val & 0x3F));
+            u8 mode  = val & 0x07;
+            u8 group = (val >> 3) & 0x07;
+            /* Caprice32 ga_memory_manager() quirk: when the selected
+             * expansion group would point past installed RAM, force
+             * group=0 (fall back to the first 64K extension bank).
+             * Without this, CP/M+ and other software that probes more
+             * banks than physically exist see 0xFF reads where real
+             * hardware mirrors to group 0. Materially affects smaller
+             * configs (128/192/256/384/448K); a no-op at 576K/1024K
+             * where all standard groups fit. */
+            u32 full_bg = (u32)bank_high * 8u + (u32)group;
+            if (((full_bg + 2u) * 64u * 1024u) > (u32)cpc->mem.ram_size) {
+                group     = 0;
+                bank_high = 0;
+            }
+            cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
+            if (getenv("ONE_K_TRACE_BANK"))
+                fprintf(stderr, "[BANK] ram_bank=%02X (group=%u mode=%u bank_high=%u) PC=%04X\n",
+                        cpc->mem.ram_bank, group, mode, bank_high, cpc->cpu.pc);
         }
         return;
     }
@@ -191,6 +216,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
     if ((hi & 0xE0) == 0xC0) {
+        if (getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
+            fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n", cpc->cpu.pc);
+        }
         cpc->mem.upper_rom_select = val;
         return;
     }
@@ -241,6 +269,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
+            if (getenv("ONE_K_TRACE_IDE")) {
+                fprintf(stderr, "[IDE W] port=FD%02X val=%02X PC=%04X\n", lo, val, cpc->cpu.pc);
+            }
             ide_write(&cpc->ide_chip, lo, val); return;
         }
         if (cpc->rtc) {
@@ -481,6 +512,85 @@ void cpc_frame(CPC *cpc) {
         u8   cur_ra = cpc->crtc.vlc;
         bool cur_de = cpc->crtc.display_enable;
 
+        if (getenv("ONE_K_TRACE_CRASH")) {
+            /* Wider ring buffer + capture SP, BC, HL too */
+            static u16 pcs[8192], sps[8192], bcs[8192], hls[8192];
+            static u32 idx = 0;
+            static int dumped = 0;
+            static int zero_visits = 0;
+            static int prev_was_nonzero = 0;
+            extern u32 ide_cmd_count_for_crash_trace;
+            /* Only arm the trigger AFTER divergence point (IDE cmd > 200) */
+            int armed = ide_cmd_count_for_crash_trace > 200;
+            static int armed_zero_visits = 0;
+            pcs[idx & 8191] = cpc->cpu.pc;
+            sps[idx & 8191] = cpc->cpu.sp;
+            bcs[idx & 8191] = cpc->cpu.bc;
+            /* Pack lower_rom + upper_rom_select into hls slot for compactness */
+            hls[idx & 8191] = (u16)((cpc->mem.lower_rom_enabled ? 0x8000 : 0) |
+                                    (cpc->mem.upper_rom_enabled ? 0x4000 : 0) |
+                                    (cpc->mem.upper_rom_select));
+            idx++;
+            /* True firmware reset: PC=0 with lower ROM enabled.
+             * CP/M+ uses PC=0 for warm boot but with lower ROM DISABLED. */
+            int real_reset = (cpc->cpu.pc == 0x0000) && cpc->mem.lower_rom_enabled;
+            if (real_reset) {
+                if (prev_was_nonzero) {
+                    zero_visits++;
+                    if (armed) armed_zero_visits++;
+                }
+                prev_was_nonzero = 0;
+            } else {
+                prev_was_nonzero = 1;
+            }
+            if (!dumped && armed_zero_visits >= 1) {
+                dumped = 1;
+                fprintf(stderr, "[CRASH] reset (PC=0 visit #2) — full ring buffer (newest last):\n");
+                /* Walk forward from oldest, suppressing runs of same PC */
+                u32 start = idx & 8191;
+                u32 last_pc = 0xFFFF;
+                int run = 0;
+                int shown = 0;
+                for (int i = 0; i < 8192; i++) {
+                    u32 j = (start + i) & 8191;
+                    u16 pc = pcs[j];
+                    if (pc == 0 && i < 1000) continue;  /* skip leading zeros (unfilled) */
+                    if (pc == last_pc) { run++; continue; }
+                    if (run > 0) fprintf(stderr, "        (x%d more)\n", run);
+                    run = 0;
+                    last_pc = pc;
+                    {
+                        u16 r = hls[j];
+                        fprintf(stderr, "  PC=%04X SP=%04X BC=%04X %s%s rom=%02X\n",
+                                pc, sps[j], bcs[j],
+                                (r & 0x8000) ? "LROM " : "lram ",
+                                (r & 0x4000) ? "UROM " : "uram ",
+                                (u8)(r & 0xFF));
+                    }
+                    if (++shown > 5000) { fprintf(stderr, "  ... (truncated)\n"); break; }
+                }
+            }
+        }
+
+        if (getenv("ONE_K_TRACE_LDIR_BANK")) {
+            static int hit = 0;
+            if (!hit && cpc->cpu.pc == 0xC636 && cpc->cpu.de == 0x7600
+                && cpc->mem.upper_rom_enabled && cpc->mem.upper_rom_select == 0x01) {
+                hit = 1;
+                fprintf(stderr, "[LDIR2 START] DE=7600 BC=%04X HL=%04X ram_bank=%02X upper_rom_enabled=%d lower_rom_enabled=%d upper_rom_select=%02X\n",
+                        cpc->cpu.bc, cpc->cpu.hl, cpc->mem.ram_bank,
+                        cpc->mem.upper_rom_enabled, cpc->mem.lower_rom_enabled, cpc->mem.upper_rom_select);
+            }
+            static int hit_end = 0;
+            if (!hit_end && cpc->cpu.pc == 0xC638 && cpc->cpu.de >= 0x79F0
+                && cpc->mem.upper_rom_enabled && cpc->mem.upper_rom_select == 0x01) {
+                hit_end = 1;
+                fprintf(stderr, "[LDIR2 END] DE=%04X BC=%04X HL=%04X ram_bank=%02X RAM[0x7600..7607]=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+                        cpc->cpu.de, cpc->cpu.bc, cpc->cpu.hl, cpc->mem.ram_bank,
+                        cpc->mem.ram[0x7600], cpc->mem.ram[0x7601], cpc->mem.ram[0x7602], cpc->mem.ram[0x7603],
+                        cpc->mem.ram[0x7604], cpc->mem.ram[0x7605], cpc->mem.ram[0x7606], cpc->mem.ram[0x7607]);
+            }
+        }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         done += t;
         /* Advance the cassette by this instruction's T-states and push
@@ -562,11 +672,19 @@ void cpc_frame(CPC *cpc) {
             cur_de = cpc->crtc.display_enable;
         }
 
-        /* Deliver pending Gate Array interrupt */
+        /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
+         * wait until the Z80 actually accepts the IRQ (IFF1=1, not in EI delay)
+         * — otherwise we'd reset the GA's scanline counter prematurely when
+         * IRQs are masked, throwing off the 300 Hz IRQ cadence the firmware
+         * (and HDCPM/CP/M+ kernel) depend on. konCePCja/Caprice32 ack inside
+         * the CPU IRQ-acceptance path; we mirror that via int_accepted. */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
-            ga_irq_ack(&cpc->ga);
             z80_interrupt(&cpc->cpu);
+        }
+        if (cpc->cpu.int_accepted) {
+            cpc->cpu.int_accepted = false;
+            ga_irq_ack(&cpc->ga);
         }
 
         /* Breakpoint check */

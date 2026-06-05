@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
+#include <stdlib.h>
 
 /* ---- Helpers ---- */
 
@@ -17,7 +18,7 @@ static u32 lba_addr(const IDE *ide) {
 
 static void set_error(IDE *ide, u8 err) {
     ide->error  = err;
-    ide->status = IDE_STATUS_DRDY | IDE_STATUS_ERR;
+    ide->status = IDE_STATUS_DRDY | IDE_STATUS_DSC | IDE_STATUS_ERR;
 }
 
 static bool load_sector(IDE *ide, u32 lba) {
@@ -103,10 +104,25 @@ static void exec_cmd(IDE *ide, u8 cmd) {
     ide->error   = 0;
     ide->buf_pos = 0;
 
+    {
+        extern u32 ide_cmd_count_for_crash_trace;
+        ide_cmd_count_for_crash_trace++;
+    }
+    if (getenv("ONE_K_TRACE_LBA")) {
+        u32 lba = lba_addr(ide);
+        u32 cnt = ide->sector_count ? (u32)ide->sector_count : 256;
+        static int n = 0; n++;
+        fprintf(stderr, "[IDE CMD #%d] cmd=%02X LBA=%07X cnt=%u dev=%02X\n",
+                n, cmd, lba, cnt, ide->device);
+        if (getenv("ONE_K_STOP_AT_LOOP") && lba == 0x83758 && n > 200) {
+            fprintf(stderr, "[STOP] At repeating LBA 0x83758 — would dump state here\n");
+        }
+    }
+
     switch (cmd) {
     case 0x91:  /* INITIALIZE DRIVE PARAMETERS */
     case 0xEF:  /* SET FEATURES */
-        ide->status = IDE_STATUS_DRDY;
+        ide->status = IDE_STATUS_DRDY | IDE_STATUS_DSC;
         break;
 
     case 0xEC:  /* IDENTIFY DEVICE */
@@ -114,7 +130,7 @@ static void exec_cmd(IDE *ide, u8 cmd) {
         build_identify(ide);
         ide->buf_pos      = 0;
         ide->writing      = false;
-        ide->status       = IDE_STATUS_DRDY | IDE_STATUS_DRQ;
+        ide->status       = IDE_STATUS_DRDY | IDE_STATUS_DSC | IDE_STATUS_DRQ;
         break;
 
     case 0x20:  /* READ SECTORS (with retry) */
@@ -124,7 +140,7 @@ static void exec_cmd(IDE *ide, u8 cmd) {
         ide->writing      = false;
         if (load_sector(ide, ide->current_lba)) {
             ide->buf_pos = 0;
-            ide->status  = IDE_STATUS_DRDY | IDE_STATUS_DRQ;
+            ide->status  = IDE_STATUS_DRDY | IDE_STATUS_DSC | IDE_STATUS_DRQ;
         }
         break;
 
@@ -134,7 +150,7 @@ static void exec_cmd(IDE *ide, u8 cmd) {
         ide->sectors_left = ide->sector_count ? (int)ide->sector_count : 256;
         ide->writing      = true;
         ide->buf_pos      = 0;
-        ide->status       = IDE_STATUS_DRDY | IDE_STATUS_DRQ;
+        ide->status       = IDE_STATUS_DRDY | IDE_STATUS_DSC | IDE_STATUS_DRQ;
         break;
 
     default:
@@ -157,7 +173,7 @@ void ide_reset(IDE *ide) {
     memset(ide, 0, sizeof(*ide));
     ide->fp          = fp;
     ide->num_sectors = ns;
-    ide->status      = fp ? IDE_STATUS_DRDY : 0x00;
+    ide->status      = fp ? IDE_STATUS_DRDY | IDE_STATUS_DSC : 0x00;
 }
 
 void ide_open(IDE *ide, const char *path) {
@@ -171,7 +187,7 @@ void ide_open(IDE *ide, const char *path) {
     fseeko(ide->fp, 0, SEEK_END);
     off_t sz = ftello(ide->fp);
     ide->num_sectors = (u64)(sz > 0 ? sz : 0) / 512;
-    ide->status      = IDE_STATUS_DRDY;
+    ide->status      = IDE_STATUS_DRDY | IDE_STATUS_DSC;
 }
 
 void ide_close(IDE *ide) {
@@ -193,14 +209,14 @@ u8 ide_read(IDE *ide, u8 reg) {
             u8 val = ide->buf[ide->buf_pos++];
             if (ide->buf_pos == 512) {
                 if (ide->cmd == 0xEC) {
-                    ide->status = IDE_STATUS_DRDY;
+                    ide->status = IDE_STATUS_DRDY | IDE_STATUS_DSC;
                 } else {
                     ide->current_lba++;
                     ide->sectors_left--;
                     if (ide->sectors_left > 0 && load_sector(ide, ide->current_lba)) {
                         ide->buf_pos = 0;
                     } else {
-                        ide->status = IDE_STATUS_DRDY;
+                        ide->status = IDE_STATUS_DRDY | IDE_STATUS_DSC;
                     }
                 }
             }
@@ -235,7 +251,7 @@ void ide_write(IDE *ide, u8 reg, u8 val) {
                     ide->buf_pos = 0;
                     /* DRQ remains set; host writes next sector */
                 } else {
-                    ide->status = IDE_STATUS_DRDY;
+                    ide->status = IDE_STATUS_DRDY | IDE_STATUS_DSC;
                 }
             }
         }

@@ -21,6 +21,7 @@
 
 #define IDE_STATUS_BSY  0x80u
 #define IDE_STATUS_DRDY 0x40u
+#define IDE_STATUS_DSC  0x10u   /* drive seek complete — many drivers expect this set whenever the drive is ready */
 #define IDE_STATUS_DRQ  0x08u
 #define IDE_STATUS_ERR  0x01u
 
