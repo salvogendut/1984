@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.4" date="2026-06-05">
+      <description>
+        <p>HDCPM / CP/M+ boots fully to the A0:CPM&gt; prompt from FAT-formatted SYMBiFACE II / Cyboard IDE drives, mounting up to four CPMDSKxx.IMG images. SymbOS desktop runs on both Albireo (CH376 USB) and Cyboard (Net4CPC + RTC + SYMBiFACE IDE). Two CPU/interrupt fixes underneath: the Gate Array IRQ acknowledge is now deferred until the Z80 actually accepts the maskable interrupt (so the 300 Hz IRQ cadence stays stable across IFF1-masked sections), and RETI restores IFF1 from IFF2 like Caprice32 / WinAPE / MAME.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-05-30">
       <description>
         <p>Cassette tape support (.cdt/TZX) with loading screech mixed into PSG audio; fullscreen letterbox gutter colour fix.</p>
