@@ -67,6 +67,9 @@ static void usage(const char *prog, int code) {
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
+        "  --tap=DEVNAME       Bind Net4CPC to a Linux TAP device for real LAN access.\n"
+        "                      Pass --tap= (empty) to let the kernel auto-name (tap0…).\n"
+        "                      Needs CAP_NET_ADMIN or a pre-created persistent TAP.\n"
         "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
@@ -96,6 +99,7 @@ int main(int argc, char *argv[]) {
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
     const char *load_sna_arg    = NULL;
+    const char *tap_dev_arg     = NULL;   /* --tap=DEVNAME for Net4CPC backend */
     const char *disk_a_arg      = NULL;
     const char *disk_b_arg      = NULL;
     const char *rom_os_arg      = NULL;
@@ -122,6 +126,8 @@ int main(int argc, char *argv[]) {
             paste_arg = argv[i] + 8;
         else if (strncmp(argv[i], "--load-sna=", 11) == 0 && argv[i][11] != '\0')
             load_sna_arg = argv[i] + 11;
+        else if (strncmp(argv[i], "--tap=", 6) == 0)
+            tap_dev_arg = argv[i] + 6;   /* may be empty: kernel auto-names */
         else if (strncmp(argv[i], "--disk-a=", 9) == 0 && argv[i][9] != '\0')
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
@@ -242,6 +248,14 @@ int main(int argc, char *argv[]) {
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
+
+    /* If the user asked for a TAP backend, open it now. Failure here is not
+     * fatal — we fall back to the legacy host-POSIX-socket behaviour. */
+    if (tap_dev_arg && cpc.net4cpc) {
+        if (net4cpc_attach_tap(tap_dev_arg) < 0)
+            fprintf(stderr, "1984: TAP attach failed, "
+                    "Net4CPC will use the legacy host-socket fallback.\n");
+    }
     /* These four expansions install their drivers as upper ROMs, so without
      * the Roms Board fitted they can't run — force them off in the live CPC
      * state while leaving the cfg values intact (re-enabling Roms Board
@@ -620,6 +634,7 @@ int main(int argc, char *argv[]) {
         paste_tick(&paste, &cpc.kbd);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
+        net4cpc_poll();
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {

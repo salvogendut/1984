@@ -17,6 +17,7 @@
  */
 
 #include "net4cpc.h"
+#include "tap.h"
 #include "compat_win.h"
 
 #include <errno.h>
@@ -24,6 +25,13 @@
 #include <string.h>
 
 int net4cpc_trace = 0;
+
+/* TAP backend state. When tap_fd >= 0 we route Ethernet frames through it
+ * instead of (or in addition to, during phase-in) the legacy host-POSIX-
+ * socket fallback. Phases 1-5 of #104 add the actual frame plumbing; this
+ * commit just wires the open/poll surface so the rest can land in steps. */
+static int  tap_fd        = -1;
+static char tap_dev_name[32] = { 0 };
 
 /* ---------------------------------------------------------------------------
  * W5100S register-space constants
@@ -516,6 +524,37 @@ void net4cpc_reset(void) {
     /* MR = 0x03: indirect bus mode + auto-increment.
      * The n4c-nettools driver reads this port to confirm the chip is present. */
     regs[0x0000] = 0x03;
+}
+
+int net4cpc_attach_tap(const char *devname) {
+    if (tap_fd >= 0) {
+        tap_close(tap_fd);
+        tap_fd = -1;
+        tap_dev_name[0] = '\0';
+    }
+    if (!devname) return 0;
+    int fd = tap_open(devname, tap_dev_name, sizeof(tap_dev_name));
+    if (fd < 0) return -1;
+    tap_fd = fd;
+    fprintf(stderr, "net4cpc: TAP backend attached on '%s' (fd=%d)\n",
+            tap_dev_name, tap_fd);
+    return 0;
+}
+
+void net4cpc_poll(void) {
+    if (tap_fd < 0) return;
+    /* Drain whatever the TAP has queued and dispatch. Phases 2-5 of #104
+     * implement the actual frame parsing (ARP, IP, UDP, ICMP, TCP). For
+     * now we just clear the queue so it doesn't back up; once those land
+     * the frames will be routed to the right W5100S sockets. */
+    u8 frame[TAP_FRAME_MAX];
+    int drained = 0;
+    while (1) {
+        int n = tap_read(tap_fd, frame, sizeof(frame));
+        if (n <= 0) break;
+        drained++;
+        if (drained > 64) break;     /* don't starve the Z80 on a flood */
+    }
 }
 
 u8 net4cpc_in(u8 reg_sel) {
