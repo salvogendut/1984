@@ -183,6 +183,7 @@ static void config_create_default(const char *path, const char *home) {
         "net4cpc_tap_netmask=255.255.255.0\n"
         "net4cpc_tap_lease_start=10.0.0.100\n"
         "net4cpc_tap_lease_end=10.0.0.150\n"
+        "net4cpc_tap_warned=false\n"
         "rtc=false\n"
         "symbiface_ide=false\n"
         "ide_image=\n"
@@ -321,6 +322,9 @@ int config_load(Config *cfg) {
                 snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "%s", val);
             } else if (!strcmp(key, "net4cpc_tap_lease_end")) {
                 snprintf(cfg->net4cpc_tap_lease_end, sizeof(cfg->net4cpc_tap_lease_end), "%s", val);
+            } else if (!strcmp(key, "net4cpc_tap_warned")) {
+                if (parse_bool(val, &b)) cfg->net4cpc_tap_warned = b;
+                else { fprintf(stderr, "1984.conf:%d: net4cpc_tap_warned must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "rtc")) {
                 if (parse_bool(val, &b)) cfg->rtc = b;
                 else { fprintf(stderr, "1984.conf:%d: rtc must be true/false\n", lineno); rc = -1; }
@@ -451,6 +455,7 @@ int config_save(const Config *cfg) {
         "net4cpc_tap_netmask=%s\n"
         "net4cpc_tap_lease_start=%s\n"
         "net4cpc_tap_lease_end=%s\n"
+        "net4cpc_tap_warned=%s\n"
         "rtc=%s\n"
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
@@ -482,6 +487,7 @@ int config_save(const Config *cfg) {
         cfg->net4cpc_tap_netmask,
         cfg->net4cpc_tap_lease_start,
         cfg->net4cpc_tap_lease_end,
+        cfg->net4cpc_tap_warned ? "true" : "false",
         cfg->rtc              ? "true" : "false",
         cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,

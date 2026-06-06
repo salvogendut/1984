@@ -22,6 +22,48 @@
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 
+/* First-time warning shown when the user enables Net4CPC TAP. They have
+ * to click "I understand" before the tap is actually brought up — that
+ * acknowledgement is persisted in cfg->net4cpc_tap_warned so the popup
+ * never reappears unless the config is reset. Returns true if the user
+ * accepted; false if they cancelled (in which case the backend stays
+ * disabled). */
+static bool warn_tap_ipclass(Config *cfg) {
+    if (cfg->net4cpc_tap_warned) return true;
+    const SDL_MessageBoxButtonData buttons[] = {
+        { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" },
+        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "I understand" },
+    };
+    const SDL_MessageBoxData mb = {
+        SDL_MESSAGEBOX_WARNING, NULL,
+        "Net4CPC TAP — heads up",
+        "The TAP backend creates a private network on your host "
+        "and runs a built-in DHCP server.\n\n"
+        "Default subnet: 10.0.0.0/24\n"
+        "Lease: 10.0.0.100 (CPC) ↔ 10.0.0.1 (host)\n\n"
+        "If your home Wi-Fi or router already uses 10.0.0.0/24 the "
+        "two will collide — change the subnet in Advanced ▸ DHCP "
+        "server (or edit 1984.conf) to e.g. 192.168.99.0/24 or "
+        "172.20.0.0/24 before continuing.\n\n"
+        "Click 'I understand' to acknowledge. This warning won't "
+        "be shown again.",
+        2, buttons, NULL,
+    };
+    int btn = 0;
+    if (!SDL_ShowMessageBox(&mb, &btn))    /* failed to display */
+        return true;
+    if (btn == 1) {
+        cfg->net4cpc_tap_warned = true;
+        config_save(cfg);
+        return true;
+    }
+    /* User cancelled — quietly disable the toggle so they aren't
+     * immediately re-prompted on the next config save. */
+    cfg->net4cpc_tap = false;
+    config_save(cfg);
+    return false;
+}
+
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
  * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
  * is the --tap=NAME the user passed on the command line (NULL/empty if
@@ -33,7 +75,7 @@
  * cleared by the kernel on reboot. On overlay-toggle-off we just
  * detach our fd from it; the device itself stays, so flipping the
  * toggle back on also doesn't prompt. */
-static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
+static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
     const bool want_auto =
         cfg->net4cpc && cfg->net4cpc_tap &&
         (!cli_tap_dev || !cli_tap_dev[0]);
@@ -77,6 +119,9 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     }
 
     if (!want_auto) return;
+
+    /* Gate auto-setup on the one-time IP-class warning. */
+    if (!warn_tap_ipclass(cfg)) return;
 
     static const char auto_name[] = "cpc-tap0";
     /* Build "host_ip/cidr" from host_ip and netmask dotted-quads.
