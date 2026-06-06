@@ -10,6 +10,7 @@ int cpc_trace_io = 0;
 u32 ide_cmd_count_for_crash_trace = 0;
 int cpc_trace_palette = 0;
 int cpc_frame_count = 0;
+long long g_total_t = 0;
 int cpc_trace_input = 0;
 
 #define AUDIO_SAMPLE_RATE   44100
@@ -593,6 +594,7 @@ void cpc_frame(CPC *cpc) {
         }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         done += t;
+        g_total_t += t;
         /* Advance the cassette by this instruction's T-states and push
          * the resulting level into the PPI's Port B bit 7 mirror. */
         tape_step(&cpc->tape, t);
@@ -685,6 +687,17 @@ void cpc_frame(CPC *cpc) {
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;
             ga_irq_ack(&cpc->ga);
+            if (getenv("ONE_K_TRACE_IRQ")) {
+                extern long long g_total_t;
+                static int irq_n = 0;
+                static long long last_t = 0;
+                u16 ret_pc = (u16)mem_read(&cpc->mem, cpc->cpu.sp)
+                           | ((u16)mem_read(&cpc->mem, cpc->cpu.sp + 1) << 8);
+                long long dt = g_total_t - last_t;
+                last_t = g_total_t;
+                fprintf(stderr, "[IRQ #%d] frame=%d ret_pc=%04X sl=%d dt=%lld\n",
+                    ++irq_n, cpc_frame_count, ret_pc, cpc->ga.interrupt_counter, dt);
+            }
         }
 
         /* Breakpoint check */
