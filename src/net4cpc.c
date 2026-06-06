@@ -38,6 +38,7 @@ static const u16 BUF_SIZE     = 2048u;
 /* Socket register offsets from SOCK_BASE[n] */
 #define SR_MR     0x00u
 #define SR_CR     0x01u
+#define SR_IR     0x02u   /* socket interrupt register (RECV=bit2, etc.)    */
 #define SR_SR     0x03u
 #define SR_DIPR   0x0Cu /* 4 bytes, big-endian */
 #define SR_DPORT  0x10u /* 2 bytes, big-endian */
@@ -170,6 +171,11 @@ static void poll_rx(int s) {
     }
 
     update_rx_rsr(s);
+    /* Signal RECV in Sn_IR (bit 2). The kernel polls Sn_IR waiting for
+     * this to flip; it then issues SCMD_RECV and clears the bit via
+     * write-1-to-clear. Without setting this we'd silently fill the RX
+     * buffer and the kernel would spin forever (NCFG's DHCP poll loop). */
+    regs[SOCK_BASE[s] + SR_IR] |= 0x04;
 }
 
 static void poll_connect(int s) {
@@ -467,8 +473,12 @@ static u8 reg_read(u16 addr) {
             if (net4cpc_trace) trace_access(addr, val, false);
             return val;
         }
-        /* Reading either byte of RX_RSR triggers a receive poll */
-        if (addr == SOCK_BASE[s] + SR_RX_RSR ||
+        /* Reading Sn_IR or Sn_RX_RSR is the kernel asking "do I have data
+         * yet?" — drain the host UDP/TCP socket so the answer is current.
+         * Without polling here NCFG spins forever on Sn_IR waiting for the
+         * RECV bit that we'd only set on RX_RSR reads it never makes. */
+        if (addr == SOCK_BASE[s] + SR_IR ||
+            addr == SOCK_BASE[s] + SR_RX_RSR ||
             addr == (u16)(SOCK_BASE[s] + SR_RX_RSR + 1)) {
             poll_rx(s);
             val = regs[addr];
@@ -485,21 +495,37 @@ static void reg_write(u16 addr, u8 val) {
     /* See reg_read() for the 0x8000 mask rationale. */
     addr &= 0x7FFF;
     if (net4cpc_trace) trace_access(addr, val, true);
-    /* MR.RST (bit 7): software reset. Real silicon clears all regs and
-     * the RST bit auto-clears within ~10us. The Net4CPC board ties the
-     * BUS_SEL pin to indirect-bus mode, so MR comes back as 0x03 (IND +
-     * AI). Clearing MR to 0x00 here disables auto-increment, which
-     * breaks every multi-byte register write SymbOS makes afterward. */
+    /* MR.RST (bit 7): software reset. Per the W5100S datasheet, soft reset
+     * clears socket state (registers + buffers) and resets internal state
+     * machines but **preserves** the host-configured common registers —
+     * SHAR (MAC), GAR (gateway), SUBR (subnet), SIPR (source IP) all live
+     * at 0x0000–0x002F and survive. HDCPM and KCNet rely on this: they set
+     * the MAC, then issue a reset, then read the MAC back. Wiping the
+     * whole regs[] array previously made that read return zeros and the
+     * KCNet utilities hang waiting for a stack that never came up.
+     *
+     * The Net4CPC board ties BUS_SEL low (indirect mode), so MR comes back
+     * as 0x03 (IND + AI). The RST bit auto-clears within ~10us on real
+     * silicon. */
     if (addr == 0x0000 && (val & 0x80)) {
         for (int s = 0; s < 4; s++) {
             close_sock(s);
             rx_wr[s] = 0;
         }
-        memset(regs, 0, sizeof(regs));
+        /* Clear sockets (0x0400+) and TX/RX buffers, preserve commons. */
+        memset(&regs[0x0400], 0, sizeof(regs) - 0x0400);
         regs[0x0000] = 0x03;
         if (net4cpc_trace)
-            fprintf(stderr, "[net4cpc]     soft reset complete; MR -> 03 (IND+AI)\n");
+            fprintf(stderr, "[net4cpc]     soft reset complete; MR -> 03 (IND+AI), commons preserved\n");
         return;
+    }
+    /* Sn_IR is write-1-to-clear: the kernel writes a 1 in the bits it has
+     * handled. Treat the write as an ack rather than an overwrite. */
+    for (int s = 0; s < 4; s++) {
+        if (addr == SOCK_BASE[s] + SR_IR) {
+            regs[addr] &= ~val;
+            return;
+        }
     }
     regs[addr] = val;
     for (int s = 0; s < 4; s++) {
