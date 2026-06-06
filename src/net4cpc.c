@@ -626,7 +626,21 @@ static void reg_write(u16 addr, u8 val) {
             fprintf(stderr, "[net4cpc]     soft reset complete; MR -> 03 (IND+AI)\n");
         return;
     }
-    regs[addr] = val;
+    /* Sn_IR is write-1-to-clear per W5100S datasheet § 4.2.10. The
+     * KCNet utilities (NCFG, PING, ...) write back the exact bits they
+     * just observed in order to acknowledge them; storing val directly
+     * would re-set the bits the kernel was trying to clear. We hit
+     * this with DHCP: NCFG cleared SEND_OK+RECV after the OFFER, our
+     * implementation stored those bits, the post-ACK probe then read
+     * 0x1C (SEND_OK|RECV|TIMEOUT) and NCFG concluded the address was
+     * in use → DHCPDECLINE. */
+    bool is_sn_ir = false;
+    for (int s = 0; s < 4; s++)
+        if (addr == SOCK_BASE[s] + SR_IR) { is_sn_ir = true; break; }
+    if (is_sn_ir)
+        regs[addr] &= ~val;
+    else
+        regs[addr] = val;
     /* If the kernel just touched one of the common-config bytes
      * (SHAR, SIPR, GAR, SUBR), push the new values to the stack so
      * outgoing frames and ARP cache use the live config. */
