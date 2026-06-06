@@ -32,6 +32,10 @@ typedef struct {
     char m4_image[CONFIG_PATH_MAX];  /* optional raw FAT32 image for C_SDREAD/C_SDWRITE */
     bool ulifac;
     bool net4cpc;
+    bool net4cpc_tap;  /* Use TAP backend: 1984 auto-creates the tap device,
+                        * runs a built-in DHCP server, adds the interface to
+                        * the firewalld trusted zone. When false, Net4CPC
+                        * falls back to the legacy POSIX host-socket path. */
     bool rtc;
     bool symbiface_ide;
     char ide_image[CONFIG_PATH_MAX];

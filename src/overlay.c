@@ -32,7 +32,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 4 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 4 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -294,6 +294,15 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         }
+        case 11:
+            snprintf(lbl, lsz, "Net4CPC TAP");
+            if (!ov->cfg->net4cpc) {
+                snprintf(val, vsz, "[needs Net4CPC]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->net4cpc_tap ? "enabled" : "disabled");
+            }
+            break;
         }
         break;
 
@@ -662,6 +671,13 @@ static void activate_item(Overlay *ov) {
             }
             break;
         }
+        case 11:
+            if (ov->cfg->net4cpc) {
+                ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
+                ov->dirty = true;
+                ov->needs_cold_boot = true;
+            }
+            break;
         }
         break;
 
@@ -878,6 +894,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->rom_board     != ov->saved.rom_board)     ||
                         (ov->cfg->dd1           != ov->saved.dd1)           ||
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
+                        (ov->cfg->net4cpc_tap   != ov->saved.net4cpc_tap)   ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
                         (ov->cfg->symbiface_mouse != ov->saved.symbiface_mouse) ||
                         strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||

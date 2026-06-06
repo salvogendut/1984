@@ -174,6 +174,7 @@ static void config_create_default(const char *path, const char *home) {
         "m4_image=\n"
         "ulifac=false\n"
         "net4cpc=false\n"
+        "net4cpc_tap=false\n"
         "rtc=false\n"
         "symbiface_ide=false\n"
         "ide_image=\n"
@@ -301,6 +302,9 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "net4cpc")) {
                 if (parse_bool(val, &b)) cfg->net4cpc = b;
                 else { fprintf(stderr, "1984.conf:%d: net4cpc must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "net4cpc_tap")) {
+                if (parse_bool(val, &b)) cfg->net4cpc_tap = b;
+                else { fprintf(stderr, "1984.conf:%d: net4cpc_tap must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "rtc")) {
                 if (parse_bool(val, &b)) cfg->rtc = b;
                 else { fprintf(stderr, "1984.conf:%d: rtc must be true/false\n", lineno); rc = -1; }
@@ -426,6 +430,7 @@ int config_save(const Config *cfg) {
         "m4_image=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n"
+        "net4cpc_tap=%s\n"
         "rtc=%s\n"
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
@@ -452,6 +457,7 @@ int config_save(const Config *cfg) {
         cfg->m4_image,
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc          ? "true" : "false",
+        cfg->net4cpc_tap      ? "true" : "false",
         cfg->rtc              ? "true" : "false",
         cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,
