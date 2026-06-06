@@ -32,7 +32,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 4 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 5 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -294,15 +294,6 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         }
-        case 11:
-            snprintf(lbl, lsz, "Net4CPC TAP");
-            if (!ov->cfg->net4cpc) {
-                snprintf(val, vsz, "[needs Net4CPC]");
-                *readonly = true;
-            } else {
-                snprintf(val, vsz, "%s", ov->cfg->net4cpc_tap ? "enabled" : "disabled");
-            }
-            break;
         }
         break;
 
@@ -327,6 +318,16 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Save Snapshot");
             snprintf(val, vsz, "[Enter to save .sna]");
             *readonly = true;
+            break;
+        case 4:
+            snprintf(lbl, lsz, "Net4CPC TAP");
+            if (!ov->cfg->net4cpc) {
+                snprintf(val, vsz, "[needs Net4CPC]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->net4cpc_tap ? "enabled (auto-setup)" : "disabled");
+            }
             break;
         }
         break;
@@ -671,13 +672,6 @@ static void activate_item(Overlay *ov) {
             }
             break;
         }
-        case 11:
-            if (ov->cfg->net4cpc) {
-                ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
-                ov->dirty = true;
-                ov->needs_cold_boot = true;
-            }
-            break;
         }
         break;
 
@@ -716,6 +710,13 @@ static void activate_item(Overlay *ov) {
                 sna_filters, 2, NULL);
             break;
         }
+        case 4:
+            if (ov->cfg->net4cpc) {
+                ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
+                ov->dirty = true;
+                ov->needs_cold_boot = true;
+            }
+            break;
         }
         break;
 

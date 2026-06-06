@@ -35,6 +35,51 @@ static void atexit_set_tap_cleanup(const char *name) {
     if (!registered) { atexit(atexit_auto_tap_destroy); registered = true; }
 }
 
+/* Synchronise the Net4CPC TAP backend with the current config. Used at
+ * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
+ * is the --tap=NAME the user passed on the command line (NULL/empty if
+ * none); it suppresses auto-setup so power users keep full control. */
+static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
+    const bool want_auto =
+        cfg->net4cpc && cfg->net4cpc_tap &&
+        (!cli_tap_dev || !cli_tap_dev[0]);
+
+    /* Tear down any tap the previous configuration brought up. */
+    if (g_atexit_tap_name[0]) {
+        net4cpc_attach_tap(NULL);
+        n4c_stack_set_dhcp_enabled(false);
+        tap_auto_destroy(g_atexit_tap_name);
+        g_atexit_tap_name[0] = '\0';
+    }
+
+    if (cli_tap_dev && cli_tap_dev[0] && cfg->net4cpc) {
+        if (net4cpc_attach_tap(cli_tap_dev) < 0)
+            fprintf(stderr, "1984: TAP attach failed, "
+                    "Net4CPC will use the legacy host-socket fallback.\n");
+        return;
+    }
+
+    if (!want_auto) {
+        net4cpc_attach_tap(NULL);
+        return;
+    }
+
+    char name[64];
+    snprintf(name, sizeof(name), "cpc-tap%d", (int)getpid() % 10000);
+    if (tap_auto_create(name, "10.0.0.1/24") < 0) {
+        fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
+                "the legacy host-socket fallback.\n");
+        return;
+    }
+    if (net4cpc_attach_tap(name) < 0) {
+        fprintf(stderr, "1984: TAP attach failed after auto-create.\n");
+        tap_auto_destroy(name);
+        return;
+    }
+    atexit_set_tap_cleanup(name);
+    n4c_stack_set_dhcp_enabled(true);
+}
+
 static void apply_led_enables(const Config *cfg) {
     /* Floppies: shown when an FDC is wired (6128 has it built-in; 464 needs DDI-1). */
     bool fdc_present = (cfg->model == MODEL_6128) || cfg->dd1;
@@ -269,33 +314,7 @@ int main(int argc, char *argv[]) {
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
 
-    /* TAP backend wiring. Two paths:
-     *   (a) explicit --tap=NAME on the CLI — power-user mode, the device
-     *       must already exist and be configured; we just bind to it.
-     *   (b) cfg->net4cpc_tap=true with no --tap override — one-click mode.
-     *       1984 generates a per-pid name, asks polkit/pkexec for the
-     *       privileged setup (ip tuntap add, link up, addr add, firewalld
-     *       trusted zone), attaches, enables the built-in DHCP server,
-     *       and tears the device down on exit. */
-    static char g_auto_tap_name[64] = "";
-    const char *attach_name = tap_dev_arg;
-    if (cpc.net4cpc && !tap_dev_arg && cfg.net4cpc_tap) {
-        snprintf(g_auto_tap_name, sizeof(g_auto_tap_name),
-                 "cpc-tap%d", (int)getpid() % 10000);
-        if (tap_auto_create(g_auto_tap_name, "10.0.0.1/24") == 0) {
-            attach_name = g_auto_tap_name;
-            atexit_set_tap_cleanup(g_auto_tap_name);
-            n4c_stack_set_dhcp_enabled(true);
-        } else {
-            fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
-                    "the legacy host-socket fallback.\n");
-        }
-    }
-    if (attach_name && cpc.net4cpc) {
-        if (net4cpc_attach_tap(attach_name) < 0)
-            fprintf(stderr, "1984: TAP attach failed, "
-                    "Net4CPC will use the legacy host-socket fallback.\n");
-    }
+    net4cpc_tap_sync(&cfg, tap_dev_arg);
     /* These four expansions install their drivers as upper ROMs, so without
      * the Roms Board fitted they can't run — force them off in the live CPC
      * state while leaving the cfg values intact (re-enabling Roms Board
@@ -635,6 +654,7 @@ int main(int argc, char *argv[]) {
             cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
+            net4cpc_tap_sync(&cfg, tap_dev_arg);
             /* See boot-time comment: these four need the Roms Board. */
             cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.rom_board;
             cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.rom_board;
