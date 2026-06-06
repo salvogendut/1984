@@ -6,6 +6,7 @@
  */
 #include "n4c_stack.h"
 #include "tap.h"
+#include "leds.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,10 +43,13 @@ void n4c_stack_set_tcp_callbacks(N4CTcpEvent on_state,
 }
 
 bool n4c_stack_active(void) {
-    if (s_tap_fd < 0) return false;
-    /* SIPR all-zero means no IP yet — let the legacy path handle DHCP
-     * scenarios until the kernel programs a real address. */
-    return (s_sipr[0] | s_sipr[1] | s_sipr[2] | s_sipr[3]) != 0;
+    /* As soon as a TAP is bound we own the wire — DHCP-style flows with
+     * SIPR=0.0.0.0 are legitimate and the only path that reaches a
+     * tap-bound DHCP server. The earlier "wait for non-zero SIPR" gate
+     * routed those through the host POSIX socket instead, which is the
+     * wrong interface entirely when the host's DHCP responder is bound
+     * to tap0. */
+    return s_tap_fd >= 0;
 }
 
 void n4c_stack_update_config(const u8 mac[6],
@@ -220,6 +224,7 @@ static void build_eth(u8 *p, const u8 dst[6], const u8 src[6], u16 etype) {
 /* Send a raw frame to the TAP. Returns bytes written or -1. */
 static int tap_tx(const u8 *frame, int len) {
     if (s_tap_fd < 0) return -1;
+    leds_ping(LED_NET);
     return tap_write(s_tap_fd, frame, (size_t)len);
 }
 
@@ -379,9 +384,14 @@ static void handle_ipv4(const u8 *eth, int len) {
 
     if (ihl < 20) return;
     if (total > len - 14) return;
-    if (memcmp(dst_ip, s_sipr, 4) != 0 &&
-        !(dst_ip[0] == 0xFF && dst_ip[1] == 0xFF &&
-          dst_ip[2] == 0xFF && dst_ip[3] == 0xFF))
+    /* Accept if dst is broadcast, or matches our SIPR, OR our SIPR is
+     * still 0.0.0.0 (DHCP-client pre-configuration case — the host
+     * kernel already MAC-filtered the frame to us, so any IP it carries
+     * is presumed for us). */
+    bool sipr_set = (s_sipr[0] | s_sipr[1] | s_sipr[2] | s_sipr[3]) != 0;
+    bool is_bcast = (dst_ip[0] == 0xFF && dst_ip[1] == 0xFF &&
+                     dst_ip[2] == 0xFF && dst_ip[3] == 0xFF);
+    if (sipr_set && !is_bcast && memcmp(dst_ip, s_sipr, 4) != 0)
         return;   /* not for us */
 
     /* Cache the source MAC so we can reply without a fresh ARP. */
@@ -474,6 +484,7 @@ void n4c_stack_poll(void) {
     for (int drained = 0; drained < 64; drained++) {
         int n = tap_read(s_tap_fd, frame, sizeof(frame));
         if (n <= 0) break;
+        leds_ping(LED_NET);
         if (n < 14) continue;
         u16 etype = get_u16_be(frame + 12);
         if (n4c_stack_trace) {

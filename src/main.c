@@ -30,6 +30,7 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_IDE, mx4 && cfg->symbiface_ide);
     leds_set_enabled(LED_USB, mx4 && cfg->albireo);
     leds_set_enabled(LED_SD,  mx4 && cfg->m4);
+    leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
 }
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"

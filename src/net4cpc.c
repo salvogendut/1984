@@ -248,6 +248,19 @@ static void handle_command(int s, u8 cmd) {
             rx_wr[s] = 0;
             break;
         }
+        fprintf(stderr, "[net4cpc/dbg] SCMD_OPEN s=%d mode=%02X stack_active=%d\n",
+            s, mode, n4c_stack_active() ? 1 : 0);
+        if (mode == SMODE_UDP && n4c_stack_active()) {
+            fprintf(stderr, "[net4cpc/dbg]   taking UDP+TAP fast path, setting Sn_SR=22\n");
+            regs[SOCK_BASE[s] + SR_SR] = SSTAT_UDP;
+            set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
+            set16(SOCK_BASE[s] + SR_TX_WR,  0);
+            set16(SOCK_BASE[s] + SR_TX_RD,  0);
+            set16(SOCK_BASE[s] + SR_RX_RSR, 0);
+            set16(SOCK_BASE[s] + SR_RX_RD,  0);
+            rx_wr[s] = 0;
+            break;
+        }
         sock_fd[s] = socket(AF_INET,
                             mode == SMODE_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (sock_fd[s] != -1) {
@@ -336,6 +349,7 @@ static void handle_command(int s, u8 cmd) {
         u16 tx_rd = get16(SOCK_BASE[s] + SR_TX_RD);
         u16 tx_wr = get16(SOCK_BASE[s] + SR_TX_WR);
         u16 len   = (u16)(tx_wr - tx_rd);
+        int udp_send_result = 1;  /* >0 means "send went out"; -1 means ARP failed */
 
         if (len > 0) {
             u8 buf[2048];
@@ -353,10 +367,10 @@ static void handle_command(int s, u8 cmd) {
                 u16 dport = get16(SOCK_BASE[s] + SR_DPORT);
 
                 if (n4c_stack_active()) {
-                    /* Real L2 path through TAP. If ARP isn't resolved
-                     * yet we just drop the TX; the kernel will retry
-                     * (NCFG/UDP apps are designed to retransmit). */
-                    n4c_stack_send_udp(sport, dst_ip, dport, buf, len);
+                    /* Real L2 path through TAP. */
+                    int sent = n4c_stack_send_udp(sport, dst_ip, dport, buf, len);
+                    /* Stash for the unified SEND_OK/TIMEOUT raise below. */
+                    udp_send_result = sent;
                 } else if (sock_fd[s] != -1) {
                     struct sockaddr_in dst;
                     memset(&dst, 0, sizeof(dst));
@@ -386,6 +400,24 @@ static void handle_command(int s, u8 cmd) {
 
         set16(SOCK_BASE[s] + SR_TX_RD, tx_wr);
         update_tx_fsr(s);
+        /* W5100S signalling after SCMD_SEND on a UDP socket:
+         *   SEND_OK (Sn_IR bit 4) — the chip successfully transmitted.
+         *   TIMEOUT (Sn_IR bit 3) — the chip couldn't ARP-resolve the
+         *     destination after its retry budget; the target IP appears
+         *     to be unused on the wire.
+         * NCFG uses TIMEOUT to mean "no ARP conflict — safe to claim
+         * the address" during DHCP's RFC 5227 probe. So raising
+         * SEND_OK on an ARP-failed unicast send is wrong — NCFG would
+         * read it as "ARP succeeded → address in use" and send
+         * DHCPDECLINE. (For broadcasts arp_resolve() returns the
+         * broadcast MAC immediately so SEND_OK is always the right
+         * answer there.) */
+        if (mode == SMODE_UDP) {
+            if (udp_send_result > 0)
+                regs[SOCK_BASE[s] + SR_IR] |= 0x10;   /* SEND_OK */
+            else
+                regs[SOCK_BASE[s] + SR_IR] |= 0x08;   /* TIMEOUT */
+        }
         break;
     }
 
@@ -545,6 +577,13 @@ static void trace_access(u16 addr, u8 val, bool is_write) {
  * ------------------------------------------------------------------------- */
 
 static u8 reg_read(u16 addr) {
+    /* W5100S indirect bus mode: KCNet utilities OR 0x8000 into every
+     * address (per a Wiznet app note). The chip masks bit 15 internally.
+     * Without this, every socket reg access lands in the unused upper
+     * half of regs[] — writes look like they took, but the dispatcher
+     * comparisons against SOCK_BASE[s] never match, so SCMD_* never
+     * triggers handle_command. */
+    addr &= 0x7FFF;
     u8 val;
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
@@ -568,6 +607,8 @@ static u8 reg_read(u16 addr) {
 }
 
 static void reg_write(u16 addr, u8 val) {
+    /* See reg_read() for the 0x8000-mask rationale. */
+    addr &= 0x7FFF;
     if (net4cpc_trace) trace_access(addr, val, true);
     /* MR.RST (bit 7): software reset. Real silicon clears all regs and
      * the RST bit auto-clears within ~10us. The Net4CPC board ties the
@@ -612,6 +653,22 @@ void net4cpc_reset(void) {
     /* MR = 0x03: indirect bus mode + auto-increment.
      * The n4c-nettools driver reads this port to confirm the chip is present. */
     regs[0x0000] = 0x03;
+    /* PHYCFGR (0x003C) = link up, 100 Mbps, full duplex.
+     * The KCNet utilities (NCFG, PING, NTIME, …) read this register before
+     * doing any network operation; if LNK=0 they print
+     * "network-cable not connected !" and bail. We're always linked —
+     * the host owns the upstream interface.
+     *
+     * Bit layout per W5100S datasheet § 4.5:
+     *   bit 7: RST   (write 1 to soft-reset PHY; reads back 0 normally)
+     *   bit 6: OPMD  (0 = hardware AUTO_NEGO pin, 1 = OPMDC bits drive)
+     *   bit 5-3: OPMDC (operation mode config when OPMD=1)
+     *   bit 2: DPX   (1 = full duplex)
+     *   bit 1: SPD   (1 = 100 Mbps)
+     *   bit 0: LNK   (1 = link up)
+     * We leave OPMD=0 so the chip looks like it's in default AUTO_NEGO
+     * mode, and report DPX=1, SPD=1, LNK=1. */
+    regs[0x003C] = 0x07;
 }
 
 int net4cpc_attach_tap(const char *devname) {
