@@ -28,14 +28,14 @@
  * never reappears unless the config is reset. Returns true if the user
  * accepted; false if they cancelled (in which case the backend stays
  * disabled). */
-static bool warn_tap_ipclass(Config *cfg) {
+static bool warn_tap_ipclass(Config *cfg, SDL_Window *parent) {
     if (cfg->net4cpc_tap_warned) return true;
     const SDL_MessageBoxButtonData buttons[] = {
         { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" },
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "I understand" },
     };
     const SDL_MessageBoxData mb = {
-        SDL_MESSAGEBOX_WARNING, NULL,
+        SDL_MESSAGEBOX_WARNING, parent,
         "Net4CPC TAP — heads up",
         "The TAP backend creates a private network on your host "
         "and runs a built-in DHCP server.\n\n"
@@ -75,7 +75,8 @@ static bool warn_tap_ipclass(Config *cfg) {
  * cleared by the kernel on reboot. On overlay-toggle-off we just
  * detach our fd from it; the device itself stays, so flipping the
  * toggle back on also doesn't prompt. */
-static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
+static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev,
+                             SDL_Window *parent) {
     const bool want_auto =
         cfg->net4cpc && cfg->net4cpc_tap &&
         (!cli_tap_dev || !cli_tap_dev[0]);
@@ -121,7 +122,7 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
     if (!want_auto) return;
 
     /* Gate auto-setup on the one-time IP-class warning. */
-    if (!warn_tap_ipclass(cfg)) return;
+    if (!warn_tap_ipclass(cfg, parent)) return;
 
     static const char auto_name[] = "cpc-tap0";
     /* Build "host_ip/cidr" from host_ip and netmask dotted-quads.
@@ -387,7 +388,7 @@ int main(int argc, char *argv[]) {
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
 
-    net4cpc_tap_sync(&cfg, tap_dev_arg);
+    net4cpc_tap_sync(&cfg, tap_dev_arg, cpc.display.window);
     /* These four expansions install their drivers as upper ROMs, so without
      * the Roms Board fitted they can't run — force them off in the live CPC
      * state while leaving the cfg values intact (re-enabling Roms Board
@@ -727,7 +728,7 @@ int main(int argc, char *argv[]) {
             cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
-            net4cpc_tap_sync(&cfg, tap_dev_arg);
+            net4cpc_tap_sync(&cfg, tap_dev_arg, cpc.display.window);
             /* See boot-time comment: these four need the Roms Board. */
             cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.rom_board;
             cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.rom_board;
