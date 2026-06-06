@@ -45,8 +45,6 @@ typedef struct {
     char net4cpc_tap_netmask   [24];   /* default "255.255.255.0" */
     char net4cpc_tap_lease_start[24];  /* default "10.0.0.100"   */
     char net4cpc_tap_lease_end [24];   /* default "10.0.0.150"   */
-    bool net4cpc_tap_warned;           /* user has acknowledged the IP-class
-                                        * conflict warning; gates the popup */
     bool rtc;
     bool symbiface_ide;
     char ide_image[CONFIG_PATH_MAX];

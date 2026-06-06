@@ -29,6 +29,35 @@ behaves as a real L2 endpoint on whatever the TAP is bridged to.
 Linux only for now. macOS/Windows fall back to the legacy host-socket
 behaviour (the `--tap=` flag is silently ignored on those platforms).
 
+## ⚠️ Heads up — pick a subnet that doesn't collide with your LAN
+
+The built-in DHCP server defaults to **`10.0.0.0/24`**: host side at
+`10.0.0.1`, the CPC leasing `10.0.0.100`. **If your home Wi-Fi or
+router already uses `10.0.0.0/24` the two will conflict**, packets
+get sent out the wrong interface and nothing works.
+
+Pick a subnet that doesn't clash. Common safe choices:
+
+- `192.168.99.0/24`
+- `172.20.0.0/24`
+
+Configure via `~/.config/1984/1984.conf`:
+
+```ini
+net4cpc_tap_host_ip=192.168.99.1
+net4cpc_tap_netmask=255.255.255.0
+net4cpc_tap_lease_start=192.168.99.100
+net4cpc_tap_lease_end=192.168.99.150
+```
+
+Stay in RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`,
+`192.168.0.0/16`) — the KCNet utilities silently reject non-RFC1918
+IPs, so HDCPM users get nothing back. SymbOS is more lenient.
+
+Changing the subnet between launches recreates the tap on the next
+start (one new `pkexec` prompt) — the iptables rules and host route
+update at the same time.
+
 ## Quick smoke test — point-to-point (no LAN, no bridge)
 
 The fastest way to verify the TAP backend is a private subnet between
