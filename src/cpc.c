@@ -106,6 +106,19 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     if (trace_bdf4 && addr == 0xB8BF)
         fprintf(stderr, "[B8BFw] frame=%d  $B8BF <- %02X  PC=%04X  lrom=%d\n",
                 cpc_frame_count, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
+    /* The actual target of JP $BE4F. If $BE4F holds 'LD A,$FF; LD
+     * ($FFF3),A; JP $BE4F' (3E FF 32 F3 FF C3 4F BE) we panic when
+     * called; the kernel is supposed to patch this slot with a real
+     * RET-bearing routine before the next 50 Hz secondary tick. */
+    if (trace_bdf4 && (addr >= 0xBE4F && addr <= 0xBE56))
+        fprintf(stderr, "[BE4Fw] frame=%d  $%04X <- %02X  PC=%04X  lrom=%d\n",
+                cpc_frame_count, addr, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
+    /* Also flag any write to the kernel error byte $FFF3 — that's
+     * what the halt loop writes to, so if we see 'FF' at $FFF3 it
+     * means we entered the panic at least once. */
+    if (trace_bdf4 && addr == 0xFFF3)
+        fprintf(stderr, "[FFF3w] frame=%d  $FFF3 <- %02X  PC=%04X  lrom=%d\n",
+                cpc_frame_count, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
 }
 
 static u8 bus_io_read(void *ctx, u16 port) {
