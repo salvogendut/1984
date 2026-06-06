@@ -113,7 +113,13 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
     const char *owner = tap_owner_name();
     if (!tap_str_is_safe(owner)) owner = "root";
 
-    char cmd[1024];
+    char cmd[2048];
+    /* Atomically: create the tap, address it, add it to firewalld
+     * trusted, enable v4 forwarding, and add a narrow MASQUERADE +
+     * FORWARD pair so 10.0.0.0/24 reaches the wider host network
+     * (and DNS upstream via the in-process proxy). Tagged via an
+     * iptables comment "1984-<dev>" so destroy can find and undo
+     * exactly our rules without disturbing anything else. */
     snprintf(cmd, sizeof(cmd),
         "pkexec sh -c '"
         "set -e; "
@@ -122,9 +128,16 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         "ip addr add %s dev %s; "
         "if command -v firewall-cmd >/dev/null 2>&1; then "
         "  firewall-cmd --zone=trusted --change-interface=%s >/dev/null 2>&1 || true; "
-        "fi"
+        "fi; "
+        "sysctl -w net.ipv4.ip_forward=1 >/dev/null; "
+        "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -o %s "
+        "  -m comment --comment 1984-%s -j MASQUERADE; "
+        "iptables -A FORWARD -i %s -m comment --comment 1984-%s -j ACCEPT; "
+        "iptables -A FORWARD -o %s -m comment --comment 1984-%s -j ACCEPT"
         "' 2>&1",
-        name, owner, name, ip_cidr, name, name);
+        name, owner, name, ip_cidr, name, name,
+        name, name, name,
+        name, name);
 
     fprintf(stderr, "tap: auto-creating '%s' (%s) via pkexec — "
                     "a password prompt may appear\n", name, ip_cidr);
@@ -135,11 +148,13 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
                         "  sudo ip tuntap add dev %s mode tap user %s\n"
                         "  sudo ip link set %s up\n"
                         "  sudo ip addr add %s dev %s\n"
-                        "  sudo firewall-cmd --zone=trusted --change-interface=%s\n",
-                rc, name, owner, name, ip_cidr, name, name);
+                        "  sudo firewall-cmd --zone=trusted --change-interface=%s\n"
+                        "  sudo sysctl -w net.ipv4.ip_forward=1\n"
+                        "  sudo iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -o %s -j MASQUERADE\n",
+                rc, name, owner, name, ip_cidr, name, name, name);
         return -1;
     }
-    fprintf(stderr, "tap: '%s' ready — %s assigned, firewalld trusted zone\n",
+    fprintf(stderr, "tap: '%s' ready — %s, trusted zone, NAT to host network\n",
             name, ip_cidr);
     return 0;
 }
@@ -147,9 +162,23 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
 void tap_auto_destroy(const char *name) {
     if (!tap_str_is_safe(name)) return;
     if (!tap_dev_exists(name)) return;
-    char cmd[256];
+    char cmd[1024];
+    /* Reverse the auto-create: drop the FORWARD/MASQUERADE rules we
+     * tagged on the way up, then delete the tap. The grep|sed dance
+     * finds matching rules by our 1984-<dev> comment and deletes them
+     * one by one so other emulator instances are untouched. */
     snprintf(cmd, sizeof(cmd),
-        "pkexec ip tuntap del dev %s mode tap >/dev/null 2>&1", name);
+        "pkexec sh -c '"
+        "for tbl in nat filter; do "
+        "  while iptables -t \"$tbl\" -S 2>/dev/null | grep -q -- \"1984-%s\"; do "
+        "    rule=$(iptables -t \"$tbl\" -S | grep -- \"1984-%s\" | head -1); "
+        "    [ -z \"$rule\" ] && break; "
+        "    iptables -t \"$tbl\" $(echo \"$rule\" | sed s/^-A/-D/) || break; "
+        "  done; "
+        "done; "
+        "ip tuntap del dev %s mode tap"
+        "' >/dev/null 2>&1",
+        name, name, name);
     (void)system(cmd);
 }
 

@@ -48,6 +48,7 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     if (g_atexit_tap_name[0]) {
         net4cpc_attach_tap(NULL);
         n4c_stack_set_dhcp_enabled(false);
+        n4c_stack_set_dns_enabled(false);
         tap_auto_destroy(g_atexit_tap_name);
         g_atexit_tap_name[0] = '\0';
     }
@@ -78,6 +79,7 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     }
     atexit_set_tap_cleanup(name);
     n4c_stack_set_dhcp_enabled(true);
+    n4c_stack_set_dns_enabled(true);
 }
 
 static void apply_led_enables(const Config *cfg) {

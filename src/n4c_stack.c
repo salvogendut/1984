@@ -476,6 +476,102 @@ static const u8 DHCP_SERVER_IP[4] = { 10, 0, 0, 1 };
 static const u8 DHCP_CLIENT_IP[4] = { 10, 0, 0, 100 };
 void n4c_stack_set_dhcp_enabled(bool on) { s_dhcp_enabled = on; }
 
+/* ---------------------------------------------------------------------------
+ * Built-in DNS proxy.
+ *
+ * The DHCP server advertises 10.0.0.1 as the DNS server but no real
+ * resolver listens on that address. When the chip sends a DNS query
+ * we forward it to the host's upstream (read from /etc/resolv.conf
+ * at first use; fall back to 8.8.8.8 if that fails) using a POSIX
+ * UDP socket, wait up to 500 ms for the reply, and push it back into
+ * the chip's RX buffer via the deliver callback. Synchronous because
+ * single-client and reply latency is tolerable; making this async
+ * would need a worker thread, which isn't worth it for now.
+ * ------------------------------------------------------------------------- */
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <poll.h>
+#include <unistd.h>
+
+static bool s_dns_enabled = false;
+static u8   s_dns_upstream[4] = { 8, 8, 8, 8 };
+static bool s_dns_upstream_loaded = false;
+
+void n4c_stack_set_dns_enabled(bool on) { s_dns_enabled = on; }
+
+static void dns_load_upstream(void) {
+    if (s_dns_upstream_loaded) return;
+    s_dns_upstream_loaded = true;
+    FILE *f = fopen("/etc/resolv.conf", "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == '#') continue;
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "nameserver", 10) != 0) continue;
+        p += 10;
+        while (*p == ' ' || *p == '\t') p++;
+        unsigned a, b, c, d;
+        if (sscanf(p, "%u.%u.%u.%u", &a, &b, &c, &d) == 4 &&
+            a < 256 && b < 256 && c < 256 && d < 256) {
+            /* Skip self-referential resolvers (the proxied address itself
+             * or stub resolvers on loopback) so we don't ping-pong. */
+            if (a == 127 || (a == 10 && b == 0 && c == 0 && d == 1)) continue;
+            s_dns_upstream[0] = (u8)a; s_dns_upstream[1] = (u8)b;
+            s_dns_upstream[2] = (u8)c; s_dns_upstream[3] = (u8)d;
+            break;
+        }
+    }
+    fclose(f);
+}
+
+/* Forward a query to upstream and deliver the reply back into the
+ * chip's RX buffer. Returns true if we handled the request (regardless
+ * of whether the upstream replied). */
+static bool dns_try_handle(u16 src_port, const u8 *query, u16 query_len) {
+    if (!s_dns_enabled || query_len < 12) return false;
+    dns_load_upstream();
+
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return true;        /* swallow: nothing else can answer */
+
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port   = htons(53);
+    memcpy(&sa.sin_addr, s_dns_upstream, 4);
+    if (sendto(fd, query, query_len, 0,
+               (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+        close(fd);
+        return true;
+    }
+
+    struct pollfd pfd = { fd, POLLIN, 0 };
+    if (poll(&pfd, 1, 500) <= 0) { close(fd); return true; }
+
+    u8 reply[1500];
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    ssize_t n = recvfrom(fd, reply, sizeof(reply), 0,
+                        (struct sockaddr *)&from, &fromlen);
+    close(fd);
+    if (n <= 0) return true;
+
+    /* Push back into the chip's S? UDP socket bound to src_port. The
+     * source IP must be the 10.0.0.1 we advertised so NCFG's resolver
+     * accepts it. */
+    static const u8 GW[4] = { 10, 0, 0, 1 };
+    if (s_udp_deliver)
+        s_udp_deliver(GW, 53, src_port, reply, (u16)n);
+    TLOG("DNS  -> upstream %u.%u.%u.%u, %u-byte reply delivered\n",
+         s_dns_upstream[0], s_dns_upstream[1],
+         s_dns_upstream[2], s_dns_upstream[3], (unsigned)n);
+    return true;
+}
+
 static int dhcp_find_option(const u8 *opts, int opts_len, u8 want, u8 *out, int out_max) {
     int i = 0;
     while (i < opts_len) {
@@ -1051,9 +1147,14 @@ int n4c_stack_send_udp(u16 src_port,
     /* DHCP client → server. The built-in server lives in this process,
      * not behind tap0, so traffic emitted by the chip never loops back
      * via the host. Intercept here and reply synchronously. */
-    (void)src_port;
     if (s_dhcp_enabled && dst_port == 67) {
         if (dhcp_try_handle(payload, payload_len))
+            return (int)payload_len;
+    }
+    /* DNS proxy: queries to 10.0.0.1:53 (the DHCP-advertised resolver)
+     * are forwarded to the host's upstream. */
+    if (s_dns_enabled && dst_port == 53) {
+        if (dns_try_handle(src_port, payload, payload_len))
             return (int)payload_len;
     }
 

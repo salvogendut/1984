@@ -79,6 +79,12 @@ void n4c_stack_set_udp_deliver(N4CUdpDeliver fn);
  * callback unchanged. main.c flips this on when cfg->net4cpc_tap is set. */
 void n4c_stack_set_dhcp_enabled(bool on);
 
+/* Toggle the built-in DNS proxy. When on, UDP traffic the chip sends to
+ * port 53 is forwarded synchronously to the host's resolver
+ * (/etc/resolv.conf, falling back to 8.8.8.8) and the reply is pushed
+ * into the chip's RX buffer. */
+void n4c_stack_set_dns_enabled(bool on);
+
 /* -- TCP ----------------------------------------------------------------
  * Per-socket TCP control blocks are owned by the stack; the W5100S
  * register emulation in net4cpc.c calls the n4c_stack_tcp_* helpers
