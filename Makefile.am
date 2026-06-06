@@ -27,6 +27,7 @@ bin_PROGRAMS = 1984
 	src/m4.c \
 	src/symbnet.c \
 	src/mouse.c \
+	src/n4c_stack.c \
 	src/snapshot.c \
 	src/tap.c \
 	src/tape.c \
@@ -51,6 +52,7 @@ noinst_HEADERS = \
 	src/monitor.h \
 	src/mouse.h \
 	src/net4cpc.h \
+	src/n4c_stack.h \
 	src/overlay.h \
 	src/tap.h \
 	src/paste.h \
