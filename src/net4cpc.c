@@ -248,10 +248,7 @@ static void handle_command(int s, u8 cmd) {
             rx_wr[s] = 0;
             break;
         }
-        fprintf(stderr, "[net4cpc/dbg] SCMD_OPEN s=%d mode=%02X stack_active=%d\n",
-            s, mode, n4c_stack_active() ? 1 : 0);
         if (mode == SMODE_UDP && n4c_stack_active()) {
-            fprintf(stderr, "[net4cpc/dbg]   taking UDP+TAP fast path, setting Sn_SR=22\n");
             regs[SOCK_BASE[s] + SR_SR] = SSTAT_UDP;
             set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
             set16(SOCK_BASE[s] + SR_TX_WR,  0);
