@@ -453,6 +453,12 @@ static void trace_access(u16 addr, u8 val, bool is_write) {
  * ------------------------------------------------------------------------- */
 
 static u8 reg_read(u16 addr) {
+    /* W5100S indirect parallel bus mode: per Wiznet app notes, the host may
+     * OR 0x8000 into the address as a "this is an indirect access" hint.
+     * The chip masks bit 15 off internally. KCNet utilities rely on this
+     * and offset all their addresses by 0x8000; without the mask our reads
+     * land in the unused upper half of the regs[] array and return 0. */
+    addr &= 0x7FFF;
     u8 val;
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
@@ -476,6 +482,8 @@ static u8 reg_read(u16 addr) {
 }
 
 static void reg_write(u16 addr, u8 val) {
+    /* See reg_read() for the 0x8000 mask rationale. */
+    addr &= 0x7FFF;
     if (net4cpc_trace) trace_access(addr, val, true);
     /* MR.RST (bit 7): software reset. Real silicon clears all regs and
      * the RST bit auto-clears within ~10us. The Net4CPC board ties the
