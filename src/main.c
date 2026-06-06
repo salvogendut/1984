@@ -12,6 +12,7 @@
 #include "paste.h"
 #include "joy.h"
 #include "net4cpc.h"
+#include "n4c_stack.h"
 #include "monitor.h"
 #include "snapshot.h"
 #include "leds.h"
@@ -64,6 +65,7 @@ static void usage(const char *prog, int code) {
         "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
         "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
+        "  --trace-tap         Log TAP-backed network stack events (ARP, IP, UDP, ICMP, TCP) to stderr\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
@@ -179,6 +181,8 @@ int main(int argc, char *argv[]) {
             ch376_trace = 1;
         } else if (strcmp(argv[i], "--trace-net4cpc") == 0) {
             net4cpc_trace = 1;
+        } else if (strcmp(argv[i], "--trace-tap") == 0) {
+            n4c_stack_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');

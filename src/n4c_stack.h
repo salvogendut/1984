@@ -23,6 +23,11 @@
 #include "types.h"
 #include <stdbool.h>
 
+/* When non-zero (set by --trace-tap), the stack logs Ethernet/IP/UDP/
+ * TCP/ARP/ICMP frame events to stderr. Independent of net4cpc_trace,
+ * which is the W5100S register-access trace. */
+extern int n4c_stack_trace;
+
 /* Attach the stack to a TAP fd and tell it the host-configured
  * SHAR/SIPR/GAR/SUBR. Safe to re-attach with new values whenever the
  * W5100S kernel writes new common registers. fd == -1 detaches. */

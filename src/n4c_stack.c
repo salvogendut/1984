@@ -12,6 +12,10 @@
 #include <string.h>
 #include <time.h>
 
+int n4c_stack_trace = 0;
+
+#define TLOG(...) do { if (n4c_stack_trace) fprintf(stderr, "[n4c] " __VA_ARGS__); } while (0)
+
 /* ---------------------------------------------------------------------------
  * Live config
  * ------------------------------------------------------------------------- */
@@ -178,8 +182,28 @@ typedef struct {
 
 static TcpCb s_tcp[4];
 
+static const char *tcp_state_name(u8 sr) {
+    switch (sr) {
+    case 0x00: return "CLOSED";
+    case 0x13: return "INIT";
+    case 0x14: return "LISTEN";
+    case 0x15: return "SYN_SENT";
+    case 0x16: return "SYN_RECV";
+    case 0x17: return "ESTABLISHED";
+    case 0x18: return "FIN_WAIT";
+    case 0x1B: return "TIME_WAIT";
+    case 0x1C: return "CLOSE_WAIT";
+    case 0x1D: return "LAST_ACK";
+    default:   return "?";
+    }
+}
+
 static void tcp_set_state(int s, u8 new_sr) {
+    u8 old = s_tcp[s].state;
     s_tcp[s].state = new_sr;
+    if (old != new_sr)
+        TLOG("TCP[%d] state %s -> %s\n", s,
+             tcp_state_name(old), tcp_state_name(new_sr));
     if (s_tcp_state) s_tcp_state(s, new_sr);
 }
 
@@ -204,6 +228,9 @@ static int tap_tx(const u8 *frame, int len) {
  * ------------------------------------------------------------------------- */
 
 static void send_arp_request(const u8 target_ip[4]) {
+    TLOG("ARP -> who-has %u.%u.%u.%u tell %u.%u.%u.%u\n",
+         target_ip[0], target_ip[1], target_ip[2], target_ip[3],
+         s_sipr[0],    s_sipr[1],    s_sipr[2],    s_sipr[3]);
     /* 14 Eth + 28 ARP = 42 bytes; bring up to minimum 60 for safety. */
     u8 f[60];
     memset(f, 0, sizeof(f));
@@ -222,6 +249,10 @@ static void send_arp_request(const u8 target_ip[4]) {
 }
 
 static void send_arp_reply(const u8 target_mac[6], const u8 target_ip[4]) {
+    TLOG("ARP -> reply  %u.%u.%u.%u is-at %02X:%02X:%02X:%02X:%02X:%02X\n",
+         s_sipr[0], s_sipr[1], s_sipr[2], s_sipr[3],
+         s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5]);
+    (void)target_ip; (void)target_mac;
     u8 f[60];
     memset(f, 0, sizeof(f));
     build_eth(f, target_mac, s_mac, ETH_TYPE_ARP);
@@ -312,8 +343,12 @@ static void handle_arp(const u8 *eth, int len) {
 
     if (op == ARP_OP_REQUEST && memcmp(target_ip, s_sipr, 4) == 0) {
         send_arp_reply(sender_mac, sender_ip);
+    } else if (op == ARP_OP_REPLY) {
+        TLOG("ARP <- reply  %u.%u.%u.%u is-at %02X:%02X:%02X:%02X:%02X:%02X\n",
+             sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
+             sender_mac[0], sender_mac[1], sender_mac[2],
+             sender_mac[3], sender_mac[4], sender_mac[5]);
     }
-    /* ARP replies are handled by the cache update above. */
 }
 
 static void handle_icmp(const u8 *src_ip,
@@ -397,6 +432,8 @@ static void handle_icmp(const u8 *src_ip,
     while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
     put_u16_be(r + 2, (u16)~sum);
 
+    TLOG("ICMP -> echo reply to %u.%u.%u.%u (%d bytes)\n",
+         src_ip[0], src_ip[1], src_ip[2], src_ip[3], icmp_len);
     tap_tx(frame, 14 + ip_total);
 }
 
@@ -410,8 +447,13 @@ static void handle_udp(const u8 *src_ip, const u8 *dst_ip,
     if (length < 8 || length > udp_len) return;
     const u8 *payload = udp + 8;
     u16 payload_len   = (u16)(length - 8);
+    int accepted = 0;
     if (s_udp_deliver)
-        s_udp_deliver(src_ip, src_port, dst_port, payload, payload_len);
+        accepted = s_udp_deliver(src_ip, src_port, dst_port, payload, payload_len);
+    TLOG("UDP <- %u.%u.%u.%u:%u -> :%u  %u bytes  %s\n",
+         src_ip[0], src_ip[1], src_ip[2], src_ip[3], src_port,
+         dst_port, payload_len,
+         accepted ? "delivered" : "no-matching-socket");
 }
 
 void n4c_stack_poll(void) {
@@ -514,6 +556,18 @@ static int tcp_tx(int s, u8 flags, const u8 *payload, int payload_len) {
     put_u16_be(tcp + 16, tcp_checksum(s_sipr, cb->peer_ip, tcp, tcp_len));
 
     if (tap_tx(frame, eth_len) < 0) return -1;
+
+    if (n4c_stack_trace) {
+        char fl[16] = "";
+        if (flags & TCP_SYN) strcat(fl, "S");
+        if (flags & TCP_ACK) strcat(fl, "A");
+        if (flags & TCP_PSH) strcat(fl, "P");
+        if (flags & TCP_FIN) strcat(fl, "F");
+        if (flags & TCP_RST) strcat(fl, "R");
+        TLOG("TCP[%d] -> %u.%u.%u.%u:%u [%s] seq=%u ack=%u %d bytes\n",
+             s, cb->peer_ip[0], cb->peer_ip[1], cb->peer_ip[2], cb->peer_ip[3],
+             cb->peer_port, fl, cb->snd_nxt, cb->rcv_nxt, payload_len);
+    }
 
     cb->snd_nxt += payload_len;
     if (flags & TCP_SYN) cb->snd_nxt += 1;
@@ -885,5 +939,8 @@ int n4c_stack_send_udp(u16 src_port,
     put_u16_be(udp + 6, udp_checksum(s_sipr, dst_ip, udp, udp_len));
 
     if (tap_tx(frame, eth_len) < 0) return -1;
+    TLOG("UDP -> %u.%u.%u.%u:%u from :%u  %u bytes\n",
+         dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3], dst_port,
+         src_port, payload_len);
     return payload_len;
 }

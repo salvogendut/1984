@@ -20,7 +20,7 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 
 **Input** — keyboard, host-clipboard paste, USB/Bluetooth joystick and gamepad with hot-plug.
 
-**Extensions** — DDI-1 floppy interface (464), DS12887 RTC (Cyboard / SYMBiFACE II), SYMBiFACE II / Cyboard IDE (FAT16/FAT32 disk images), SYMBiFACE II PS/2 mouse, Albireo USB mass-storage (CH376 host controller, driven by UNIDOS), Net4CPC Ethernet (W5100S, static IP — DHCP unsupported), Amstrad Diagnostics ROM as a one-click toggle.
+**Extensions** — DDI-1 floppy interface (464), DS12887 RTC (Cyboard / SYMBiFACE II), SYMBiFACE II / Cyboard IDE (FAT16/FAT32 disk images), SYMBiFACE II PS/2 mouse, Albireo USB mass-storage (CH376 host controller, driven by UNIDOS), Net4CPC Ethernet (W5100S; bind to a Linux TAP device with `--tap=NAME` for full LAN access — ARP, ICMP, TCP, UDP, DHCP via bridge), Amstrad Diagnostics ROM as a one-click toggle.
 
 ## Supported platforms
 
@@ -62,6 +62,7 @@ Per-expansion guides:
 - **[M4.md](M4.md)** — M4 board (SD card + Wi-Fi networking); SymbOS netd-m4c.exe autostart caveat
 - **[CYBOARD.md](CYBOARD.md)** — Cyboard pack (Net4CPC + RTC + SYMBiFACE IDE/Mouse); UNIDOS + UNITOOLS + FATFS ROM layout
 - **[ALBIREO.md](ALBIREO.md)** — Albireo USB host (CH376); UNIDOS + ALBIREO.ROM layout; coexistence with Cyboard
+- **[NET4CPC.md](NET4CPC.md)** — Net4CPC (W5100S) TAP backend; host-side device setup, bridge vs point-to-point, KCNet `NCFG.INI` profiles, `--trace-tap` walkthrough
 
 ## Acknowledgements
 
