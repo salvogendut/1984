@@ -32,7 +32,7 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 | OpenBSD | Builds and runs |
 | macOS | Builds and runs |
 | Haiku (32-bit nightly) | Builds and runs |
-| FreeBSD | Should work — autotools build is portable; not tested |
+| FreeBSD | Builds and runs |
 
 Pre-built Linux and Windows binaries are attached to each [GitHub Release](https://github.com/salvogendut/1984/releases).
 
@@ -48,6 +48,9 @@ Pre-built Linux and Windows binaries are attached to each [GitHub Release](https
     <td align="center"><img src="screenshots/haiku.png" width="280" alt="Haiku"><br><sub>Haiku</sub></td>
     <td align="center"><img src="screenshots/netbsd.png" width="280" alt="NetBSD"><br><sub>NetBSD</sub></td>
     <td align="center"><img src="screenshots/openbsd.png" width="280" alt="OpenBSD"><br><sub>OpenBSD</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/FreeBSD.png" width="280" alt="FreeBSD"><br><sub>FreeBSD</sub></td>
   </tr>
 </table>
 
