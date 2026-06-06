@@ -474,8 +474,6 @@ static void handle_icmp(const u8 *src_ip,
 static bool s_dhcp_enabled = false;
 static const u8 DHCP_SERVER_IP[4] = { 10, 0, 0, 1 };
 static const u8 DHCP_CLIENT_IP[4] = { 10, 0, 0, 100 };
-static const u8 DHCP_SERVER_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
-
 void n4c_stack_set_dhcp_enabled(bool on) { s_dhcp_enabled = on; }
 
 static int dhcp_find_option(const u8 *opts, int opts_len, u8 want, u8 *out, int out_max) {
@@ -527,42 +525,20 @@ static void dhcp_send_reply(const u8 *req_bootp, int req_len,
     reply[o++] = 255;                                                /* end */
     int payload_len = o;
     (void)req_len;
+    (void)client_mac;
 
-    /* Wrap in eth + ipv4 + udp, source = server, broadcast to client. */
-    u8 frame[TAP_FRAME_MAX];
-    int udp_len  = 8 + payload_len;
-    int ip_total = 20 + udp_len;
-    int eth_len  = 14 + ip_total;
-    build_eth(frame, client_mac, DHCP_SERVER_MAC, ETH_TYPE_IPV4);
-    u8 *ip = frame + 14;
-    ip[0] = 0x45;
-    ip[1] = 0;
-    put_u16_be(ip + 2, (u16)ip_total);
-    put_u16_be(ip + 4, 0);
-    put_u16_be(ip + 6, 0x4000);
-    ip[8] = 64;
-    ip[9] = IP_PROTO_UDP;
-    put_u16_be(ip + 10, 0);
-    memcpy(ip + 12, DHCP_SERVER_IP, 4);
-    /* Send to broadcast so the W5100S socket (bound to 0.0.0.0:68) accepts it. */
-    static const u8 BCAST_IP[4] = { 255, 255, 255, 255 };
-    memcpy(ip + 16, BCAST_IP, 4);
-    put_u16_be(ip + 10, ip_checksum(ip, 20));
-
-    u8 *udp = ip + 20;
-    put_u16_be(udp + 0, 67);
-    put_u16_be(udp + 2, 68);
-    put_u16_be(udp + 4, (u16)udp_len);
-    put_u16_be(udp + 6, 0);                  /* checksum optional for IPv4 UDP */
-    memcpy(udp + 8, reply, payload_len);
-
-    tap_tx(frame, eth_len);
-    TLOG("DHCP -> %s to %02X:%02X:%02X:%02X:%02X:%02X (%u.%u.%u.%u)\n",
+    /* Deliver straight into the W5100S socket bound to port 68 — the
+     * chip-side DHCP client. We don't wrap in eth+ip+udp and write to
+     * tap because the chip's RX path reads from poll() which sees host
+     * → chip frames; chip-emitted broadcasts don't loop back through
+     * tap. Calling deliver directly mirrors what handle_udp would do
+     * for an inbound frame. */
+    if (s_udp_deliver)
+        s_udp_deliver(DHCP_SERVER_IP, 67, 68, reply, (u16)payload_len);
+    TLOG("DHCP -> %s (%u.%u.%u.%u, lease 10.0.0.100)\n",
          msg_type == 2 ? "OFFER" : msg_type == 5 ? "ACK" : "NAK",
-         client_mac[0], client_mac[1], client_mac[2],
-         client_mac[3], client_mac[4], client_mac[5],
-         DHCP_CLIENT_IP[0], DHCP_CLIENT_IP[1],
-         DHCP_CLIENT_IP[2], DHCP_CLIENT_IP[3]);
+         DHCP_SERVER_IP[0], DHCP_SERVER_IP[1],
+         DHCP_SERVER_IP[2], DHCP_SERVER_IP[3]);
 }
 
 /* Returns true if the packet was a DHCP request and we replied. */
@@ -1071,6 +1047,15 @@ int n4c_stack_send_udp(u16 src_port,
                        const u8 dst_ip[4], u16 dst_port,
                        const u8 *payload, u16 payload_len) {
     if (!n4c_stack_active()) return -1;
+
+    /* DHCP client → server. The built-in server lives in this process,
+     * not behind tap0, so traffic emitted by the chip never loops back
+     * via the host. Intercept here and reply synchronously. */
+    (void)src_port;
+    if (s_dhcp_enabled && dst_port == 67) {
+        if (dhcp_try_handle(payload, payload_len))
+            return (int)payload_len;
+    }
 
     u8 dst_mac[6];
     if (!n4c_stack_arp_resolve(dst_ip, dst_mac))
