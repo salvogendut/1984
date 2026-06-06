@@ -518,11 +518,13 @@ void n4c_stack_set_dhcp_params(const char *host_ip,
  * would need a worker thread, which isn't worth it for now.
  * ------------------------------------------------------------------------- */
 
+#if defined(__linux__)
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
 #include <unistd.h>
+#endif
 
 static bool s_dns_enabled = false;
 static u8   s_dns_upstream[4] = { 8, 8, 8, 8 };
@@ -560,6 +562,7 @@ static void dns_load_upstream(void) {
 /* Forward a query to upstream and deliver the reply back into the
  * chip's RX buffer. Returns true if we handled the request (regardless
  * of whether the upstream replied). */
+#if defined(__linux__)
 static bool dns_try_handle(u16 src_port, const u8 *query, u16 query_len) {
     if (!s_dns_enabled || query_len < 12) return false;
     dns_load_upstream();
@@ -600,6 +603,12 @@ static bool dns_try_handle(u16 src_port, const u8 *query, u16 query_len) {
          s_dns_upstream[2], s_dns_upstream[3], (unsigned)n);
     return true;
 }
+#else  /* non-Linux: TAP backend is unavailable, so DNS proxy is too */
+static bool dns_try_handle(u16 src_port, const u8 *query, u16 query_len) {
+    (void)src_port; (void)query; (void)query_len;
+    return false;
+}
+#endif
 
 static int dhcp_find_option(const u8 *opts, int opts_len, u8 want, u8 *out, int out_max) {
     int i = 0;
