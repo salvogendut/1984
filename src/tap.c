@@ -136,7 +136,8 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         "iptables -A FORWARD -o %s -m comment --comment 1984-%s -j ACCEPT"
         "' 2>&1",
         name, owner, name, ip_cidr, name, name,
-        name, name, name,
+        name, name,
+        name, name,
         name, name);
 
     fprintf(stderr, "tap: auto-creating '%s' (%s) via pkexec — "
