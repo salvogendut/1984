@@ -74,10 +74,20 @@ typedef int (*N4CUdpDeliver)(const u8 src_ip[4], u16 src_port,
                              const u8 *payload, u16 payload_len);
 void n4c_stack_set_udp_deliver(N4CUdpDeliver fn);
 
-/* Toggle the built-in DHCPv4 server (single hardcoded lease at 10.0.0.100
- * from 10.0.0.1). When off, DHCP traffic flows through to the deliver
- * callback unchanged. main.c flips this on when cfg->net4cpc_tap is set. */
+/* Toggle the built-in DHCPv4 server. When off, DHCP traffic flows
+ * through to the deliver callback unchanged. main.c flips this on
+ * when cfg->net4cpc_tap is set. */
 void n4c_stack_set_dhcp_enabled(bool on);
+
+/* Configure the DHCP server's offered lease. host_ip is the address
+ * we advertise as server / gateway / DNS; netmask is the offered
+ * subnet mask. lease_start/end define the IP range the server hands
+ * out (each MAC gets the next free address in that range). All four
+ * args are dotted-quad strings. */
+void n4c_stack_set_dhcp_params(const char *host_ip,
+                               const char *netmask,
+                               const char *lease_start,
+                               const char *lease_end);
 
 /* Toggle the built-in DNS proxy. When on, UDP traffic the chip sends to
  * port 53 is forwarded synchronously to the host's resolver

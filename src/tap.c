@@ -107,8 +107,23 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         return -1;
     }
     if (tap_dev_exists(name)) {
-        fprintf(stderr, "tap: '%s' already present, reusing\n", name);
-        return 0;
+        /* Check whether the existing tap's address matches what cfg
+         * asks for. If yes, reuse silently. If not, fall through so
+         * we recreate with the new address (the iptables rules added
+         * earlier are tagged by device name, so deleting + recreating
+         * the tap also cleans them up — see tap_auto_destroy). */
+        char probe[256];
+        snprintf(probe, sizeof(probe),
+                 "ip -o addr show %s 2>/dev/null | grep -q '%s'",
+                 name, ip_cidr);
+        if (system(probe) == 0) {
+            fprintf(stderr, "tap: '%s' already configured for %s, reusing\n",
+                    name, ip_cidr);
+            return 0;
+        }
+        fprintf(stderr, "tap: '%s' exists with a different address — "
+                        "recreating for %s\n", name, ip_cidr);
+        tap_auto_destroy(name);
     }
     const char *owner = tap_owner_name();
     if (!tap_str_is_safe(owner)) owner = "root";
@@ -130,13 +145,14 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         "  firewall-cmd --zone=trusted --change-interface=%s >/dev/null 2>&1 || true; "
         "fi; "
         "sysctl -w net.ipv4.ip_forward=1 >/dev/null; "
-        "iptables -t nat -A POSTROUTING -s 10.0.0.0/24 ! -o %s "
+        "subnet=$(ip -o addr show %s | awk '/inet /{print $4}' | head -1); "
+        "iptables -t nat -A POSTROUTING -s \"$subnet\" ! -o %s "
         "  -m comment --comment 1984-%s -j MASQUERADE; "
         "iptables -A FORWARD -i %s -m comment --comment 1984-%s -j ACCEPT; "
         "iptables -A FORWARD -o %s -m comment --comment 1984-%s -j ACCEPT"
         "' 2>&1",
         name, owner, name, ip_cidr, name, name,
-        name, name,
+        name, name, name,
         name, name,
         name, name);
 

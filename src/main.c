@@ -79,7 +79,18 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     if (!want_auto) return;
 
     static const char auto_name[] = "cpc-tap0";
-    if (tap_auto_create(auto_name, "10.0.0.1/24") < 0) {
+    /* Build "host_ip/cidr" from host_ip and netmask dotted-quads.
+     * Count contiguous set bits to get the prefix length. */
+    unsigned a, b, c, d;
+    int cidr = 24;
+    if (sscanf(cfg->net4cpc_tap_netmask, "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
+        u32 mask = (a << 24) | (b << 16) | (c << 8) | d;
+        cidr = 0; while (mask & 0x80000000u) { cidr++; mask <<= 1; }
+    }
+    char host_cidr[40];
+    snprintf(host_cidr, sizeof(host_cidr), "%s/%d",
+             cfg->net4cpc_tap_host_ip, cidr);
+    if (tap_auto_create(auto_name, host_cidr) < 0) {
         fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
                 "the legacy host-socket fallback.\n");
         return;
@@ -88,6 +99,10 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
         fprintf(stderr, "1984: TAP attach failed after auto-create.\n");
         return;
     }
+    n4c_stack_set_dhcp_params(cfg->net4cpc_tap_host_ip,
+                              cfg->net4cpc_tap_netmask,
+                              cfg->net4cpc_tap_lease_start,
+                              cfg->net4cpc_tap_lease_end);
     n4c_stack_set_dhcp_enabled(true);
     n4c_stack_set_dns_enabled(true);
     have_auto = true;

@@ -472,9 +472,38 @@ static void handle_icmp(const u8 *src_ip,
  * ------------------------------------------------------------------------- */
 
 static bool s_dhcp_enabled = false;
-static const u8 DHCP_SERVER_IP[4] = { 10, 0, 0, 1 };
-static const u8 DHCP_CLIENT_IP[4] = { 10, 0, 0, 100 };
+/* Configurable lease parameters — defaults match the original hardcoded
+ * 10.0.0.0/24 topology. Overwritten by n4c_stack_set_dhcp_params().
+ * DHCP_CLIENT_IP advances through [lease_start..lease_end] as new MACs
+ * appear, but a single-CPC session always sees the first slot. */
+static u8 DHCP_SERVER_IP   [4] = { 10, 0, 0, 1   };
+static u8 DHCP_NETMASK     [4] = { 255,255,255,0 };
+static u8 DHCP_LEASE_START [4] = { 10, 0, 0, 100 };
+static u8 DHCP_LEASE_END   [4] = { 10, 0, 0, 150 };
+/* Tracks the next IP to hand out. Cleared back to LEASE_START on every
+ * set_dhcp_params() so config changes pick up the new range immediately. */
+static u8 DHCP_CLIENT_IP   [4] = { 10, 0, 0, 100 };
+
 void n4c_stack_set_dhcp_enabled(bool on) { s_dhcp_enabled = on; }
+
+static bool parse_dotted_quad(const char *s, u8 out[4]) {
+    unsigned a, b, c, d;
+    if (!s || sscanf(s, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) return false;
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+    out[0] = (u8)a; out[1] = (u8)b; out[2] = (u8)c; out[3] = (u8)d;
+    return true;
+}
+
+void n4c_stack_set_dhcp_params(const char *host_ip,
+                               const char *netmask,
+                               const char *lease_start,
+                               const char *lease_end) {
+    parse_dotted_quad(host_ip,     DHCP_SERVER_IP);
+    parse_dotted_quad(netmask,     DHCP_NETMASK);
+    parse_dotted_quad(lease_start, DHCP_LEASE_START);
+    parse_dotted_quad(lease_end,   DHCP_LEASE_END);
+    memcpy(DHCP_CLIENT_IP, DHCP_LEASE_START, 4);
+}
 
 /* ---------------------------------------------------------------------------
  * Built-in DNS proxy.
@@ -614,8 +643,7 @@ static void dhcp_send_reply(const u8 *req_bootp, int req_len,
     reply[o++] = 54; reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
     reply[o++] = 51; reply[o++] = 4;                                 /* lease 1 day */
     reply[o++] = 0; reply[o++] = 1; reply[o++] = 0x51; reply[o++] = 0x80;
-    reply[o++] = 1;  reply[o++] = 4;                                 /* netmask */
-    reply[o++] = 255; reply[o++] = 255; reply[o++] = 255; reply[o++] = 0;
+    reply[o++] = 1;  reply[o++] = 4; memcpy(reply+o, DHCP_NETMASK, 4); o += 4;
     reply[o++] = 3;  reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
     reply[o++] = 6;  reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
     reply[o++] = 255;                                                /* end */

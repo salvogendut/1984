@@ -36,6 +36,15 @@ typedef struct {
                         * runs a built-in DHCP server, adds the interface to
                         * the firewalld trusted zone. When false, Net4CPC
                         * falls back to the legacy POSIX host-socket path. */
+    /* DHCP server / TAP network parameters. All four are dotted-quad IPv4
+     * strings. The host IP is the address we assign to the tap interface;
+     * lease_start/end define the range the in-process DHCP server hands
+     * out (a single CPC will always lease the first free IP). Netmask is
+     * also dotted-quad so /etc/sysctl-style "/24" doesn't need parsing. */
+    char net4cpc_tap_host_ip   [24];   /* default "10.0.0.1"     */
+    char net4cpc_tap_netmask   [24];   /* default "255.255.255.0" */
+    char net4cpc_tap_lease_start[24];  /* default "10.0.0.100"   */
+    char net4cpc_tap_lease_end [24];   /* default "10.0.0.150"   */
     bool rtc;
     bool symbiface_ide;
     char ide_image[CONFIG_PATH_MAX];
