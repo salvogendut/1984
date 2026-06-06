@@ -518,8 +518,9 @@ void cpc_frame(CPC *cpc) {
          * that led into the CP/M+ kernel halt loop at $BE4F-$BE54.
          * Independent of the heavier ONE_K_TRACE_CRASH below. */
         {
+            #define PANIC_RING 32768
             static int panic_pc = -1;
-            static u16 ring_pc[1024], ring_sp[1024], ring_bc[1024], ring_hl[1024];
+            static u16 ring_pc[PANIC_RING], ring_sp[PANIC_RING], ring_bc[PANIC_RING], ring_hl[PANIC_RING];
             static u32 ring_idx = 0;
             static int panic_dumped = 0;
             if (panic_pc == -1) {
@@ -527,19 +528,19 @@ void cpc_frame(CPC *cpc) {
                 panic_pc = (e && *e) ? (int)strtoul(e, NULL, 16) : 0;
             }
             if (panic_pc > 0) {
-                ring_pc[ring_idx & 1023] = cpc->cpu.pc;
-                ring_sp[ring_idx & 1023] = cpc->cpu.sp;
-                ring_bc[ring_idx & 1023] = cpc->cpu.bc;
-                ring_hl[ring_idx & 1023] = cpc->cpu.hl;
+                ring_pc[ring_idx & (PANIC_RING-1)] = cpc->cpu.pc;
+                ring_sp[ring_idx & (PANIC_RING-1)] = cpc->cpu.sp;
+                ring_bc[ring_idx & (PANIC_RING-1)] = cpc->cpu.bc;
+                ring_hl[ring_idx & (PANIC_RING-1)] = cpc->cpu.hl;
                 ring_idx++;
                 if (!panic_dumped && cpc->cpu.pc == (u16)panic_pc) {
                     panic_dumped = 1;
-                    fprintf(stderr, "[PANIC] PC reached %04X — last 1024 PCs (oldest first):\n",
+                    fprintf(stderr, "[PANIC] PC reached %04X — last PANIC_RING PCs (oldest first):\n",
                             (unsigned)panic_pc);
-                    u32 start = ring_idx & 1023;
+                    u32 start = ring_idx & (PANIC_RING-1);
                     u16 last = 0xFFFF; int run = 0;
-                    for (int i = 0; i < 1024; i++) {
-                        u32 j = (start + i) & 1023;
+                    for (int i = 0; i < PANIC_RING; i++) {
+                        u32 j = (start + i) & (PANIC_RING-1);
                         u16 pc = ring_pc[j];
                         if (pc == last) { run++; continue; }
                         if (run > 0) fprintf(stderr, "        (x%d more)\n", run);
