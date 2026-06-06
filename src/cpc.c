@@ -94,6 +94,18 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
             && addr >= 0xB1D9 && addr <= 0xB1FC)
         fprintf(stderr, "[f%04d memw] %04X <- %02X  lrom=%d\n",
                 cpc_frame_count, addr, val, cpc->mem.lower_rom_enabled);
+    /* #102 wedge: trace writes to the firmware's secondary-tick vector
+     * slot at $BDF4..$BDF6 and to the counter at $B8BF, so we can see
+     * exactly when (and from where) the panic placeholder gets either
+     * overwritten by the kernel or kept in place. */
+    static int trace_bdf4 = -1;
+    if (trace_bdf4 == -1) trace_bdf4 = getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
+    if (trace_bdf4 && (addr >= 0xBDF4 && addr <= 0xBDF6))
+        fprintf(stderr, "[BDF4w] frame=%d  $%04X <- %02X  PC=%04X  lrom=%d\n",
+                cpc_frame_count, addr, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
+    if (trace_bdf4 && addr == 0xB8BF)
+        fprintf(stderr, "[B8BFw] frame=%d  $B8BF <- %02X  PC=%04X  lrom=%d\n",
+                cpc_frame_count, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
 }
 
 static u8 bus_io_read(void *ctx, u16 port) {
@@ -508,6 +520,32 @@ void cpc_frame(CPC *cpc) {
     bool stop_early = false;
 
     while (done < target) {
+        /* #102 wedge instrumentation: at every firmware-IRQ-handler
+         * 'CALL $BDF4' site ($00D9 in OS ROM), capture what's actually
+         * at $BDF4 and the value of the secondary-tick counter $B8BF.
+         * Hypothesis: the panic ($BE54 spin) fires because the CP/M+
+         * kernel image's placeholder JP $BE4F at $BDF4 has not yet
+         * been replaced by the kernel's real handler when the
+         * firmware's 8.3 Hz secondary tick hits zero.
+         *
+         * Gate on ONE_K_TRACE_BDF4 (set once at startup); only print
+         * the first 30 hits and any hit where $BDF4 holds the panic
+         * stub (C3 4F BE) so we can correlate failing boots. */
+        static int trace_bdf4 = -1;
+        if (trace_bdf4 == -1) trace_bdf4 = getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
+        if (trace_bdf4 && cpc->cpu.pc == 0x00D9 && cpc->mem.lower_rom_enabled) {
+            static int hits = 0;
+            u8 a = mem_read(&cpc->mem, 0xBDF4);
+            u8 b = mem_read(&cpc->mem, 0xBDF5);
+            u8 c = mem_read(&cpc->mem, 0xBDF6);
+            u8 b8bf = mem_read(&cpc->mem, 0xB8BF);
+            bool panic_stub = (a == 0xC3 && b == 0x4F && c == 0xBE);
+            if (hits < 30 || panic_stub)
+                fprintf(stderr, "[BDF4] hit#%-4d frame=%d  $BDF4=%02X %02X %02X  $B8BF=%02X  PC=%04X%s\n",
+                        hits, cpc_frame_count, a, b, c, b8bf, cpc->cpu.pc,
+                        panic_stub ? "  <<< PANIC STUB!" : "");
+            hits++;
+        }
         /* Capture CRTC state BEFORE tick for this character clock */
         u16  cur_ma = cpc->crtc.ma;
         u8   cur_ra = cpc->crtc.vlc;
