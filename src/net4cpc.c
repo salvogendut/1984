@@ -610,20 +610,29 @@ static void reg_write(u16 addr, u8 val) {
     /* See reg_read() for the 0x8000-mask rationale. */
     addr &= 0x7FFF;
     if (net4cpc_trace) trace_access(addr, val, true);
-    /* MR.RST (bit 7): software reset. Real silicon clears all regs and
-     * the RST bit auto-clears within ~10us. The Net4CPC board ties the
-     * BUS_SEL pin to indirect-bus mode, so MR comes back as 0x03 (IND +
-     * AI). Clearing MR to 0x00 here disables auto-increment, which
-     * breaks every multi-byte register write SymbOS makes afterward. */
+    /* MR.RST (bit 7): software reset. Per W5100S datasheet § 4.2.1, the
+     * common-config block (0x0000–0x002F: MR, GAR, SUBR, SHAR, SIPR,
+     * INTLEVEL, IR, IMR, RTR, RCR, …) survives soft reset — only socket
+     * state from 0x0400 up is cleared. KCNet's NCFG -r writes MR.RST
+     * after staging new SHAR/SIPR/GAR/SUBR and then re-reads SHAR to
+     * confirm the chip is alive; wiping the full regs[] array makes
+     * SHAR come back zero and HDCPM panics → BASIC reset.
+     *
+     * The Net4CPC board ties the BUS_SEL pin to indirect-bus mode, so
+     * MR auto-restores to 0x03 (IND + AI); we explicitly preserve
+     * PHYCFGR=0x07 too so the link-up gate the KCNet utilities check
+     * doesn't suddenly read disconnected. */
     if (addr == 0x0000 && (val & 0x80)) {
         for (int s = 0; s < 4; s++) {
             close_sock(s);
             rx_wr[s] = 0;
         }
-        memset(regs, 0, sizeof(regs));
+        memset(&regs[0x0400], 0, sizeof(regs) - 0x0400);
         regs[0x0000] = 0x03;
+        regs[0x003C] = 0x07;
         if (net4cpc_trace)
-            fprintf(stderr, "[net4cpc]     soft reset complete; MR -> 03 (IND+AI)\n");
+            fprintf(stderr, "[net4cpc]     soft reset complete; "
+                            "MR -> 03 (IND+AI), common block preserved\n");
         return;
     }
     /* Sn_IR is write-1-to-clear per W5100S datasheet § 4.2.10. The
