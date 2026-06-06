@@ -68,3 +68,45 @@ typedef int (*N4CUdpDeliver)(const u8 src_ip[4], u16 src_port,
                              u16 dst_port,
                              const u8 *payload, u16 payload_len);
 void n4c_stack_set_udp_deliver(N4CUdpDeliver fn);
+
+/* -- TCP ----------------------------------------------------------------
+ * Per-socket TCP control blocks are owned by the stack; the W5100S
+ * register emulation in net4cpc.c calls the n4c_stack_tcp_* helpers
+ * when it sees the matching SCMD_*, and the stack calls back into
+ * net4cpc.c through three function pointers to mutate the W5100S
+ * register state. */
+
+void n4c_stack_tcp_open(int sock, u16 local_port);
+void n4c_stack_tcp_listen(int sock);
+
+/* Returns true if the SYN was sent (handshake started); false if ARP
+ * resolution is pending (caller will be retriggered when the kernel
+ * polls again). */
+bool n4c_stack_tcp_connect(int sock, const u8 dst_ip[4], u16 dst_port);
+
+/* Hand bytes to the stack; the stack will transmit them respecting
+ * MSS, hold the unacked bytes for retransmit, and call the ack-cb
+ * with the number that the peer ACKs. Returns bytes accepted (always
+ * == len; the kernel's TX FSR already gated this). */
+int  n4c_stack_tcp_send(int sock, const u8 *data, int len);
+
+/* Graceful close (sends FIN). */
+void n4c_stack_tcp_disconnect(int sock);
+
+/* Hard close (sends RST then discards state). */
+void n4c_stack_tcp_close(int sock);
+
+/* Callbacks back into net4cpc.c. on_state is invoked whenever the
+ * W5100S socket should transition state (new_sr is the W5100S Sn_SR
+ * value); it should set Sn_SR and raise the right Sn_IR bits (CON on
+ * ESTABLISHED, DISCON on CLOSED, TIMEOUT on a 4-retry RTO blow-up).
+ * on_data is invoked for inbound bytes; it should push them into the
+ * RX ring and raise RECV. on_ack is invoked when the peer ACKs
+ * outbound bytes; it should advance TX_RD by `acked` and raise
+ * SEND_OK. */
+typedef void (*N4CTcpEvent)(int sock, u8 new_sr);
+typedef int  (*N4CTcpDeliver)(int sock, const u8 *data, int len);
+typedef void (*N4CTcpAck)(int sock, u16 acked);
+void n4c_stack_set_tcp_callbacks(N4CTcpEvent on_state,
+                                 N4CTcpDeliver on_data,
+                                 N4CTcpAck on_ack);

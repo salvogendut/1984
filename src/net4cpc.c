@@ -40,6 +40,9 @@ static int  stack_deliver_udp(const u8 src_ip[4], u16 src_port,
                               u16 dst_port,
                               const u8 *payload, u16 payload_len);
 static void stack_sync_config(void);
+static void stack_tcp_state (int s, u8 new_sr);
+static int  stack_tcp_data  (int s, const u8 *data, int len);
+static void stack_tcp_ack   (int s, u16 acked);
 
 /* ---------------------------------------------------------------------------
  * W5100S register-space constants
@@ -71,13 +74,19 @@ static const u16 BUF_SIZE     = 2048u;
 /* Socket status */
 #define SSTAT_CLOSED      0x00u
 #define SSTAT_INIT        0x13u
+#define SSTAT_LISTEN      0x14u
 #define SSTAT_SYNSENT     0x15u
+#define SSTAT_SYNRECV     0x16u
 #define SSTAT_ESTABLISHED 0x17u
+#define SSTAT_FIN_WAIT    0x18u
+#define SSTAT_TIME_WAIT   0x1Bu
 #define SSTAT_CLOSE_WAIT  0x1Cu
+#define SSTAT_LAST_ACK    0x1Du
 #define SSTAT_UDP         0x22u
 
 /* Socket commands */
 #define SCMD_OPEN    0x01u
+#define SCMD_LISTEN  0x02u
 #define SCMD_CONNECT 0x04u
 #define SCMD_DISCON  0x08u
 #define SCMD_CLOSE   0x10u
@@ -223,6 +232,22 @@ static void handle_command(int s, u8 cmd) {
 
     case SCMD_OPEN:
         close_sock(s);
+        /* TAP backend for TCP: tell the stack about the new socket and
+         * reflect INIT immediately. UDP keeps using the POSIX backend
+         * even with TAP because n4c_stack_send_udp() is selected per
+         * call inside SCMD_SEND, so we still want the host socket open
+         * to receive DHCP-style replies before SIPR is set. */
+        if (mode == SMODE_TCP && n4c_stack_active()) {
+            n4c_stack_tcp_open(s, get16(SOCK_BASE[s] + 0x04));
+            regs[SOCK_BASE[s] + SR_SR] = SSTAT_INIT;
+            set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
+            set16(SOCK_BASE[s] + SR_TX_WR,  0);
+            set16(SOCK_BASE[s] + SR_TX_RD,  0);
+            set16(SOCK_BASE[s] + SR_RX_RSR, 0);
+            set16(SOCK_BASE[s] + SR_RX_RD,  0);
+            rx_wr[s] = 0;
+            break;
+        }
         sock_fd[s] = socket(AF_INET,
                             mode == SMODE_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (sock_fd[s] != -1) {
@@ -269,12 +294,26 @@ static void handle_command(int s, u8 cmd) {
         }
         break;
 
+    case SCMD_LISTEN:
+        if (mode == SMODE_TCP && n4c_stack_active()) {
+            n4c_stack_tcp_listen(s);
+            regs[SOCK_BASE[s] + SR_SR] = SSTAT_LISTEN;
+        }
+        break;
+
     case SCMD_CONNECT: {
         u8  ip0   = regs[SOCK_BASE[s] + SR_DIPR];
         u8  ip1   = regs[SOCK_BASE[s] + SR_DIPR + 1];
         u8  ip2   = regs[SOCK_BASE[s] + SR_DIPR + 2];
         u8  ip3   = regs[SOCK_BASE[s] + SR_DIPR + 3];
         u16 dport = get16(SOCK_BASE[s] + SR_DPORT);
+
+        if (mode == SMODE_TCP && n4c_stack_active()) {
+            u8 dst_ip[4] = { ip0, ip1, ip2, ip3 };
+            n4c_stack_tcp_connect(s, dst_ip, dport);
+            regs[SOCK_BASE[s] + SR_SR] = SSTAT_SYNSENT;
+            break;
+        }
 
         struct sockaddr_in addr;
         memset(&addr, 0, sizeof(addr));
@@ -329,6 +368,17 @@ static void handle_command(int s, u8 cmd) {
                     sendto(sock_fd[s], (const char *)buf, len, 0,
                            (struct sockaddr *)&dst, sizeof(dst));
                 }
+            } else if (mode == SMODE_TCP && n4c_stack_active()) {
+                /* TAP-backed TCP. Don't advance TX_RD here — the stack
+                 * does that via the ack callback when the peer ACKs. */
+                int sent = n4c_stack_tcp_send(s, buf, (int)len);
+                if (sent > 0) {
+                    /* Leave TX_RD at tx_rd until SEND_OK; the kernel
+                     * watches TX_FSR/RX_RSR. */
+                    update_tx_fsr(s);
+                    break;
+                }
+                /* Stack refused (not ESTABLISHED yet) — drop. */
             } else if (sock_fd[s] != -1) {
                 send(sock_fd[s], (const char *)buf, len, 0);
             }
@@ -345,7 +395,21 @@ static void handle_command(int s, u8 cmd) {
         break;
 
     case SCMD_DISCON:
+        if (mode == SMODE_TCP && n4c_stack_active()) {
+            n4c_stack_tcp_disconnect(s);
+            break;
+        }
+        /* fall through to legacy close */
+        /* fallthrough */
     case SCMD_CLOSE:
+        if (mode == SMODE_TCP && n4c_stack_active()) {
+            n4c_stack_tcp_close(s);
+            regs[SOCK_BASE[s] + SR_SR]    = SSTAT_CLOSED;
+            set16(SOCK_BASE[s] + SR_RX_RSR, 0);
+            set16(SOCK_BASE[s] + SR_TX_FSR, 0);
+            rx_wr[s] = 0;
+            break;
+        }
         close_sock(s);
         regs[SOCK_BASE[s] + SR_SR]    = SSTAT_CLOSED;
         set16(SOCK_BASE[s] + SR_RX_RSR, 0);
@@ -563,6 +627,9 @@ int net4cpc_attach_tap(const char *devname) {
     tap_fd = fd;
     n4c_stack_attach(tap_fd, regs + 0x09, regs + 0x0F, regs + 0x01, regs + 0x05);
     n4c_stack_set_udp_deliver(stack_deliver_udp);
+    n4c_stack_set_tcp_callbacks(stack_tcp_state,
+                                stack_tcp_data,
+                                stack_tcp_ack);
     fprintf(stderr, "net4cpc: TAP backend attached on '%s' (fd=%d)\n",
             tap_dev_name, tap_fd);
     return 0;
@@ -582,6 +649,41 @@ static void stack_sync_config(void) {
  * our local ports. Find a SOCK_UDP socket with Sn_PORT == dst_port and
  * push the payload into its RX buffer (with the 8-byte W5100S UDP
  * header). Returns 1 on accept, 0 on drop. */
+/* TCP callbacks from the stack. The stack drives the wire side; these
+ * three hooks mutate W5100S register state so the kernel observes the
+ * lifecycle through Sn_SR + Sn_IR exactly as it would on real silicon. */
+static void stack_tcp_state(int s, u8 new_sr) {
+    if (s < 0 || s > 3) return;
+    u8 old = regs[SOCK_BASE[s] + SR_SR];
+    regs[SOCK_BASE[s] + SR_SR] = new_sr;
+    /* Sn_IR bits per W5100S datasheet: CON=0x01, DISCON=0x02,
+     * RECV=0x04, TIMEOUT=0x08, SEND_OK=0x10. */
+    if (new_sr == 0x17 /* ESTABLISHED */ && old != 0x17)
+        regs[SOCK_BASE[s] + SR_IR] |= 0x01;
+    if (new_sr == 0x00 /* CLOSED */ && old != 0x00)
+        regs[SOCK_BASE[s] + SR_IR] |= 0x02;
+}
+static int stack_tcp_data(int s, const u8 *data, int len) {
+    if (s < 0 || s > 3 || len <= 0) return 0;
+    u16 used  = (u16)(rx_wr[s] - get16(SOCK_BASE[s] + SR_RX_RD));
+    u16 space = (u16)(BUF_SIZE - used);
+    if (space == 0) return 0;
+    int take = len;
+    if (take > space) take = space;
+    for (int i = 0; i < take; i++)
+        write_rx_byte(s, data[i]);
+    update_rx_rsr(s);
+    regs[SOCK_BASE[s] + SR_IR] |= 0x04;   /* RECV */
+    return take;
+}
+static void stack_tcp_ack(int s, u16 acked) {
+    if (s < 0 || s > 3) return;
+    u16 tx_rd = get16(SOCK_BASE[s] + SR_TX_RD);
+    set16(SOCK_BASE[s] + SR_TX_RD, (u16)(tx_rd + acked));
+    update_tx_fsr(s);
+    regs[SOCK_BASE[s] + SR_IR] |= 0x10;   /* SEND_OK */
+}
+
 static int stack_deliver_udp(const u8 src_ip[4], u16 src_port,
                              u16 dst_port,
                              const u8 *payload, u16 payload_len) {
