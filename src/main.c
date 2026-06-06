@@ -43,27 +43,47 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     const bool want_auto =
         cfg->net4cpc && cfg->net4cpc_tap &&
         (!cli_tap_dev || !cli_tap_dev[0]);
+    const bool want_cli =
+        cli_tap_dev && cli_tap_dev[0] && cfg->net4cpc;
+
+    /* Idempotent: if the currently-active backend already matches what
+     * cfg asks for, do nothing. Cold-boot saves on unrelated fields
+     * (ROM swaps, RAM size, …) re-enter this path; tearing down and
+     * re-creating the tap every time would re-prompt for pkexec on
+     * every overlay save. */
+    static bool have_auto = false;
+    static char have_cli_name[64] = "";
+    if (want_auto && have_auto) return;
+    if (want_cli && strncmp(have_cli_name, cli_tap_dev, sizeof(have_cli_name)) == 0)
+        return;
+    if (!want_auto && !want_cli && !have_auto && !have_cli_name[0])
+        return;
 
     /* Tear down any tap the previous configuration brought up. */
-    if (g_atexit_tap_name[0]) {
+    if (have_auto && g_atexit_tap_name[0]) {
         net4cpc_attach_tap(NULL);
         n4c_stack_set_dhcp_enabled(false);
         n4c_stack_set_dns_enabled(false);
         tap_auto_destroy(g_atexit_tap_name);
         g_atexit_tap_name[0] = '\0';
+        have_auto = false;
+    }
+    if (have_cli_name[0]) {
+        net4cpc_attach_tap(NULL);
+        have_cli_name[0] = '\0';
     }
 
-    if (cli_tap_dev && cli_tap_dev[0] && cfg->net4cpc) {
-        if (net4cpc_attach_tap(cli_tap_dev) < 0)
+    if (want_cli) {
+        if (net4cpc_attach_tap(cli_tap_dev) < 0) {
             fprintf(stderr, "1984: TAP attach failed, "
                     "Net4CPC will use the legacy host-socket fallback.\n");
+            return;
+        }
+        snprintf(have_cli_name, sizeof(have_cli_name), "%s", cli_tap_dev);
         return;
     }
 
-    if (!want_auto) {
-        net4cpc_attach_tap(NULL);
-        return;
-    }
+    if (!want_auto) return;
 
     char name[64];
     snprintf(name, sizeof(name), "cpc-tap%d", (int)getpid() % 10000);
@@ -80,6 +100,7 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     atexit_set_tap_cleanup(name);
     n4c_stack_set_dhcp_enabled(true);
     n4c_stack_set_dns_enabled(true);
+    have_auto = true;
 }
 
 static void apply_led_enables(const Config *cfg) {
