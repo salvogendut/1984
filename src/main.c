@@ -12,12 +12,101 @@
 #include "paste.h"
 #include "joy.h"
 #include "net4cpc.h"
+#include "n4c_stack.h"
+#include "tap.h"
+#include <unistd.h>
 #include "monitor.h"
 #include "snapshot.h"
 #include "leds.h"
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
+
+/* Synchronise the Net4CPC TAP backend with the current config. Used at
+ * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
+ * is the --tap=NAME the user passed on the command line (NULL/empty if
+ * none); it suppresses auto-setup so power users keep full control.
+ *
+ * Persistence model: the auto-tap device 'cpc-tap0' lives for the host
+ * uptime — created once on first enable (one pkexec prompt), reused
+ * across subsequent 1984 launches in the same session (zero prompts),
+ * cleared by the kernel on reboot. On overlay-toggle-off we just
+ * detach our fd from it; the device itself stays, so flipping the
+ * toggle back on also doesn't prompt. */
+static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
+    const bool want_auto =
+        cfg->net4cpc && cfg->net4cpc_tap &&
+        (!cli_tap_dev || !cli_tap_dev[0]);
+    const bool want_cli =
+        cli_tap_dev && cli_tap_dev[0] && cfg->net4cpc;
+
+    /* Idempotent: if the currently-active backend already matches what
+     * cfg asks for, do nothing. Cold-boot saves on unrelated fields
+     * re-enter this path; tearing down and re-creating the tap every
+     * time would re-prompt for pkexec on every overlay save. */
+    static bool have_auto = false;
+    static char have_cli_name[64] = "";
+    if (want_auto && have_auto) return;
+    if (want_cli && strncmp(have_cli_name, cli_tap_dev, sizeof(have_cli_name)) == 0)
+        return;
+    if (!want_auto && !want_cli && !have_auto && !have_cli_name[0])
+        return;
+
+    /* Detach from any previously-attached tap. We deliberately do NOT
+     * delete the kernel device — leaving it lets the next enable
+     * (this run or a future launch) attach without re-prompting. */
+    if (have_auto) {
+        net4cpc_attach_tap(NULL);
+        n4c_stack_set_dhcp_enabled(false);
+        n4c_stack_set_dns_enabled(false);
+        have_auto = false;
+    }
+    if (have_cli_name[0]) {
+        net4cpc_attach_tap(NULL);
+        have_cli_name[0] = '\0';
+    }
+
+    if (want_cli) {
+        if (net4cpc_attach_tap(cli_tap_dev) < 0) {
+            fprintf(stderr, "1984: TAP attach failed, "
+                    "Net4CPC will use the legacy host-socket fallback.\n");
+            return;
+        }
+        snprintf(have_cli_name, sizeof(have_cli_name), "%s", cli_tap_dev);
+        return;
+    }
+
+    if (!want_auto) return;
+
+    static const char auto_name[] = "cpc-tap0";
+    /* Build "host_ip/cidr" from host_ip and netmask dotted-quads.
+     * Count contiguous set bits to get the prefix length. */
+    unsigned a, b, c, d;
+    int cidr = 24;
+    if (sscanf(cfg->net4cpc_tap_netmask, "%u.%u.%u.%u", &a, &b, &c, &d) == 4) {
+        u32 mask = (a << 24) | (b << 16) | (c << 8) | d;
+        cidr = 0; while (mask & 0x80000000u) { cidr++; mask <<= 1; }
+    }
+    char host_cidr[40];
+    snprintf(host_cidr, sizeof(host_cidr), "%s/%d",
+             cfg->net4cpc_tap_host_ip, cidr);
+    if (tap_auto_create(auto_name, host_cidr) < 0) {
+        fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
+                "the legacy host-socket fallback.\n");
+        return;
+    }
+    if (net4cpc_attach_tap(auto_name) < 0) {
+        fprintf(stderr, "1984: TAP attach failed after auto-create.\n");
+        return;
+    }
+    n4c_stack_set_dhcp_params(cfg->net4cpc_tap_host_ip,
+                              cfg->net4cpc_tap_netmask,
+                              cfg->net4cpc_tap_lease_start,
+                              cfg->net4cpc_tap_lease_end);
+    n4c_stack_set_dhcp_enabled(true);
+    n4c_stack_set_dns_enabled(true);
+    have_auto = true;
+}
 
 static void apply_led_enables(const Config *cfg) {
     /* Floppies: shown when an FDC is wired (6128 has it built-in; 464 needs DDI-1). */
@@ -29,6 +118,7 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_IDE, mx4 && cfg->symbiface_ide);
     leds_set_enabled(LED_USB, mx4 && cfg->albireo);
     leds_set_enabled(LED_SD,  mx4 && cfg->m4);
+    leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
 }
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
@@ -64,9 +154,13 @@ static void usage(const char *prog, int code) {
         "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
         "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
+        "  --trace-tap         Log TAP-backed network stack events (ARP, IP, UDP, ICMP, TCP) to stderr\n"
         "  --autostart=NAME    After boot, types run\"NAME into BASIC\n"
         "  --paste=TEXT        After boot, types TEXT verbatim (\\n becomes Enter)\n"
         "  --load-sna=PATH     Load an Amstrad .sna snapshot file after init (.sna v1-v3)\n"
+        "  --tap=DEVNAME       Bind Net4CPC to a Linux TAP device for real LAN access.\n"
+        "                      Pass --tap= (empty) to let the kernel auto-name (tap0…).\n"
+        "                      Needs CAP_NET_ADMIN or a pre-created persistent TAP.\n"
         "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
         "  --save-sna-at-ide=N:PATH  Save a .sna snapshot when the Nth ATA command is issued (for cross-emulator bisection)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
@@ -97,6 +191,7 @@ int main(int argc, char *argv[]) {
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
     const char *load_sna_arg    = NULL;
+    const char *tap_dev_arg     = NULL;   /* --tap=DEVNAME for Net4CPC backend */
     const char *disk_a_arg      = NULL;
     const char *disk_b_arg      = NULL;
     const char *rom_os_arg      = NULL;
@@ -125,6 +220,8 @@ int main(int argc, char *argv[]) {
             paste_arg = argv[i] + 8;
         else if (strncmp(argv[i], "--load-sna=", 11) == 0 && argv[i][11] != '\0')
             load_sna_arg = argv[i] + 11;
+        else if (strncmp(argv[i], "--tap=", 6) == 0)
+            tap_dev_arg = argv[i] + 6;   /* may be empty: kernel auto-names */
         else if (strncmp(argv[i], "--disk-a=", 9) == 0 && argv[i][9] != '\0')
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
@@ -176,6 +273,8 @@ int main(int argc, char *argv[]) {
             ch376_trace = 1;
         } else if (strcmp(argv[i], "--trace-net4cpc") == 0) {
             net4cpc_trace = 1;
+        } else if (strcmp(argv[i], "--trace-tap") == 0) {
+            n4c_stack_trace = 1;
         } else if (strncmp(argv[i], "--screenshot-at=", 16) == 0 && argv[i][16] != '\0') {
             const char *arg = argv[i] + 16;
             char *colon = strchr(arg, ':');
@@ -254,6 +353,8 @@ int main(int argc, char *argv[]) {
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
+
+    net4cpc_tap_sync(&cfg, tap_dev_arg);
     /* These four expansions install their drivers as upper ROMs, so without
      * the Roms Board fitted they can't run — force them off in the live CPC
      * state while leaving the cfg values intact (re-enabling Roms Board
@@ -593,6 +694,7 @@ int main(int argc, char *argv[]) {
             cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
+            net4cpc_tap_sync(&cfg, tap_dev_arg);
             /* See boot-time comment: these four need the Roms Board. */
             cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.rom_board;
             cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.rom_board;
@@ -632,6 +734,7 @@ int main(int argc, char *argv[]) {
         paste_tick(&paste, &cpc.kbd);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
+        net4cpc_poll();
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {

@@ -68,6 +68,10 @@ void config_defaults(Config *cfg) {
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
     cfg->tinker    = false;
+    snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
+    snprintf(cfg->net4cpc_tap_netmask,    sizeof(cfg->net4cpc_tap_netmask),    "255.255.255.0");
+    snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "10.0.0.100");
+    snprintf(cfg->net4cpc_tap_lease_end,  sizeof(cfg->net4cpc_tap_lease_end),  "10.0.0.150");
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -174,6 +178,11 @@ static void config_create_default(const char *path, const char *home) {
         "m4_image=\n"
         "ulifac=false\n"
         "net4cpc=false\n"
+        "net4cpc_tap=false\n"
+        "net4cpc_tap_host_ip=10.0.0.1\n"
+        "net4cpc_tap_netmask=255.255.255.0\n"
+        "net4cpc_tap_lease_start=10.0.0.100\n"
+        "net4cpc_tap_lease_end=10.0.0.150\n"
         "rtc=false\n"
         "symbiface_ide=false\n"
         "ide_image=\n"
@@ -301,6 +310,17 @@ int config_load(Config *cfg) {
             } else if (!strcmp(key, "net4cpc")) {
                 if (parse_bool(val, &b)) cfg->net4cpc = b;
                 else { fprintf(stderr, "1984.conf:%d: net4cpc must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "net4cpc_tap")) {
+                if (parse_bool(val, &b)) cfg->net4cpc_tap = b;
+                else { fprintf(stderr, "1984.conf:%d: net4cpc_tap must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "net4cpc_tap_host_ip")) {
+                snprintf(cfg->net4cpc_tap_host_ip, sizeof(cfg->net4cpc_tap_host_ip), "%s", val);
+            } else if (!strcmp(key, "net4cpc_tap_netmask")) {
+                snprintf(cfg->net4cpc_tap_netmask, sizeof(cfg->net4cpc_tap_netmask), "%s", val);
+            } else if (!strcmp(key, "net4cpc_tap_lease_start")) {
+                snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "%s", val);
+            } else if (!strcmp(key, "net4cpc_tap_lease_end")) {
+                snprintf(cfg->net4cpc_tap_lease_end, sizeof(cfg->net4cpc_tap_lease_end), "%s", val);
             } else if (!strcmp(key, "rtc")) {
                 if (parse_bool(val, &b)) cfg->rtc = b;
                 else { fprintf(stderr, "1984.conf:%d: rtc must be true/false\n", lineno); rc = -1; }
@@ -426,6 +446,11 @@ int config_save(const Config *cfg) {
         "m4_image=%s\n"
         "ulifac=%s\n"
         "net4cpc=%s\n"
+        "net4cpc_tap=%s\n"
+        "net4cpc_tap_host_ip=%s\n"
+        "net4cpc_tap_netmask=%s\n"
+        "net4cpc_tap_lease_start=%s\n"
+        "net4cpc_tap_lease_end=%s\n"
         "rtc=%s\n"
         "symbiface_ide=%s\n"
         "ide_image=%s\n"
@@ -452,6 +477,11 @@ int config_save(const Config *cfg) {
         cfg->m4_image,
         cfg->ulifac  ? "true" : "false",
         cfg->net4cpc          ? "true" : "false",
+        cfg->net4cpc_tap      ? "true" : "false",
+        cfg->net4cpc_tap_host_ip,
+        cfg->net4cpc_tap_netmask,
+        cfg->net4cpc_tap_lease_start,
+        cfg->net4cpc_tap_lease_end,
         cfg->rtc              ? "true" : "false",
         cfg->symbiface_ide    ? "true" : "false",
         cfg->ide_image,

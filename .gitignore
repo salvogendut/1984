@@ -26,3 +26,21 @@ roms/*
 /src/.dirstamp
 /1984
 /autom4te.cache/
+
+# Personal notes / scratch — never commit
+dimitri-note*.md
+notes/
+*.note.md
+
+# Runtime screenshots from --screenshot-at and overlay capture
+1984_*.ppm
+1984_*.png
+
+# Flatpak build output
+/flatpak-repo/
+/1984.flatpak
+
+# Autotools regenerable bits not tracked elsewhere
+/build-aux/config.guess
+/build-aux/config.sub
+/config.h.in
