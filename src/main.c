@@ -22,23 +22,17 @@
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 
-/* Stashed by main() so the atexit handler can tear down the auto-tap
- * even on a clean exit path. Empty string ⇒ nothing to clean up. */
-static char g_atexit_tap_name[64] = "";
-static void atexit_auto_tap_destroy(void) {
-    if (g_atexit_tap_name[0])
-        tap_auto_destroy(g_atexit_tap_name);
-}
-static void atexit_set_tap_cleanup(const char *name) {
-    static bool registered = false;
-    snprintf(g_atexit_tap_name, sizeof(g_atexit_tap_name), "%s", name);
-    if (!registered) { atexit(atexit_auto_tap_destroy); registered = true; }
-}
-
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
  * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
  * is the --tap=NAME the user passed on the command line (NULL/empty if
- * none); it suppresses auto-setup so power users keep full control. */
+ * none); it suppresses auto-setup so power users keep full control.
+ *
+ * Persistence model: the auto-tap device 'cpc-tap0' lives for the host
+ * uptime — created once on first enable (one pkexec prompt), reused
+ * across subsequent 1984 launches in the same session (zero prompts),
+ * cleared by the kernel on reboot. On overlay-toggle-off we just
+ * detach our fd from it; the device itself stays, so flipping the
+ * toggle back on also doesn't prompt. */
 static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     const bool want_auto =
         cfg->net4cpc && cfg->net4cpc_tap &&
@@ -48,9 +42,8 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
 
     /* Idempotent: if the currently-active backend already matches what
      * cfg asks for, do nothing. Cold-boot saves on unrelated fields
-     * (ROM swaps, RAM size, …) re-enter this path; tearing down and
-     * re-creating the tap every time would re-prompt for pkexec on
-     * every overlay save. */
+     * re-enter this path; tearing down and re-creating the tap every
+     * time would re-prompt for pkexec on every overlay save. */
     static bool have_auto = false;
     static char have_cli_name[64] = "";
     if (want_auto && have_auto) return;
@@ -59,13 +52,13 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
     if (!want_auto && !want_cli && !have_auto && !have_cli_name[0])
         return;
 
-    /* Tear down any tap the previous configuration brought up. */
-    if (have_auto && g_atexit_tap_name[0]) {
+    /* Detach from any previously-attached tap. We deliberately do NOT
+     * delete the kernel device — leaving it lets the next enable
+     * (this run or a future launch) attach without re-prompting. */
+    if (have_auto) {
         net4cpc_attach_tap(NULL);
         n4c_stack_set_dhcp_enabled(false);
         n4c_stack_set_dns_enabled(false);
-        tap_auto_destroy(g_atexit_tap_name);
-        g_atexit_tap_name[0] = '\0';
         have_auto = false;
     }
     if (have_cli_name[0]) {
@@ -85,19 +78,16 @@ static void net4cpc_tap_sync(const Config *cfg, const char *cli_tap_dev) {
 
     if (!want_auto) return;
 
-    char name[64];
-    snprintf(name, sizeof(name), "cpc-tap%d", (int)getpid() % 10000);
-    if (tap_auto_create(name, "10.0.0.1/24") < 0) {
+    static const char auto_name[] = "cpc-tap0";
+    if (tap_auto_create(auto_name, "10.0.0.1/24") < 0) {
         fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
                 "the legacy host-socket fallback.\n");
         return;
     }
-    if (net4cpc_attach_tap(name) < 0) {
+    if (net4cpc_attach_tap(auto_name) < 0) {
         fprintf(stderr, "1984: TAP attach failed after auto-create.\n");
-        tap_auto_destroy(name);
         return;
     }
-    atexit_set_tap_cleanup(name);
     n4c_stack_set_dhcp_enabled(true);
     n4c_stack_set_dns_enabled(true);
     have_auto = true;
