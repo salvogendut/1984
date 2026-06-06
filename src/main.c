@@ -13,12 +13,27 @@
 #include "joy.h"
 #include "net4cpc.h"
 #include "n4c_stack.h"
+#include "tap.h"
+#include <unistd.h>
 #include "monitor.h"
 #include "snapshot.h"
 #include "leds.h"
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
+
+/* Stashed by main() so the atexit handler can tear down the auto-tap
+ * even on a clean exit path. Empty string ⇒ nothing to clean up. */
+static char g_atexit_tap_name[64] = "";
+static void atexit_auto_tap_destroy(void) {
+    if (g_atexit_tap_name[0])
+        tap_auto_destroy(g_atexit_tap_name);
+}
+static void atexit_set_tap_cleanup(const char *name) {
+    static bool registered = false;
+    snprintf(g_atexit_tap_name, sizeof(g_atexit_tap_name), "%s", name);
+    if (!registered) { atexit(atexit_auto_tap_destroy); registered = true; }
+}
 
 static void apply_led_enables(const Config *cfg) {
     /* Floppies: shown when an FDC is wired (6128 has it built-in; 464 needs DDI-1). */
@@ -254,10 +269,30 @@ int main(int argc, char *argv[]) {
     cpc.net4cpc         = cfg.net4cpc;
     cpc.rtc             = cfg.rtc;
 
-    /* If the user asked for a TAP backend, open it now. Failure here is not
-     * fatal — we fall back to the legacy host-POSIX-socket behaviour. */
-    if (tap_dev_arg && cpc.net4cpc) {
-        if (net4cpc_attach_tap(tap_dev_arg) < 0)
+    /* TAP backend wiring. Two paths:
+     *   (a) explicit --tap=NAME on the CLI — power-user mode, the device
+     *       must already exist and be configured; we just bind to it.
+     *   (b) cfg->net4cpc_tap=true with no --tap override — one-click mode.
+     *       1984 generates a per-pid name, asks polkit/pkexec for the
+     *       privileged setup (ip tuntap add, link up, addr add, firewalld
+     *       trusted zone), attaches, enables the built-in DHCP server,
+     *       and tears the device down on exit. */
+    static char g_auto_tap_name[64] = "";
+    const char *attach_name = tap_dev_arg;
+    if (cpc.net4cpc && !tap_dev_arg && cfg.net4cpc_tap) {
+        snprintf(g_auto_tap_name, sizeof(g_auto_tap_name),
+                 "cpc-tap%d", (int)getpid() % 10000);
+        if (tap_auto_create(g_auto_tap_name, "10.0.0.1/24") == 0) {
+            attach_name = g_auto_tap_name;
+            atexit_set_tap_cleanup(g_auto_tap_name);
+            n4c_stack_set_dhcp_enabled(true);
+        } else {
+            fprintf(stderr, "1984: auto TAP setup failed; Net4CPC stays on "
+                    "the legacy host-socket fallback.\n");
+        }
+    }
+    if (attach_name && cpc.net4cpc) {
+        if (net4cpc_attach_tap(attach_name) < 0)
             fprintf(stderr, "1984: TAP attach failed, "
                     "Net4CPC will use the legacy host-socket fallback.\n");
     }

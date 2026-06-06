@@ -74,6 +74,11 @@ typedef int (*N4CUdpDeliver)(const u8 src_ip[4], u16 src_port,
                              const u8 *payload, u16 payload_len);
 void n4c_stack_set_udp_deliver(N4CUdpDeliver fn);
 
+/* Toggle the built-in DHCPv4 server (single hardcoded lease at 10.0.0.100
+ * from 10.0.0.1). When off, DHCP traffic flows through to the deliver
+ * callback unchanged. main.c flips this on when cfg->net4cpc_tap is set. */
+void n4c_stack_set_dhcp_enabled(bool on);
+
 /* -- TCP ----------------------------------------------------------------
  * Per-socket TCP control blocks are owned by the stack; the W5100S
  * register emulation in net4cpc.c calls the n4c_stack_tcp_* helpers

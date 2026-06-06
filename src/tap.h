@@ -38,3 +38,15 @@ int tap_read(int fd, u8 *buf, size_t maxlen);
 
 /* Write one Ethernet frame. Returns bytes written on success, -1 on error. */
 int tap_write(int fd, const u8 *buf, size_t len);
+
+/* Auto-provision a TAP device: ip-tuntap-add it, bring it up, assign
+ * `ip_cidr` (e.g. "10.0.0.1/24") to it, and add it to firewalld's
+ * 'trusted' zone if firewall-cmd is installed. Privileged work is
+ * funnelled through pkexec so the user gets a single graphical
+ * password prompt. Returns 0 on success, -1 on failure (errors are
+ * printed to stderr). If the device already exists it is reused. */
+int tap_auto_create(const char *name, const char *ip_cidr);
+
+/* Tear down a tap device previously created by tap_auto_create. Best
+ * effort; silently ignores failure. Idempotent. */
+void tap_auto_destroy(const char *name);

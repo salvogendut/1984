@@ -454,6 +454,139 @@ static void handle_icmp(const u8 *src_ip,
     tap_tx(frame, 14 + ip_total);
 }
 
+/* ---------------------------------------------------------------------------
+ * Built-in DHCP server (RFC 2131 minimal).
+ *
+ * Hardcoded single-client topology so users don't need dnsmasq:
+ *   server IP    = 10.0.0.1   (the host side of the tap)
+ *   client lease = 10.0.0.100
+ *   netmask      = 255.255.255.0
+ *   router/dns   = 10.0.0.1
+ *   lease time   = 1 day
+ *
+ * The server runs only when explicitly enabled via
+ * n4c_stack_set_dhcp_enabled() — main.c flips it on when
+ * cfg->net4cpc_tap is true. When enabled we shortcut DHCP traffic
+ * before the W5100S deliver path so the chip never sees its own DHCP
+ * client traffic looping back.
+ * ------------------------------------------------------------------------- */
+
+static bool s_dhcp_enabled = false;
+static const u8 DHCP_SERVER_IP[4] = { 10, 0, 0, 1 };
+static const u8 DHCP_CLIENT_IP[4] = { 10, 0, 0, 100 };
+static const u8 DHCP_SERVER_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+
+void n4c_stack_set_dhcp_enabled(bool on) { s_dhcp_enabled = on; }
+
+static int dhcp_find_option(const u8 *opts, int opts_len, u8 want, u8 *out, int out_max) {
+    int i = 0;
+    while (i < opts_len) {
+        u8 code = opts[i++];
+        if (code == 0) continue;
+        if (code == 255) return -1;
+        if (i >= opts_len) return -1;
+        u8 len = opts[i++];
+        if (i + len > opts_len) return -1;
+        if (code == want) {
+            int n = (len < out_max) ? len : out_max;
+            if (out && n > 0) memcpy(out, opts + i, n);
+            return len;
+        }
+        i += len;
+    }
+    return -1;
+}
+
+static void dhcp_send_reply(const u8 *req_bootp, int req_len,
+                            u8 msg_type, const u8 client_mac[6]) {
+    /* Build reply payload: BOOTP header (236) + magic (4) + options. */
+    u8 reply[576];
+    memset(reply, 0, sizeof(reply));
+    reply[0]  = 2;                                 /* op = BOOTREPLY */
+    reply[1]  = 1;                                 /* htype = ethernet */
+    reply[2]  = 6;                                 /* hlen = 6 */
+    reply[3]  = 0;                                 /* hops */
+    memcpy(reply + 4, req_bootp + 4, 4);           /* xid */
+    memcpy(reply + 8, req_bootp + 8, 4);           /* secs + flags */
+    /* ciaddr stays 0; yiaddr = the offer */
+    memcpy(reply + 16, DHCP_CLIENT_IP, 4);
+    memcpy(reply + 20, DHCP_SERVER_IP, 4);         /* siaddr */
+    memcpy(reply + 28, client_mac, 6);             /* chaddr */
+    /* magic cookie */
+    reply[236] = 0x63; reply[237] = 0x82;
+    reply[238] = 0x53; reply[239] = 0x63;
+    int o = 240;
+    reply[o++] = 53; reply[o++] = 1; reply[o++] = msg_type;          /* msg type */
+    reply[o++] = 54; reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
+    reply[o++] = 51; reply[o++] = 4;                                 /* lease 1 day */
+    reply[o++] = 0; reply[o++] = 1; reply[o++] = 0x51; reply[o++] = 0x80;
+    reply[o++] = 1;  reply[o++] = 4;                                 /* netmask */
+    reply[o++] = 255; reply[o++] = 255; reply[o++] = 255; reply[o++] = 0;
+    reply[o++] = 3;  reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
+    reply[o++] = 6;  reply[o++] = 4; memcpy(reply+o, DHCP_SERVER_IP, 4); o += 4;
+    reply[o++] = 255;                                                /* end */
+    int payload_len = o;
+    (void)req_len;
+
+    /* Wrap in eth + ipv4 + udp, source = server, broadcast to client. */
+    u8 frame[TAP_FRAME_MAX];
+    int udp_len  = 8 + payload_len;
+    int ip_total = 20 + udp_len;
+    int eth_len  = 14 + ip_total;
+    build_eth(frame, client_mac, DHCP_SERVER_MAC, ETH_TYPE_IPV4);
+    u8 *ip = frame + 14;
+    ip[0] = 0x45;
+    ip[1] = 0;
+    put_u16_be(ip + 2, (u16)ip_total);
+    put_u16_be(ip + 4, 0);
+    put_u16_be(ip + 6, 0x4000);
+    ip[8] = 64;
+    ip[9] = IP_PROTO_UDP;
+    put_u16_be(ip + 10, 0);
+    memcpy(ip + 12, DHCP_SERVER_IP, 4);
+    /* Send to broadcast so the W5100S socket (bound to 0.0.0.0:68) accepts it. */
+    static const u8 BCAST_IP[4] = { 255, 255, 255, 255 };
+    memcpy(ip + 16, BCAST_IP, 4);
+    put_u16_be(ip + 10, ip_checksum(ip, 20));
+
+    u8 *udp = ip + 20;
+    put_u16_be(udp + 0, 67);
+    put_u16_be(udp + 2, 68);
+    put_u16_be(udp + 4, (u16)udp_len);
+    put_u16_be(udp + 6, 0);                  /* checksum optional for IPv4 UDP */
+    memcpy(udp + 8, reply, payload_len);
+
+    tap_tx(frame, eth_len);
+    TLOG("DHCP -> %s to %02X:%02X:%02X:%02X:%02X:%02X (%u.%u.%u.%u)\n",
+         msg_type == 2 ? "OFFER" : msg_type == 5 ? "ACK" : "NAK",
+         client_mac[0], client_mac[1], client_mac[2],
+         client_mac[3], client_mac[4], client_mac[5],
+         DHCP_CLIENT_IP[0], DHCP_CLIENT_IP[1],
+         DHCP_CLIENT_IP[2], DHCP_CLIENT_IP[3]);
+}
+
+/* Returns true if the packet was a DHCP request and we replied. */
+static bool dhcp_try_handle(const u8 *udp_payload, int payload_len) {
+    if (!s_dhcp_enabled) return false;
+    if (payload_len < 240) return false;
+    if (udp_payload[0] != 1) return false;                /* op = BOOTREQUEST */
+    /* Magic cookie check */
+    if (udp_payload[236] != 0x63 || udp_payload[237] != 0x82 ||
+        udp_payload[238] != 0x53 || udp_payload[239] != 0x63) return false;
+    u8 client_mac[6];
+    memcpy(client_mac, udp_payload + 28, 6);
+    u8 type = 0;
+    if (dhcp_find_option(udp_payload + 240, payload_len - 240, 53, &type, 1) != 1)
+        return false;
+    if (type == 1)        /* DISCOVER */
+        dhcp_send_reply(udp_payload, payload_len, 2 /* OFFER */, client_mac);
+    else if (type == 3)   /* REQUEST */
+        dhcp_send_reply(udp_payload, payload_len, 5 /* ACK */, client_mac);
+    else
+        return false;     /* DECLINE / RELEASE / INFORM: ignore, no reply */
+    return true;
+}
+
 static void handle_udp(const u8 *src_ip, const u8 *dst_ip,
                        const u8 *udp, int udp_len) {
     (void)dst_ip;
@@ -464,6 +597,10 @@ static void handle_udp(const u8 *src_ip, const u8 *dst_ip,
     if (length < 8 || length > udp_len) return;
     const u8 *payload = udp + 8;
     u16 payload_len   = (u16)(length - 8);
+    /* Built-in DHCP server: swallow client → server traffic before it
+     * reaches the W5100S deliver path. */
+    if (dst_port == 67 && dhcp_try_handle(payload, payload_len))
+        return;
     int accepted = 0;
     if (s_udp_deliver)
         accepted = s_udp_deliver(src_ip, src_port, dst_port, payload, payload_len);

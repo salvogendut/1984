@@ -1,13 +1,17 @@
 /* tap.c — Linux TAP device backend. See tap.h. */
 #include "tap.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <errno.h>
 
 #if defined(__linux__)
 #include <unistd.h>
 #include <fcntl.h>
+#include <pwd.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <linux/if.h>
 #include <linux/if_tun.h>
 
@@ -69,6 +73,86 @@ int tap_write(int fd, const u8 *buf, size_t len) {
     return (int)n;
 }
 
+/* Whitelist for shell-safe identifiers: alphanumerics, dash, dot, slash,
+ * underscore. Used to gate device names and CIDR strings before they
+ * end up inside the pkexec sh -c '...' payload. */
+static bool tap_str_is_safe(const char *s) {
+    if (!s || !*s) return false;
+    for (const char *p = s; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '-' || c == '.' || c == '/' || c == '_'))
+            return false;
+    }
+    return true;
+}
+
+static bool tap_dev_exists(const char *name) {
+    char path[64];
+    snprintf(path, sizeof(path), "/sys/class/net/%s", name);
+    return access(path, F_OK) == 0;
+}
+
+static const char *tap_owner_name(void) {
+    const char *u = getenv("SUDO_USER");
+    if (u && *u) return u;
+    u = getenv("USER");
+    if (u && *u) return u;
+    struct passwd *pw = getpwuid(getuid());
+    return (pw && pw->pw_name) ? pw->pw_name : "nobody";
+}
+
+int tap_auto_create(const char *name, const char *ip_cidr) {
+    if (!tap_str_is_safe(name) || !tap_str_is_safe(ip_cidr)) {
+        fprintf(stderr, "tap: refusing unsafe device/cidr string\n");
+        return -1;
+    }
+    if (tap_dev_exists(name)) {
+        fprintf(stderr, "tap: '%s' already present, reusing\n", name);
+        return 0;
+    }
+    const char *owner = tap_owner_name();
+    if (!tap_str_is_safe(owner)) owner = "root";
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "pkexec sh -c '"
+        "set -e; "
+        "ip tuntap add dev %s mode tap user %s; "
+        "ip link set %s up; "
+        "ip addr add %s dev %s; "
+        "if command -v firewall-cmd >/dev/null 2>&1; then "
+        "  firewall-cmd --zone=trusted --change-interface=%s >/dev/null 2>&1 || true; "
+        "fi"
+        "' 2>&1",
+        name, owner, name, ip_cidr, name, name);
+
+    fprintf(stderr, "tap: auto-creating '%s' (%s) via pkexec — "
+                    "a password prompt may appear\n", name, ip_cidr);
+    int rc = system(cmd);
+    if (rc != 0) {
+        fprintf(stderr, "tap: auto-create failed (system() returned %d). "
+                        "You can do it manually:\n"
+                        "  sudo ip tuntap add dev %s mode tap user %s\n"
+                        "  sudo ip link set %s up\n"
+                        "  sudo ip addr add %s dev %s\n"
+                        "  sudo firewall-cmd --zone=trusted --change-interface=%s\n",
+                rc, name, owner, name, ip_cidr, name, name);
+        return -1;
+    }
+    fprintf(stderr, "tap: '%s' ready — %s assigned, firewalld trusted zone\n",
+            name, ip_cidr);
+    return 0;
+}
+
+void tap_auto_destroy(const char *name) {
+    if (!tap_str_is_safe(name)) return;
+    if (!tap_dev_exists(name)) return;
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd),
+        "pkexec ip tuntap del dev %s mode tap >/dev/null 2>&1", name);
+    (void)system(cmd);
+}
+
 #else  /* non-Linux: stub everything so the rest of net4cpc.c compiles */
 
 int  tap_open(const char *devname, char *out_name, size_t out_name_sz) {
@@ -83,5 +167,11 @@ int  tap_read(int fd, u8 *buf, size_t maxlen) {
 int  tap_write(int fd, const u8 *buf, size_t len) {
     (void)fd; (void)buf; (void)len; return -1;
 }
+int  tap_auto_create(const char *name, const char *ip_cidr) {
+    (void)name; (void)ip_cidr;
+    fprintf(stderr, "tap: auto-create not supported on this platform\n");
+    return -1;
+}
+void tap_auto_destroy(const char *name) { (void)name; }
 
 #endif
