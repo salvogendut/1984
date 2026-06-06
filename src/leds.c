@@ -13,6 +13,7 @@ static const LedPalette palette[LED_COUNT] = {
     [LED_IDE]   = { 18, 70, 18,   80, 255,  80 },
     [LED_USB]   = { 25, 50,110,   90, 160, 255 },
     [LED_SD]    = { 25, 50,110,   90, 160, 255 },
+    [LED_NET]   = { 80, 70, 18,  255, 224,  32 },   /* Net4CPC — yellow */
 };
 
 static bool   g_enabled[LED_COUNT];

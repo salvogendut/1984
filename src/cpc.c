@@ -512,6 +512,46 @@ void cpc_frame(CPC *cpc) {
         u8   cur_ra = cpc->crtc.vlc;
         bool cur_de = cpc->crtc.display_enable;
 
+        /* Lightweight panic-trace: fires the first time PC hits the
+         * address in ONE_K_TRACE_PANIC (hex), then dumps a small ring
+         * buffer of preceding PCs/SPs so we can see the call chain
+         * that led into the CP/M+ kernel halt loop at $BE4F-$BE54.
+         * Independent of the heavier ONE_K_TRACE_CRASH below. */
+        {
+            #define PANIC_RING 32768
+            static int panic_pc = -1;
+            static u16 ring_pc[PANIC_RING], ring_sp[PANIC_RING], ring_bc[PANIC_RING], ring_hl[PANIC_RING];
+            static u32 ring_idx = 0;
+            static int panic_dumped = 0;
+            if (panic_pc == -1) {
+                const char *e = getenv("ONE_K_TRACE_PANIC");
+                panic_pc = (e && *e) ? (int)strtoul(e, NULL, 16) : 0;
+            }
+            if (panic_pc > 0) {
+                ring_pc[ring_idx & (PANIC_RING-1)] = cpc->cpu.pc;
+                ring_sp[ring_idx & (PANIC_RING-1)] = cpc->cpu.sp;
+                ring_bc[ring_idx & (PANIC_RING-1)] = cpc->cpu.bc;
+                ring_hl[ring_idx & (PANIC_RING-1)] = cpc->cpu.hl;
+                ring_idx++;
+                if (!panic_dumped && cpc->cpu.pc == (u16)panic_pc) {
+                    panic_dumped = 1;
+                    fprintf(stderr, "[PANIC] PC reached %04X — last PANIC_RING PCs (oldest first):\n",
+                            (unsigned)panic_pc);
+                    u32 start = ring_idx & (PANIC_RING-1);
+                    u16 last = 0xFFFF; int run = 0;
+                    for (int i = 0; i < PANIC_RING; i++) {
+                        u32 j = (start + i) & (PANIC_RING-1);
+                        u16 pc = ring_pc[j];
+                        if (pc == last) { run++; continue; }
+                        if (run > 0) fprintf(stderr, "        (x%d more)\n", run);
+                        run = 0; last = pc;
+                        fprintf(stderr, "  PC=%04X SP=%04X BC=%04X HL=%04X\n",
+                                pc, ring_sp[j], ring_bc[j], ring_hl[j]);
+                    }
+                    fflush(stderr);
+                }
+            }
+        }
         if (getenv("ONE_K_TRACE_CRASH")) {
             /* Wider ring buffer + capture SP, BC, HL too */
             static u16 pcs[8192], sps[8192], bcs[8192], hls[8192];

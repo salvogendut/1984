@@ -23,6 +23,7 @@ typedef enum {
     LED_IDE,
     LED_USB,
     LED_SD,
+    LED_NET,
     LED_COUNT
 } LedId;
 

@@ -32,7 +32,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 4 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 6 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -318,6 +318,28 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Save Snapshot");
             snprintf(val, vsz, "[Enter to save .sna]");
             *readonly = true;
+            break;
+        case 4:
+            snprintf(lbl, lsz, "Net4CPC TAP");
+            if (!ov->cfg->net4cpc) {
+                snprintf(val, vsz, "[needs Net4CPC]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->net4cpc_tap ? "enabled (auto-setup)" : "disabled");
+            }
+            break;
+        case 5:
+            snprintf(lbl, lsz, "DHCP server");
+            if (!ov->cfg->net4cpc || !ov->cfg->net4cpc_tap) {
+                snprintf(val, vsz, "[Net4CPC TAP off]");
+            } else {
+                snprintf(val, vsz, "%s, lease %s-%s",
+                         ov->cfg->net4cpc_tap_host_ip,
+                         ov->cfg->net4cpc_tap_lease_start,
+                         ov->cfg->net4cpc_tap_lease_end);
+            }
+            *readonly = true;   /* see NET4CPC.md; edit values in 1984.conf */
             break;
         }
         break;
@@ -700,6 +722,13 @@ static void activate_item(Overlay *ov) {
                 sna_filters, 2, NULL);
             break;
         }
+        case 4:
+            if (ov->cfg->net4cpc) {
+                ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
+                ov->dirty = true;
+                ov->needs_cold_boot = true;
+            }
+            break;
         }
         break;
 
@@ -878,6 +907,15 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         (ov->cfg->rom_board     != ov->saved.rom_board)     ||
                         (ov->cfg->dd1           != ov->saved.dd1)           ||
                         (ov->cfg->net4cpc       != ov->saved.net4cpc)       ||
+                        (ov->cfg->net4cpc_tap   != ov->saved.net4cpc_tap)   ||
+                        strcmp(ov->cfg->net4cpc_tap_host_ip,
+                               ov->saved.net4cpc_tap_host_ip)               ||
+                        strcmp(ov->cfg->net4cpc_tap_netmask,
+                               ov->saved.net4cpc_tap_netmask)               ||
+                        strcmp(ov->cfg->net4cpc_tap_lease_start,
+                               ov->saved.net4cpc_tap_lease_start)           ||
+                        strcmp(ov->cfg->net4cpc_tap_lease_end,
+                               ov->saved.net4cpc_tap_lease_end)             ||
                         (ov->cfg->symbiface_ide != ov->saved.symbiface_ide) ||
                         (ov->cfg->symbiface_mouse != ov->saved.symbiface_mouse) ||
                         strcmp(ov->cfg->ide_image, ov->saved.ide_image)     ||
