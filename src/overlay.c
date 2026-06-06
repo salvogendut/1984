@@ -335,11 +335,9 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[Net4CPC TAP off]");
                 *readonly = true;
             } else {
-                snprintf(val, vsz, "%s, lease %s-%s",
-                         ov->cfg->net4cpc_tap_host_ip,
-                         ov->cfg->net4cpc_tap_lease_start,
-                         ov->cfg->net4cpc_tap_lease_end);
-                *readonly = true;   /* Edit via 1984.conf for now */
+                snprintf(val, vsz, "%s [Enter for info]",
+                         ov->cfg->net4cpc_tap_host_ip);
+                /* Not readonly: Enter shows the IP-class warning popup. */
             }
             break;
         }
@@ -728,6 +726,40 @@ static void activate_item(Overlay *ov) {
                 ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
                 ov->dirty = true;
                 ov->needs_cold_boot = true;
+            }
+            break;
+        case 5:
+            /* DHCP server row — show IP-class warning on first activation.
+             * Doing it here (Enter on the row) instead of on the Net4CPC
+             * TAP toggle keeps the SDL message box well away from the
+             * cold-boot reconfig path, which is where the popup was
+             * getting starved on Wayland. */
+            if (ov->cfg->net4cpc && ov->cfg->net4cpc_tap) {
+                if (!ov->cfg->net4cpc_tap_warned) {
+                    const SDL_MessageBoxButtonData btns[] = {
+                        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "I understand" },
+                    };
+                    const SDL_MessageBoxData mb = {
+                        SDL_MESSAGEBOX_WARNING,
+                        ov->cpc ? ov->cpc->display.window : NULL,
+                        "DHCP server — IP-class heads up",
+                        "1984's built-in DHCP server hands out a small "
+                        "private subnet on its tap interface.\n\n"
+                        "Default: 10.0.0.0/24 (host 10.0.0.1, CPC 10.0.0.100).\n\n"
+                        "If your home Wi-Fi or router already uses "
+                        "10.0.0.0/24 the two will collide. Edit "
+                        "~/.config/1984/1984.conf and change "
+                        "net4cpc_tap_host_ip, _netmask, _lease_start, "
+                        "_lease_end to e.g. 192.168.99.x or 172.20.0.x.\n\n"
+                        "(Inline editing in this overlay is on the "
+                        "todo list.)",
+                        1, btns, NULL,
+                    };
+                    int btn = 0;
+                    SDL_ShowMessageBox(&mb, &btn);
+                    ov->cfg->net4cpc_tap_warned = true;
+                    ov->dirty = true;
+                }
             }
             break;
         }
