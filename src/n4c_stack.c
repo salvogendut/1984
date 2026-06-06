@@ -341,8 +341,15 @@ static void handle_arp(const u8 *eth, int len) {
     /* Always cache the sender — it's a free entry. */
     arp_insert(sender_ip, sender_mac);
 
-    if (op == ARP_OP_REQUEST && memcmp(target_ip, s_sipr, 4) == 0) {
-        send_arp_reply(sender_mac, sender_ip);
+    if (op == ARP_OP_REQUEST) {
+        bool for_me = (memcmp(target_ip, s_sipr, 4) == 0);
+        bool sipr_set = (s_sipr[0]|s_sipr[1]|s_sipr[2]|s_sipr[3]) != 0;
+        TLOG("ARP <- who-has %u.%u.%u.%u tell %u.%u.%u.%u  %s\n",
+             target_ip[0], target_ip[1], target_ip[2], target_ip[3],
+             sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
+             for_me  ? "(for me — replying)" :
+             !sipr_set ? "(SIPR=0.0.0.0, ignoring)" : "(not for me)");
+        if (for_me) send_arp_reply(sender_mac, sender_ip);
     } else if (op == ARP_OP_REPLY) {
         TLOG("ARP <- reply  %u.%u.%u.%u is-at %02X:%02X:%02X:%02X:%02X:%02X\n",
              sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
@@ -458,12 +465,25 @@ static void handle_udp(const u8 *src_ip, const u8 *dst_ip,
 
 void n4c_stack_poll(void) {
     if (s_tap_fd < 0) return;
+    static int first = 1;
+    if (first && n4c_stack_trace) {
+        first = 0;
+        fprintf(stderr, "[n4c] poll: first call, s_tap_fd=%d\n", s_tap_fd);
+    }
     u8 frame[TAP_FRAME_MAX];
     for (int drained = 0; drained < 64; drained++) {
         int n = tap_read(s_tap_fd, frame, sizeof(frame));
         if (n <= 0) break;
         if (n < 14) continue;
         u16 etype = get_u16_be(frame + 12);
+        if (n4c_stack_trace) {
+            fprintf(stderr, "[n4c] poll: frame %d bytes  dst=%02X:%02X:%02X:%02X:%02X:%02X "
+                "src=%02X:%02X:%02X:%02X:%02X:%02X etype=%04X\n",
+                n,
+                frame[0], frame[1], frame[2], frame[3], frame[4], frame[5],
+                frame[6], frame[7], frame[8], frame[9], frame[10], frame[11],
+                etype);
+        }
         switch (etype) {
         case ETH_TYPE_ARP:  handle_arp (frame, n); break;
         case ETH_TYPE_IPV4: handle_ipv4(frame, n); break;
