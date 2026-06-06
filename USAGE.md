@@ -124,9 +124,22 @@ Because **M4**, **SYMBiFACE IDE**, **SYMBiFACE Mouse**, and **Albireo** install 
 
 Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library and with the SymbOS N4C network daemon. The toggle triggers a cold boot on save.
 
-**Use a static IP — DHCP does not work.** Because the emulator runs as a regular host process and accesses the network through ordinary POSIX sockets rather than a raw L2 interface, broadcast DHCP exchanges cannot fully complete: a `DHCPDISCOVER` to `255.255.255.255` is sent (`SO_BROADCAST` is enabled), but server `DHCPOFFER` replies are addressed to the emulated MAC + offered IP — addresses the host kernel doesn't own and therefore silently drops. Configure the SymbOS daemon (or any other Net4CPC consumer) with a fixed IP, subnet mask, gateway, and DNS server. Proper DHCP support would require TUN/TAP networking so the emulator can present its own L2 interface to the host — planned as a future enhancement.
+**Net4CPC TAP** (Advanced → Net4CPC TAP, Linux only): swaps the legacy host-socket backend for a real L2 endpoint on a kernel TAP device. The W5100S is no longer just a thin shim around POSIX sockets — outbound frames are assembled as real Ethernet + IP + UDP/TCP, ARP / ICMP / TCP are handled inside the emulator, and inbound frames are demultiplexed back to the matching W5100S socket. The CPC becomes pingable from the host, accepts inbound connections, and **DHCP works**.
 
-For debugging, `--trace-net4cpc` logs every W5100S register read/write (decoded with register names and socket index), every socket command (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`), and TX/RX buffer access summaries.
+When enabled, 1984 auto-provisions everything via a single `pkexec` prompt: creates `cpc-tap0`, assigns the configured host IP, adds the device to firewalld's trusted zone, enables IPv4 forwarding, and installs narrow MASQUERADE + FORWARD rules so the CPC can reach the wider network through the host. An in-process DHCP server hands out the configured lease range; an in-process DNS proxy forwards to the host's `/etc/resolv.conf` upstream. The tap device is reused across 1984 launches and only re-created when the configured subnet changes or the host reboots — so you get **one polkit prompt per host uptime**, not per launch.
+
+**Pick a subnet that doesn't collide with your LAN.** Defaults to `10.0.0.0/24`. If your home Wi-Fi or router already uses that range, edit `~/.config/1984/1984.conf` and change the four keys before enabling TAP:
+
+```ini
+net4cpc_tap_host_ip=192.168.99.1
+net4cpc_tap_netmask=255.255.255.0
+net4cpc_tap_lease_start=192.168.99.100
+net4cpc_tap_lease_end=192.168.99.150
+```
+
+KCNet utilities reject non-RFC1918 IPs; stay inside `10.0.0.0/8`, `172.16.0.0/12`, or `192.168.0.0/16`. See [NET4CPC.md](NET4CPC.md) for the full setup walkthrough and the power-user `--tap=DEVNAME` CLI for managing your own tap.
+
+For debugging, `--trace-net4cpc` logs every W5100S register read/write (decoded with register names and socket index), every socket command (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`), and TX/RX buffer access summaries. `--trace-tap` logs the L2/L3 events (ARP, IPv4, UDP, ICMP, TCP) on the TAP backend.
 
 **RTC** (Extensions → RTC): enables emulation of a DS12887 real-time clock compatible with the Cyboard and Symbiface II add-on boards. Time is sourced from the host OS via `localtime()` and is always current. Two I/O ports are exposed at:
 
@@ -241,6 +254,11 @@ dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AM
 m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE
 ulifac=false      # [unimplemented]
 net4cpc=false
+net4cpc_tap=false                       # Linux TAP backend (auto-tap + built-in DHCP + DNS proxy + NAT)
+net4cpc_tap_host_ip=10.0.0.1            # Host side of the tap interface
+net4cpc_tap_netmask=255.255.255.0
+net4cpc_tap_lease_start=10.0.0.100      # DHCP lease range — pick something
+net4cpc_tap_lease_end=10.0.0.150        # that doesn't collide with your LAN
 rtc=false         # DS12887 real-time clock (Cyboard/Symbiface II compatible)
 symbiface_ide=false
 ide_image=        # path to a raw FAT16/FAT32 disk image (.img)
