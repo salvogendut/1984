@@ -422,9 +422,9 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         "' 2>&1",
         elev, name, name, ip_cidr, owner, name);
 
-    fprintf(stderr, "tap: auto-creating '%s' (%s) via %s — "
-                    "you may be prompted for your password\n",
-                    name, ip_cidr, elev);
+    fprintf(stderr, "tap: auto-creating '%s' (%s) via %s, "
+                    "chown to '%s' — you may be prompted for your password\n",
+                    name, ip_cidr, elev, owner);
     int rc = system(cmd);
     if (rc != 0) {
         fprintf(stderr, "tap: auto-create failed (system() returned %d). "
