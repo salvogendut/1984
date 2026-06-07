@@ -52,6 +52,7 @@ static const char *const g_trace_vars[] = {
     "ONE_K_TRACE_CRASH", "ONE_K_TRACE_IRQ", "ONE_K_TRACE_BANK",
     "ONE_K_TRACE_HDCPM", "ONE_K_TRACE_LDIR_BANK", "ONE_K_RESET_SNA",
     "ONE_K_TRACE_IM1", "ONE_K_TRACE_PALETTE",
+    "ONE_K_CAP_TEXT", "ONE_K_TRACE_LDIR", "ONE_K_TRACE_RTC",
     NULL
 };
 static void trace_check_master(void) {
@@ -887,6 +888,80 @@ void cpc_frame(CPC *cpc) {
                         cpc->mem.ram[0x7604], cpc->mem.ram[0x7605], cpc->mem.ram[0x7606], cpc->mem.ram[0x7607]);
             }
         }
+        /* #102 outcome detector. Captures printed text from firmware
+         * TXT_OUTPUT (PC=$BB5A; lower-ROM enabled) and CP/M+ BDOS
+         * C_WRITE (PC=$0005 with C=2). Writes to a circular char buf
+         * so a post-run scan can tell us whether the kernel reached
+         * `A0:CPM>` (success), reached the CP/M+ banner only
+         * (mid-boot stall), or stayed in BASIC (autostart paste race
+         * — not a #102 fail). Plus a reboot signature: HDCPM ROM
+         * activated AGAIN after BDOS was reached.
+         *
+         * Gated on ONE_K_CAP_TEXT=N where N is the boot index (just
+         * an id passed through to stderr to disambiguate batch runs).
+         */
+        {
+            static int cap_text = -1;
+            if (cap_text == -1) cap_text = getenv("ONE_K_CAP_TEXT") ? 1 : 0;
+        if (cap_text) {
+            static int boot_reached_bdos = 0;
+            static int reboots_after_bdos = 0;
+            if (cpc->cpu.pc == 0xBB5A && cpc->mem.lower_rom_enabled) {
+                u8 c = cpc->cpu.a;
+                if (c >= 0x20 && c < 0x7F)
+                    fputc(c, stderr);
+                else if (c == '\r')
+                    fputc('\n', stderr);
+                /* sentinel: a `>` at this point right after `A0:CPM`
+                 * means the prompt printed; we leave higher-level
+                 * detection to the post-run grep. */
+            }
+            if (cpc->cpu.pc == 0x0005 && cpc->cpu.c == 2) {
+                if (!boot_reached_bdos) {
+                    boot_reached_bdos = 1;
+                    fprintf(stderr, "\n[CAP] BDOS C_WRITE reached at frame=%d\n", cpc_frame_count);
+                }
+                u8 c = cpc->cpu.e;
+                if (c >= 0x20 && c < 0x7F)
+                    fputc(c, stderr);
+                else if (c == '\r')
+                    fputc('\n', stderr);
+            }
+            /* Reboot detector: HDCPM ROM init runs at PC=$C000 area
+             * with upper_rom_select==1. If that happens AFTER we've
+             * already reached BDOS, the kernel rebooted (= fail). */
+            if (boot_reached_bdos
+                && cpc->cpu.pc >= 0xC000 && cpc->cpu.pc < 0xC100
+                && cpc->mem.upper_rom_enabled
+                && cpc->mem.upper_rom_select == 0x01) {
+                static int reported = 0;
+                if (!reported) {
+                    reported = 1;
+                    reboots_after_bdos++;
+                    fprintf(stderr, "\n[CAP] REBOOT detected: HDCPM ROM re-entered at frame=%d PC=%04X (post-BDOS)\n",
+                            cpc_frame_count, cpc->cpu.pc);
+                }
+            }
+            /* Earlier reboot detector: PC=0x0000 firmware-reset vector
+             * AFTER the boot loader started executing (PC=0x0100+ was
+             * reached). Catches crashes BEFORE BDOS is reached. */
+            {
+                static int boot_loader_reached = 0;
+                static int early_reboot_reported = 0;
+                if (cpc->cpu.pc >= 0x0100 && cpc->cpu.pc < 0x4000
+                    && !cpc->mem.lower_rom_enabled)
+                    boot_loader_reached = 1;
+                if (boot_loader_reached && !early_reboot_reported
+                    && cpc->cpu.pc == 0x0000
+                    && cpc->mem.lower_rom_enabled) {
+                    early_reboot_reported = 1;
+                    fprintf(stderr, "\n[CAP] EARLY REBOOT: PC=0000 firmware reset at frame=%d (pre-BDOS)\n",
+                            cpc_frame_count);
+                }
+            }
+        }
+        }
+
         /* TEMP #102: log every entry to the relocated LDIR patcher at
          * PC=0117/0119, plus first 8 PCs before entering, to find what
          * triggers the spurious second pass. */
