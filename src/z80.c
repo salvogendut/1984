@@ -650,8 +650,10 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
          * was accepted — that PC is pushed onto the stack as the
          * eventual RETI/RET return address. Gated on ONE_K_TRACE_IM1. */
         {
+            extern int g_debug_enabled;
             static int tracing = -1;
-            if (tracing == -1) tracing = getenv("ONE_K_TRACE_IM1") ? 1 : 0;
+            if (tracing == -1)
+                tracing = (g_debug_enabled && getenv("ONE_K_TRACE_IM1")) ? 1 : 0;
             if (tracing) {
                 extern int cpc_frame_count;
                 fprintf(stderr, "[IM1] frame=%d  pushing PC=%04X SP=%04X (next SP=%04X)\n",

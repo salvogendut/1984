@@ -315,6 +315,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     SD_LOG("config_load OK: model=%d mem=%d", (int)cfg.model, cfg.memory_kb);
+    /* Master debug enable from config. When off (default), dbg_getenv()
+     * returns NULL for every call, neutering all ONE_K_TRACE_* /
+     * ONE_K_CAP_TEXT / ONE_K_DUMP_* / ONE_K_RESET_SNA / ONE_K_TRACE_PANIC
+     * hooks. Production env vars (CC_TABLES, FAKE_RTC, AUTOSTART_FRAMES,
+     * PASTE_GAP) use plain getenv() and are unaffected. */
+    g_debug_enabled = cfg.debug ? 1 : 0;
     SD_LOG("  rom_os=%s", cfg.rom_os);
     SD_LOG("  rom_basic=%s", cfg.rom_basic);
     SD_LOG("  rom_amsdos=%s [next: SDL_Init]", cfg.rom_amsdos);
@@ -750,7 +756,7 @@ int main(int argc, char *argv[]) {
             /* Debug hook: ONE_K_DUMP_RAM=/path/to/file writes physical RAM
              * to a file at every breakpoint pause (overwrites). Lets us
              * diff our RAM against WinAPE .sna byte-for-byte. */
-            const char *dump_path = getenv("ONE_K_DUMP_RAM");
+            const char *dump_path = dbg_getenv("ONE_K_DUMP_RAM");
             if (dump_path) {
                 FILE *fp = fopen(dump_path, "wb");
                 if (fp) {
@@ -766,6 +772,39 @@ int main(int argc, char *argv[]) {
             monitor_notify_step(monitor);
         }
         overlay_render(&overlay, cpc.display.renderer);
+        /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
+         * Doubles as a visual marker that debug machinery is live. */
+        if (g_debug_enabled) {
+            static Uint64 last_ns = 0;
+            static int    samples = 0;
+            static float  fps_smooth = 0.0f;
+            Uint64 now = SDL_GetTicksNS();
+            if (last_ns) {
+                float dt_s = (now - last_ns) / 1.0e9f;
+                if (dt_s > 0.0f) {
+                    float fps_inst = 1.0f / dt_s;
+                    /* exponential smoothing — alpha=0.05 ≈ 1 s window at 50 Hz */
+                    if (samples == 0) fps_smooth = fps_inst;
+                    else              fps_smooth = fps_smooth * 0.95f + fps_inst * 0.05f;
+                    samples++;
+                }
+            }
+            last_ns = now;
+            int ww, wh;
+            SDL_GetWindowSize(cpc.display.window, &ww, &wh);
+            int bar_h = 24; /* LED_BAR_HEIGHT; keep in sync with display.c */
+            if (bar_h > wh / 4) bar_h = wh / 4;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "DBG  %.1f fps", (double)fps_smooth);
+            /* black drop-shadow for readability over any background */
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0, 0, 0, 255);
+            SDL_RenderDebugText(cpc.display.renderer, 7.0f,
+                                (float)(wh - bar_h - 12), buf);
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0xFF, 0xC0, 0x40, 255);
+            SDL_RenderDebugText(cpc.display.renderer, 6.0f,
+                                (float)(wh - bar_h - 13), buf);
+            (void)ww;
+        }
         display_flip(&cpc.display);
         monitor_render(monitor);
 
@@ -788,7 +827,7 @@ int main(int argc, char *argv[]) {
         }
         if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
             display_save_ppm(&cpc.display, screenshot_path);
-            if (getenv("ONE_K_DUMP_PC")) {
+            if (dbg_getenv("ONE_K_DUMP_PC")) {
                 fprintf(stderr, "[pc-dump] frame=%d PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IFF1=%d halted=%d\n",
                         frame_count, cpc.cpu.pc, cpc.cpu.sp, cpc.cpu.af,
                         cpc.cpu.bc, cpc.cpu.de, cpc.cpu.hl,

@@ -46,6 +46,11 @@ u32 g_reset_pc_idx = 0;
  * If none of these are set at startup, no trace site does anything.
  * ------------------------------------------------------------------------- */
 int g_trace_any = -1;   /* -1 = uninitialised, 0 = no trace, 1 = some trace */
+/* Master debug enable, set from cfg->debug by main.c at startup. When 0
+ * (default), trace_check_master() forces g_trace_any=0 and per-step env
+ * checks (CAP_TEXT, TRACE_LDIR, DUMP_PC, …) all read it as 0, so no
+ * debug machinery runs regardless of which ONE_K_* env vars are set. */
+int g_debug_enabled = 0;
 static const char *const g_trace_vars[] = {
     "ONE_K_TRACE_BDF4", "ONE_K_TRACE_FE58", "ONE_K_TRACE_IDE",
     "ONE_K_TRACE_IDE_R", "ONE_K_TRACE_IDE_ISR", "ONE_K_TRACE_PANIC",
@@ -58,6 +63,7 @@ static const char *const g_trace_vars[] = {
 static void trace_check_master(void) {
     if (g_trace_any != -1) return;
     g_trace_any = 0;
+    if (!g_debug_enabled) return;     /* master gate: debug off → traces stay off */
     for (const char *const *p = g_trace_vars; *p; ++p) {
         if (getenv(*p)) { g_trace_any = 1; break; }
     }
@@ -153,7 +159,7 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
      * exactly when (and from where) the panic placeholder gets either
      * overwritten by the kernel or kept in place. */
     static int trace_bdf4 = -1;
-    if (trace_bdf4 == -1) trace_bdf4 = getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
+    if (trace_bdf4 == -1) trace_bdf4 = dbg_getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
     if (trace_bdf4 && (addr >= 0xBDF4 && addr <= 0xBDF6))
         fprintf(stderr, "[BDF4w] frame=%d  $%04X <- %02X  PC=%04X  lrom=%d\n",
                 cpc_frame_count, addr, val, cpc->cpu.pc, cpc->mem.lower_rom_enabled);
@@ -222,7 +228,7 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
      * the wrong bank and JPs to garbage. Gated on ONE_K_TRACE_FE58
      * so we don't interfere with quiet runs. */
     static int trace_fe58 = -1;
-    if (trace_fe58 == -1) trace_fe58 = getenv("ONE_K_TRACE_FE58") ? 1 : 0;
+    if (trace_fe58 == -1) trace_fe58 = dbg_getenv("ONE_K_TRACE_FE58") ? 1 : 0;
     if (trace_fe58 && addr == 0xFE58)
         fprintf(stderr, "[FE58w] frame=%d  $FE58 <- %02X  PC=%04X  ram_bank=%02X  lrom=%d\n",
                 cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank,
@@ -269,14 +275,14 @@ static u8 bus_io_read(void *ctx, u16 port) {
             result = mouse_read(&cpc->mouse);
         else if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
             result = ide_read(&cpc->ide_chip, lo);
-            if (getenv("ONE_K_TRACE_IDE_R") && lo != 0x08) {
+            if (dbg_getenv("ONE_K_TRACE_IDE_R") && lo != 0x08) {
                 fprintf(stderr, "[IDE R] port=FD%02X -> %02X PC=%04X\n", lo, result, cpc->cpu.pc);
             }
             /* Wider trace for the #102 kernel-ISR investigation: log
              * every read INCLUDING the data port, gated on PC being
              * in the kernel-ISR IDE block ($FD00-$FDAF) or close to
              * a known-bad address. Helps diff failing vs passing runs. */
-            if (getenv("ONE_K_TRACE_IDE_ISR") && cpc->cpu.pc >= 0xFD00
+            if (dbg_getenv("ONE_K_TRACE_IDE_ISR") && cpc->cpu.pc >= 0xFD00
                     && cpc->cpu.pc <= 0xFDAF) {
                 fprintf(stderr, "[IDE-ISR R] frame=%d port=FD%02X -> %02X PC=%04X SP=%04X\n",
                         cpc_frame_count, lo, result, cpc->cpu.pc, cpc->cpu.sp);
@@ -284,7 +290,7 @@ static u8 bus_io_read(void *ctx, u16 port) {
         }
         else if (cpc->rtc && lo == 0x14) {
             result = rtc_read_data(&cpc->rtc_chip);
-            if (getenv("ONE_K_TRACE_RTC")) {
+            if (dbg_getenv("ONE_K_TRACE_RTC")) {
                 fprintf(stderr, "[RTC R] frame=%d addr=%02X -> %02X PC=%04X\n",
                         cpc_frame_count, cpc->rtc_chip.addr, result, cpc->cpu.pc);
             }
@@ -319,7 +325,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         /* #102 layer A: trace every RAM-banking write (top 2 bits = 11)
          * so we can correlate banking flips against $FE58 writes and
          * IRQ events. */
-        if (getenv("ONE_K_TRACE_FE58") && (val & 0xC0) == 0xC0)
+        if (dbg_getenv("ONE_K_TRACE_FE58") && (val & 0xC0) == 0xC0)
             fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
                     cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
         ga_write(&cpc->ga, val);
@@ -350,7 +356,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
                 bank_high = 0;
             }
             cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
-            if (getenv("ONE_K_TRACE_BANK"))
+            if (dbg_getenv("ONE_K_TRACE_BANK"))
                 fprintf(stderr, "[BANK] ram_bank=%02X (group=%u mode=%u bank_high=%u) PC=%04X\n",
                         cpc->mem.ram_bank, group, mode, bank_high, cpc->cpu.pc);
         }
@@ -370,7 +376,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
     if ((hi & 0xE0) == 0xC0) {
-        if (getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
+        if (dbg_getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
             fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n", cpc->cpu.pc);
         }
         cpc->mem.upper_rom_select = val;
@@ -423,10 +429,10 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     if (cpc->mx4 && hi == 0xFD) {
         u8 lo = port & 0xFF;
         if (cpc->symbiface_ide && (lo == 0x06 || (lo >= 0x08 && lo <= 0x0F))) {
-            if (getenv("ONE_K_TRACE_IDE")) {
+            if (dbg_getenv("ONE_K_TRACE_IDE")) {
                 fprintf(stderr, "[IDE W] port=FD%02X val=%02X PC=%04X\n", lo, val, cpc->cpu.pc);
             }
-            if (getenv("ONE_K_TRACE_IDE_ISR") && cpc->cpu.pc >= 0xFD00
+            if (dbg_getenv("ONE_K_TRACE_IDE_ISR") && cpc->cpu.pc >= 0xFD00
                     && cpc->cpu.pc <= 0xFDAF) {
                 fprintf(stderr, "[IDE-ISR W] frame=%d port=FD%02X val=%02X PC=%04X SP=%04X\n",
                         cpc_frame_count, lo, val, cpc->cpu.pc, cpc->cpu.sp);
@@ -682,7 +688,7 @@ void cpc_frame(CPC *cpc) {
          * the first 30 hits and any hit where $BDF4 holds the panic
          * stub (C3 4F BE) so we can correlate failing boots. */
         static int trace_bdf4 = -1;
-        if (g_trace_any && trace_bdf4 == -1) trace_bdf4 = getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
+        if (g_trace_any && trace_bdf4 == -1) trace_bdf4 = dbg_getenv("ONE_K_TRACE_BDF4") ? 1 : 0;
         if (g_trace_any && trace_bdf4 && cpc->cpu.pc == 0x00D9 && cpc->mem.lower_rom_enabled) {
             static int hits = 0;
             u8 a = mem_read(&cpc->mem, 0xBDF4);
@@ -715,7 +721,7 @@ void cpc_frame(CPC *cpc) {
          * we were previously in the kernel — that's the runaway entry,
          * BEFORE banking gets reset by firmware. Capture a snapshot
          * here so we can disassemble the pre-corruption memory state. */
-        if (g_trace_any && getenv("ONE_K_TRACE_BDF4")) {
+        if (g_trace_any && dbg_getenv("ONE_K_TRACE_BDF4")) {
             g_reset_pc_ring[g_reset_pc_idx & 0x1FFF] = cpc->cpu.pc;
             g_reset_sp_ring[g_reset_pc_idx & 0x1FFF] = cpc->cpu.sp;
             g_reset_bank_ring[g_reset_pc_idx & 0x1FFF] = cpc->mem.ram_bank;
@@ -734,7 +740,7 @@ void cpc_frame(CPC *cpc) {
                 fprintf(stderr, "[RUNAWAY] frame=%d  first entry into "
                                 "$FF00-$FFFF at PC=%04X SP=%04X — dumping ring + sna\n",
                         cpc_frame_count, cpc->cpu.pc, cpc->cpu.sp);
-                const char *p = getenv("ONE_K_RESET_SNA");
+                const char *p = dbg_getenv("ONE_K_RESET_SNA");
                 if (p && *p) snapshot_save(cpc, p);
                 u32 start = g_reset_pc_idx & 0x1FFF;
                 u16 last = 0xFFFF; int run = 0;
@@ -781,7 +787,7 @@ void cpc_frame(CPC *cpc) {
             static u32 ring_idx = 0;
             static int panic_dumped = 0;
             if (panic_pc == -1) {
-                const char *e = getenv("ONE_K_TRACE_PANIC");
+                const char *e = dbg_getenv("ONE_K_TRACE_PANIC");
                 panic_pc = (e && *e) ? (int)strtoul(e, NULL, 16) : 0;
             }
             if (panic_pc > 0) {
@@ -809,7 +815,7 @@ void cpc_frame(CPC *cpc) {
                 }
             }
         }
-        if (getenv("ONE_K_TRACE_CRASH")) {
+        if (dbg_getenv("ONE_K_TRACE_CRASH")) {
             /* Wider ring buffer + capture SP, BC, HL too */
             static u16 pcs[8192], sps[8192], bcs[8192], hls[8192];
             static u32 idx = 0;
@@ -869,7 +875,7 @@ void cpc_frame(CPC *cpc) {
             }
         }
 
-        if (getenv("ONE_K_TRACE_LDIR_BANK")) {
+        if (dbg_getenv("ONE_K_TRACE_LDIR_BANK")) {
             static int hit = 0;
             if (!hit && cpc->cpu.pc == 0xC636 && cpc->cpu.de == 0x7600
                 && cpc->mem.upper_rom_enabled && cpc->mem.upper_rom_select == 0x01) {
@@ -902,10 +908,10 @@ void cpc_frame(CPC *cpc) {
          */
         {
             static int cap_text = -1;
-            if (cap_text == -1) cap_text = getenv("ONE_K_CAP_TEXT") ? 1 : 0;
+            if (cap_text == -1)
+                cap_text = (g_debug_enabled && dbg_getenv("ONE_K_CAP_TEXT")) ? 1 : 0;
         if (cap_text) {
             static int boot_reached_bdos = 0;
-            static int reboots_after_bdos = 0;
             if (cpc->cpu.pc == 0xBB5A && cpc->mem.lower_rom_enabled) {
                 u8 c = cpc->cpu.a;
                 if (c >= 0x20 && c < 0x7F)
@@ -937,7 +943,6 @@ void cpc_frame(CPC *cpc) {
                 static int reported = 0;
                 if (!reported) {
                     reported = 1;
-                    reboots_after_bdos++;
                     fprintf(stderr, "\n[CAP] REBOOT detected: HDCPM ROM re-entered at frame=%d PC=%04X (post-BDOS)\n",
                             cpc_frame_count, cpc->cpu.pc);
                 }
@@ -965,7 +970,7 @@ void cpc_frame(CPC *cpc) {
         /* TEMP #102: log every entry to the relocated LDIR patcher at
          * PC=0117/0119, plus first 8 PCs before entering, to find what
          * triggers the spurious second pass. */
-        if (getenv("ONE_K_TRACE_LDIR")) {
+        if (dbg_getenv("ONE_K_TRACE_LDIR")) {
             #define LDIR_RING_N 2048
             static u16 ring[LDIR_RING_N]; static int ringp = 0;
             static int hits_117 = 0;
@@ -1086,7 +1091,7 @@ void cpc_frame(CPC *cpc) {
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;
             ga_irq_ack(&cpc->ga);
-            if (getenv("ONE_K_TRACE_IRQ")) {
+            if (dbg_getenv("ONE_K_TRACE_IRQ")) {
                 extern long long g_total_t;
                 static int irq_n = 0;
                 static long long last_t = 0;
