@@ -10,6 +10,12 @@
 #define HOLD_FRAMES 2   /* how long a key is held */
 #define GAP_FRAMES  1   /* silent gap between characters */
 
+/* Optional per-char gap multiplier read from ONE_K_PASTE_GAP at start of
+ * paste, e.g. ONE_K_PASTE_GAP=40 will hold a frame for 1 and gap for 40
+ * so commands trickle in slowly enough to survive a CP/M boot draining
+ * the keyboard buffer between them. 0 means "use defaults". */
+static int paste_gap_override = -1;
+
 typedef struct {
     int  row, col;
     bool shift;
@@ -162,6 +168,10 @@ void paste_tick(Paste *p, Keyboard *k) {
         key_up(k, ck);
         p->held  = false;
         p->pos++;
-        p->timer = GAP_FRAMES;
+        if (paste_gap_override < 0) {
+            const char *e = getenv("ONE_K_PASTE_GAP");
+            paste_gap_override = e ? atoi(e) : 0;
+        }
+        p->timer = paste_gap_override > 0 ? paste_gap_override : GAP_FRAMES;
     }
 }

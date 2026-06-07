@@ -66,6 +66,10 @@ typedef struct {
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
+    bool debug;              /* enable debug machinery (env-var traces, panic
+                              * dumps, text capture). Off by default; when off,
+                              * setting ONE_K_TRACE_* / ONE_K_CAP_TEXT / etc.
+                              * has no effect at all. */
 } Config;
 
 /* Load ~/.config/1984/1984.conf into cfg. Missing file = silent defaults.

@@ -162,6 +162,7 @@ static void usage(const char *prog, int code) {
         "                      Pass --tap= (empty) to let the kernel auto-name (tap0…).\n"
         "                      Needs CAP_NET_ADMIN or a pre-created persistent TAP.\n"
         "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
+        "  --save-sna-at-ide=N:PATH  Save a .sna snapshot when the Nth ATA command is issued (for cross-emulator bisection)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  -h, --help          Show this help and exit\n"
@@ -198,6 +199,8 @@ int main(int argc, char *argv[]) {
     const char *screenshot_path  = NULL;
     int         save_sna_frame   = -1;
     const char *save_sna_path    = NULL;
+    int         save_sna_ide_cmd = -1;
+    const char *save_sna_ide_path = NULL;
     bool        trace_io         = false;
     bool        monitor_pty      = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
@@ -290,6 +293,15 @@ int main(int argc, char *argv[]) {
             }
             save_sna_frame = atoi(arg);
             save_sna_path  = colon + 1;
+        } else if (strncmp(argv[i], "--save-sna-at-ide=", 18) == 0 && argv[i][18] != '\0') {
+            const char *arg = argv[i] + 18;
+            char *colon = strchr(arg, ':');
+            if (!colon || colon == arg || colon[1] == '\0') {
+                fprintf(stderr, "%s: --save-sna-at-ide requires N:PATH format\n", argv[0]);
+                usage(argv[0], 1);
+            }
+            save_sna_ide_cmd = atoi(arg);
+            save_sna_ide_path = colon + 1;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "%s: unrecognised option '%s'\n", argv[0], argv[i]);
             usage(argv[0], 1);
@@ -303,6 +315,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     SD_LOG("config_load OK: model=%d mem=%d", (int)cfg.model, cfg.memory_kb);
+    /* Master debug enable from config. When off (default), dbg_getenv()
+     * returns NULL for every call, neutering all ONE_K_TRACE_* /
+     * ONE_K_CAP_TEXT / ONE_K_DUMP_* / ONE_K_RESET_SNA / ONE_K_TRACE_PANIC
+     * hooks. Production env vars (CC_TABLES, FAKE_RTC, AUTOSTART_FRAMES,
+     * PASTE_GAP) use plain getenv() and are unaffected. */
+    g_debug_enabled = cfg.debug ? 1 : 0;
     SD_LOG("  rom_os=%s", cfg.rom_os);
     SD_LOG("  rom_basic=%s", cfg.rom_basic);
     SD_LOG("  rom_amsdos=%s [next: SDL_Init]", cfg.rom_amsdos);
@@ -484,8 +502,17 @@ int main(int argc, char *argv[]) {
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
-    /* Frames to wait before injecting autostart text (matches caprice32 timing) */
+    /* Frames to wait before injecting autostart text (matches caprice32 timing).
+     * ONE_K_AUTOSTART_FRAMES overrides for headless QA scripts that need a
+     * larger margin (paste before BASIC Ready is silently dropped). */
     int autostart_countdown = (autostart || paste_arg) ? 42 : 0;
+    {
+        const char *e = getenv("ONE_K_AUTOSTART_FRAMES");
+        if (e && autostart_countdown > 0) {
+            int n = atoi(e);
+            if (n > 0) autostart_countdown = n;
+        }
+    }
 
     /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
      * VSync is off; we sleep for any leftover time in each 20 ms budget. */
@@ -729,7 +756,7 @@ int main(int argc, char *argv[]) {
             /* Debug hook: ONE_K_DUMP_RAM=/path/to/file writes physical RAM
              * to a file at every breakpoint pause (overwrites). Lets us
              * diff our RAM against WinAPE .sna byte-for-byte. */
-            const char *dump_path = getenv("ONE_K_DUMP_RAM");
+            const char *dump_path = dbg_getenv("ONE_K_DUMP_RAM");
             if (dump_path) {
                 FILE *fp = fopen(dump_path, "wb");
                 if (fp) {
@@ -745,6 +772,39 @@ int main(int argc, char *argv[]) {
             monitor_notify_step(monitor);
         }
         overlay_render(&overlay, cpc.display.renderer);
+        /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
+         * Doubles as a visual marker that debug machinery is live. */
+        if (g_debug_enabled) {
+            static Uint64 last_ns = 0;
+            static int    samples = 0;
+            static float  fps_smooth = 0.0f;
+            Uint64 now = SDL_GetTicksNS();
+            if (last_ns) {
+                float dt_s = (now - last_ns) / 1.0e9f;
+                if (dt_s > 0.0f) {
+                    float fps_inst = 1.0f / dt_s;
+                    /* exponential smoothing — alpha=0.05 ≈ 1 s window at 50 Hz */
+                    if (samples == 0) fps_smooth = fps_inst;
+                    else              fps_smooth = fps_smooth * 0.95f + fps_inst * 0.05f;
+                    samples++;
+                }
+            }
+            last_ns = now;
+            int ww, wh;
+            SDL_GetWindowSize(cpc.display.window, &ww, &wh);
+            int bar_h = 24; /* LED_BAR_HEIGHT; keep in sync with display.c */
+            if (bar_h > wh / 4) bar_h = wh / 4;
+            char buf[64];
+            snprintf(buf, sizeof(buf), "DBG  %.1f fps", (double)fps_smooth);
+            /* black drop-shadow for readability over any background */
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0, 0, 0, 255);
+            SDL_RenderDebugText(cpc.display.renderer, 7.0f,
+                                (float)(wh - bar_h - 12), buf);
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0xFF, 0xC0, 0x40, 255);
+            SDL_RenderDebugText(cpc.display.renderer, 6.0f,
+                                (float)(wh - bar_h - 13), buf);
+            (void)ww;
+        }
         display_flip(&cpc.display);
         monitor_render(monitor);
 
@@ -767,6 +827,37 @@ int main(int argc, char *argv[]) {
         }
         if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
             display_save_ppm(&cpc.display, screenshot_path);
+            if (dbg_getenv("ONE_K_DUMP_PC")) {
+                fprintf(stderr, "[pc-dump] frame=%d PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IFF1=%d halted=%d\n",
+                        frame_count, cpc.cpu.pc, cpc.cpu.sp, cpc.cpu.af,
+                        cpc.cpu.bc, cpc.cpu.de, cpc.cpu.hl,
+                        (int)cpc.cpu.iff1, (int)cpc.cpu.halted);
+                fprintf(stderr, "[pc-dump] stack: ");
+                for (int i = 0; i < 16; i++) {
+                    u16 a = (u16)(cpc.cpu.sp + i);
+                    fprintf(stderr, "%02X ", cpc.mem.ram[a & 0xFFFF]);
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] code at PC (Z80 view): ");
+                for (int i = 0; i < 16; i++) {
+                    u16 a = (u16)(cpc.cpu.pc + i);
+                    fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, a));
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] code at 0x100: ");
+                for (int i = 0; i < 64; i++) {
+                    fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, 0x100 + i));
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] mem BE00-BE7F (Z80 view):\n");
+                for (int row = 0; row < 8; row++) {
+                    fprintf(stderr, "[pc-dump] %04X: ", 0xBE00 + row*16);
+                    for (int col = 0; col < 16; col++) {
+                        fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, 0xBE00 + row*16 + col));
+                    }
+                    fprintf(stderr, "\n");
+                }
+            }
             running = false;
         }
         if (save_sna_frame >= 0 && frame_count == save_sna_frame) {
@@ -775,6 +866,13 @@ int main(int argc, char *argv[]) {
              * want both. If they want to exit after the snapshot they can use
              * a screenshot-at at the same frame, or rely on --exit-after. */
             save_sna_frame = -1;
+        }
+        if (save_sna_ide_cmd >= 0) {
+            extern u32 ide_cmd_count_for_crash_trace;
+            if ((int)ide_cmd_count_for_crash_trace >= save_sna_ide_cmd) {
+                snapshot_save(&cpc, save_sna_ide_path);
+                save_sna_ide_cmd = -1;
+            }
         }
 
         /* Sleep for whatever is left of the 20 ms frame budget */

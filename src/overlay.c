@@ -32,7 +32,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 6 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 7 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -340,6 +340,11 @@ static void item_text(const Overlay *ov, int row,
                          ov->cfg->net4cpc_tap_lease_end);
             }
             *readonly = true;   /* see NET4CPC.md; edit values in 1984.conf */
+            break;
+        case 6:
+            snprintf(lbl, lsz, "Debugging");
+            snprintf(val, vsz, "%s",
+                     ov->cfg->debug ? "enabled" : "disabled");
             break;
         }
         break;
@@ -728,6 +733,13 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
                 ov->needs_cold_boot = true;
             }
+            break;
+        case 6:
+            ov->cfg->debug = !ov->cfg->debug;
+            g_debug_enabled = ov->cfg->debug ? 1 : 0;
+            ov->dirty = true;
+            /* No cold boot needed — debug machinery is checked at every
+             * site, so the change takes effect on the next instruction. */
             break;
         }
         break;

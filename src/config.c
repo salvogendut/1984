@@ -68,6 +68,7 @@ void config_defaults(Config *cfg) {
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
     cfg->tinker    = false;
+    cfg->debug     = false;
     snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
     snprintf(cfg->net4cpc_tap_netmask,    sizeof(cfg->net4cpc_tap_netmask),    "255.255.255.0");
     snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "10.0.0.100");
@@ -203,6 +204,10 @@ static void config_create_default(const char *path, const char *home) {
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
         "tinker=false\n"
+        "# Enable debug machinery (ONE_K_TRACE_* env vars, panic dumps,\n"
+        "# text capture, etc.). Off by default; when off, none of the\n"
+        "# debug machinery runs and ONE_K_* trace env vars are no-ops.\n"
+        "debug=false\n"
     );
 
     fclose(f);
@@ -363,6 +368,10 @@ int config_load(Config *cfg) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->tinker = b;
                 else { fprintf(stderr, "1984.conf:%d: tinker must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "debug")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->debug = b;
+                else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
             }
         }
     }
@@ -464,7 +473,8 @@ int config_save(const Config *cfg) {
         "fullscreen=%s\n"
         "fullscreen_smoothing=%s\n\n"
         "[advanced]\n"
-        "tinker=%s\n",
+        "tinker=%s\n"
+        "debug=%s\n",
         cfg->disk_a,
         cfg->disk_b,
         cfg->tape,
@@ -493,7 +503,8 @@ int config_save(const Config *cfg) {
         cfg->scale,
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",
-        cfg->tinker     ? "true" : "false"
+        cfg->tinker     ? "true" : "false",
+        cfg->debug      ? "true" : "false"
     );
 
     fclose(f);

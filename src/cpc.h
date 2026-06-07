@@ -1,4 +1,5 @@
 #pragma once
+#include <stdlib.h>     /* dbg_getenv() wraps getenv() */
 #include "types.h"
 #include "z80.h"
 #include "mem.h"
@@ -81,6 +82,16 @@ extern int cpc_trace_palette; /* set to 1 to log palette buffer state when B7F7=
 extern int m4_trace;          /* set to 1 to log M4 commands, responses, NMI state */
 extern int cpc_trace_input;   /* set to 1 to log keyboard row 9 (joystick) scans */
 extern int cpc_frame_count;   /* incremented by cpc_frame(); used by trace helpers */
+
+/* Master debug enable, set from cfg->debug by main.c at startup. When 0
+ * (default), dbg_getenv() returns NULL for every call, so every debug
+ * site that uses it short-circuits. Non-debug env vars (ONE_K_CC_TABLES,
+ * ONE_K_FAKE_RTC*, ONE_K_AUTOSTART_FRAMES, ONE_K_PASTE_GAP) continue to
+ * call getenv() directly and are unaffected. */
+extern int g_debug_enabled;
+static inline const char *dbg_getenv(const char *name) {
+    return g_debug_enabled ? getenv(name) : NULL;
+}
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);
 void cpc_reset(CPC *cpc);
