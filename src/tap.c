@@ -203,7 +203,240 @@ void tap_auto_destroy(const char *name) {
     (void)system(cmd);
 }
 
-#else  /* non-Linux: stub everything so the rest of net4cpc.c compiles */
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+
+/* -------------------------------------------------------------------
+ * BSD if_tap backend. FreeBSD / NetBSD have a cloning '/dev/tap'
+ * device — opening it spawns a tapN and the name is recovered via
+ * TAPGIFNAME. OpenBSD doesn't clone; it has fixed '/dev/tap0' …
+ * '/dev/tapN' nodes that need to exist (often via 'ifconfig tapN
+ * create' beforehand). All three speak raw Ethernet frames (no
+ * Linux 4-byte protocol prefix), so tap_read/tap_write are the same.
+ *
+ * Auto-setup uses a runtime probe for doas → sudo → fail. doas is
+ * the default on OpenBSD; FreeBSD/NetBSD users typically have sudo.
+ * If neither is present we print the manual command list and let
+ * the host-socket fallback take over.
+ *
+ * NAT/forwarding is intentionally minimal in v1: we bring up the
+ * interface and assign an address. Routing outward (pf/ipfw/npf
+ * NAT) is documented in NET4CPC.md as a manual follow-up — the
+ * three BSDs each have their own packet filter and a "one-click
+ * NAT" abstraction across them is more code than this branch should
+ * land at once. The CPC is reachable from the host either way.
+ * ----------------------------------------------------------------- */
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <pwd.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <net/if.h>
+#if defined(__FreeBSD__) || defined(__NetBSD__)
+#  include <net/if_tap.h>            /* TAPGIFNAME */
+#endif
+#include <ifaddrs.h>
+
+static const char *bsd_elevator(void) {
+    /* Runtime probe: prefer doas (lighter, default on OpenBSD),
+     * fall back to sudo, give up otherwise. system("command -v X")
+     * spawns a shell but only on the first call per process. */
+    static const char *picked = NULL;
+    static int probed = 0;
+    if (!probed) {
+        probed = 1;
+        if (system("command -v doas >/dev/null 2>&1") == 0) picked = "doas";
+        else if (system("command -v sudo >/dev/null 2>&1") == 0) picked = "sudo";
+    }
+    return picked;
+}
+
+int tap_open(const char *devname, char *out_name, size_t out_name_sz) {
+    char path[64];
+    int fd = -1;
+
+#if defined(__OpenBSD__)
+    /* OpenBSD: explicit /dev/tapN node. If devname is "tap5" we open
+     * /dev/tap5; if NULL/empty we walk tap0..tap63 until one opens. */
+    if (devname && devname[0]) {
+        const char *n = devname;
+        if (strncmp(n, "tap", 3) == 0) n += 3;
+        snprintf(path, sizeof(path), "/dev/tap%s", n);
+        fd = open(path, O_RDWR);
+        if (fd < 0) {
+            fprintf(stderr, "tap: open %s: %s\n", path, strerror(errno));
+            return -1;
+        }
+        if (out_name && out_name_sz)
+            snprintf(out_name, out_name_sz, "tap%s", n);
+    } else {
+        for (int i = 0; i < 64; i++) {
+            snprintf(path, sizeof(path), "/dev/tap%d", i);
+            fd = open(path, O_RDWR);
+            if (fd >= 0) {
+                if (out_name && out_name_sz)
+                    snprintf(out_name, out_name_sz, "tap%d", i);
+                break;
+            }
+        }
+        if (fd < 0) {
+            fprintf(stderr,
+                "tap: no openable /dev/tapN node found. Create one first:\n"
+                "tap:   doas ifconfig tap0 create\n");
+            return -1;
+        }
+    }
+#else
+    /* FreeBSD / NetBSD: cloning /dev/tap (also accept /dev/tapN for
+     * explicit selection). After open() the kernel has bound this fd
+     * to a fresh interface; TAPGIFNAME recovers its name. */
+    if (devname && devname[0]) {
+        const char *n = devname;
+        if (strncmp(n, "tap", 3) == 0) n += 3;
+        snprintf(path, sizeof(path), "/dev/tap%s", n);
+    } else {
+        snprintf(path, sizeof(path), "/dev/tap");
+    }
+    fd = open(path, O_RDWR);
+    if (fd < 0) {
+        fprintf(stderr, "tap: open %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+#  if defined(TAPGIFNAME)
+    if (ioctl(fd, TAPGIFNAME, &ifr) == 0) {
+        if (out_name && out_name_sz)
+            snprintf(out_name, out_name_sz, "%s", ifr.ifr_name);
+    } else
+#  endif
+    {
+        /* Fallback: derive name from devnode minor via fstat. */
+        struct stat st;
+        if (fstat(fd, &st) == 0) {
+            int minor_num = (int)(st.st_rdev & 0xFF);
+            if (out_name && out_name_sz)
+                snprintf(out_name, out_name_sz, "tap%d", minor_num);
+        }
+    }
+#endif
+
+    int fl = fcntl(fd, F_GETFL, 0);
+    if (fl >= 0) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+    return fd;
+}
+
+void tap_close(int fd) { if (fd >= 0) close(fd); }
+
+int tap_read(int fd, u8 *buf, size_t maxlen) {
+    ssize_t n = read(fd, buf, maxlen);
+    if (n > 0) return (int)n;
+    if (n == 0) return 0;
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+    return -1;
+}
+
+int tap_write(int fd, const u8 *buf, size_t len) {
+    ssize_t n = write(fd, buf, len);
+    return (n < 0) ? -1 : (int)n;
+}
+
+static bool tap_str_is_safe(const char *s) {
+    if (!s || !*s) return false;
+    for (const char *p = s; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '-' || c == '.' || c == '/' || c == '_'))
+            return false;
+    }
+    return true;
+}
+
+static bool tap_dev_exists(const char *name) {
+    struct ifaddrs *ifa = NULL, *p;
+    if (getifaddrs(&ifa) != 0) return false;
+    bool found = false;
+    for (p = ifa; p; p = p->ifa_next) {
+        if (p->ifa_name && strcmp(p->ifa_name, name) == 0) { found = true; break; }
+    }
+    freeifaddrs(ifa);
+    return found;
+}
+
+int tap_auto_create(const char *name, const char *ip_cidr) {
+    if (!tap_str_is_safe(name) || !tap_str_is_safe(ip_cidr)) {
+        fprintf(stderr, "tap: refusing unsafe device/cidr string\n");
+        return -1;
+    }
+    const char *elev = bsd_elevator();
+    if (!elev) {
+        fprintf(stderr,
+            "tap: neither doas nor sudo is installed. Auto-setup needs one\n"
+            "tap: of them to run privileged commands. Either install one\n"
+            "tap: (`pkg install sudo` on FreeBSD, etc.) or run the manual\n"
+            "tap: commands shown after the next failure.\n");
+        return -1;
+    }
+    if (tap_dev_exists(name)) {
+        fprintf(stderr, "tap: '%s' already present, reusing (host IP not re-checked on BSD)\n", name);
+        return 0;
+    }
+
+    /* CIDR like "10.0.0.1/24" → ifconfig wants "10.0.0.1/24" inet on
+     * all three BSDs; the form is portable. The 'create' subcommand
+     * is also common across them when applied to a tap interface
+     * name; if the kernel already auto-created the interface from
+     * the device node, 'create' is a no-op (FreeBSD/NetBSD warn but
+     * succeed; OpenBSD treats it as creating the if). */
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "%s sh -c '"
+        "set -e; "
+        "ifconfig %s create 2>/dev/null || true; "
+        "ifconfig %s inet %s up; "
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
+        "sysctl -w net.inet.ip.forwarding=1 >/dev/null"
+#elif defined(__NetBSD__)
+        "sysctl -w net.inet.ip.forwarding=1 >/dev/null"
+#endif
+        "' 2>&1",
+        elev, name, name, ip_cidr);
+
+    fprintf(stderr, "tap: auto-creating '%s' (%s) via %s — "
+                    "you may be prompted for your password\n",
+                    name, ip_cidr, elev);
+    int rc = system(cmd);
+    if (rc != 0) {
+        fprintf(stderr, "tap: auto-create failed (system() returned %d). "
+                        "Manual setup:\n"
+                        "  %s ifconfig %s create\n"
+                        "  %s ifconfig %s inet %s up\n"
+                        "  %s sysctl -w net.inet.ip.forwarding=1\n"
+                        "(NAT to host network requires pf/ipfw/npf rules — "
+                        "see NET4CPC.md)\n",
+                rc, elev, name, elev, name, ip_cidr, elev);
+        return -1;
+    }
+    fprintf(stderr, "tap: '%s' ready — %s\n"
+                    "tap: NAT to wider network not auto-configured on BSD; "
+                    "host ↔ CPC works.\n",
+                    name, ip_cidr);
+    return 0;
+}
+
+void tap_auto_destroy(const char *name) {
+    if (!tap_str_is_safe(name)) return;
+    if (!tap_dev_exists(name)) return;
+    const char *elev = bsd_elevator();
+    if (!elev) return;
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd),
+        "%s ifconfig %s destroy >/dev/null 2>&1", elev, name);
+    (void)system(cmd);
+}
+
+#else  /* non-Linux, non-BSD: stub everything so net4cpc.c compiles */
 
 int  tap_open(const char *devname, char *out_name, size_t out_name_sz) {
     (void)devname; (void)out_name; (void)out_name_sz;

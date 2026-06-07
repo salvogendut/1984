@@ -26,8 +26,21 @@ behaves as a real L2 endpoint on whatever the TAP is bridged to.
 - SymbOS networking
 - DHCP if the TAP is bridged to a network that has a DHCP server
 
-Linux only for now. macOS/Windows fall back to the legacy host-socket
-behaviour (the `--tap=` flag is silently ignored on those platforms).
+Linux, FreeBSD, NetBSD, OpenBSD. macOS and Windows fall back to the
+legacy host-socket behaviour (the `--tap=` flag is silently ignored
+on those platforms, the overlay shows the TAP row as
+`[unsupported on this OS]`).
+
+The auto-setup path differs by OS:
+
+- **Linux** — `pkexec ip tuntap …` with built-in NAT via iptables; one
+  password prompt, full LAN integration out of the box.
+- **BSDs** — `doas` (preferred) or `sudo` (fallback) wraps `ifconfig`
+  to create the tap interface and assign the host IP. NAT to the
+  wider host network is **not** auto-configured on BSD — you get
+  host-↔-CPC connectivity for free; outbound LAN/internet needs a
+  manual packet-filter rule (see [BSD NAT setup](#bsd-nat-setup)
+  below).
 
 ## ⚠️ Heads up — pick a subnet that doesn't collide with your LAN
 
@@ -153,6 +166,46 @@ The first TAP launch needs `CAP_NET_ADMIN` to call
    refuse to honour `LD_PRELOAD`, `LD_LIBRARY_PATH`, etc. on
    `setcap`'d binaries, which may break some development workflows.
 3. Run `1984` as root — discouraged.
+
+<a id="bsd-nat-setup"></a>
+## BSD NAT setup (manual)
+
+The Linux auto-setup wires up iptables MASQUERADE so the CPC reaches
+the wider host network and the internet. The BSD auto-setup stops
+after `ifconfig … inet … up` — host-↔-CPC works immediately, but
+outbound LAN/internet needs you to add a NAT rule in the host's
+packet filter. Pick the one for your OS:
+
+### FreeBSD / OpenBSD (pf)
+
+Add to `/etc/pf.conf`:
+
+```
+ext_if="em0"          # your real outbound interface
+nat on $ext_if from 10.0.0.0/24 to any -> ($ext_if)
+pass quick on tap0
+```
+
+Then `doas pfctl -f /etc/pf.conf && doas pfctl -e`.
+
+### FreeBSD (ipfw alternative)
+
+```
+doas sysctl net.inet.ip.forwarding=1
+doas ipfw add 1000 nat 1 ip from 10.0.0.0/24 to any out via em0
+doas ipfw nat 1 config if em0
+```
+
+### NetBSD (npf)
+
+```
+# /etc/npf.conf
+$ext_if = "wm0"
+map $ext_if dynamic 10.0.0.0/24 -> $ext_if
+group default { pass final on $ext_if all }
+```
+
+Then `doas npfctl reload && doas npfctl start`.
 
 ## Troubleshooting
 
