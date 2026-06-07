@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include "cpc.h"
+#include "tap.h"     /* TAP_SUPPORTED */
 #include "m4.h"
 #include "disk.h"
 #include "mem.h"
@@ -321,7 +322,10 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 4:
             snprintf(lbl, lsz, "Net4CPC TAP");
-            if (!ov->cfg->net4cpc) {
+            if (!TAP_SUPPORTED) {
+                snprintf(val, vsz, "[unsupported on this OS]");
+                *readonly = true;
+            } else if (!ov->cfg->net4cpc) {
                 snprintf(val, vsz, "[needs Net4CPC]");
                 *readonly = true;
             } else {
@@ -331,7 +335,9 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 5:
             snprintf(lbl, lsz, "DHCP server");
-            if (!ov->cfg->net4cpc || !ov->cfg->net4cpc_tap) {
+            if (!TAP_SUPPORTED) {
+                snprintf(val, vsz, "[Net4CPC TAP unsupported]");
+            } else if (!ov->cfg->net4cpc || !ov->cfg->net4cpc_tap) {
                 snprintf(val, vsz, "[Net4CPC TAP off]");
             } else {
                 snprintf(val, vsz, "%s, lease %s-%s",
@@ -771,7 +777,7 @@ static void activate_item(Overlay *ov) {
             break;
         }
         case 4:
-            if (ov->cfg->net4cpc) {
+            if (TAP_SUPPORTED && ov->cfg->net4cpc) {
                 ov->cfg->net4cpc_tap = !ov->cfg->net4cpc_tap;
                 ov->dirty = true;
                 ov->needs_cold_boot = true;

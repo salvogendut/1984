@@ -18,6 +18,23 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* Compile-time gate for the L2 TAP backend + one-click auto-setup.
+ *   Linux:    full support (existing).
+ *   BSDs:     planned (#114); the per-OS device + ioctls land there.
+ *   macOS:    no native L2 TAP and no built-in privilege elevation;
+ *             the host-socket fallback is the only realistic path.
+ *   Windows:  requires the third-party OpenVPN TAP-Windows6 driver
+ *             which is a separate install with no scriptable setup.
+ *
+ * When TAP_SUPPORTED is 0 the overlay hides the Net4CPC TAP row and
+ * net4cpc_tap_sync() short-circuits, so unsupported builds never try
+ * to call tap_open / tap_auto_create. */
+#if defined(__linux__)
+#  define TAP_SUPPORTED 1
+#else
+#  define TAP_SUPPORTED 0
+#endif
+
 #define TAP_FRAME_MAX  2048
 
 /* Open the TAP device. Returns fd >= 0 on success, -1 on failure with errno
