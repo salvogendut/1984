@@ -27,12 +27,13 @@
  * is the --tap=NAME the user passed on the command line (NULL/empty if
  * none); it suppresses auto-setup so power users keep full control.
  *
- * Persistence model: the auto-tap device 'cpc-tap0' lives for the host
- * uptime — created once on first enable (one pkexec prompt), reused
- * across subsequent 1984 launches in the same session (zero prompts),
- * cleared by the kernel on reboot. On overlay-toggle-off we just
- * detach our fd from it; the device itself stays, so flipping the
- * toggle back on also doesn't prompt. */
+ * Persistence model: the auto-tap device ('cpc-tap0' on Linux, 'tap0'
+ * on BSDs — the BSD tap driver only accepts 'tap<N>' names) lives for
+ * the host uptime — created once on first enable (one elevation
+ * prompt), reused across subsequent 1984 launches in the same session
+ * (zero prompts), cleared by the kernel on reboot. On overlay-toggle-off
+ * we just detach our fd from it; the device itself stays, so flipping
+ * the toggle back on also doesn't prompt. */
 static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
 #if !TAP_SUPPORTED
     /* No L2 TAP on this OS — the overlay hides the toggle, the config
@@ -85,7 +86,16 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
 
     if (!want_auto) return;
 
+    /* Linux's ip(8) accepts any device name; we use 'cpc-tap0' so the
+     * device is visibly attributable. BSD if_tap drivers (FreeBSD,
+     * NetBSD, OpenBSD) only accept names of the form 'tap<digits>'
+     * because the name is used to select the clone driver; pick a
+     * portable 'tap0' there. */
+#if defined(__linux__)
     static const char auto_name[] = "cpc-tap0";
+#else
+    static const char auto_name[] = "tap0";
+#endif
     /* Build "host_ip/cidr" from host_ip and netmask dotted-quads.
      * Count contiguous set bits to get the prefix length. */
     unsigned a, b, c, d;
