@@ -735,14 +735,12 @@ int config_apply_boards(Config *cfg) {
          * if more than one active claims this slot. */
         const char *winner = NULL;
         const char *winner_path = NULL;
-        int active_count = 0;
         for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
             const char *board = CONFIG_BOARDS[b];
             if (!config_boards_contains(csv, board)) continue;
             if (!board_is_active(cfg, board)) continue;
             const char *p = board_template_path(cfg, board, slot);
             if (!p) continue;
-            active_count++;
             if (winner_path && strcmp(winner_path, p) != 0)
                 fprintf(stderr, "1984: slot %d conflict — board '%s' wants '%s', "
                                 "overrides earlier '%s' from '%s'\n",

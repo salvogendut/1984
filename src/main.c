@@ -34,6 +34,13 @@
  * detach our fd from it; the device itself stays, so flipping the
  * toggle back on also doesn't prompt. */
 static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
+#if !TAP_SUPPORTED
+    /* No L2 TAP on this OS — the overlay hides the toggle, the config
+     * field stays a no-op, and Net4CPC stays on the host-socket
+     * fallback unconditionally. Silently return. */
+    (void)cfg; (void)cli_tap_dev;
+    return;
+#else
     const bool want_auto =
         cfg->net4cpc && cfg->net4cpc_tap &&
         (!cli_tap_dev || !cli_tap_dev[0]);
@@ -106,6 +113,7 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
     n4c_stack_set_dhcp_enabled(true);
     n4c_stack_set_dns_enabled(true);
     have_auto = true;
+#endif /* TAP_SUPPORTED */
 }
 
 static void apply_led_enables(const Config *cfg) {
