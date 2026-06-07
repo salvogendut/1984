@@ -389,9 +389,21 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
             "tap: commands shown after the next failure.\n");
         return -1;
     }
+    /* If both the interface and the /dev/tapN node owned-by-us already
+     * exist, we can skip the elevation prompt entirely. Otherwise fall
+     * through to the script: it'll create if missing AND chown the
+     * device node so tap_open() can read/write without EACCES. */
     if (tap_dev_exists(name)) {
-        fprintf(stderr, "tap: '%s' already present, reusing (host IP not re-checked on BSD)\n", name);
-        return 0;
+        char devpath[64];
+        snprintf(devpath, sizeof(devpath), "/dev/%s", name);
+        struct stat st;
+        if (stat(devpath, &st) == 0 && st.st_uid == getuid()) {
+            fprintf(stderr, "tap: '%s' already present and owned by us, reusing\n", name);
+            return 0;
+        }
+        fprintf(stderr, "tap: '%s' exists but %s isn't owned by us (uid=%u); "
+                        "re-running setup to chown it\n",
+                name, devpath, (unsigned)getuid());
     }
 
     /* CIDR like "10.0.0.1/24" → ifconfig wants "10.0.0.1/24" inet on
