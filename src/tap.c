@@ -393,13 +393,15 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
     snprintf(cmd, sizeof(cmd),
         "%s sh -c '"
         "set -e; "
+#if defined(__NetBSD__)
+        /* On NetBSD the tap pseudo-device is a loadable kernel module
+         * (if_tap) that isn't loaded by default on stock installs.
+         * modload returns 0 if already loaded so this is idempotent. */
+        "modload if_tap 2>/dev/null || true; "
+#endif
         "ifconfig %s create 2>/dev/null || true; "
         "ifconfig %s inet %s up; "
-#if defined(__OpenBSD__) || defined(__FreeBSD__)
         "sysctl -w net.inet.ip.forwarding=1 >/dev/null"
-#elif defined(__NetBSD__)
-        "sysctl -w net.inet.ip.forwarding=1 >/dev/null"
-#endif
         "' 2>&1",
         elev, name, name, ip_cidr);
 
@@ -410,12 +412,20 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
     if (rc != 0) {
         fprintf(stderr, "tap: auto-create failed (system() returned %d). "
                         "Manual setup:\n"
+#if defined(__NetBSD__)
+                        "  %s modload if_tap            "
+                        "  # NetBSD: load the pseudo-device first\n"
+#endif
                         "  %s ifconfig %s create\n"
                         "  %s ifconfig %s inet %s up\n"
                         "  %s sysctl -w net.inet.ip.forwarding=1\n"
                         "(NAT to host network requires pf/ipfw/npf rules — "
                         "see NET4CPC.md)\n",
-                rc, elev, name, elev, name, ip_cidr, elev);
+                rc,
+#if defined(__NetBSD__)
+                elev,
+#endif
+                elev, name, elev, name, ip_cidr, elev);
         return -1;
     }
     fprintf(stderr, "tap: '%s' ready — %s\n"
