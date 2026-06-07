@@ -6,14 +6,18 @@
 
 void rtc_init(RTC *r) {
     memset(r, 0, sizeof(*r));
-    /* Register B default: 0x02 = 24-hour, BCD time format. This matches the
-     * real DS12887 power-on default (24h bit set; DM=0 → BCD) and konCePCja's
-     * behaviour. Time registers are returned in BCD regardless of what
-     * software writes to reg B's DM bit (see rtc_read_data) — that was the
-     * konCePCja quirk that made HDCPM/CP/M+ boot reliably across all RTC
-     * values. Honouring DM broke kernel boot at specific seconds values
-     * (#102). */
-    r->regb = 0x02;
+    /* Register B default: 0x06 = 24-hour, binary time format.
+     * HDCPM and its |TIME/|DATE RSX commands assume binary values
+     * from the RTC (they binary→BCD double-dabble before display
+     * and compute the year as century*100+year, which only works
+     * if both registers are binary). Setting BCD-mode here makes
+     * |DATE print bogus years (e.g. 3238).
+     *
+     * The earlier konCePCja-style "always BCD" was useful only as
+     * a workaround for the #102 boot hang — the actual fix is the
+     * cycle-table port in src/z80.c, so we can restore the binary
+     * default that HDCPM needs. */
+    r->regb = 0x06;
 }
 
 void rtc_write_addr(RTC *r, u8 addr) {
@@ -58,7 +62,9 @@ static struct tm rtc_now(void) {
 }
 
 u8 rtc_read_data(RTC *r) {
-    bool h24 = (r->regb >> 1) & 1;
+    bool binary = (r->regb >> 2) & 1;
+    bool h24    = (r->regb >> 1) & 1;
+    #define FMT(n) (binary ? (u8)(n) : to_bcd(n))
 
     /* DS12887 frozen-time cache: fill on reg-A read (HDCPM's UIP probe), then
      * serve subsequent time-register reads from the snapshot so a sequence of
@@ -92,29 +98,29 @@ u8 rtc_read_data(RTC *r) {
 
     u8 result;
     switch (r->addr) {
-    case 0x00: result = to_bcd(tm->tm_sec);  break;
-    case 0x02: result = to_bcd(tm->tm_min);  break;
+    case 0x00: result = FMT(tm->tm_sec);  break;
+    case 0x02: result = FMT(tm->tm_min);  break;
     case 0x04:
         if (h24) {
-            result = to_bcd(tm->tm_hour);
+            result = FMT(tm->tm_hour);
         } else {
             int h = tm->tm_hour % 12; if (h == 0) h = 12;
             u8 pm = (tm->tm_hour >= 12) ? 0x80 : 0x00;
-            result = (u8)(to_bcd(h) | pm);
+            result = (u8)(FMT(h) | pm);
         }
         break;
     /* Day of week: ISO with Sunday = 7 (not 1 as in C tm_wday). Match konCePCja. */
     case 0x06: { int wday = tm->tm_wday == 0 ? 7 : tm->tm_wday;
-                 result = (u8)wday; break; }
-    case 0x07: result = to_bcd(tm->tm_mday); break;
-    case 0x08: result = to_bcd(tm->tm_mon + 1); break;
-    case 0x09: result = to_bcd(tm->tm_year % 100); break;
+                 result = FMT(wday); break; }
+    case 0x07: result = FMT(tm->tm_mday); break;
+    case 0x08: result = FMT(tm->tm_mon + 1); break;
+    case 0x09: result = FMT(tm->tm_year % 100); break;
     /* Reg A: UIP=0, DV=010, RS=0110 = 0x26 (DS12887 default). */
     case 0x0A: result = 0x26; break;
     case 0x0B: result = r->regb; break;
     case 0x0C: result = 0x00; break;
     case 0x0D: result = 0x80; break;
-    case 0x32: result = to_bcd((tm->tm_year + 1900) / 100); break;
+    case 0x32: result = FMT((tm->tm_year + 1900) / 100); break;
     default:
         result = (r->addr >= 0x0E && r->addr <= 0x7F)
                  ? r->nvram[r->addr - 0x0E]

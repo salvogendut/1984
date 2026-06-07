@@ -566,9 +566,13 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus);
  * tables. When off (default), returns the impl's original cycles —
  * zero behaviour change. */
 int z80_step(Z80 *cpu, Z80Bus *bus) {
+    /* cc_tables default ON since 2026-06-07 (fixes #102). Opt-out
+     * for A/B comparison via ONE_K_CC_TABLES=0. */
     static int use_tables = -1;
-    if (use_tables == -1)
-        use_tables = getenv("ONE_K_CC_TABLES") ? 1 : 0;
+    if (use_tables == -1) {
+        const char *e = getenv("ONE_K_CC_TABLES");
+        use_tables = (e && e[0] == '0') ? 0 : 1;
+    }
 
     if (!use_tables)
         return z80_step_impl(cpu, bus);
