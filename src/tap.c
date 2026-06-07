@@ -364,6 +364,17 @@ static bool tap_dev_exists(const char *name) {
     return found;
 }
 
+static const char *bsd_owner_name(void) {
+    const char *u = getenv("SUDO_USER");
+    if (u && *u) return u;
+    u = getenv("DOAS_USER");
+    if (u && *u) return u;
+    u = getenv("USER");
+    if (u && *u) return u;
+    struct passwd *pw = getpwuid(getuid());
+    return (pw && pw->pw_name) ? pw->pw_name : "nobody";
+}
+
 int tap_auto_create(const char *name, const char *ip_cidr) {
     if (!tap_str_is_safe(name) || !tap_str_is_safe(ip_cidr)) {
         fprintf(stderr, "tap: refusing unsafe device/cidr string\n");
@@ -389,6 +400,8 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
      * name; if the kernel already auto-created the interface from
      * the device node, 'create' is a no-op (FreeBSD/NetBSD warn but
      * succeed; OpenBSD treats it as creating the if). */
+    const char *owner = bsd_owner_name();
+    if (!tap_str_is_safe(owner)) owner = "root";
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "%s sh -c '"
@@ -401,9 +414,13 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
 #endif
         "ifconfig %s create 2>/dev/null || true; "
         "ifconfig %s inet %s up; "
+        /* /dev/tapN is root:wheel mode 0600 by default. Chown to the
+         * invoking user so the unprivileged 1984 process can open it
+         * via tap_open without EACCES. */
+        "chown %s /dev/%s; "
         "sysctl -w net.inet.ip.forwarding=1 >/dev/null"
         "' 2>&1",
-        elev, name, name, ip_cidr);
+        elev, name, name, ip_cidr, owner, name);
 
     fprintf(stderr, "tap: auto-creating '%s' (%s) via %s — "
                     "you may be prompted for your password\n",
@@ -418,6 +435,8 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
 #endif
                         "  %s ifconfig %s create\n"
                         "  %s ifconfig %s inet %s up\n"
+                        "  %s chown %s /dev/%s          "
+                        "# so 1984 can open the device node\n"
                         "  %s sysctl -w net.inet.ip.forwarding=1\n"
                         "(NAT to host network requires pf/ipfw/npf rules — "
                         "see NET4CPC.md)\n",
@@ -425,7 +444,9 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
 #if defined(__NetBSD__)
                 elev,
 #endif
-                elev, name, elev, name, ip_cidr, elev);
+                elev, name, elev, name, ip_cidr,
+                elev, owner, name,
+                elev);
         return -1;
     }
     fprintf(stderr, "tap: '%s' ready — %s\n"
