@@ -1187,6 +1187,20 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                     config_default_amsdos(
                         ov->cfg->rom_amsdos, sizeof(ov->cfg->rom_amsdos));
                 }
+                /* Removing the ROM also removes its board membership and
+                 * the per-board template entries that pointed at it —
+                 * otherwise the next enable of any tagged board would
+                 * silently restore the now-deleted path on cold boot,
+                 * and the [board:NAME] sections would still reference
+                 * the dropped slot in the saved conf. */
+                if (ov->cfg->rom_ext_boards[slot][0]) {
+                    for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
+                        char (*tbl)[CONFIG_PATH_MAX] =
+                            config_board_slots(ov->cfg, CONFIG_BOARDS[b]);
+                        if (tbl) tbl[slot][0] = '\0';
+                    }
+                    ov->cfg->rom_ext_boards[slot][0] = '\0';
+                }
                 ov->needs_cold_boot = true;
                 ov->dirty = true;
             }
