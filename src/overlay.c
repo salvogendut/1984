@@ -513,18 +513,33 @@ static void activate_item(Overlay *ov) {
                                           sizeof(ov->cfg->rom_amsdos));
                 if (ov->cpc)
                     mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
-                /* Enable: open file picker to select SD card image (raw FAT) */
-                ov->dialog_kind  = DIALOG_M4_IMAGE;
-                ov->dialog_ready = false;
-                static const SDL_DialogFileFilter m4_filters[] = {
-                    { "SD card images", "img;IMG;bin;BIN;raw;RAW" },
-                    { "All files",      "*"                        },
-                };
-                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    m4_filters, 2, NULL, false);
+                /* Reuse cached image if present (see cyboard/albireo). */
+                if (ov->cfg->board_m4_image[0]) {
+                    snprintf(ov->cfg->m4_image, sizeof(ov->cfg->m4_image),
+                             "%s", ov->cfg->board_m4_image);
+                    ov->cfg->m4 = true;
+                    if (ov->cpc) {
+                        ov->cpc->m4 = true;
+                        m4_set_image(&ov->cpc->m4_card, ov->cfg->m4_image);
+                    }
+                    ov->needs_cold_boot = true;
+                    ov->dirty = true;
+                } else {
+                    /* Enable: open file picker to select SD card image (raw FAT) */
+                    ov->dialog_kind  = DIALOG_M4_IMAGE;
+                    ov->dialog_ready = false;
+                    static const SDL_DialogFileFilter m4_filters[] = {
+                        { "SD card images", "img;IMG;bin;BIN;raw;RAW" },
+                        { "All files",      "*"                        },
+                    };
+                    SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                        ov->cpc ? ov->cpc->display.window : NULL,
+                        m4_filters, 2, NULL, false);
+                }
             } else {
-                /* Disable: clear flag and unload M4ROM from its slot */
+                /* Disable: clear flag and unload M4ROM from its slot.
+                 * Keep board_m4_image so the next enable doesn't
+                 * re-prompt; clear it via Del on this row. */
                 ov->cfg->m4 = false;
                 ov->cfg->m4_image[0] = '\0';
                 if (ov->cpc) {
@@ -593,18 +608,29 @@ static void activate_item(Overlay *ov) {
         }
         case 7:
             if (!ov->cfg->symbiface_ide) {
-                /* Enabling: open file dialog to select a disk image */
-                ov->dialog_kind  = DIALOG_IDE;
-                ov->dialog_ready = false;
-                static const SDL_DialogFileFilter ide_filters[] = {
-                    { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
-                    { "All files",   "*"                       },
-                };
-                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    ide_filters, 2, NULL, false);
+                /* Enabling: if the cyboard board template has a cached
+                 * IDE image, reuse it (no dialog) — config_apply_boards
+                 * runs after this case and copies the cached image
+                 * into cfg.ide_image. Otherwise open the file picker. */
+                if (ov->cfg->board_cyboard_image[0]) {
+                    ov->cfg->symbiface_ide = true;
+                    ov->dirty = true;
+                } else {
+                    ov->dialog_kind  = DIALOG_IDE;
+                    ov->dialog_ready = false;
+                    static const SDL_DialogFileFilter ide_filters[] = {
+                        { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
+                        { "All files",   "*"                       },
+                    };
+                    SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                        ov->cpc ? ov->cpc->display.window : NULL,
+                        ide_filters, 2, NULL, false);
+                }
             } else {
-                /* Disabling: clear image path and disable */
+                /* Disabling: clear the LIVE image but keep the cached
+                 * board_cyboard_image so the next enable doesn't
+                 * re-prompt. The user clears the cache via Del on
+                 * this row (see key handler for OV_ADVANCED). */
                 ov->cfg->symbiface_ide = false;
                 ov->cfg->ide_image[0]  = '\0';
                 ov->dirty = true;
@@ -628,16 +654,23 @@ static void activate_item(Overlay *ov) {
                     }
                     ov->needs_cold_boot = true;
                 }
-                ov->dialog_kind  = DIALOG_ALBIREO;
-                ov->dialog_ready = false;
-                static const SDL_DialogFileFilter alb_filters[] = {
-                    { "USB drive images", "img;IMG;bin;BIN;raw;RAW;iso;ISO" },
-                    { "All files",        "*"                                },
-                };
-                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    alb_filters, 2, NULL, false);
+                /* Reuse cached image if present (see case 7). */
+                if (ov->cfg->board_albireo_image[0]) {
+                    ov->cfg->albireo = true;
+                    ov->dirty = true;
+                } else {
+                    ov->dialog_kind  = DIALOG_ALBIREO;
+                    ov->dialog_ready = false;
+                    static const SDL_DialogFileFilter alb_filters[] = {
+                        { "USB drive images", "img;IMG;bin;BIN;raw;RAW;iso;ISO" },
+                        { "All files",        "*"                                },
+                    };
+                    SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                        ov->cpc ? ov->cpc->display.window : NULL,
+                        alb_filters, 2, NULL, false);
+                }
             } else {
+                /* Keep board_albireo_image for the next enable cycle. */
                 ov->cfg->albireo = false;
                 ov->cfg->albireo_image[0] = '\0';
                 if (ov->cpc) {
@@ -673,17 +706,27 @@ static void activate_item(Overlay *ov) {
                 ov->cfg->ide_image[0] = '\0';
                 ov->dirty = true;
             } else if (!ov->cfg->ide_image[0]) {
-                /* Enabling with no image selected — open file picker */
-                ov->dialog_kind  = DIALOG_IDE;
-                ov->dialog_ready = false;
-                static const SDL_DialogFileFilter ide_filters[] = {
-                    { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
-                    { "All files",   "*"                       },
-                };
-                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    ide_filters, 2, NULL, false);
-                /* dirty set by file callback once image is chosen */
+                /* Enabling with no image selected — use the cached
+                 * board_cyboard_image if set; else open a file picker
+                 * (config_apply_boards runs in handle_event after this
+                 * and will sync the cache → live too, but doing it
+                 * here keeps the case self-contained). */
+                if (ov->cfg->board_cyboard_image[0]) {
+                    snprintf(ov->cfg->ide_image, sizeof(ov->cfg->ide_image),
+                             "%s", ov->cfg->board_cyboard_image);
+                    ov->dirty = true;
+                } else {
+                    ov->dialog_kind  = DIALOG_IDE;
+                    ov->dialog_ready = false;
+                    static const SDL_DialogFileFilter ide_filters[] = {
+                        { "Disk images", "img;IMG;hdf;HDF;raw;RAW" },
+                        { "All files",   "*"                       },
+                    };
+                    SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                        ov->cpc ? ov->cpc->display.window : NULL,
+                        ide_filters, 2, NULL, false);
+                    /* dirty set by file callback once image is chosen */
+                }
             } else {
                 ov->dirty = true;
             }
@@ -778,6 +821,29 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc) {
     ov->dialog_kind  = DIALOG_NONE;
     ov->dialog_drive = -1;
     ov->dialog_slot  = -1;
+    ov->last_m4            = cfg->m4;
+    ov->last_albireo       = cfg->albireo;
+    ov->last_symbiface_ide = cfg->symbiface_ide;
+}
+
+/* Check whether any of the ROM-owning hardware toggles flipped since
+ * we last looked; if so, re-apply per-board ROM templates and request
+ * a cold boot so the new board's grouping loads from scratch. Called
+ * from both overlay_handle_event (after activate_item) and
+ * overlay_tick (after dialog-callback completion), so changes via
+ * either path are caught. */
+static void overlay_check_board_changes(Overlay *ov) {
+    bool changed =
+        (ov->cfg->m4            != ov->last_m4) ||
+        (ov->cfg->albireo       != ov->last_albireo) ||
+        (ov->cfg->symbiface_ide != ov->last_symbiface_ide);
+    if (!changed) return;
+    config_apply_boards(ov->cfg);
+    ov->dirty = true;
+    ov->needs_cold_boot = true;
+    ov->last_m4            = ov->cfg->m4;
+    ov->last_albireo       = ov->cfg->albireo;
+    ov->last_symbiface_ide = ov->cfg->symbiface_ide;
 }
 
 void overlay_tick(Overlay *ov) {
@@ -816,10 +882,18 @@ void overlay_tick(Overlay *ov) {
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_IDE) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        /* Also stash in the cyboard board template so the next enable
+         * cycle reuses this path without re-prompting. */
+        snprintf(ov->cfg->board_cyboard_image,
+                 sizeof(ov->cfg->board_cyboard_image),
+                 "%s", ov->dialog_path);
         ov->cfg->symbiface_ide = true;
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_ALBIREO) {
         snprintf(ov->cfg->albireo_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        snprintf(ov->cfg->board_albireo_image,
+                 sizeof(ov->cfg->board_albireo_image),
+                 "%s", ov->dialog_path);
         ov->cfg->albireo = true;
         if (ov->cpc) {
             ov->cpc->albireo = true;
@@ -848,6 +922,8 @@ void overlay_tick(Overlay *ov) {
          * SDCARD.img and SDCARD/ sits next to it), wire it up as the file-API
          * backing so BASIC's cat/load/save keep working. */
         snprintf(ov->cfg->m4_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        snprintf(ov->cfg->board_m4_image, sizeof(ov->cfg->board_m4_image),
+                 "%s", ov->dialog_path);
         ov->cfg->m4 = true;
 
         char sibling[CONFIG_PATH_MAX];
@@ -884,6 +960,11 @@ void overlay_tick(Overlay *ov) {
         ov->dirty = true;
     }
     ov->dialog_kind = DIALOG_NONE;
+    /* Catch board toggles that flipped via a file-dialog callback
+     * (DIALOG_IDE → cfg.symbiface_ide, DIALOG_ALBIREO → cfg.albireo,
+     * DIALOG_M4_IMAGE → cfg.m4). Same effect as the call in
+     * overlay_handle_event after activate_item. */
+    overlay_check_board_changes(ov);
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
@@ -963,10 +1044,87 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     /* ---- ROM slots sub-panel ---- */
     /* idx 0 = Lower ROM; idx 1-32 = upper slots 0-31 */
     if (ov->state == OV_STATE_ROMSLOTS) {
+        /* Inline board-tag editor: when active, every key flows into
+         * the edit buffer. Enter commits, Esc cancels. */
+        if (ov->romslot_editing) {
+            if (sc == SDL_SCANCODE_ESCAPE) {
+                ov->romslot_editing = false;
+            } else if (sc == SDL_SCANCODE_RETURN
+                    || sc == SDL_SCANCODE_KP_ENTER) {
+                int slot = ov->romslot_row - 1;
+                if (slot >= 0 && slot < ROM_EXT_COUNT) {
+                    char prev_csv[64];
+                    snprintf(prev_csv, sizeof(prev_csv), "%s",
+                             ov->cfg->rom_ext_boards[slot]);
+                    config_normalize_boards(ov->romslot_edit_buf,
+                        ov->cfg->rom_ext_boards[slot],
+                        sizeof(ov->cfg->rom_ext_boards[slot]));
+                    /* Sync the per-board template tables: for each board
+                     * now tagged, store this slot's current path; for
+                     * each board removed, clear the template entry. */
+                    for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
+                        const char *board = CONFIG_BOARDS[b];
+                        char (*tbl)[CONFIG_PATH_MAX] =
+                            config_board_slots(ov->cfg, board);
+                        if (!tbl) continue;
+                        bool was = config_boards_contains(prev_csv, board);
+                        bool now = config_boards_contains(
+                            ov->cfg->rom_ext_boards[slot], board);
+                        if (now && ov->cfg->rom_ext[slot][0]) {
+                            snprintf(tbl[slot], sizeof(tbl[slot]),
+                                     "%s", ov->cfg->rom_ext[slot]);
+                        } else if (was && !now) {
+                            tbl[slot][0] = '\0';
+                        }
+                    }
+                    ov->dirty = true;
+                    /* If the tag change touches an already-enabled
+                     * board, the slot may need reload/clear — let
+                     * apply_boards run and flag cold-boot if so. */
+                    if (config_apply_boards(ov->cfg) > 0)
+                        ov->needs_cold_boot = true;
+                }
+                ov->romslot_editing = false;
+            } else if (sc == SDL_SCANCODE_BACKSPACE) {
+                if (ov->romslot_edit_len > 0)
+                    ov->romslot_edit_buf[--ov->romslot_edit_len] = '\0';
+            } else {
+                /* Accept letters a–z, digits 0–9, comma, space.
+                 * Only `m4` needs digits from the whitelist but we
+                 * accept all for future-proofing. */
+                char ch = 0;
+                if (sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_Z)
+                    ch = (char)('a' + (sc - SDL_SCANCODE_A));
+                else if (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9)
+                    ch = (char)('1' + (sc - SDL_SCANCODE_1));
+                else if (sc == SDL_SCANCODE_0)
+                    ch = '0';
+                else if (sc == SDL_SCANCODE_COMMA)
+                    ch = ',';
+                else if (sc == SDL_SCANCODE_SPACE)
+                    ch = ' ';
+                if (ch && ov->romslot_edit_len + 1 <
+                          (int)sizeof(ov->romslot_edit_buf)) {
+                    ov->romslot_edit_buf[ov->romslot_edit_len++] = ch;
+                    ov->romslot_edit_buf[ov->romslot_edit_len] = '\0';
+                }
+            }
+            return true;
+        }
         switch (sc) {
         case SDL_SCANCODE_ESCAPE:
             ov->state = OV_STATE_MENU;
             break;
+        case SDL_SCANCODE_INSERT: {
+            if (ov->romslot_row == 0) break;  /* lower ROM not taggable */
+            int slot = ov->romslot_row - 1;
+            if (!ov->cfg->rom_ext[slot][0]) break;  /* empty slot — no-op */
+            ov->romslot_editing = true;
+            snprintf(ov->romslot_edit_buf, sizeof(ov->romslot_edit_buf),
+                     "%s", ov->cfg->rom_ext_boards[slot]);
+            ov->romslot_edit_len = (int)strlen(ov->romslot_edit_buf);
+            break;
+        }
         case SDL_SCANCODE_UP:
             if (ov->romslot_row > 0) {
                 ov->romslot_row--;
@@ -1062,6 +1220,48 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     case SDL_SCANCODE_RETURN:
     case SDL_SCANCODE_KP_ENTER:
         activate_item(ov);
+        overlay_check_board_changes(ov);
+        break;
+    case SDL_SCANCODE_DELETE:
+    case SDL_SCANCODE_BACKSPACE:
+        /* Del on the Extensions tab row for M4 / Symbiface IDE /
+         * Albireo also clears the cached board image — so the next
+         * enable re-prompts for a fresh path. Toggles the extension
+         * off as a side effect (the live cfg field is cleared too). */
+        if (ov->section == OV_ADVANCED) {
+            char *cached = NULL;
+            switch (ov->row) {
+            case 0:                                /* M4 */
+                cached = ov->cfg->board_m4_image;
+                ov->cfg->m4 = false;
+                ov->cfg->m4_image[0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->m4 = false;
+                    m4_set_image(&ov->cpc->m4_card, "");
+                }
+                break;
+            case 7:                                /* Symbiface IDE (cyboard) */
+                cached = ov->cfg->board_cyboard_image;
+                ov->cfg->symbiface_ide = false;
+                ov->cfg->ide_image[0] = '\0';
+                break;
+            case 9:                                /* Albireo */
+                cached = ov->cfg->board_albireo_image;
+                ov->cfg->albireo = false;
+                ov->cfg->albireo_image[0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->albireo = false;
+                    ch376_close(&ov->cpc->ch376);
+                }
+                break;
+            }
+            if (cached) {
+                cached[0] = '\0';
+                ov->dirty = true;
+                ov->needs_cold_boot = true;
+                overlay_check_board_changes(ov);
+            }
+        }
         break;
     default:
         break;
@@ -1082,7 +1282,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     /* ---- ROM slots sub-panel ---- */
     if (ov->state == OV_STATE_ROMSLOTS) {
         fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
-        draw_text(r, DROP_PAD, 4, "ROMs  Esc=back  Enter=load  Del=clear (upper slots)",
+        draw_text(r, DROP_PAD, 4, "ROMs  Esc=back  Enter=load  Del=clear  Ins=tag (m4/albireo/cyboard)",
                   180, 180, 220);
         SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
@@ -1144,6 +1344,25 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                     /* Empty slot — grey */
                     draw_text(r, VAL_X, ty, "[empty]", 70, 70, 90);
                 }
+
+                /* Boards column — show the comma-separated board CSV
+                 * (m4/albireo/cyboard) the slot is tagged with, or
+                 * (when the user is editing this slot) the live edit
+                 * buffer with a cursor. */
+                #define BOARDS_X 360
+                bool editing_here = (ov->state == OV_STATE_ROMSLOTS
+                                     && ov->romslot_editing
+                                     && idx == ov->romslot_row);
+                if (editing_here) {
+                    char buf[80];
+                    snprintf(buf, sizeof(buf), "%s_", ov->romslot_edit_buf);
+                    draw_text(r, BOARDS_X, ty, buf, 255, 220, 80);
+                } else if (ov->cfg->rom_ext_boards[slot][0] && has_ext) {
+                    draw_text(r, BOARDS_X, ty,
+                              ov->cfg->rom_ext_boards[slot],
+                              150, 200, 255);
+                }
+                #undef BOARDS_X
             }
         }
         SDL_SetRenderScale(r, 1.0f, 1.0f);

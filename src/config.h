@@ -16,6 +16,27 @@ typedef struct {
 
     /* [expansion_roms] — slot_0 … slot_31 */
     char rom_ext[ROM_EXT_COUNT][CONFIG_PATH_MAX];
+    /* Per-slot board membership, comma-separated. Set via the overlay
+     * ROM menu's `Ins` key, validated against the whitelist
+     * {m4, albireo, cyboard}. Sourced from `[board:NAME]` sections in
+     * 1984.conf. When a board's matching hardware bool flips on (m4,
+     * albireo, or symbiface_ide for cyboard), every slot tagged with
+     * that board's name gets its template path loaded into rom_ext[].
+     * Empty string = the slot is user-pinned, not board-managed. */
+    char rom_ext_boards[ROM_EXT_COUNT][64];
+    /* Per-board conf templates. Each `[board:NAME]` section in
+     * 1984.conf holds the slot_N=PATH and image=PATH entries the
+     * board needs to function. When the matching hardware toggle
+     * flips on, the overlay copies these into the live cfg
+     * (rom_ext[] + ide_image/albireo_image/m4_image) so the user
+     * doesn't have to re-pick paths on every enable cycle.
+     * Cleared per-field by pressing Del on the relevant row. */
+    char board_m4_slot[ROM_EXT_COUNT][CONFIG_PATH_MAX];
+    char board_albireo_slot[ROM_EXT_COUNT][CONFIG_PATH_MAX];
+    char board_cyboard_slot[ROM_EXT_COUNT][CONFIG_PATH_MAX];
+    char board_m4_image[CONFIG_PATH_MAX];        /* SD-card image */
+    char board_albireo_image[CONFIG_PATH_MAX];   /* USB drive image */
+    char board_cyboard_image[CONFIG_PATH_MAX];   /* IDE (SymbIface) image */
 
     /* [storage] */
     char disk_a[CONFIG_PATH_MAX];
@@ -87,6 +108,33 @@ void config_set_model(Config *cfg, CpcModel model);
 
 /* Enable or disable the DDI-1 on a CPC 464 (sets/clears rom_amsdos). */
 void config_apply_dd1(Config *cfg, bool enabled);
+
+/* Whitelist of board names usable as ROM-slot tags. */
+#define CONFIG_BOARDS  (const char *[]){"m4", "albireo", "cyboard"}
+#define CONFIG_BOARDS_COUNT 3
+
+/* Returns the per-board template-paths table for `board`, or NULL if
+ * board isn't a known name. Pointer is into the supplied Config. */
+char (*config_board_slots(Config *cfg, const char *board))[CONFIG_PATH_MAX];
+
+/* Returns the per-board cached-image-path buffer for `board`
+ * (sized CONFIG_PATH_MAX), or NULL if board isn't a known name. */
+char *config_board_image(Config *cfg, const char *board);
+
+/* Normalise + validate a comma-separated board list (e.g. user input
+ * from the overlay `Ins` editor). Drops unknown tokens with a stderr
+ * warning, trims whitespace, lowercases, deduplicates. Writes the
+ * canonical form into `out` (size `out_sz`). */
+void config_normalize_boards(const char *in, char *out, size_t out_sz);
+
+/* True if `board` appears in the comma-separated list `csv`. */
+bool config_boards_contains(const char *csv, const char *board);
+
+/* Reapply board membership to rom_ext[]: for every slot that names a
+ * board whose hardware bool is on, copy the board's template path into
+ * rom_ext[]; for every slot whose only board(s) are now disabled,
+ * clear rom_ext[]. Returns the number of slots whose path changed. */
+int config_apply_boards(Config *cfg);
 
 /* Restore individual ROM paths to the compiled-in defaults for the model. */
 void config_default_os(CpcModel model, char *out, size_t sz);
