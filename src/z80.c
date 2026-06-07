@@ -3,6 +3,145 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* ---- Cycle tables (Caprice32 / konCePCja convention) ----------------
+ * Cycle counts are T-states. Lookups: cc_op[op] for unprefixed,
+ * cc_cb[op] for CB-prefixed, cc_ed[op] for ED-prefixed,
+ * cc_xy[op] for DD/FD-prefixed (followed by a normal opcode),
+ * cc_xycb[op] for DD/FD CB-prefixed.
+ *
+ * cc_ex[op] holds the EXTRA cycles when a conditional branch is
+ * taken (JR/JP/CALL/RET cond), or when a block instruction repeats
+ * (LDIR, CPIR, INIR, OTIR and their reverse variants).
+ *
+ * Two macro families parameterise IN/OUT block opcodes — kept as
+ * plain integers here:
+ *   Oa  = OUT (n),A  / IN A,(n)            (cc_op rows D3/DB)
+ *   Ox/Oy/Ix/Iy = ED-prefix block IN/OUT  (cc_ed rows 40–7F and A0–BF)
+ *
+ * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
+ * ------------------------------------------------------------------ */
+#define Oa   8
+#define Ia  12
+#define Ox   8
+#define Oy  12
+#define Ix  12
+#define Iy  16
+
+static const u8 cc_op[256] = {
+    4, 12,  8,  8,  4,  4,  8,  4,  4, 12,  8,  8,  4,  4,  8,  4,
+   12, 12,  8,  8,  4,  4,  8,  4, 12, 12,  8,  8,  4,  4,  8,  4,
+    8, 12, 20,  8,  4,  4,  8,  4,  8, 12, 20,  8,  4,  4,  8,  4,
+    8, 12, 16,  8, 12, 12, 12,  4,  8, 12, 16,  8,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    8,  8,  8,  8,  8,  8,  4,  8,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    8, 12, 12, 12, 12, 16,  8, 16,  8, 12, 12,  4, 12, 20,  8, 16,
+    8, 12, 12, Oa, 12, 16,  8, 16,  8,  4, 12, Ia, 12,  4,  8, 16,
+    8, 12, 12, 24, 12, 16,  8, 16,  8,  4, 12,  4, 12,  4,  8, 16,
+    8, 12, 12,  4, 12, 16,  8, 16,  8,  8, 12,  4, 12,  4,  8, 16
+};
+
+static const u8 cc_cb[256] = {
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4,  8,  4,  4,  4,  4,  4,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4,
+    4,  4,  4,  4,  4,  4, 12,  4,  4,  4,  4,  4,  4,  4, 12,  4
+};
+
+static const u8 cc_ed[256] = {
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+   Ix, Ox, 12, 20,  4, 12,  4,  8, Ix, Ox, 12, 20,  4, 12,  4,  8,
+   Ix, Ox, 12, 20,  4, 12,  4,  8, Ix, Ox, 12, 20,  4, 12,  4,  8,
+   Ix, Ox, 12, 20,  4, 12,  4, 16, Ix, Ox, 12, 20,  4, 12,  4, 16,
+   Ix, Ox, 12, 20,  4, 12,  4,  4, Ix, Ox, 12, 20,  4, 12,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+   16, 12, Iy, Oy,  4,  4,  4,  4, 16, 12, Iy, Oy,  4,  4,  4,  4,
+   16, 12, Iy, Oy,  4,  4,  4,  4, 16, 12, Iy, Oy,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+    4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4
+};
+
+static const u8 cc_xy[256] = {
+    4, 12,  8,  8,  4,  4,  8,  4,  4, 12,  8,  8,  4,  4,  8,  4,
+   12, 12,  8,  8,  4,  4,  8,  4, 12, 12,  8,  8,  4,  4,  8,  4,
+    8, 12, 20,  8,  4,  4,  8,  4,  8, 12, 20,  8,  4,  4,  8,  4,
+    8, 12, 16,  8, 20, 20, 20,  4,  8, 12, 16,  8,  4,  4,  8,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+   16, 16, 16, 16, 16, 16,  4, 16,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    4,  4,  4,  4,  4,  4, 16,  4,  4,  4,  4,  4,  4,  4, 16,  4,
+    8, 12, 12, 12, 12, 16,  8, 16,  8, 12, 12,  4, 12, 20,  8, 16,
+    8, 12, 12, Oa, 12, 16,  8, 16,  8,  4, 12, Ia, 12,  4,  8, 16,
+    8, 12, 12, 24, 12, 16,  8, 16,  8,  4, 12,  4, 12,  4,  8, 16,
+    8, 12, 12,  4, 12, 16,  8, 16,  8,  8, 12,  4, 12,  4,  8, 16
+};
+
+__attribute__((unused))
+static const u8 cc_xycb[256] = {
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+   16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+   16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+   16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+   20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20
+};
+
+static const u8 cc_ex[256] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    4,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    4,  0,  0,  0,  0,  0,  0,  0,  4,  0,  0,  0,  0,  0,  0,  0,
+    4,  0,  0,  0,  0,  0,  0,  0,  4,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    4,  8,  4,  4,  0,  0,  0,  0,  4,  8,  4,  4,  0,  0,  0,  0,
+    8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
+    8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
+    8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
+    8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0
+};
+
 /* ---- Bus access ---- */
 #define READ8(addr)      bus->mem_read(bus->ctx, (u16)(addr))
 #define WRITE8(addr, v)  bus->mem_write(bus->ctx, (u16)(addr), (u8)(v))
@@ -418,7 +557,84 @@ void z80_nmi(Z80 *cpu) {
     cpu->iff1 = false;
 }
 
+/* Forward decl of the original implementation, defined immediately below. */
+static int z80_step_impl(Z80 *cpu, Z80Bus *bus);
+
+/* Public z80_step: thin wrapper around z80_step_impl that, when
+ * ONE_K_CC_TABLES is set, overrides the cycle count with the
+ * Caprice32/konCePCja-style cc_op[]/cc_cb[]/cc_ed[]/cc_xy[]/cc_xycb[]
+ * tables. When off (default), returns the impl's original cycles —
+ * zero behaviour change. */
 int z80_step(Z80 *cpu, Z80Bus *bus) {
+    static int use_tables = -1;
+    if (use_tables == -1)
+        use_tables = getenv("ONE_K_CC_TABLES") ? 1 : 0;
+
+    if (!use_tables)
+        return z80_step_impl(cpu, bus);
+
+    /* Snapshot pre-state so we can detect taken conditional branches. */
+    u16 pc_before = cpu->pc;
+    u16 sp_before = cpu->sp;
+    u8  b_before  = cpu->b;
+    int orig = z80_step_impl(cpu, bus);
+
+    /* IRQ acceptance and HALT short-circuit return early from impl;
+     * trust the impl's count in those cases. */
+    if (cpu->int_accepted || (cpu->halted && cpu->pc == pc_before))
+        return orig;
+
+    u8 op = cpu->last_op;
+    int cycles;
+    switch (cpu->last_prefix) {
+    case 0xCB: cycles = cc_cb[op];   break;
+    case 0xED: cycles = cc_ed[op];   break;
+    case 0xDD: case 0xFD: cycles = cc_xy[op]; break;
+    default:   cycles = cc_op[op];   break;
+    }
+
+    /* cc_ex[]: extra T-states when a conditional branch is taken or a
+     * block instruction repeats. Only relevant for the unprefixed and
+     * ED tables; CB/xy/xycb sub-tables don't have these. */
+    bool taken = false;
+    if (cpu->last_prefix == 0) {
+        switch (op) {
+        case 0x10:                            /* DJNZ d        */
+            taken = (cpu->b != 0);            /* B was decremented */
+            break;
+        case 0x20: case 0x28: case 0x30: case 0x38:  /* JR cc,d */
+            taken = (cpu->pc != (u16)(pc_before + 2));
+            break;
+        case 0xC0: case 0xC8: case 0xD0: case 0xD8:  /* RET cc */
+        case 0xE0: case 0xE8: case 0xF0: case 0xF8:
+            taken = (cpu->sp == (u16)(sp_before + 2));
+            break;
+        case 0xC4: case 0xCC: case 0xD4: case 0xDC:  /* CALL cc,nn */
+        case 0xE4: case 0xEC: case 0xF4: case 0xFC:
+            taken = (cpu->sp == (u16)(sp_before - 2));
+            break;
+        }
+    } else if (cpu->last_prefix == 0xED) {
+        /* Block ops: LDIR/LDDR/CPIR/CPDR/INIR/INDR/OTIR/OTDR. They
+         * "repeat" by rolling PC back by 2 inside the impl, so taken
+         * means PC went backwards. */
+        switch (op) {
+        case 0xB0: case 0xB8:                 /* LDIR, LDDR */
+        case 0xB1: case 0xB9:                 /* CPIR, CPDR */
+        case 0xB2: case 0xBA:                 /* INIR, INDR */
+        case 0xB3: case 0xBB:                 /* OTIR, OTDR */
+            taken = (cpu->pc != (u16)(pc_before + 2));
+            break;
+        }
+    }
+    if (taken)
+        cycles += cc_ex[op];
+    (void)b_before; /* future use if we need pre-state B for DJNZ corner case */
+    (void)orig;
+    return cycles;
+}
+
+static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
     /* Service maskable interrupt (blocked for one instruction after EI) */
     if (cpu->pending_irq && cpu->iff1 && !cpu->ei_delay) {
         cpu->pending_irq = false;
