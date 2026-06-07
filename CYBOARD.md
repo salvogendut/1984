@@ -29,6 +29,13 @@ slot order, so as long as the tools and FAT nodes sit just after `UNIDOS.ROM`
 they will be picked up. If you have additional UNIDOS nodes (e.g. another
 file-system or device), drop them in slots 11, 12, … in the same order.
 
+> **Tip — tag these slots `cyboard`.** With each slot focused, press **Ins**
+> to add the `cyboard` board tag (comma-separated if you want to share with
+> another board, e.g. `cyboard,albireo` for UNIDOS). Toggling SYMBiFACE IDE
+> on in the Extensions tab will then load every `cyboard`-tagged ROM into
+> the matching slot automatically; toggling it off clears those slots and
+> triggers a cold boot. Stored as `[board:cyboard]` in `1984.conf`.
+
 > **Note:** Slot 7 is normally AMSDOS. Replacing it with UNIDOS is expected —
 > UNIDOS provides the AMSDOS-equivalent disc-handling RSXes via its own command
 > set. Disk A/B (`.dsk` images via the µPD765 FDC) keep working through the OS

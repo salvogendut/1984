@@ -321,6 +321,12 @@ int main(int argc, char *argv[]) {
      * hooks. Production env vars (CC_TABLES, FAKE_RTC, AUTOSTART_FRAMES,
      * PASTE_GAP) use plain getenv() and are unaffected. */
     g_debug_enabled = cfg.debug ? 1 : 0;
+
+    /* Apply per-board ROM templates to rom_ext[]: every slot tagged
+     * with an active board (m4/albireo/symbiface_ide-for-cyboard) gets
+     * the board's template path loaded; slots whose only board is now
+     * inactive get cleared. See config_apply_boards() and #103. */
+    config_apply_boards(&cfg);
     SD_LOG("  rom_os=%s", cfg.rom_os);
     SD_LOG("  rom_basic=%s", cfg.rom_basic);
     SD_LOG("  rom_amsdos=%s [next: SDL_Init]", cfg.rom_amsdos);

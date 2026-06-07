@@ -49,8 +49,22 @@ typedef struct {
     /* ROM slots sub-panel state */
     int          romslot_row;    /* selected slot 0-31 */
     int          romslot_scroll; /* index of first visible slot */
+    /* Inline editor for the boards CSV (Ins key on a populated slot). */
+    bool         romslot_editing;
+    char         romslot_edit_buf[64];
+    int          romslot_edit_len;
     /* set by overlay after a save that requires a cold boot */
     bool         needs_cold_boot;
+    /* Last-seen state of the three ROM-owning hardware toggles.
+     * Initialised in overlay_init from the loaded config. After every
+     * event AND every dialog-callback tick, the overlay diffs the
+     * current config against this snapshot; if any of the three flipped
+     * (Enter-on-toggle, file-dialog completion, anywhere) we re-apply
+     * board ROM templates and flag a cold boot. This catches the
+     * async dialog path that direct hooks in handle_event miss. */
+    bool         last_m4;
+    bool         last_albireo;
+    bool         last_symbiface_ide;
 } Overlay;
 
 void overlay_init(Overlay *ov, Config *cfg, CPC *cpc);

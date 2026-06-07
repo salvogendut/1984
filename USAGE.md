@@ -243,6 +243,25 @@ amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 4
 # Slot 0 = BASIC fallback, slot 7 = AMSDOS fallback; all slots can be overridden.
 # Example: slot_5=~/.config/1984/roms/TOOLKIT.ROM
 
+# Per-board conf templates — when a board is enabled in [hardware] below,
+# the slot paths AND the image path listed under its [board:NAME] section
+# are loaded into the live config automatically; when the board is
+# disabled, the live slots clear but the [board:NAME] template stays
+# parked for the next enable (no re-prompt for the image path).
+# Whitelisted board names: m4, albireo, cyboard. Slot tags via the
+# overlay (Options → Extensions → ROM Slots → Ins on a populated slot).
+# The image is captured automatically the first time you pick a disk
+# image for that board. Press Del on the M4 / Symbiface IDE / Albireo
+# row in the Extensions tab to clear the cached image. The same ROM
+# can belong to multiple boards (multi-board coexistence). Conflict
+# resolution: last-active-board wins, stderr warning names the slot.
+# [board:cyboard]
+# slot_1=~/.config/1984/roms/HDCPM.ROM
+# image=~/Disks/cpcplus.img
+# [board:albireo]
+# slot_7=~/.config/1984/roms/UNIDOS.ROM
+# image=~/Disks/usb-stick.img
+
 [hardware]
 mx4=true          # MX4 expansion bus — when false, every extension peripheral
                   # below (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) is

@@ -279,6 +279,28 @@ int config_load(Config *cfg) {
                 if (slot >= 0 && slot < ROM_EXT_COUNT && val[0])
                     expand_path(val, cfg->rom_ext[slot], sizeof(cfg->rom_ext[slot]));
             }
+        } else if (strncmp(section, "board:", 6) == 0) {
+            const char *board = section + 6;
+            char (*tbl)[CONFIG_PATH_MAX] = config_board_slots(cfg, board);
+            if (tbl && strncmp(key, "slot_", 5) == 0) {
+                int slot = atoi(key + 5);
+                if (slot >= 0 && slot < ROM_EXT_COUNT && val[0]) {
+                    expand_path(val, tbl[slot], sizeof(tbl[slot]));
+                    /* Add board name to the slot's board CSV, dedup'd. */
+                    if (!config_boards_contains(cfg->rom_ext_boards[slot], board)) {
+                        size_t cur = strlen(cfg->rom_ext_boards[slot]);
+                        size_t need = cur + (cur ? 1 : 0) + strlen(board) + 1;
+                        if (need <= sizeof(cfg->rom_ext_boards[slot])) {
+                            if (cur) cfg->rom_ext_boards[slot][cur++] = ',';
+                            strcpy(cfg->rom_ext_boards[slot] + cur, board);
+                        }
+                    }
+                }
+            } else if (!strcmp(key, "image")) {
+                char *img = config_board_image(cfg, board);
+                if (img && val[0])
+                    expand_path(val, img, CONFIG_PATH_MAX);
+            }
         } else if (!strcmp(section, "storage")) {
             if (!strcmp(key, "drive_a"))
                 expand_path(val, cfg->disk_a, sizeof(cfg->disk_a));
@@ -440,6 +462,32 @@ int config_save(const Config *cfg) {
             fprintf(f, "slot_%d=%s\n", i, cfg->rom_ext[i]);
     }
 
+    /* [board:NAME] sections — per-board conf templates: ROM slot
+     * paths the board needs, plus a cached disk-image path for boards
+     * that have one (m4 SD card, albireo USB drive, cyboard IDE).
+     * Toggling the board on populates the live cfg fields from here;
+     * toggling off keeps the templates so the next enable doesn't
+     * re-prompt. See config_apply_boards() and the overlay activate
+     * handlers in src/overlay.c. */
+    for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
+        const char *board = CONFIG_BOARDS[b];
+        char (*tbl)[CONFIG_PATH_MAX] = config_board_slots((Config *)cfg, board);
+        char *img = config_board_image((Config *)cfg, board);
+        if (!tbl && !img) continue;
+        bool any_slot = false;
+        for (int i = 0; tbl && i < ROM_EXT_COUNT; i++)
+            if (tbl[i][0]) { any_slot = true; break; }
+        bool any_img = img && img[0];
+        if (!any_slot && !any_img) continue;
+        fprintf(f, "\n[board:%s]\n", board);
+        for (int i = 0; tbl && i < ROM_EXT_COUNT; i++) {
+            if (tbl[i][0])
+                fprintf(f, "slot_%d=%s\n", i, tbl[i]);
+        }
+        if (any_img)
+            fprintf(f, "image=%s\n", img);
+    }
+
     fprintf(f,
         "\n[storage]\n"
         "drive_a=%s\n"
@@ -554,4 +602,167 @@ void config_default_m4rom(char *out, size_t sz) {
 
 void config_default_diag(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_DIAG, out, sz);
+}
+
+/* ---------------------------------------------------------------
+ * Per-board ROM tagging — see Config.rom_ext_boards in config.h.
+ * --------------------------------------------------------------- */
+
+char (*config_board_slots(Config *cfg, const char *board))[CONFIG_PATH_MAX] {
+    if (!cfg || !board) return NULL;
+    if (!strcmp(board, "m4"))      return cfg->board_m4_slot;
+    if (!strcmp(board, "albireo")) return cfg->board_albireo_slot;
+    if (!strcmp(board, "cyboard")) return cfg->board_cyboard_slot;
+    return NULL;
+}
+
+char *config_board_image(Config *cfg, const char *board) {
+    if (!cfg || !board) return NULL;
+    if (!strcmp(board, "m4"))      return cfg->board_m4_image;
+    if (!strcmp(board, "albireo")) return cfg->board_albireo_image;
+    if (!strcmp(board, "cyboard")) return cfg->board_cyboard_image;
+    return NULL;
+}
+
+bool config_boards_contains(const char *csv, const char *board) {
+    if (!csv || !board || !csv[0]) return false;
+    size_t bl = strlen(board);
+    const char *p = csv;
+    while (*p) {
+        while (*p == ' ' || *p == ',') p++;
+        const char *start = p;
+        while (*p && *p != ',') p++;
+        size_t len = (size_t)(p - start);
+        /* trim trailing spaces */
+        while (len > 0 && start[len - 1] == ' ') len--;
+        if (len == bl && strncmp(start, board, bl) == 0) return true;
+    }
+    return false;
+}
+
+void config_normalize_boards(const char *in, char *out, size_t out_sz) {
+    if (!out || out_sz == 0) return;
+    out[0] = '\0';
+    if (!in) return;
+    size_t out_len = 0;
+    const char *p = in;
+    while (*p) {
+        while (*p == ' ' || *p == ',' || *p == '\t') p++;
+        if (!*p) break;
+        const char *start = p;
+        while (*p && *p != ',') p++;
+        size_t len = (size_t)(p - start);
+        while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t')) len--;
+        if (!len) continue;
+        /* lowercase into a stack buffer for compare */
+        char tok[32];
+        if (len >= sizeof(tok)) { /* too long → reject */
+            fprintf(stderr, "1984: ROM board tag '%.*s' too long, ignored\n", (int)len, start);
+            continue;
+        }
+        for (size_t i = 0; i < len; i++)
+            tok[i] = (start[i] >= 'A' && start[i] <= 'Z') ? (char)(start[i] + 32) : start[i];
+        tok[len] = '\0';
+        /* whitelist check */
+        bool known = false;
+        for (int b = 0; b < CONFIG_BOARDS_COUNT; b++)
+            if (!strcmp(tok, CONFIG_BOARDS[b])) { known = true; break; }
+        if (!known) {
+            fprintf(stderr, "1984: unknown ROM board tag '%s' (allowed: m4, albireo, cyboard)\n", tok);
+            continue;
+        }
+        /* dedupe */
+        if (config_boards_contains(out, tok)) continue;
+        size_t need = out_len + (out_len ? 1 : 0) + strlen(tok) + 1;
+        if (need > out_sz) {
+            fprintf(stderr, "1984: ROM board tag list overflow, '%s' dropped\n", tok);
+            continue;
+        }
+        if (out_len) out[out_len++] = ',';
+        strcpy(out + out_len, tok);
+        out_len += strlen(tok);
+    }
+}
+
+/* Look up the path for `slot` under `board`. NULL if board unknown
+ * or slot has no template path under that board. */
+static const char *board_template_path(Config *cfg, const char *board, int slot) {
+    char (*tbl)[CONFIG_PATH_MAX] = config_board_slots(cfg, board);
+    if (!tbl) return NULL;
+    if (slot < 0 || slot >= ROM_EXT_COUNT) return NULL;
+    return tbl[slot][0] ? tbl[slot] : NULL;
+}
+
+/* Maps a board name to whether its hardware bool is currently on. */
+static bool board_is_active(const Config *cfg, const char *board) {
+    if (!strcmp(board, "m4"))      return cfg->m4;
+    if (!strcmp(board, "albireo")) return cfg->albireo;
+    if (!strcmp(board, "cyboard")) return cfg->symbiface_ide;
+    return false;
+}
+
+/* Maps a board name to the live cfg disk-image field (NOT the cached
+ * board_*_image), or NULL if board has no image concept. */
+static char *board_live_image(Config *cfg, const char *board) {
+    if (!strcmp(board, "m4"))      return cfg->m4_image;
+    if (!strcmp(board, "albireo")) return cfg->albireo_image;
+    if (!strcmp(board, "cyboard")) return cfg->ide_image;
+    return NULL;
+}
+
+int config_apply_boards(Config *cfg) {
+    int changed = 0;
+    /* Image sync: for each ACTIVE board, copy its cached image into
+     * the live cfg field if the live field is empty (so a user-pinned
+     * image isn't overwritten). For each INACTIVE board, do nothing
+     * to the live field — disabling a board doesn't blow away its
+     * image unless the user explicitly clears it via Del. */
+    for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
+        const char *board = CONFIG_BOARDS[b];
+        if (!board_is_active(cfg, board)) continue;
+        char *cached = config_board_image(cfg, board);
+        char *live   = board_live_image(cfg, board);
+        if (cached && live && cached[0] && !live[0]) {
+            snprintf(live, CONFIG_PATH_MAX, "%s", cached);
+            changed++;
+        }
+    }
+    for (int slot = 0; slot < ROM_EXT_COUNT; slot++) {
+        const char *csv = cfg->rom_ext_boards[slot];
+        if (!csv[0]) continue;  /* user-pinned; leave alone */
+        /* Find the last (alphabetically: m4 < albireo < cyboard) active
+         * board for this slot. Last-wins on multi-board conflicts; warn
+         * if more than one active claims this slot. */
+        const char *winner = NULL;
+        const char *winner_path = NULL;
+        int active_count = 0;
+        for (int b = 0; b < CONFIG_BOARDS_COUNT; b++) {
+            const char *board = CONFIG_BOARDS[b];
+            if (!config_boards_contains(csv, board)) continue;
+            if (!board_is_active(cfg, board)) continue;
+            const char *p = board_template_path(cfg, board, slot);
+            if (!p) continue;
+            active_count++;
+            if (winner_path && strcmp(winner_path, p) != 0)
+                fprintf(stderr, "1984: slot %d conflict — board '%s' wants '%s', "
+                                "overrides earlier '%s' from '%s'\n",
+                        slot, board, p, winner_path, winner ? winner : "?");
+            winner = board;
+            winner_path = p;
+        }
+        if (winner_path) {
+            if (strcmp(cfg->rom_ext[slot], winner_path) != 0) {
+                snprintf(cfg->rom_ext[slot], sizeof(cfg->rom_ext[slot]),
+                         "%s", winner_path);
+                changed++;
+            }
+        } else {
+            /* No active board for this slot — clear it. */
+            if (cfg->rom_ext[slot][0]) {
+                cfg->rom_ext[slot][0] = '\0';
+                changed++;
+            }
+        }
+    }
+    return changed;
 }

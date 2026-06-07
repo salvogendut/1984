@@ -19,6 +19,12 @@ Slot 8 is the conventional adjacent placement; UNIDOS scans for nodes in slot
 order, so as long as `ALBIREO.ROM` sits just after `UNIDOS.ROM` it will be
 picked up.
 
+> **Tip — tag these slots `albireo`.** Hover the slot row and press **Ins**
+> to tag it with a comma-separated board list (`m4`, `albireo`, or `cyboard`).
+> When the Albireo extension is toggled on later, every slot tagged `albireo`
+> gets its ROM loaded automatically; toggling it off clears those slots. The
+> tag is stored as `[board:albireo]` in `1984.conf` and survives across runs.
+
 > **Note:** Slot 7 is normally AMSDOS. Replacing it with UNIDOS is expected —
 > UNIDOS provides the AMSDOS-equivalent disc-handling RSXes via its own command
 > set. Disk A/B (`.dsk` images via the µPD765 FDC) keep working through the OS
