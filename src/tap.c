@@ -135,6 +135,11 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
      * (and DNS upstream via the in-process proxy). Tagged via an
      * iptables comment "1984-<dev>" so destroy can find and undo
      * exactly our rules without disturbing anything else. */
+    /* iptables wants the SUBNET (10.0.0.0/24), not the host CIDR
+     * (10.0.0.1/24). It normalises the latter to the former silently,
+     * so just passing ip_cidr through is safe — and avoids the awk
+     * pipeline that previously embedded single quotes inside the
+     * pkexec sh -c '...' payload, breaking shell parsing. */
     snprintf(cmd, sizeof(cmd),
         "pkexec sh -c '"
         "set -e; "
@@ -145,14 +150,13 @@ int tap_auto_create(const char *name, const char *ip_cidr) {
         "  firewall-cmd --zone=trusted --change-interface=%s >/dev/null 2>&1 || true; "
         "fi; "
         "sysctl -w net.ipv4.ip_forward=1 >/dev/null; "
-        "subnet=$(ip -o addr show %s | awk '/inet /{print $4}' | head -1); "
-        "iptables -t nat -A POSTROUTING -s \"$subnet\" ! -o %s "
+        "iptables -t nat -A POSTROUTING -s %s ! -o %s "
         "  -m comment --comment 1984-%s -j MASQUERADE; "
         "iptables -A FORWARD -i %s -m comment --comment 1984-%s -j ACCEPT; "
         "iptables -A FORWARD -o %s -m comment --comment 1984-%s -j ACCEPT"
         "' 2>&1",
         name, owner, name, ip_cidr, name, name,
-        name, name, name,
+        ip_cidr, name, name,
         name, name,
         name, name);
 
