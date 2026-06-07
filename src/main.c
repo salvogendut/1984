@@ -496,8 +496,17 @@ int main(int argc, char *argv[]) {
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
-    /* Frames to wait before injecting autostart text (matches caprice32 timing) */
+    /* Frames to wait before injecting autostart text (matches caprice32 timing).
+     * ONE_K_AUTOSTART_FRAMES overrides for headless QA scripts that need a
+     * larger margin (paste before BASIC Ready is silently dropped). */
     int autostart_countdown = (autostart || paste_arg) ? 42 : 0;
+    {
+        const char *e = getenv("ONE_K_AUTOSTART_FRAMES");
+        if (e && autostart_countdown > 0) {
+            int n = atoi(e);
+            if (n > 0) autostart_countdown = n;
+        }
+    }
 
     /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
      * VSync is off; we sleep for any leftover time in each 20 ms budget. */
@@ -779,6 +788,37 @@ int main(int argc, char *argv[]) {
         }
         if (screenshot_frame >= 0 && frame_count == screenshot_frame) {
             display_save_ppm(&cpc.display, screenshot_path);
+            if (getenv("ONE_K_DUMP_PC")) {
+                fprintf(stderr, "[pc-dump] frame=%d PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IFF1=%d halted=%d\n",
+                        frame_count, cpc.cpu.pc, cpc.cpu.sp, cpc.cpu.af,
+                        cpc.cpu.bc, cpc.cpu.de, cpc.cpu.hl,
+                        (int)cpc.cpu.iff1, (int)cpc.cpu.halted);
+                fprintf(stderr, "[pc-dump] stack: ");
+                for (int i = 0; i < 16; i++) {
+                    u16 a = (u16)(cpc.cpu.sp + i);
+                    fprintf(stderr, "%02X ", cpc.mem.ram[a & 0xFFFF]);
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] code at PC (Z80 view): ");
+                for (int i = 0; i < 16; i++) {
+                    u16 a = (u16)(cpc.cpu.pc + i);
+                    fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, a));
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] code at 0x100: ");
+                for (int i = 0; i < 64; i++) {
+                    fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, 0x100 + i));
+                }
+                fprintf(stderr, "\n");
+                fprintf(stderr, "[pc-dump] mem BE00-BE7F (Z80 view):\n");
+                for (int row = 0; row < 8; row++) {
+                    fprintf(stderr, "[pc-dump] %04X: ", 0xBE00 + row*16);
+                    for (int col = 0; col < 16; col++) {
+                        fprintf(stderr, "%02X ", cpc.bus.mem_read(cpc.bus.ctx, 0xBE00 + row*16 + col));
+                    }
+                    fprintf(stderr, "\n");
+                }
+            }
             running = false;
         }
         if (save_sna_frame >= 0 && frame_count == save_sna_frame) {

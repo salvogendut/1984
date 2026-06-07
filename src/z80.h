@@ -35,6 +35,8 @@ typedef struct {
     bool int_accepted;
 
     int cycles;        /* T-states consumed this step */
+    u8   last_op;      /* opcode just fetched by z80_step (for CPC cc_op[] lookup) */
+    u8   last_prefix;  /* 0, 0xCB, 0xED, 0xDD, 0xFD — for prefix-table dispatch */
 } Z80;
 
 /* Bus callbacks — implemented by cpc.c, wiring mem + I/O */

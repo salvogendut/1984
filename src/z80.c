@@ -1,6 +1,7 @@
 #include "z80.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ---- Bus access ---- */
 #define READ8(addr)      bus->mem_read(bus->ctx, (u16)(addr))
@@ -140,6 +141,7 @@ static u8 do_sll(Z80 *cpu, u8 v) { u8 r=(v<<1)|1;     cpu->f=sz(r)|par(r)|(v>>7?
 /* ---- CB prefix ---- */
 static int exec_cb(Z80 *cpu, Z80Bus *bus) {
     u8 op = FETCH8();
+    cpu->last_op = op;
     cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
     int ri = op & 7, b = (op >> 3) & 7;
     u8 v = get_r(cpu, bus, ri, cpu->hl);
@@ -170,6 +172,7 @@ static int exec_cb(Z80 *cpu, Z80Bus *bus) {
 /* ---- ED prefix ---- */
 static int exec_ed(Z80 *cpu, Z80Bus *bus) {
     u8 op = FETCH8();
+    cpu->last_op = op;
     cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
 
     switch (op) {
@@ -270,6 +273,7 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
 /* ---- DD/FD prefix (IX/IY) ---- */
 static int exec_xy(Z80 *cpu, Z80Bus *bus, u16 *xy) {
     u8 op = FETCH8();
+    cpu->last_op = op;
     cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
 
     switch (op) {
@@ -422,6 +426,19 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         cpu->iff1 = cpu->iff2 = false;
         cpu->int_accepted = true;
         cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
+        /* #102 instrumentation: log the PC the Z80 was at when IM1
+         * was accepted — that PC is pushed onto the stack as the
+         * eventual RETI/RET return address. Gated on ONE_K_TRACE_IM1. */
+        {
+            static int tracing = -1;
+            if (tracing == -1) tracing = getenv("ONE_K_TRACE_IM1") ? 1 : 0;
+            if (tracing) {
+                extern int cpc_frame_count;
+                fprintf(stderr, "[IM1] frame=%d  pushing PC=%04X SP=%04X (next SP=%04X)\n",
+                        cpc_frame_count, cpu->pc, cpu->sp,
+                        (u16)(cpu->sp - 2));
+            }
+        }
         push16(cpu, bus, cpu->pc);
         switch (cpu->im) {
             case 0: case 1: cpu->pc = 0x0038; return 13;
@@ -436,6 +453,8 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     }
 
     u8 op = FETCH8();
+    cpu->last_op = op;
+    cpu->last_prefix = 0;
     cpu->r = ((cpu->r + 1) & 0x7F) | (cpu->r & 0x80);
 
     switch (op) {
@@ -658,10 +677,10 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         case 0xD3: { u8 n=FETCH8(); OUT((cpu->a<<8)|n,cpu->a); return 11; }
 
         /* Prefixes */
-        case 0xCB: return exec_cb(cpu, bus);
-        case 0xED: return exec_ed(cpu, bus);
-        case 0xDD: return exec_xy(cpu, bus, &cpu->ix);
-        case 0xFD: return exec_xy(cpu, bus, &cpu->iy);
+        case 0xCB: cpu->last_prefix = 0xCB; return exec_cb(cpu, bus);
+        case 0xED: cpu->last_prefix = 0xED; return exec_ed(cpu, bus);
+        case 0xDD: cpu->last_prefix = 0xDD; return exec_xy(cpu, bus, &cpu->ix);
+        case 0xFD: cpu->last_prefix = 0xFD; return exec_xy(cpu, bus, &cpu->iy);
 
         default:
             fprintf(stderr, "Unimplemented opcode: 0x%02X at PC=0x%04X\n", op, cpu->pc - 1);
