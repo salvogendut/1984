@@ -23,6 +23,7 @@ bin_PROGRAMS = 1984
 	src/ide.c \
 	src/fat.c \
 	src/ch376.c \
+	src/gifcap.c \
 	src/leds.c \
 	src/m4.c \
 	src/symbnet.c \
@@ -43,6 +44,7 @@ noinst_HEADERS = \
 	src/fat.h \
 	src/fdc.h \
 	src/gate_array.h \
+	src/gifcap.h \
 	src/ide.h \
 	src/joy.h \
 	src/kbd.h \

@@ -21,6 +21,32 @@
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
+#include "gifcap.h"
+
+/* --- Video capture (GIF89a) state. See videocap_* in cpc.h. ---------- */
+static GifCap *g_videocap = NULL;
+static int     g_videocap_skip = 0;   /* toggles 0/1 to halve framerate */
+bool videocap_active(void)        { return g_videocap != NULL; }
+int  videocap_frame_count(void)   { return gifcap_frame_count(g_videocap); }
+bool videocap_start(const char *path) {
+    if (g_videocap) return true;
+    /* 4 cs = 25 fps; we decimate input from 50 Hz by writing every other frame */
+    g_videocap = gifcap_open(path, CPC_SCREEN_W, CPC_SCREEN_H, 4);
+    if (!g_videocap) {
+        fprintf(stderr, "[videocap] failed to open '%s' for writing\n", path);
+        return false;
+    }
+    g_videocap_skip = 0;
+    fprintf(stderr, "[videocap] recording to %s\n", path);
+    return true;
+}
+void videocap_stop(void) {
+    if (!g_videocap) return;
+    int n = gifcap_frame_count(g_videocap);
+    gifcap_close(g_videocap);
+    g_videocap = NULL;
+    fprintf(stderr, "[videocap] stopped (%d frames)\n", n);
+}
 
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
  * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
@@ -139,8 +165,8 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
 }
 
-#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
-#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_CAPTURED    "Mouse captured  |  Ctrl+Enter to release"
 
 static void set_mouse_capture(SDL_Window *win, bool capture, bool *flag, CpcModel model) {
@@ -188,6 +214,7 @@ static void usage(const char *prog, int code) {
         "Keyboard shortcuts:\n"
         "  F4     Save screenshot (.ppm)\n"
         "  F5     Warm reset\n"
+        "  F6     Toggle video capture (.gif in CWD)\n"
         "  F8     Open/close memory monitor / disassembler\n"
         "  F9     Options overlay\n"
         "  F11    Toggle fullscreen\n"
@@ -653,6 +680,22 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
+                } else if (ev.key.scancode == SDL_SCANCODE_F6) {
+                    /* Toggle video capture. Auto-name in CWD when starting
+                     * outside the overlay file picker. */
+                    if (videocap_active()) {
+                        videocap_stop();
+                    } else {
+                        char path[256];
+                        time_t t = time(NULL);
+                        struct tm *lt = localtime(&t);
+                        if (lt)
+                            strftime(path, sizeof(path),
+                                     "1984-%Y%m%d-%H%M%S.gif", lt);
+                        else
+                            snprintf(path, sizeof(path), "1984-capture.gif");
+                        videocap_start(path);
+                    }
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
                            (SDL_GetModState() & SDL_KMOD_CTRL)) {
                     /* Release Ctrl from the CPC matrix before injecting text;
@@ -795,6 +838,12 @@ int main(int argc, char *argv[]) {
         } else if (was_stepping && cpc.paused) {
             monitor_notify_step(monitor);
         }
+        /* Video capture: grab the CPC framebuffer before the overlay
+         * draws on top. Decimate 50 Hz → 25 fps. */
+        if (g_videocap) {
+            if ((g_videocap_skip ^= 1) == 0)
+                gifcap_frame(g_videocap, cpc.display.pixels);
+        }
         overlay_render(&overlay, cpc.display.renderer);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
          * Doubles as a visual marker that debug machinery is live. */
@@ -916,6 +965,7 @@ int main(int argc, char *argv[]) {
     monitor_destroy(monitor);
     if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
     if (sfx_buf)    SDL_free(sfx_buf);
+    videocap_stop();   /* finalise GIF if recording */
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

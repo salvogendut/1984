@@ -33,7 +33,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 7 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 8 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -351,6 +351,15 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Debugging");
             snprintf(val, vsz, "%s",
                      ov->cfg->debug ? "enabled" : "disabled");
+            break;
+        case 7:
+            snprintf(lbl, lsz, "Capture video");
+            if (videocap_active())
+                snprintf(val, vsz, "recording (%d frames) — Enter to stop",
+                         videocap_frame_count());
+            else
+                snprintf(val, vsz, "[Enter to pick .gif]");
+            *readonly = true;
             break;
         }
         break;
@@ -790,6 +799,21 @@ static void activate_item(Overlay *ov) {
             /* No cold boot needed — debug machinery is checked at every
              * site, so the change takes effect on the next instruction. */
             break;
+        case 7:
+            if (videocap_active()) {
+                videocap_stop();
+            } else {
+                ov->dialog_kind  = DIALOG_VIDEO_CAPTURE;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter gif_filters[] = {
+                    { "GIF animation", "gif;GIF" },
+                    { "All files",     "*"       },
+                };
+                SDL_ShowSaveFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    gif_filters, 2, NULL);
+            }
+            break;
         }
         break;
 
@@ -920,6 +944,16 @@ void overlay_tick(Overlay *ov) {
             if (!dot || (slash && dot < slash))
                 strncat(path, ".sna", sizeof(path) - strlen(path) - 1);
             snapshot_save(ov->cpc, path);
+        }
+    } else if (ov->dialog_kind == DIALOG_VIDEO_CAPTURE) {
+        if (ov->dialog_path[0]) {
+            char path[512];
+            snprintf(path, sizeof(path), "%s", ov->dialog_path);
+            char *dot = strrchr(path, '.');
+            char *slash = strrchr(path, '/');
+            if (!dot || (slash && dot < slash))
+                strncat(path, ".gif", sizeof(path) - strlen(path) - 1);
+            videocap_start(path);
         }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
         /* User picked an SD card image — enable M4, load its ROM, and seed
