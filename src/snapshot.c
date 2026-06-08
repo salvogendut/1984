@@ -11,6 +11,11 @@ static u16 le16(const u8 *p) {
 }
 
 int snapshot_load(CPC *cpc, const char *path) {
+    if (!cpc || cpc->mem.ram_size <= 0) {
+        fprintf(stderr, "snapshot: RAM not initialised — refusing to load '%s'\n",
+                path ? path : "(null)");
+        return -1;
+    }
     FILE *f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, "snapshot: cannot open '%s'\n", path);

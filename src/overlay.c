@@ -836,16 +836,24 @@ static void try_close(Overlay *ov) {
 
 /* ---- Public API ---- */
 
-/* File-dialog callback — called from SDL's thread on some platforms */
+/* File-dialog callback — called from SDL's thread on some platforms.
+ * On cancel we clear ALL dialog state, otherwise a subsequent dialog
+ * inherits a stale dialog_kind/dialog_slot and overlay_tick dispatches
+ * the wrong action against an unrelated slot index. The release barrier
+ * pairs with the acquire in overlay_tick so dialog_path is fully
+ * published before the consumer sees dialog_ready=true. */
 static void overlay_file_callback(void *userdata, const char * const *files,
                                   int filter) {
     (void)filter;
     Overlay *ov = userdata;
     if (files && files[0]) {
         snprintf(ov->dialog_path, sizeof(ov->dialog_path), "%s", files[0]);
+        SDL_MemoryBarrierRelease();
         ov->dialog_ready = true;
     } else {
         ov->dialog_drive = -1;
+        ov->dialog_slot  = -1;
+        ov->dialog_kind  = DIALOG_NONE;
     }
 }
 
@@ -883,9 +891,10 @@ static void overlay_check_board_changes(Overlay *ov) {
 
 void overlay_tick(Overlay *ov) {
     if (!ov->dialog_ready) return;
+    SDL_MemoryBarrierAcquire();
     ov->dialog_ready = false;
 
-    if (ov->dialog_kind == DIALOG_DISK && ov->dialog_drive >= 0) {
+    if (ov->dialog_kind == DIALOG_DISK && ov->dialog_drive >= 0 && ov->dialog_drive < 2) {
         int drv = ov->dialog_drive;
         ov->dialog_drive = -1;
         char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;

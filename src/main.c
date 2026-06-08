@@ -48,6 +48,7 @@ static bool path_ends_with(const char *p, const char *suffix) {
 }
 
 bool videocap_start(const char *path) {
+    if (!path || !path[0]) return false;
     if (videocap_active()) return true;
     if (path_ends_with(path, ".webm")) {
         g_videocap_webm = webmcap_open(path,

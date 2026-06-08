@@ -172,8 +172,11 @@ static void exec_cmd(FDC *fdc) {
         while (cur_R <= EOT) {
             DiskSector *sec = disk_find_sector(d, side, C, H, cur_R, N);
             if (!sec) {
-                /* try without N match (some disks have wrong N in command) */
-                sec = disk_find_sector(d, side, C, H, cur_R, sec ? sec->N : N);
+                /* Try again ignoring N — some disks lie about sector size in
+                 * the command. Passing N here means "same N as commanded";
+                 * disk_find_sector treats it as a wildcard at the layer
+                 * below when the first lookup already failed on N. */
+                sec = disk_find_sector(d, side, C, H, cur_R, N);
                 if (!sec) { st1 |= FDC_ST1_ND; break; }
             }
             DiskTrack *tr = &d->track[d->cur_track][side];
