@@ -30,8 +30,15 @@ bool videocap_active(void)        { return g_videocap != NULL; }
 int  videocap_frame_count(void)   { return gifcap_frame_count(g_videocap); }
 bool videocap_start(const char *path) {
     if (g_videocap) return true;
-    /* 4 cs = 25 fps; we decimate input from 50 Hz by writing every other frame */
-    g_videocap = gifcap_open(path, CPC_SCREEN_W, CPC_SCREEN_H, 4);
+    /* 4 cs = 25 fps; decimate input from 50 Hz by writing every other frame.
+     * Output at WINDOW_H to get the correct 4:3 aspect — the CPC's
+     * framebuffer is 768x272 (non-square pixels), but the display
+     * stretches that to 768x576. Nearest-neighbour scaling inside the
+     * encoder keeps pixel art crisp. */
+    g_videocap = gifcap_open(path,
+                             CPC_SCREEN_W, CPC_SCREEN_H,
+                             CPC_SCREEN_W, WINDOW_H,
+                             4);
     if (!g_videocap) {
         fprintf(stderr, "[videocap] failed to open '%s' for writing\n", path);
         return false;

@@ -9,11 +9,14 @@
 
 struct GifCap {
     FILE   *fp;
-    int     w, h;
+    int     in_w, in_h;      /* input framebuffer size */
+    int     w, h;            /* output (GIF) size, nearest-neighbour scaled */
     int     delay_cs;
     int     frames;
-    /* Per-frame scratch — sized for the framebuffer. */
-    uint8_t *indices;       /* w*h palette indices */
+    /* Per-frame scratch — sized for the OUTPUT frame. */
+    uint8_t *indices;        /* w*h palette indices */
+    int     *row_src;        /* h entries: source row index for each out row */
+    int     *col_src;        /* w entries: source col index for each out col */
     uint32_t palette[256];
     int      palette_size;
 };
@@ -41,18 +44,22 @@ static int pal_find_or_insert(uint32_t *pal, int *pal_size,
     }
 }
 
-/* Build per-frame palette + index buffer. Returns true if losslessly
- * mappable in ≤256 colours; false → caller must fall back. */
+/* Build per-frame palette + index buffer (with nearest-neighbour
+ * scaling baked in). Returns true if losslessly mappable in ≤256
+ * colours; false → caller must fall back. */
 static bool build_palette(GifCap *g, const uint32_t *pixels) {
     int16_t htab[PAL_HASH_N];
     for (int i = 0; i < PAL_HASH_N; i++) htab[i] = -1;
     g->palette_size = 0;
-    int n = g->w * g->h;
-    for (int i = 0; i < n; i++) {
-        uint32_t rgb = pixels[i] & 0x00FFFFFFu;
-        int idx = pal_find_or_insert(g->palette, &g->palette_size, htab, rgb);
-        if (idx < 0) return false;
-        g->indices[i] = (uint8_t)idx;
+    for (int y = 0; y < g->h; y++) {
+        const uint32_t *src_row = pixels + g->row_src[y] * g->in_w;
+        uint8_t *dst_row = g->indices + y * g->w;
+        for (int x = 0; x < g->w; x++) {
+            uint32_t rgb = src_row[g->col_src[x]] & 0x00FFFFFFu;
+            int idx = pal_find_or_insert(g->palette, &g->palette_size, htab, rgb);
+            if (idx < 0) return false;
+            dst_row[x] = (uint8_t)idx;
+        }
     }
     return true;
 }
@@ -69,14 +76,16 @@ static void build_palette_rgb332(GifCap *g, const uint32_t *pixels) {
         int b = (b2 * 255) / 3;
         g->palette[i] = ((uint32_t)r << 16) | ((uint32_t)gg << 8) | (uint32_t)b;
     }
-    int n = g->w * g->h;
-    for (int i = 0; i < n; i++) {
-        uint32_t rgb = pixels[i];
-        int r = (rgb >> 16) & 0xFF;
-        int gg = (rgb >> 8) & 0xFF;
-        int b = (rgb     ) & 0xFF;
-        int idx = ((r >> 5) << 5) | ((gg >> 5) << 2) | (b >> 6);
-        g->indices[i] = (uint8_t)idx;
+    for (int y = 0; y < g->h; y++) {
+        const uint32_t *src_row = pixels + g->row_src[y] * g->in_w;
+        uint8_t *dst_row = g->indices + y * g->w;
+        for (int x = 0; x < g->w; x++) {
+            uint32_t rgb = src_row[g->col_src[x]];
+            int r = (rgb >> 16) & 0xFF;
+            int gg = (rgb >> 8) & 0xFF;
+            int b = (rgb     ) & 0xFF;
+            dst_row[x] = (uint8_t)(((r >> 5) << 5) | ((gg >> 5) << 2) | (b >> 6));
+        }
     }
 }
 
@@ -239,19 +248,39 @@ static void write_frame(GifCap *g) {
 
 /* ---------- public ---------- */
 
-GifCap *gifcap_open(const char *path, int width, int height, int frame_delay_cs) {
-    if (!path || width <= 0 || height <= 0 ||
-        width > GIFCAP_MAX_W || height > GIFCAP_MAX_H) return NULL;
+GifCap *gifcap_open(const char *path,
+                    int in_w, int in_h, int out_w, int out_h,
+                    int frame_delay_cs) {
+    if (!path || in_w <= 0 || in_h <= 0 || out_w <= 0 || out_h <= 0 ||
+        out_w > GIFCAP_MAX_W || out_h > GIFCAP_MAX_H) return NULL;
     if (frame_delay_cs < 1) frame_delay_cs = 1;
     GifCap *g = calloc(1, sizeof(*g));
     if (!g) return NULL;
     g->fp = fopen(path, "wb");
     if (!g->fp) { free(g); return NULL; }
-    g->w = width;
-    g->h = height;
+    g->in_w = in_w;
+    g->in_h = in_h;
+    g->w = out_w;
+    g->h = out_h;
     g->delay_cs = frame_delay_cs;
-    g->indices = malloc((size_t)width * (size_t)height);
-    if (!g->indices) { fclose(g->fp); free(g); return NULL; }
+    g->indices = malloc((size_t)out_w * (size_t)out_h);
+    g->row_src = malloc(sizeof(int) * out_h);
+    g->col_src = malloc(sizeof(int) * out_w);
+    if (!g->indices || !g->row_src || !g->col_src) {
+        free(g->indices); free(g->row_src); free(g->col_src);
+        fclose(g->fp); free(g); return NULL;
+    }
+    /* Precompute nearest-neighbour source coordinates. */
+    for (int y = 0; y < out_h; y++) {
+        int s = (y * in_h) / out_h;
+        if (s >= in_h) s = in_h - 1;
+        g->row_src[y] = s;
+    }
+    for (int x = 0; x < out_w; x++) {
+        int s = (x * in_w) / out_w;
+        if (s >= in_w) s = in_w - 1;
+        g->col_src[x] = s;
+    }
     write_header(g);
     return g;
 }
@@ -272,6 +301,8 @@ void gifcap_close(GifCap *g) {
         fclose(g->fp);
     }
     free(g->indices);
+    free(g->row_src);
+    free(g->col_src);
     free(g);
 }
 

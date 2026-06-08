@@ -17,12 +17,17 @@
 
 typedef struct GifCap GifCap;
 
-/* Open path for writing. width/height are the framebuffer dimensions.
- * frame_delay_cs is the inter-frame delay in centiseconds (1/100 s);
- * use 4 for 25 fps, 2 for 50 fps. Returns NULL on failure. */
-GifCap *gifcap_open(const char *path, int width, int height, int frame_delay_cs);
+/* Open path for writing. in_w/in_h are the framebuffer dimensions
+ * passed to gifcap_frame(); out_w/out_h are the dimensions written into
+ * the GIF (nearest-neighbour scaled). Pass out_w==in_w and out_h==in_h
+ * for no scaling. frame_delay_cs is the inter-frame delay in
+ * centiseconds (1/100 s); use 4 for 25 fps, 2 for 50 fps. Returns NULL
+ * on failure. */
+GifCap *gifcap_open(const char *path,
+                    int in_w, int in_h, int out_w, int out_h,
+                    int frame_delay_cs);
 
-/* Append one frame. pixels is width*height u32 values in 0x00RRGGBB
+/* Append one frame. pixels is in_w*in_h u32 values in 0x00RRGGBB
  * (or 0xAARRGGBB — alpha is ignored). Returns true on success. */
 bool gifcap_frame(GifCap *g, const uint32_t *pixels);
 
