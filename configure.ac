@@ -54,5 +54,17 @@ esac
 AC_SUBST([WIN_LIBS])
 AC_SUBST([WIN_SUBSYSTEM])
 
+# ffmpeg — optional. Enables WebM/VP9 video capture from the overlay's
+# "Capture video" menu. The F6-triggered .gif capture works without it.
+# Detected at configure time so the overlay can gate the menu row; the
+# path is hardcoded into the binary as FFMPEG_PATH for popen().
+AC_PATH_PROG([FFMPEG], [ffmpeg], [])
+AS_IF([test -n "$FFMPEG"],
+      [AC_DEFINE_UNQUOTED([FFMPEG_PATH], ["$FFMPEG"],
+           [Path to ffmpeg binary for WebM video capture])
+       AC_DEFINE([HAVE_FFMPEG], [1], [ffmpeg available for WebM capture])
+       AC_MSG_NOTICE([video capture: WebM enabled via $FFMPEG])],
+      [AC_MSG_NOTICE([video capture: WebM disabled (no ffmpeg found)])])
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

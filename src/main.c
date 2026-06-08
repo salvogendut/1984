@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <libgen.h>
+#include <strings.h>     /* strcasecmp */
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
@@ -22,37 +23,69 @@
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 #include "gifcap.h"
+#include "webmcap.h"
 
-/* --- Video capture (GIF89a) state. See videocap_* in cpc.h. ---------- */
-static GifCap *g_videocap = NULL;
-static int     g_videocap_skip = 0;   /* toggles 0/1 to halve framerate */
-bool videocap_active(void)        { return g_videocap != NULL; }
-int  videocap_frame_count(void)   { return gifcap_frame_count(g_videocap); }
+/* --- Video capture state. F6 → GIF (lean, no deps); overlay file
+ * picker → WebM via ffmpeg when configure detected it. Dispatch is by
+ * file extension. Output is scaled to 768x576 (4:3) in both paths. */
+static GifCap  *g_videocap_gif  = NULL;
+static WebmCap *g_videocap_webm = NULL;
+static int      g_videocap_skip = 0;   /* GIF-only: halve to 25 fps */
+
+bool videocap_active(void) {
+    return g_videocap_gif != NULL || g_videocap_webm != NULL;
+}
+int videocap_frame_count(void) {
+    if (g_videocap_gif)  return gifcap_frame_count(g_videocap_gif);
+    if (g_videocap_webm) return webmcap_frame_count(g_videocap_webm);
+    return 0;
+}
+
+static bool path_ends_with(const char *p, const char *suffix) {
+    size_t lp = strlen(p), ls = strlen(suffix);
+    if (lp < ls) return false;
+    return strcasecmp(p + lp - ls, suffix) == 0;
+}
+
 bool videocap_start(const char *path) {
-    if (g_videocap) return true;
-    /* 4 cs = 25 fps; decimate input from 50 Hz by writing every other frame.
-     * Output at WINDOW_H to get the correct 4:3 aspect — the CPC's
-     * framebuffer is 768x272 (non-square pixels), but the display
-     * stretches that to 768x576. Nearest-neighbour scaling inside the
-     * encoder keeps pixel art crisp. */
-    g_videocap = gifcap_open(path,
-                             CPC_SCREEN_W, CPC_SCREEN_H,
-                             CPC_SCREEN_W, WINDOW_H,
-                             4);
-    if (!g_videocap) {
-        fprintf(stderr, "[videocap] failed to open '%s' for writing\n", path);
-        return false;
+    if (videocap_active()) return true;
+    if (path_ends_with(path, ".webm")) {
+        g_videocap_webm = webmcap_open(path,
+                                       CPC_SCREEN_W, CPC_SCREEN_H,
+                                       CPC_SCREEN_W, WINDOW_H);
+        if (!g_videocap_webm) {
+            fprintf(stderr, "[videocap] WebM start failed for '%s'\n", path);
+            return false;
+        }
+    } else {
+        /* 4 cs = 25 fps; decimate 50 Hz input by writing every other frame.
+         * Output at WINDOW_H for the correct 4:3 aspect — the CPC
+         * framebuffer is 768x272 non-square pixels, displayed at
+         * 768x576. */
+        g_videocap_gif = gifcap_open(path,
+                                     CPC_SCREEN_W, CPC_SCREEN_H,
+                                     CPC_SCREEN_W, WINDOW_H,
+                                     4);
+        if (!g_videocap_gif) {
+            fprintf(stderr, "[videocap] GIF open failed for '%s'\n", path);
+            return false;
+        }
+        g_videocap_skip = 0;
     }
-    g_videocap_skip = 0;
     fprintf(stderr, "[videocap] recording to %s\n", path);
     return true;
 }
 void videocap_stop(void) {
-    if (!g_videocap) return;
-    int n = gifcap_frame_count(g_videocap);
-    gifcap_close(g_videocap);
-    g_videocap = NULL;
-    fprintf(stderr, "[videocap] stopped (%d frames)\n", n);
+    if (g_videocap_gif) {
+        int n = gifcap_frame_count(g_videocap_gif);
+        gifcap_close(g_videocap_gif);
+        g_videocap_gif = NULL;
+        fprintf(stderr, "[videocap] GIF stopped (%d frames)\n", n);
+    }
+    if (g_videocap_webm) {
+        webmcap_close(g_videocap_webm);
+        g_videocap_webm = NULL;
+    }
 }
 
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
@@ -846,10 +879,15 @@ int main(int argc, char *argv[]) {
             monitor_notify_step(monitor);
         }
         /* Video capture: grab the CPC framebuffer before the overlay
-         * draws on top. Decimate 50 Hz → 25 fps. */
-        if (g_videocap) {
+         * draws on top. GIF decimates to 25 fps; WebM takes every
+         * frame at 50 fps (VP9 compresses interframe deltas well). */
+        if (g_videocap_gif) {
             if ((g_videocap_skip ^= 1) == 0)
-                gifcap_frame(g_videocap, cpc.display.pixels);
+                gifcap_frame(g_videocap_gif, cpc.display.pixels);
+        }
+        if (g_videocap_webm) {
+            if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))
+                videocap_stop();
         }
         overlay_render(&overlay, cpc.display.renderer);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).

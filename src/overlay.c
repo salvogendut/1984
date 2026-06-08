@@ -5,6 +5,7 @@
 #include "disk.h"
 #include "mem.h"
 #include "snapshot.h"
+#include "webmcap.h"   /* WEBMCAP_SUPPORTED */
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
@@ -354,11 +355,14 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 7:
             snprintf(lbl, lsz, "Capture video");
-            if (videocap_active())
+            if (!WEBMCAP_SUPPORTED) {
+                snprintf(val, vsz, "[needs ffmpeg — F6 still records .gif]");
+            } else if (videocap_active()) {
                 snprintf(val, vsz, "recording (%d frames) — Enter to stop",
                          videocap_frame_count());
-            else
-                snprintf(val, vsz, "[Enter to pick .gif]");
+            } else {
+                snprintf(val, vsz, "[Enter to pick .webm]");
+            }
             *readonly = true;
             break;
         }
@@ -800,18 +804,19 @@ static void activate_item(Overlay *ov) {
              * site, so the change takes effect on the next instruction. */
             break;
         case 7:
+            if (!WEBMCAP_SUPPORTED) break;
             if (videocap_active()) {
                 videocap_stop();
             } else {
                 ov->dialog_kind  = DIALOG_VIDEO_CAPTURE;
                 ov->dialog_ready = false;
-                static const SDL_DialogFileFilter gif_filters[] = {
-                    { "GIF animation", "gif;GIF" },
-                    { "All files",     "*"       },
+                static const SDL_DialogFileFilter webm_filters[] = {
+                    { "WebM (VP9)", "webm;WEBM" },
+                    { "All files",  "*"         },
                 };
                 SDL_ShowSaveFileDialog(overlay_file_callback, ov,
                     ov->cpc ? ov->cpc->display.window : NULL,
-                    gif_filters, 2, NULL);
+                    webm_filters, 2, NULL);
             }
             break;
         }
@@ -952,7 +957,7 @@ void overlay_tick(Overlay *ov) {
             char *dot = strrchr(path, '.');
             char *slash = strrchr(path, '/');
             if (!dot || (slash && dot < slash))
-                strncat(path, ".gif", sizeof(path) - strlen(path) - 1);
+                strncat(path, ".webm", sizeof(path) - strlen(path) - 1);
             videocap_start(path);
         }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
