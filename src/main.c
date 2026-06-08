@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <libgen.h>
+#include <strings.h>     /* strcasecmp */
 #include "config.h"
 #include "overlay.h"
 #include "cpc.h"
@@ -21,6 +22,71 @@
 #include "shutter_wav.h"
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
+#include "gifcap.h"
+#include "webmcap.h"
+
+/* --- Video capture state. F6 → GIF (lean, no deps); overlay file
+ * picker → WebM via ffmpeg when configure detected it. Dispatch is by
+ * file extension. Output is scaled to 768x576 (4:3) in both paths. */
+static GifCap  *g_videocap_gif  = NULL;
+static WebmCap *g_videocap_webm = NULL;
+static int      g_videocap_skip = 0;   /* GIF-only: halve to 25 fps */
+
+bool videocap_active(void) {
+    return g_videocap_gif != NULL || g_videocap_webm != NULL;
+}
+int videocap_frame_count(void) {
+    if (g_videocap_gif)  return gifcap_frame_count(g_videocap_gif);
+    if (g_videocap_webm) return webmcap_frame_count(g_videocap_webm);
+    return 0;
+}
+
+static bool path_ends_with(const char *p, const char *suffix) {
+    size_t lp = strlen(p), ls = strlen(suffix);
+    if (lp < ls) return false;
+    return strcasecmp(p + lp - ls, suffix) == 0;
+}
+
+bool videocap_start(const char *path) {
+    if (videocap_active()) return true;
+    if (path_ends_with(path, ".webm")) {
+        g_videocap_webm = webmcap_open(path,
+                                       CPC_SCREEN_W, CPC_SCREEN_H,
+                                       CPC_SCREEN_W, WINDOW_H);
+        if (!g_videocap_webm) {
+            fprintf(stderr, "[videocap] WebM start failed for '%s'\n", path);
+            return false;
+        }
+    } else {
+        /* 4 cs = 25 fps; decimate 50 Hz input by writing every other frame.
+         * Output at WINDOW_H for the correct 4:3 aspect — the CPC
+         * framebuffer is 768x272 non-square pixels, displayed at
+         * 768x576. */
+        g_videocap_gif = gifcap_open(path,
+                                     CPC_SCREEN_W, CPC_SCREEN_H,
+                                     CPC_SCREEN_W, WINDOW_H,
+                                     4);
+        if (!g_videocap_gif) {
+            fprintf(stderr, "[videocap] GIF open failed for '%s'\n", path);
+            return false;
+        }
+        g_videocap_skip = 0;
+    }
+    fprintf(stderr, "[videocap] recording to %s\n", path);
+    return true;
+}
+void videocap_stop(void) {
+    if (g_videocap_gif) {
+        int n = gifcap_frame_count(g_videocap_gif);
+        gifcap_close(g_videocap_gif);
+        g_videocap_gif = NULL;
+        fprintf(stderr, "[videocap] GIF stopped (%d frames)\n", n);
+    }
+    if (g_videocap_webm) {
+        webmcap_close(g_videocap_webm);
+        g_videocap_webm = NULL;
+    }
+}
 
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
  * boot and after the overlay flips net4cpc / net4cpc_tap. cli_tap_dev
@@ -139,8 +205,8 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
 }
 
-#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
-#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_CAPTURED    "Mouse captured  |  Ctrl+Enter to release"
 
 static void set_mouse_capture(SDL_Window *win, bool capture, bool *flag, CpcModel model) {
@@ -188,6 +254,7 @@ static void usage(const char *prog, int code) {
         "Keyboard shortcuts:\n"
         "  F4     Save screenshot (.ppm)\n"
         "  F5     Warm reset\n"
+        "  F6     Toggle video capture (.gif in CWD)\n"
         "  F8     Open/close memory monitor / disassembler\n"
         "  F9     Options overlay\n"
         "  F11    Toggle fullscreen\n"
@@ -653,6 +720,22 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
+                } else if (ev.key.scancode == SDL_SCANCODE_F6) {
+                    /* Toggle video capture. Auto-name in CWD when starting
+                     * outside the overlay file picker. */
+                    if (videocap_active()) {
+                        videocap_stop();
+                    } else {
+                        char path[256];
+                        time_t t = time(NULL);
+                        struct tm *lt = localtime(&t);
+                        if (lt)
+                            strftime(path, sizeof(path),
+                                     "1984-%Y%m%d-%H%M%S.gif", lt);
+                        else
+                            snprintf(path, sizeof(path), "1984-capture.gif");
+                        videocap_start(path);
+                    }
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
                            (SDL_GetModState() & SDL_KMOD_CTRL)) {
                     /* Release Ctrl from the CPC matrix before injecting text;
@@ -795,6 +878,17 @@ int main(int argc, char *argv[]) {
         } else if (was_stepping && cpc.paused) {
             monitor_notify_step(monitor);
         }
+        /* Video capture: grab the CPC framebuffer before the overlay
+         * draws on top. GIF decimates to 25 fps; WebM takes every
+         * frame at 50 fps (VP9 compresses interframe deltas well). */
+        if (g_videocap_gif) {
+            if ((g_videocap_skip ^= 1) == 0)
+                gifcap_frame(g_videocap_gif, cpc.display.pixels);
+        }
+        if (g_videocap_webm) {
+            if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))
+                videocap_stop();
+        }
         overlay_render(&overlay, cpc.display.renderer);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
          * Doubles as a visual marker that debug machinery is live. */
@@ -916,6 +1010,7 @@ int main(int argc, char *argv[]) {
     monitor_destroy(monitor);
     if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
     if (sfx_buf)    SDL_free(sfx_buf);
+    videocap_stop();   /* finalise GIF if recording */
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

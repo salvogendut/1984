@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdlib.h>     /* dbg_getenv() wraps getenv() */
 #include "types.h"
 #include "z80.h"
@@ -92,6 +93,13 @@ extern int g_debug_enabled;
 static inline const char *dbg_getenv(const char *name) {
     return g_debug_enabled ? getenv(name) : NULL;
 }
+
+/* Video capture (GIF89a) — owned by main.c. Returns true if recording
+ * is active, regardless of how the call resolved. */
+bool videocap_start(const char *path);   /* false on open failure */
+void videocap_stop(void);
+bool videocap_active(void);
+int  videocap_frame_count(void);
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);
 void cpc_reset(CPC *cpc);
