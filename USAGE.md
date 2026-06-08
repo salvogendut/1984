@@ -55,6 +55,7 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 |--------|--------|
 | F4     | Save screenshot (`<binary>_<timestamp>.ppm`) and play camera shutter sound |
 | F5     | Warm reset |
+| F6     | Toggle GIF screen recording (auto-named `1984-<timestamp>.gif` in CWD) |
 | F8     | Open/close memory monitor / debugger |
 | F9     | Open/close options overlay |
 | F11    | Toggle fullscreen |
@@ -75,6 +76,22 @@ Any USB or Bluetooth controller recognised by SDL3 is automatically mapped to CP
 Controllers that SDL3 recognises via its gamepad database are opened as gamepads; any other device (legacy sticks, budget pads not in the database) falls back to raw joystick mode and is mapped by physical axis/button index (axis 0 = left/right, axis 1 = up/down; button 0 = Fire 1, button 1 = Fire 2; hat switch also works).
 
 Gamepad and joystick events are delivered regardless of whether the emulator window has focus (`SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS` is enabled at startup).
+
+## Screen / video capture
+
+Two paths, picked by what you want from the output.
+
+| Action | Output | When to use |
+|--------|--------|-------------|
+| **F4** | `.ppm` (single frame) | Bug reports, regression baselines |
+| **F6** | `.gif` (animated) | Quick share, no dependencies, ≤ few seconds of gameplay |
+| **F9 → Advanced → Capture video** | `.webm` (VP9) | Longer clips, YouTube uploads, anything where GIF size becomes painful |
+
+Both video paths capture the CPC framebuffer **before** the overlay draws, so the recording shows only the CPC screen. Output is scaled to 768×576 (correct 4:3 — the CPC framebuffer is 768×272 with non-square pixels).
+
+**GIF (F6)** uses an in-tree GIF89a + LZW encoder — no codec libraries, no ffmpeg required. Captured at 25 fps. Lossless palette for the CPC's ≤27 simultaneous colours. Toggle F6 again to stop; the file is finalised on stop or on clean exit.
+
+**WebM (overlay)** spawns `ffmpeg` as a subprocess and pipes raw frames to it; `ffmpeg` does the VP9 encoding (50 fps, 2 Mbit/s) and Matroska muxing. `./configure` detects ffmpeg at build time; on systems where it was absent the overlay row shows `[needs ffmpeg — F6 still records .gif]`. The encoded bitstream is YouTube-ingestible without re-encoding.
 
 ## Paste from host (Ctrl+V)
 

@@ -21,6 +21,10 @@ Requirements:
 - SDL3 (development headers)
 - `autoconf`, `automake`, `pkg-config`, GNU `make`
 
+Optional runtime tools (auto-detected by `./configure`):
+
+- `ffmpeg` — enables the WebM/VP9 video-capture path in the overlay. Without it, F6 still records GIFs (no dependencies).
+
 ### Linux
 
 ```bash
