@@ -15,6 +15,10 @@
 
 typedef struct {
     u8  ink[GA_NUM_INKS];    /* hardware colour index (0-31) */
+    /* Resolved RGB888 cache of ink[]; kept in sync by ga_init / ga_write so
+     * the per-pixel render path can do a single u32 load instead of two
+     * dependent array lookups (ink[pen] then ga_hw_palette[idx]). */
+    u32 resolved_ink[GA_NUM_INKS];
     u8  selected_pen;        /* current pen register (bit 4 = border) */
     u8  screen_mode;         /* 0/1/2 — active mode (latched on HSYNC) */
     u8  requested_mode;      /* mode written via ga_write; copied to screen_mode on next HSYNC */

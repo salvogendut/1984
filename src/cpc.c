@@ -499,7 +499,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 
 /* ---- Init / destroy ---- */
 
+static void build_pen_tables(void);
+static bool g_pen_tables_built;
+
 int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic) {
+    if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
     cpc->model = model;
     cpc->cpu_clk_hz = 4000000;
@@ -594,52 +598,80 @@ void cpc_destroy(CPC *cpc) {
  * Video address: A[15:14] = MA[13:12], A[13:11] = RA[2:0], A[10:1] = MA[9:0]
  */
 
-static inline u32 ink_rgb(GateArray *ga, u8 pen) {
-    return ga_hw_palette[ga->ink[pen < GA_NUM_INKS ? pen : 0]];
+/* Precomputed byte → pen-index tables. Built once at startup; the per-pixel
+ * render path then just indexes ga->resolved_ink[] (already-cached u32).
+ *
+ *   mode0_pens[b] = {left_pen, right_pen}  — 2 pixels × 4 wide each
+ *   mode1_pens[b] = 4 pens                 — each pixel doubled
+ *   mode2_pens[b] = 8 pens                 — 1:1
+ *
+ * Pen-bit layout per the CRTC docs:
+ *   mode 0:  pen0 = b1 b5 b3 b7  ; pen1 = b0 b4 b2 b6
+ *   mode 1:  pen[i] = b(3-i+4) << 1 | b(3-i+0)
+ *   mode 2:  pen[i] = (byte >> (7 - i)) & 1
+ */
+static u8 g_mode0_pens[256][2];
+static u8 g_mode1_pens[256][4];
+static u8 g_mode2_pens[256][8];
+
+static void build_pen_tables(void) {
+    for (int b = 0; b < 256; b++) {
+        g_mode0_pens[b][0] = (u8)(((b>>1)&1)<<3 | ((b>>5)&1)<<2 | ((b>>3)&1)<<1 | ((b>>7)&1));
+        g_mode0_pens[b][1] = (u8)(((b>>0)&1)<<3 | ((b>>4)&1)<<2 | ((b>>2)&1)<<1 | ((b>>6)&1));
+        for (int p = 0; p < 4; p++)
+            g_mode1_pens[b][p] = (u8)(((b >> (3 - p)) & 1) << 1 | ((b >> (7 - p)) & 1));
+        for (int p = 0; p < 8; p++)
+            g_mode2_pens[b][p] = (u8)((b >> (7 - p)) & 1);
+    }
+    g_pen_tables_built = true;
 }
 
-static void render_char(u32 *row, int px, GateArray *ga, u8 b0, u8 b1) {
+/* Caller (cpc.c frame loop) guarantees px is a multiple of 16 in [0, 752],
+ * so px..px+15 always fits in CPC_SCREEN_W (768). No per-pixel bounds
+ * checks — the only valid call sites have already gated px. */
+static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 b1) {
+    const u32 *inks = ga->resolved_ink;
+    u32 *out = row + px;
+
     switch (ga->screen_mode) {
-
-    case 2: /* 1 bpp, 8 pixels/byte, 1:1 → 16 px */
-        for (int b = 0; b < 2; b++) {
-            u8 byte = b ? b1 : b0;
-            for (int p = 0; p < 8; p++) {
-                int x = px + b * 8 + p;
-                if ((unsigned)x < CPC_SCREEN_W)
-                    row[x] = ink_rgb(ga, (byte >> (7 - p)) & 1);
-            }
-        }
+    case 2: { /* 1 bpp, 8 pixels/byte */
+        const u8 *p0 = g_mode2_pens[b0];
+        const u8 *p1 = g_mode2_pens[b1];
+        out[0]  = inks[p0[0]]; out[1]  = inks[p0[1]];
+        out[2]  = inks[p0[2]]; out[3]  = inks[p0[3]];
+        out[4]  = inks[p0[4]]; out[5]  = inks[p0[5]];
+        out[6]  = inks[p0[6]]; out[7]  = inks[p0[7]];
+        out[8]  = inks[p1[0]]; out[9]  = inks[p1[1]];
+        out[10] = inks[p1[2]]; out[11] = inks[p1[3]];
+        out[12] = inks[p1[4]]; out[13] = inks[p1[5]];
+        out[14] = inks[p1[6]]; out[15] = inks[p1[7]];
         break;
-
-    case 1: /* 2 bpp, 4 pixels/byte, doubled → 16 px */
-        for (int b = 0; b < 2; b++) {
-            u8 byte = b ? b1 : b0;
-            for (int p = 0; p < 4; p++) {
-                u8 pen = (u8)(((byte >> (3 - p)) & 1) << 1 | ((byte >> (7 - p)) & 1));
-                u32 c  = ink_rgb(ga, pen);
-                int x  = px + b * 8 + p * 2;
-                if ((unsigned)x     < CPC_SCREEN_W) row[x]     = c;
-                if ((unsigned)(x+1) < CPC_SCREEN_W) row[x + 1] = c;
-            }
-        }
+    }
+    case 1: { /* 2 bpp, 4 pixels/byte, ×2 */
+        const u8 *p0 = g_mode1_pens[b0];
+        const u8 *p1 = g_mode1_pens[b1];
+        u32 c;
+        c = inks[p0[0]]; out[0]  = c; out[1]  = c;
+        c = inks[p0[1]]; out[2]  = c; out[3]  = c;
+        c = inks[p0[2]]; out[4]  = c; out[5]  = c;
+        c = inks[p0[3]]; out[6]  = c; out[7]  = c;
+        c = inks[p1[0]]; out[8]  = c; out[9]  = c;
+        c = inks[p1[1]]; out[10] = c; out[11] = c;
+        c = inks[p1[2]]; out[12] = c; out[13] = c;
+        c = inks[p1[3]]; out[14] = c; out[15] = c;
         break;
-
-    case 0: /* 4 bpp, 2 pixels/byte, ×4 → 16 px */
-        for (int b = 0; b < 2; b++) {
-            u8 byte = b ? b1 : b0;
-            u8 pen0 = (u8)(((byte>>1)&1)<<3 | ((byte>>5)&1)<<2 | ((byte>>3)&1)<<1 | ((byte>>7)&1));
-            u8 pen1 = (u8)(((byte>>0)&1)<<3 | ((byte>>4)&1)<<2 | ((byte>>2)&1)<<1 | ((byte>>6)&1));
-            u32 c0  = ink_rgb(ga, pen0);
-            u32 c1  = ink_rgb(ga, pen1);
-            for (int i = 0; i < 4; i++) {
-                int x = px + b * 8 + i;
-                if ((unsigned)x < CPC_SCREEN_W) row[x] = c0;
-                x = px + b * 8 + 4 + i;
-                if ((unsigned)x < CPC_SCREEN_W) row[x] = c1;
-            }
-        }
+    }
+    case 0: { /* 4 bpp, 2 pixels/byte, ×4 */
+        u32 c0 = inks[g_mode0_pens[b0][0]];
+        u32 c1 = inks[g_mode0_pens[b0][1]];
+        u32 c2 = inks[g_mode0_pens[b1][0]];
+        u32 c3 = inks[g_mode0_pens[b1][1]];
+        out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
+        out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
+        out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;
+        out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
         break;
+    }
     }
 }
 
@@ -1064,9 +1096,12 @@ void cpc_frame(CPC *cpc) {
                     u8  b1   = mem_read_video(&cpc->mem, (u16)(addr + 1));
                     render_char(row, px, &cpc->ga, b0, b1);
                 } else {
-                    u32 c = ga_hw_palette[cpc->ga.ink[16]]; /* border */
-                    for (int p = 0; p < 16 && px + p < CPC_SCREEN_W; p++)
-                        row[px + p] = c;
+                    u32 c = cpc->ga.resolved_ink[16]; /* border */
+                    u32 *out = row + px;
+                    out[0]=c;  out[1]=c;  out[2]=c;  out[3]=c;
+                    out[4]=c;  out[5]=c;  out[6]=c;  out[7]=c;
+                    out[8]=c;  out[9]=c;  out[10]=c; out[11]=c;
+                    out[12]=c; out[13]=c; out[14]=c; out[15]=c;
                 }
             }
 
