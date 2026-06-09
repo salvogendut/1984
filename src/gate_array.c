@@ -25,6 +25,8 @@ void ga_init(GateArray *ga) {
         ga->ink[i] = 0;
     ga->ink[0]  = 0x1A;   /* typical border */
     ga->ink[1]  = 0x04;
+    for (int i = 0; i < GA_NUM_INKS; i++)
+        ga->resolved_ink[i] = ga_hw_palette[ga->ink[i] & 0x1F];
 }
 
 void ga_write(GateArray *ga, u8 val) {
@@ -36,6 +38,7 @@ void ga_write(GateArray *ga, u8 val) {
         case 0x01:   /* Set ink colour */
             if (ga->selected_pen < GA_NUM_INKS) {
                 ga->ink[ga->selected_pen] = val & 0x1F;
+                ga->resolved_ink[ga->selected_pen] = ga_hw_palette[val & 0x1F];
             }
             break;
         case 0x02:   /* Screen mode + ROM control */
