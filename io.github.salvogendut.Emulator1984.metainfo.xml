@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.5" date="2026-06-10">
+      <description>
+        <p>Renderer perf: cached resolved inks + precomputed pen tables collapse the per-pixel scalar work in render_char to a flat 16-pixel write, freeing meaningful frame headroom on slower hardware. Video capture: F6 records a GIF (in-tree encoder, no extra dependencies) and Overlay → Capture video saves WebM/VP9 via ffmpeg when available. Snapshot load/save with .sna v1-v3 support. Net4CPC gains a one-click TAP backend on Linux with built-in DHCP server, DNS proxy and NAT, plus an if_tap backend on FreeBSD / NetBSD / OpenBSD. Per-board ROM groupings: ROMs follow the M4 / Albireo / Cyboard toggle automatically. Stability: konCePCja cc_op cycle-table port fixes the HDCPM / CP/M+ kernel-ISR bank-save/restore race, plus several segfault hazards in the file-dialog callback, video capture, FDC and snapshot paths.</p>
+      </description>
+    </release>
     <release version="0.4.4" date="2026-06-05">
       <description>
         <p>HDCPM / CP/M+ boots fully to the A0:CPM&gt; prompt from FAT-formatted SYMBiFACE II / Cyboard IDE drives, mounting up to four CPMDSKxx.IMG images. SymbOS desktop runs on both Albireo (CH376 USB) and Cyboard (Net4CPC + RTC + SYMBiFACE IDE). Two CPU/interrupt fixes underneath: the Gate Array IRQ acknowledge is now deferred until the Z80 actually accepts the maskable interrupt (so the 300 Hz IRQ cadence stays stable across IFF1-masked sections), and RETI restores IFF1 from IFF2 like Caprice32 / WinAPE / MAME.</p>

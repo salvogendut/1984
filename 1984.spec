@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.3
+Version:        0.4.5
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -79,6 +79,27 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Tue Jun 10 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.5-1
+- Segfault fixes: file-dialog cancel state, NULL videocap path, dead
+  FDC ternary, unguarded snapshot load (#120)
+- Renderer perf: precomputed pen tables + cached resolved inks in
+  render_char; per-pixel scalar work collapsed to a flat 16-pixel
+  write (#121)
+- Video capture: F6 GIF screen-recording (in-tree LZW encoder, no
+  deps) plus Overlay → Capture video for WebM/VP9 via ffmpeg (#118)
+- Snapshot load/save (.sna v1-v3), with --save-sna-at=N:PATH for
+  headless capture (#100)
+- Per-board ROM groupings — ROMs follow the M4 / Albireo / Cyboard
+  toggle automatically (#103)
+- Net4CPC TAP backend: one-click setup with built-in DHCP server,
+  DNS proxy, and NAT; configurable subnet; CPC fully on the LAN
+  (Linux); BSD if_tap backend for FreeBSD/NetBSD/OpenBSD (#109,
+  #114)
+- Stability: konCePCja cc_op cycle-table port, fixes the HDCPM /
+  CP/M+ kernel-ISR bank-save/restore race (#102)
+- Overlay: Debugging toggle in Advanced + bottom-left FPS counter
+- Overlay: ROM-slot Del also clears the board tag + template (#117)
+
 * Sun May 31 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.3-1
 - Stabilise SymbOS networking on M4 — sock_info window extended to 16
   slots with active TCP socket broadcast across all slots; wget HTTP
