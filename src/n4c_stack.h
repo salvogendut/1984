@@ -74,6 +74,23 @@ typedef int (*N4CUdpDeliver)(const u8 src_ip[4], u16 src_port,
                              const u8 *payload, u16 payload_len);
 void n4c_stack_set_udp_deliver(N4CUdpDeliver fn);
 
+/* Send a raw IP datagram (the caller supplies just the L4 payload —
+ * the stack adds the IPv4 header). Used by the W5100S IPRAW socket
+ * mode, which KCNet's PING.COM uses for ICMP echo. Returns payload_len
+ * on success, -1 if ARP is pending. */
+int  n4c_stack_send_ip(u8 proto, const u8 dst_ip[4],
+                       const u8 *payload, u16 payload_len);
+
+/* Hook installed by net4cpc.c: called by the stack for every inbound
+ * IPv4 datagram BEFORE the protocol-specific (ICMP/UDP/TCP) handler
+ * runs. Lets an IPRAW socket claim it. Returning non-zero suppresses
+ * the default per-protocol handling for this frame; 0 means "not for
+ * me, run the default" (echo-request auto-reply, UDP/TCP socket
+ * delivery, etc.). */
+typedef int (*N4CRawIpDeliver)(u8 proto, const u8 src_ip[4],
+                               const u8 *payload, u16 payload_len);
+void n4c_stack_set_ip_deliver(N4CRawIpDeliver fn);
+
 /* Toggle the built-in DHCPv4 server. When off, DHCP traffic flows
  * through to the deliver callback unchanged. main.c flips this on
  * when cfg->net4cpc_tap is set. */

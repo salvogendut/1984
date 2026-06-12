@@ -27,12 +27,14 @@ static u8   s_sipr[4];
 static u8   s_gar [4];
 static u8   s_subr[4];
 
-static N4CUdpDeliver s_udp_deliver = NULL;
-static N4CTcpEvent   s_tcp_state   = NULL;
-static N4CTcpDeliver s_tcp_data    = NULL;
-static N4CTcpAck     s_tcp_ack     = NULL;
+static N4CUdpDeliver   s_udp_deliver    = NULL;
+static N4CRawIpDeliver s_raw_ip_deliver = NULL;
+static N4CTcpEvent     s_tcp_state      = NULL;
+static N4CTcpDeliver   s_tcp_data       = NULL;
+static N4CTcpAck       s_tcp_ack        = NULL;
 
-void n4c_stack_set_udp_deliver(N4CUdpDeliver fn) { s_udp_deliver = fn; }
+void n4c_stack_set_udp_deliver(N4CUdpDeliver fn)   { s_udp_deliver    = fn; }
+void n4c_stack_set_ip_deliver (N4CRawIpDeliver fn) { s_raw_ip_deliver = fn; }
 
 void n4c_stack_set_tcp_callbacks(N4CTcpEvent on_state,
                                  N4CTcpDeliver on_data,
@@ -399,6 +401,14 @@ static void handle_ipv4(const u8 *eth, int len) {
 
     const u8 *payload = ip + ihl;
     int payload_len   = total - ihl;
+
+    /* Raw-IP deliver hook (W5100S IPRAW sockets). Suppresses the
+     * default per-protocol handling for this frame when claimed —
+     * e.g. PING.COM consumes ICMP echo replies through here. */
+    if (s_raw_ip_deliver &&
+        s_raw_ip_deliver(proto, src_ip,
+                         payload, (u16)payload_len))
+        return;
 
     switch (proto) {
     case IP_PROTO_ICMP: handle_icmp(src_ip, payload, payload_len, eth + 6); break;
@@ -1233,5 +1243,42 @@ int n4c_stack_send_udp(u16 src_port,
     TLOG("UDP -> %u.%u.%u.%u:%u from :%u  %u bytes\n",
          dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3], dst_port,
          src_port, payload_len);
+    return payload_len;
+}
+
+int n4c_stack_send_ip(u8 proto, const u8 dst_ip[4],
+                      const u8 *payload, u16 payload_len) {
+    if (!n4c_stack_active()) return -1;
+
+    u8 dst_mac[6];
+    if (!n4c_stack_arp_resolve(dst_ip, dst_mac))
+        return -1;
+
+    if (payload_len > TAP_FRAME_MAX - 14 - 20) return -1;
+
+    u8 frame[TAP_FRAME_MAX];
+    int ip_total = 20 + payload_len;
+    int eth_len  = 14 + ip_total;
+
+    build_eth(frame, dst_mac, s_mac, ETH_TYPE_IPV4);
+
+    u8 *ip = frame + 14;
+    ip[0] = 0x45;
+    ip[1] = 0;
+    put_u16_be(ip + 2, (u16)ip_total);
+    put_u16_be(ip + 4, 0);
+    put_u16_be(ip + 6, 0x4000);
+    ip[8]  = 64;
+    ip[9]  = proto;
+    put_u16_be(ip + 10, 0);
+    memcpy(ip + 12, s_sipr, 4);
+    memcpy(ip + 16, dst_ip, 4);
+    put_u16_be(ip + 10, ip_checksum(ip, 20));
+
+    memcpy(ip + 20, payload, payload_len);
+
+    if (tap_tx(frame, eth_len) < 0) return -1;
+    TLOG("IP  -> %u.%u.%u.%u proto=%u  %u bytes\n",
+         dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3], proto, payload_len);
     return payload_len;
 }
