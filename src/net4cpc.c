@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 int net4cpc_trace = 0;
 
@@ -102,6 +103,17 @@ static u16 idm_ar;        /* current indirect address register */
 static int sock_fd[4];    /* host socket fds (-1 = closed) */
 static u16 rx_wr[4];      /* internal RX write pointers (free-running) */
 
+/* TCNTR (0x0082/0x0083): a free-running 100 µs ticker. Reading it latches
+ * the current elapsed time; writing 0x0088 (TCNTCLR) restarts it. */
+static clock_t tcntr_start;
+
+static inline void tcntr_reset(void) { tcntr_start = clock(); }
+
+static inline u16 tcntr_read(void) {
+    double us = (double)(clock() - tcntr_start) * 1e6 / CLOCKS_PER_SEC;
+    return (u16)((u32)(us / 10.0) & 0xFFFFu);
+}
+
 /* ---------------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------------- */
@@ -123,6 +135,40 @@ static void update_rx_rsr(int s) {
 static void update_tx_fsr(int s) {
     u16 used = (u16)(get16(SOCK_BASE[s] + SR_TX_WR) - get16(SOCK_BASE[s] + SR_TX_RD));
     set16(SOCK_BASE[s] + SR_TX_FSR, (u16)(BUF_SIZE - used));
+}
+
+/* Install the post-reset hardware default values for the W5100S register
+ * file. Per the W5100S datasheet § 3.2, several registers come up with
+ * non-zero defaults (RTR, RCR, RMSR/TMSR, PHYCFGR, …). The maintainer of
+ * the n4c-nettools driver reported (issue #123) that our previous code,
+ * which preserved the common block across MR.RST, was contrary to the
+ * datasheet — §3.1.1 says MR.RST initialises ALL registers. So both the
+ * cold-reset path and the MR.RST path now wipe the file and then call
+ * this helper to put the silicon defaults back. */
+static void restore_hw_defaults(void) {
+    /* Common block */
+    regs[0x0000] = 0x03;   /* MR: BUS_SEL ties IND + AI on the Net4CPC board */
+    regs[0x0017] = 0x07;   /* RTR  = 0x07D0 → 200 ms retry timeout         */
+    regs[0x0018] = 0xD0;
+    regs[0x0019] = 0x08;   /* RCR  = 8 retries                              */
+    regs[0x001A] = 0x55;   /* RMSR = 2 KB per socket (01b × 4 sockets)      */
+    regs[0x001B] = 0x55;   /* TMSR = 2 KB per socket                        */
+    regs[0x0028] = 0x28;   /* per silicon                                   */
+    regs[0x0030] = 0x40;
+    regs[0x003A] = 0xFF;
+    regs[0x003B] = 0xFF;
+    /* PHYCFGR (0x003C): we report LNK=1, SPD=1, DPX=1 so KCNet utilities
+     * (NCFG, PING, NTIME, …) pass their link-up gate — the host owns the
+     * upstream interface, so the wire is always "up" from the CPC's
+     * point of view. */
+    regs[0x003C] = 0x07;
+    regs[0x003D] = 0x81;
+    regs[0x0045] = 0x01;
+    regs[0x0047] = 0x41;
+    regs[0x004D] = 0x07;
+    regs[0x004E] = 0xD0;
+    regs[0x0080] = 0x51;
+    tcntr_reset();
 }
 
 static void close_sock(int s) {
@@ -582,6 +628,12 @@ static u8 reg_read(u16 addr) {
      * triggers handle_command. */
     addr &= 0x7FFF;
     u8 val;
+    /* TCNTR (0x0082/0x0083): reading either byte latches the elapsed
+     * 100 µs counter into the register pair so successive byte reads
+     * see a coherent value. */
+    if (addr == 0x0082 || addr == 0x0083) {
+        set16(0x0082, tcntr_read());
+    }
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
             poll_connect(s);
@@ -607,29 +659,27 @@ static void reg_write(u16 addr, u8 val) {
     /* See reg_read() for the 0x8000-mask rationale. */
     addr &= 0x7FFF;
     if (net4cpc_trace) trace_access(addr, val, true);
-    /* MR.RST (bit 7): software reset. Per W5100S datasheet § 4.2.1, the
-     * common-config block (0x0000–0x002F: MR, GAR, SUBR, SHAR, SIPR,
-     * INTLEVEL, IR, IMR, RTR, RCR, …) survives soft reset — only socket
-     * state from 0x0400 up is cleared. KCNet's NCFG -r writes MR.RST
-     * after staging new SHAR/SIPR/GAR/SUBR and then re-reads SHAR to
-     * confirm the chip is alive; wiping the full regs[] array makes
-     * SHAR come back zero and HDCPM panics → BASIC reset.
-     *
-     * The Net4CPC board ties the BUS_SEL pin to indirect-bus mode, so
-     * MR auto-restores to 0x03 (IND + AI); we explicitly preserve
-     * PHYCFGR=0x07 too so the link-up gate the KCNet utilities check
-     * doesn't suddenly read disconnected. */
+    /* MR.RST (bit 7): software reset. Per W5100S datasheet § 3.1.1 a
+     * soft reset initialises ALL W5100S registers — common block and
+     * sockets alike — back to their hardware defaults (which for some
+     * registers are non-zero; see restore_hw_defaults). Our previous
+     * implementation preserved the common block, which was incorrect
+     * (issue #123). */
     if (addr == 0x0000 && (val & 0x80)) {
         for (int s = 0; s < 4; s++) {
             close_sock(s);
             rx_wr[s] = 0;
         }
-        memset(&regs[0x0400], 0, sizeof(regs) - 0x0400);
-        regs[0x0000] = 0x03;
-        regs[0x003C] = 0x07;
+        memset(regs, 0, sizeof(regs));
+        restore_hw_defaults();
         if (net4cpc_trace)
             fprintf(stderr, "[net4cpc]     soft reset complete; "
-                            "MR -> 03 (IND+AI), common block preserved\n");
+                            "all registers restored to hardware defaults\n");
+        return;
+    }
+    /* TCNTCLR (0x0088): writing any value restarts the ticker. */
+    if (addr == 0x0088) {
+        tcntr_reset();
         return;
     }
     /* Sn_IR is write-1-to-clear per W5100S datasheet § 4.2.10. The
@@ -670,25 +720,7 @@ void net4cpc_reset(void) {
         close_sock(s);
         rx_wr[s] = 0;
     }
-    /* MR = 0x03: indirect bus mode + auto-increment.
-     * The n4c-nettools driver reads this port to confirm the chip is present. */
-    regs[0x0000] = 0x03;
-    /* PHYCFGR (0x003C) = link up, 100 Mbps, full duplex.
-     * The KCNet utilities (NCFG, PING, NTIME, …) read this register before
-     * doing any network operation; if LNK=0 they print
-     * "network-cable not connected !" and bail. We're always linked —
-     * the host owns the upstream interface.
-     *
-     * Bit layout per W5100S datasheet § 4.5:
-     *   bit 7: RST   (write 1 to soft-reset PHY; reads back 0 normally)
-     *   bit 6: OPMD  (0 = hardware AUTO_NEGO pin, 1 = OPMDC bits drive)
-     *   bit 5-3: OPMDC (operation mode config when OPMD=1)
-     *   bit 2: DPX   (1 = full duplex)
-     *   bit 1: SPD   (1 = 100 Mbps)
-     *   bit 0: LNK   (1 = link up)
-     * We leave OPMD=0 so the chip looks like it's in default AUTO_NEGO
-     * mode, and report DPX=1, SPD=1, LNK=1. */
-    regs[0x003C] = 0x07;
+    restore_hw_defaults();
 }
 
 int net4cpc_attach_tap(const char *devname) {
