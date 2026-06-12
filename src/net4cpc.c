@@ -40,6 +40,8 @@ static char tap_dev_name[32] = { 0 };
 static int  stack_deliver_udp(const u8 src_ip[4], u16 src_port,
                               u16 dst_port,
                               const u8 *payload, u16 payload_len);
+static int  stack_deliver_ip (u8 proto, const u8 src_ip[4],
+                              const u8 *payload, u16 payload_len);
 static void stack_sync_config(void);
 static void stack_tcp_state (int s, u8 new_sr);
 static int  stack_tcp_data  (int s, const u8 *data, int len);
@@ -69,8 +71,14 @@ static const u16 BUF_SIZE     = 2048u;
 #define SR_RX_RD  0x28u /* 2 bytes */
 
 /* Socket modes */
-#define SMODE_TCP 0x01u
-#define SMODE_UDP 0x02u
+#define SMODE_TCP   0x01u
+#define SMODE_UDP   0x02u
+#define SMODE_IPRAW 0x03u   /* raw IP — used by KCNet PING.COM for ICMP */
+
+/* IPRAW-specific socket register: Sn_PROTO (the IP protocol number
+ * the chip puts in the IP header of outbound packets and matches on
+ * inbound). Per W5100S datasheet § 4.2.5. */
+#define SR_PROTO 0x14u
 
 /* Socket status */
 #define SSTAT_CLOSED      0x00u
@@ -84,6 +92,7 @@ static const u16 BUF_SIZE     = 2048u;
 #define SSTAT_CLOSE_WAIT  0x1Cu
 #define SSTAT_LAST_ACK    0x1Du
 #define SSTAT_UDP         0x22u
+#define SSTAT_IPRAW       0x32u
 
 /* Socket commands */
 #define SCMD_OPEN    0x01u
@@ -304,6 +313,16 @@ static void handle_command(int s, u8 cmd) {
             rx_wr[s] = 0;
             break;
         }
+        if (mode == SMODE_IPRAW && n4c_stack_active()) {
+            regs[SOCK_BASE[s] + SR_SR] = SSTAT_IPRAW;
+            set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
+            set16(SOCK_BASE[s] + SR_TX_WR,  0);
+            set16(SOCK_BASE[s] + SR_TX_RD,  0);
+            set16(SOCK_BASE[s] + SR_RX_RSR, 0);
+            set16(SOCK_BASE[s] + SR_RX_RD,  0);
+            rx_wr[s] = 0;
+            break;
+        }
         sock_fd[s] = socket(AF_INET,
                             mode == SMODE_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (sock_fd[s] != -1) {
@@ -425,6 +444,15 @@ static void handle_command(int s, u8 cmd) {
                     sendto(sock_fd[s], (const char *)buf, len, 0,
                            (struct sockaddr *)&dst, sizeof(dst));
                 }
+            } else if (mode == SMODE_IPRAW && n4c_stack_active()) {
+                u8 dst_ip[4] = {
+                    regs[SOCK_BASE[s] + SR_DIPR],
+                    regs[SOCK_BASE[s] + SR_DIPR + 1],
+                    regs[SOCK_BASE[s] + SR_DIPR + 2],
+                    regs[SOCK_BASE[s] + SR_DIPR + 3],
+                };
+                u8 proto = regs[SOCK_BASE[s] + SR_PROTO];
+                udp_send_result = n4c_stack_send_ip(proto, dst_ip, buf, len);
             } else if (mode == SMODE_TCP && n4c_stack_active()) {
                 /* TAP-backed TCP. Don't advance TX_RD here — the stack
                  * does that via the ack callback when the peer ACKs. */
@@ -455,7 +483,7 @@ static void handle_command(int s, u8 cmd) {
          * DHCPDECLINE. (For broadcasts arp_resolve() returns the
          * broadcast MAC immediately so SEND_OK is always the right
          * answer there.) */
-        if (mode == SMODE_UDP) {
+        if (mode == SMODE_UDP || mode == SMODE_IPRAW) {
             if (udp_send_result > 0)
                 regs[SOCK_BASE[s] + SR_IR] |= 0x10;   /* SEND_OK */
             else
@@ -536,6 +564,7 @@ static const char *reg_name(u16 addr, int *sock_out) {
             case 0x0C: case 0x0D: case 0x0E: case 0x0F: return "Sn_DIPR";
             case 0x10: case 0x11: return "Sn_DPORT";
             case 0x12: case 0x13: return "Sn_MSSR";
+            case 0x14: return "Sn_PROTO";
             case 0x15: return "Sn_TOS";
             case 0x16: return "Sn_TTL";
             case 0x20: case 0x21: return "Sn_TX_FSR";
@@ -736,6 +765,7 @@ int net4cpc_attach_tap(const char *devname) {
     tap_fd = fd;
     n4c_stack_attach(tap_fd, regs + 0x09, regs + 0x0F, regs + 0x01, regs + 0x05);
     n4c_stack_set_udp_deliver(stack_deliver_udp);
+    n4c_stack_set_ip_deliver (stack_deliver_ip);
     n4c_stack_set_tcp_callbacks(stack_tcp_state,
                                 stack_tcp_data,
                                 stack_tcp_ack);
@@ -813,6 +843,36 @@ static int stack_deliver_udp(const u8 src_ip[4], u16 src_port,
         write_rx_byte(s, src_ip[3]);
         write_rx_byte(s, (u8)(src_port >> 8));
         write_rx_byte(s, (u8)(src_port));
+        write_rx_byte(s, (u8)(payload_len >> 8));
+        write_rx_byte(s, (u8)(payload_len));
+        for (u16 i = 0; i < payload_len; i++)
+            write_rx_byte(s, payload[i]);
+        update_rx_rsr(s);
+        regs[SOCK_BASE[s] + SR_IR] |= 0x04;   /* RECV */
+        return 1;
+    }
+    return 0;
+}
+
+/* IPRAW inbound: find a socket in IPRAW mode whose Sn_PROTO matches
+ * this frame's IP protocol, and push it the W5100S IPRAW frame format
+ * (4 bytes src IP, 2 bytes length, then the L3 payload). */
+static int stack_deliver_ip(u8 proto, const u8 src_ip[4],
+                            const u8 *payload, u16 payload_len) {
+    for (int s = 0; s < 4; s++) {
+        u8 mode = regs[SOCK_BASE[s] + SR_MR] & 0x0F;
+        u8 sr   = regs[SOCK_BASE[s] + SR_SR];
+        if (mode != SMODE_IPRAW || sr != SSTAT_IPRAW) continue;
+        if (regs[SOCK_BASE[s] + SR_PROTO] != proto) continue;
+
+        u16 used  = (u16)(rx_wr[s] - get16(SOCK_BASE[s] + SR_RX_RD));
+        u16 space = (u16)(BUF_SIZE - used);
+        if (space < 6u + payload_len) return 0;
+
+        write_rx_byte(s, src_ip[0]);
+        write_rx_byte(s, src_ip[1]);
+        write_rx_byte(s, src_ip[2]);
+        write_rx_byte(s, src_ip[3]);
         write_rx_byte(s, (u8)(payload_len >> 8));
         write_rx_byte(s, (u8)(payload_len));
         for (u16 i = 0; i < payload_len; i++)
