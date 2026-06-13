@@ -37,6 +37,21 @@ typedef struct {
     int cycles;        /* T-states consumed this step */
     u8   last_op;      /* opcode just fetched by z80_step (for CPC cc_op[] lookup) */
     u8   last_prefix;  /* 0, 0xCB, 0xED, 0xDD, 0xFD — for prefix-table dispatch */
+
+    /* Pipeline-state hint left by the previous instruction. Set to 1 by
+     * z80_step when the last opcode was a 16-bit INC/DEC rr, EX (SP),rr,
+     * LD SP,rr, a non-taken RET cc, or a repeating CPIR/CPDR; 0 otherwise.
+     * Consumed at the top of the next z80_step_impl: when an IRQ is
+     * accepted and iWSAdjust > 0, the accept cost is reduced by 4 cycles,
+     * mirroring Caprice32/konCePCja/qcpcemu. Goes hand-in-hand with the
+     * IM1=20 / IM2=28 baseline costs they all share — IM1 effective cost
+     * is then 16 or 20 (context dependent), IM2 is 24 or 28. Closes the
+     * residual ~10% HDCPM boot race left by #102.
+     *
+     * NOTE: LDIR/LDDR repeats do NOT bump iWSAdjust per Caprice32's
+     * macros at z80.cpp:839-846 / 860-866; only CPIR/CPDR do
+     * (z80.cpp:753-760 / 775-782). */
+    int iWSAdjust;
 } Z80;
 
 /* Bus callbacks — implemented by cpc.c, wiring mem + I/O */

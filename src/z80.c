@@ -546,6 +546,7 @@ void z80_reset(Z80 *cpu) {
     cpu->halted = false;
     cpu->pending_irq = false;
     cpu->int_accepted = false;
+    cpu->iWSAdjust = 0;
 }
 
 void z80_interrupt(Z80 *cpu) {
@@ -633,6 +634,39 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     }
     if (taken)
         cycles += cc_ex[op];
+
+    /* iWSAdjust pipeline hint for the next instruction's IRQ accept.
+     * Mirrors Caprice32: 16-bit INC/DEC rr, EX (SP),rr, LD SP,rr, a
+     * non-taken RET cc, or a repeating CPIR/CPDR all shave 4 cycles
+     * off the next IM1/IM2 accept cost. Crucially LDIR/LDDR and
+     * block-IO repeats do NOT bump (caprice32 z80.cpp:839-846, 860-866). */
+    bool bump = false;
+    if (cpu->last_prefix == 0) {
+        switch (op) {
+        case 0x03: case 0x0B: case 0x13: case 0x1B:
+        case 0x23: case 0x2B: case 0x33: case 0x3B:   /* INC/DEC rr (BC/DE/HL/SP) */
+        case 0xE3:                                    /* EX (SP),HL              */
+        case 0xF9:                                    /* LD SP,HL                */
+            bump = true; break;
+        case 0xC0: case 0xC8: case 0xD0: case 0xD8:   /* RET cc — bump when NOT taken */
+        case 0xE0: case 0xE8: case 0xF0: case 0xF8:
+            bump = !taken; break;
+        }
+    } else if (cpu->last_prefix == 0xDD || cpu->last_prefix == 0xFD) {
+        switch (op) {
+        case 0x23: case 0x2B:                          /* INC/DEC IX/IY          */
+        case 0xE3:                                     /* EX (SP),IX/IY          */
+        case 0xF9:                                     /* LD SP,IX/IY            */
+            bump = true; break;
+        }
+    } else if (cpu->last_prefix == 0xED) {
+        switch (op) {
+        case 0xB1: case 0xB9:                          /* CPIR, CPDR — bump on repeat */
+            bump = taken; break;
+        }
+    }
+    cpu->iWSAdjust = bump ? 1 : 0;
+
     (void)b_before; /* future use if we need pre-state B for DJNZ corner case */
     (void)orig;
     return cycles;
@@ -662,9 +696,19 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
             }
         }
         push16(cpu, bus, cpu->pc);
+        /* IM1 = 20, IM2 = 28 baseline (Caprice32/konCePCja/qcpcemu).
+         * iWSAdjust shaves 4 cycles when the previous instruction left
+         * the pipeline state where the chip can accept the IRQ faster
+         * (16-bit INC/DEC, EX (SP),HL, LD SP,HL, non-taken RET cc,
+         * repeating CPIR/CPDR). Effective cost: 16/20 (IM1) or 24/28
+         * (IM2) depending on pipeline state. The two values are coupled
+         * — applied separately, either regresses HDCPM boot stability;
+         * applied together they restore the reference-emulator pacing. */
+        int adj = cpu->iWSAdjust ? -4 : 0;
+        cpu->iWSAdjust = 0;
         switch (cpu->im) {
-            case 0: case 1: cpu->pc = 0x0038; return 13;
-            case 2: cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF)); return 19;
+            case 0: case 1: cpu->pc = 0x0038; return 20 + adj;
+            case 2: cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF)); return 28 + adj;
         }
     }
     cpu->ei_delay = false;
