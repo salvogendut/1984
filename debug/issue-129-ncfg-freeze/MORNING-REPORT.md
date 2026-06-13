@@ -98,15 +98,28 @@ from what we'd assumed earlier:
 
 In priority order:
 
-1. Run `boot_only_check.py 20` to confirm whether the headless harness
-   regresses PR #128's 40/40 boot rate (i.e., is the Xvfb timing pure
-   noise, or did something in this branch break boot?). If the rate is
-   ≤30/40, the harness needs deeper investigation; the 40% fail rate
-   in our probe.py baseline is inflated by harness noise on top of
-   the actual #129 race.
-2. With TAP off (1984.conf `net4cpc=false`), confirm baseline:
-   if it's 100% pass, #129 is *entirely* a TAP-timing race.
-3. Build the deterministic-TAP-responder if pursuing the bug.
+1. ✅ **boot-only regression check: 10/10 PASS.** PR #128's boot rate is
+   intact under headless. The HDCPM_FAIL / PROMPT_FAIL we see in the
+   probe.py baseline are probe-time noise, not actual 1984 regressions.
+2. ⚠️ **net4cpc_tap=false test inconclusive.** Disabling TAP just kills
+   the built-in DHCP server too, so NCFG -a:cpc legitimately hangs (no
+   responder). N=8 with TAP off: 8/8 FREEZE_NCFG_A — but that's because
+   there's nothing to respond, not because the race isn't TAP-driven.
+   A clean confirmation test would need a deterministic mock TAP
+   responder (which is exactly the "fix" shape).
+3. **Build the deterministic-TAP-responder** if pursuing the bug. ~1-2
+   days. Outline:
+   - Add `n4c_stack_set_test_clock(cycle_count_callback)` so the stack
+     knows the current emulator time.
+   - Add `n4c_stack_schedule_packet(deliver_at_cycles, packet)` so test
+     code can queue DHCP-OFFER / ARP-REPLY at deterministic moments.
+   - In test mode, `tap_read()` returns those scheduled packets instead
+     of reading the real TAP fd.
+   - probe.py uses test mode; production runs use live TAP unchanged.
+4. **Atomic port of the full bus-contention model** from konCePCja as
+   a separate, larger project. Still wise to do at some point; only
+   addresses the residual CPU-level race that *might* still be there
+   once TAP is deterministic.
 
 ## How to use what shipped
 
