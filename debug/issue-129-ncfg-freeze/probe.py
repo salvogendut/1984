@@ -283,10 +283,23 @@ def run_once(run_id):
         pty.close()
         try: os.close(mfd)
         except: pass
+        # Aggressive cleanup: SIGTERM, wait, SIGKILL, then nuke any
+        # surviving 1984 process holding cpc-tap0. The headless harness
+        # depends on this — a single leaked process hogs the TAP and
+        # every subsequent run gets DHCP timeouts.
         try: os.killpg(proc.pid, signal.SIGTERM)
         except: pass
         try: proc.wait(timeout=2)
-        except: proc.kill()
+        except subprocess.TimeoutExpired:
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except: pass
+            try: proc.wait(timeout=2)
+            except: pass
+        # Belt and braces — kill any other 1984 instances that survived
+        # prior runs (e.g. orphaned by a probe.py crash mid-batch).
+        subprocess.run(["pkill", "-9", "-f", "1984 --memory=576 --ocr-monitor"],
+                       capture_output=True)
+        time.sleep(0.5)
 
 
 def main():
