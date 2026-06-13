@@ -275,6 +275,14 @@ static void send_arp_reply(const u8 target_mac[6], const u8 target_ip[4]) {
     tap_tx(f, 60);
 }
 
+/* Sub-millisecond ARP wait: when arp_resolve has just fired a request,
+ * give the host kernel a few polls to push the reply back through the
+ * TAP before declaring failure. The next-hop IP for off-subnet traffic
+ * is our own TAP's host endpoint, so the round trip is local-kernel
+ * fast — without this retry the caller (KCNet PING, NCFG -a) sees a
+ * spurious "Send ARP Error" on the very first packet. (#130) */
+static bool arp_resolve_with_retry(const u8 dst_ip[4], u8 out_mac[6]);
+
 bool n4c_stack_arp_resolve(const u8 dst_ip[4], u8 out_mac[6]) {
     if (!n4c_stack_active()) return false;
 
@@ -301,6 +309,22 @@ bool n4c_stack_arp_resolve(const u8 dst_ip[4], u8 out_mac[6]) {
     ArpEntry *e = arp_find(hop_ip);
     if (e) { memcpy(out_mac, e->mac, 6); return true; }
     send_arp_request(hop_ip);
+    return false;
+}
+
+static bool arp_resolve_with_retry(const u8 dst_ip[4], u8 out_mac[6]) {
+    if (n4c_stack_arp_resolve(dst_ip, out_mac))
+        return true;
+    /* arp_resolve has fired the request. Drain the TAP a handful of times
+     * looking for the reply. Each n4c_stack_poll drains one frame (or
+     * returns immediately if none available), so we cap iterations rather
+     * than wall-clock. ~32 iterations comfortably covers a local-kernel
+     * round trip without blocking the emulator visibly. */
+    for (int i = 0; i < 32; i++) {
+        n4c_stack_poll();
+        if (n4c_stack_arp_resolve(dst_ip, out_mac))
+            return true;
+    }
     return false;
 }
 
@@ -1206,8 +1230,8 @@ int n4c_stack_send_udp(u16 src_port,
     }
 
     u8 dst_mac[6];
-    if (!n4c_stack_arp_resolve(dst_ip, dst_mac))
-        return -1;        /* ARP query queued; caller retries */
+    if (!arp_resolve_with_retry(dst_ip, dst_mac))
+        return -1;        /* ARP timed out for real */
 
     if (payload_len > TAP_FRAME_MAX - 14 - 20 - 8) return -1;
 
@@ -1251,7 +1275,7 @@ int n4c_stack_send_ip(u8 proto, const u8 dst_ip[4],
     if (!n4c_stack_active()) return -1;
 
     u8 dst_mac[6];
-    if (!n4c_stack_arp_resolve(dst_ip, dst_mac))
+    if (!arp_resolve_with_retry(dst_ip, dst_mac))
         return -1;
 
     if (payload_len > TAP_FRAME_MAX - 14 - 20) return -1;
