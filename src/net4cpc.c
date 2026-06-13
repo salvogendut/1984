@@ -148,7 +148,7 @@ static void update_tx_fsr(int s) {
 
 /* Install the post-reset hardware default values for the W5100S register
  * file. Per the W5100S datasheet § 3.2, several registers come up with
- * non-zero defaults (RTR, RCR, RMSR/TMSR, PHYCFGR, …). The maintainer of
+ * non-zero defaults (RTR, RCR, RMSR/TMSR, PHYSR0, …). The maintainer of
  * the n4c-nettools driver reported (issue #123) that our previous code,
  * which preserved the common block across MR.RST, was contrary to the
  * datasheet — §3.1.1 says MR.RST initialises ALL registers. So both the
@@ -166,11 +166,15 @@ static void restore_hw_defaults(void) {
     regs[0x0030] = 0x40;
     regs[0x003A] = 0xFF;
     regs[0x003B] = 0xFF;
-    /* PHYCFGR (0x003C): we report LNK=1, SPD=1, DPX=1 so KCNet utilities
-     * (NCFG, PING, NTIME, …) pass their link-up gate — the host owns the
-     * upstream interface, so the wire is always "up" from the CPC's
-     * point of view. */
-    regs[0x003C] = 0x07;
+    /* PHYSR0 (0x003C): the W5100S' PHY status register. Per the W5100S
+     * datasheet (NOT W5500's PHYCFGR — they share the address but invert
+     * the FDPX and FSPD bits): bit 0 = LNK (link up), bit 1 = FDPX
+     * (full duplex), bit 2 = FSPD (100 Mbps). We previously wrote 0x07,
+     * which on a W5100S means half duplex + 10 Mb + link up (SymbOS's
+     * Network Daemon display reflects that, which the Net4CPC maintainer
+     * pointed out). Correct value for full duplex + 100 Mbps + link up
+     * is 0x01. */
+    regs[0x003C] = 0x01;
     regs[0x003D] = 0x81;
     regs[0x0045] = 0x01;
     regs[0x0047] = 0x41;
