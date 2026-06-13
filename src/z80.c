@@ -661,8 +661,24 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         }
     } else if (cpu->last_prefix == 0xED) {
         switch (op) {
-        case 0xB1: case 0xB9:                          /* CPIR, CPDR — bump on repeat */
-            bump = taken; break;
+        /* ED block-move and single-byte block ops: caprice32 + konCePCja
+         * both bump iWSAdjust on EVERY iteration of these (the macro
+         * doesn't, but the dispatcher does — z80.cpp:2408-2411 in
+         * caprice32, :2574-2575 in konCePCja). 1984 previously omitted
+         * LDIR/LDDR per a misreading of the macro alone; that was a real
+         * gap because LDIR/LDDR loops at PC=0x0B2C are exactly where the
+         * #129 NCFG/ping race lands. Adding all of LDI/LDD/LDIR/LDDR. */
+        case 0xA0: case 0xA8:                          /* LDI,  LDD            */
+        case 0xB0: case 0xB8:                          /* LDIR, LDDR           */
+        case 0xA1: case 0xA9:                          /* CPI,  CPD            */
+            bump = true; break;
+        case 0xB1: case 0xB9:                          /* CPIR, CPDR           */
+            bump = true; break;
+        /* LD A,I / LD A,R / LD I,A / LD R,A — caprice32 z80.cpp:2412-2423.
+         * The Z80's I/R registers feed the IRQ vector, so accesses adjust
+         * the same pipeline state. */
+        case 0x47: case 0x4F: case 0x57: case 0x5F:
+            bump = true; break;
         }
     }
     cpu->iWSAdjust = bump ? 1 : 0;
