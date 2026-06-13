@@ -101,11 +101,17 @@ void kbd_pty_emit_char(unsigned char c) {
     (void)!write(s_fd, &c, 1);
 }
 
+void kbd_pty_emit_buf(const void *buf, int len) {
+    if (s_fd < 0 || len <= 0) return;
+    (void)!write(s_fd, buf, (size_t)len);
+}
+
 #else  /* _WIN32 */
 
 const char *kbd_pty_open(void) { return NULL; }
 bool        kbd_pty_is_open(void) { return false; }
 void        kbd_pty_tick(Paste *p) { (void)p; }
 void        kbd_pty_emit_char(unsigned char c) { (void)c; }
+void        kbd_pty_emit_buf(const void *buf, int len) { (void)buf; (void)len; }
 
 #endif  /* _WIN32 */

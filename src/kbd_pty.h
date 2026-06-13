@@ -25,3 +25,9 @@ bool kbd_pty_is_open(void);
  * enters the firmware TXT WR CHAR vector (&BB5A) so external readers
  * see the CPC's text output in real time. */
 void kbd_pty_emit_char(unsigned char c);
+
+/* Stream a buffer out the PTY in one write() call — much more efficient
+ * than emit_char for bulk output (~1 KB screen-text frames every frame
+ * would otherwise saturate the master-side buffer in single-byte syscalls
+ * and starve the input-read path). Best-effort; partial writes are dropped. */
+void kbd_pty_emit_buf(const void *buf, int len);
