@@ -243,10 +243,9 @@ def run_once(run_id):
         n = pty.count_prompts()
         rep.write(f"→ ncfg -r completed (prompts={n})\n")
 
-        # Phase 5: ncfg -a:cpc — DHCP can be slow when the host's DHCP
-        # response and our built-in server's reply race. 90 s ceiling.
+        # Phase 5: ncfg -a:cpc — DHCP cycle, allow longer.
         pty.send(b"ncfg -a:cpc\r")
-        if not pty.wait_new_prompt(n, timeout=90):
+        if not pty.wait_new_prompt(n, timeout=45):
             rep.write("FREEZE_NCFG_A\n")
             rep.write("--- last frame ---\n" + pty.current_frame() + "\n")
             return "FREEZE_NCFG_A"
