@@ -9,10 +9,15 @@
 #define _XOPEN_SOURCE 600
 #include "kbd_pty.h"
 
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* PTYs are POSIX-only — Windows stubs return failure so callers fail
+ * closed if --kbd-pty is passed. The harness is Linux-only anyway. */
+#ifndef _WIN32
+
+#include <fcntl.h>
 #include <unistd.h>
 #include <termios.h>
 
@@ -95,3 +100,12 @@ void kbd_pty_emit_char(unsigned char c) {
     /* Best-effort write; don't block if the reader isn't draining. */
     (void)!write(s_fd, &c, 1);
 }
+
+#else  /* _WIN32 */
+
+const char *kbd_pty_open(void) { return NULL; }
+bool        kbd_pty_is_open(void) { return false; }
+void        kbd_pty_tick(Paste *p) { (void)p; }
+void        kbd_pty_emit_char(unsigned char c) { (void)c; }
+
+#endif  /* _WIN32 */
