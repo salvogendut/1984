@@ -1,6 +1,7 @@
 #include "cpc.h"
 #include "net4cpc.h"
 #include "snapshot.h"
+#include "kbd_pty.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -1029,6 +1030,15 @@ void cpc_frame(CPC *cpc) {
             ringp++;
         }
         int t = z80_step(&cpc->cpu, &cpc->bus);
+        /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
+         * "TXT WR CHAR" at &BB5A — A holds the byte to print. By
+         * sampling AFTER the step we catch the moment the CPU has
+         * just entered the vector (PC is at the second instruction
+         * already, but A is still the caller's). We rely on the next
+         * step to detect this; cheap, and only emits when a kbd PTY
+         * is actually open. */
+        if (cpc->cpu.pc == 0xBB5A && kbd_pty_is_open())
+            kbd_pty_emit_char(cpc->cpu.a);
         done += t;
         g_total_t += t;
         /* Advance the cassette by this instruction's T-states and push

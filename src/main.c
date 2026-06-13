@@ -11,6 +11,7 @@
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
+#include "kbd_pty.h"
 #include "joy.h"
 #include "net4cpc.h"
 #include "n4c_stack.h"
@@ -250,6 +251,8 @@ static void usage(const char *prog, int code) {
         "  --save-sna-at-ide=N:PATH  Save a .sna snapshot when the Nth ATA command is issued (for cross-emulator bisection)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
+        "  --kbd-pty           Open a PTY that injects writes as keystrokes and streams\n"
+        "                      the firmware text-out (&BB5A) for external test harnesses\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -289,6 +292,7 @@ int main(int argc, char *argv[]) {
     const char *save_sna_ide_path = NULL;
     bool        trace_io         = false;
     bool        monitor_pty      = false;
+    bool        kbd_pty_enabled  = false;
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
     int         memory_override  = 0;             /* 0 = no override */
@@ -347,6 +351,8 @@ int main(int argc, char *argv[]) {
             memory_override = kb;
         } else if (strcmp(argv[i], "--monitor-pty") == 0) {
             monitor_pty = true;
+        } else if (strcmp(argv[i], "--kbd-pty") == 0) {
+            kbd_pty_enabled = true;
         } else if (strcmp(argv[i], "--trace-io") == 0) {
             trace_io = true;
         } else if (strcmp(argv[i], "--trace-palette") == 0) {
@@ -573,6 +579,12 @@ int main(int argc, char *argv[]) {
 
     Paste paste;
     paste_init(&paste);
+
+    if (kbd_pty_enabled) {
+        const char *p = kbd_pty_open();
+        if (p) fprintf(stderr, "1984: kbd PTY: %s\n", p);
+        else   fprintf(stderr, "1984: failed to open kbd PTY\n");
+    }
 
     Joy joy;
     joy_init(&joy);
@@ -854,6 +866,7 @@ int main(int argc, char *argv[]) {
         }
 
         monitor_pty_tick(monitor);
+        kbd_pty_tick(&paste);
         paste_tick(&paste, &cpc.kbd);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;

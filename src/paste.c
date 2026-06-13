@@ -1,4 +1,5 @@
 #include "paste.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -140,6 +141,18 @@ void paste_text(Paste *p, const char *text) {
     p->buf[p->len]   = '\0';
     p->pos   = 0;
     p->timer = 3;   /* wait 3 frames for Ctrl to clear from the CPC matrix */
+    p->held  = false;
+}
+
+void paste_text_raw(Paste *p, const char *text) {
+    free(p->buf);
+    p->len = (int)strlen(text);
+    p->buf = malloc(p->len + 1);
+    if (!p->buf) { p->len = 0; return; }
+    memcpy(p->buf, text, p->len);
+    p->buf[p->len] = '\0';
+    p->pos   = 0;
+    p->timer = 3;
     p->held  = false;
 }
 
