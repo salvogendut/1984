@@ -101,6 +101,11 @@ void kbd_pty_emit_char(unsigned char c) {
     (void)!write(s_fd, &c, 1);
 }
 
+void kbd_pty_emit_buf(const void *buf, int len) {
+    if (s_fd < 0 || len <= 0) return;
+    (void)!write(s_fd, buf, (size_t)len);
+}
+
 #else  /* _WIN32 */
 
 const char *kbd_pty_open(void) { return NULL; }

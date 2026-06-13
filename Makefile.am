@@ -18,6 +18,7 @@ bin_PROGRAMS = 1984
 	src/overlay.c \
 	src/paste.c \
 	src/kbd_pty.c \
+	src/screen_text.c \
 	src/ppi.c \
 	src/psg.c \
 	src/rtc.c \
