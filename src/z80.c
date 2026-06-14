@@ -742,11 +742,11 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         cpu->iWSAdjust = 0;
         switch (cpu->im) {
             case 0: case 1:
-                /* konCePCja calls z80_wait_states inside the IRQ accept
-                 * (z80.cpp:1046) so the bus advances mid-acceptance, not
-                 * all-after. Pre-tick the IRQ-accept cycles before the
-                 * IM1 handler entry so the firmware sees the bus state
-                 * konCePCja would have at PC=0x0038 fetch. */
+                /* Mid-IRQ-accept bus tick: konCePCja calls z80_wait_states
+                 * inside the IRQ accept handler (z80.cpp:1046/1063) so the
+                 * GA interrupt counter advances mid-acceptance rather than
+                 * all-after. Empirically: removing this tick regresses the
+                 * sweep from 8/13 to 4/13. */
                 if (bus->tick) bus->tick(bus->ctx, 20 + adj);
                 cpu->pc = 0x0038; return 20 + adj;
             case 2:
@@ -991,9 +991,8 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
          * advance. NULL tick = legacy single-chunk behavior. */
         case 0xDB: {
             u8 n = FETCH8();
-            /* IN A,(n) is 12 cycles total in konCePCja (Ia=12 + Ia_=0).
-             * No pre-IO tick needed — the bus arbiter sees the same
-             * state at the IN time whether ticked before or after. */
+            /* IN A,(n) is 12 cycles total. Pre-ticking 12 cycles before
+             * the IN regressed sweep to 3/13, so kept as single-chunk. */
             cpu->a = IN((cpu->a<<8)|n);
             return 11;
         }
