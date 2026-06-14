@@ -952,9 +952,32 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         case 0xF3: cpu->iff1=cpu->iff2=false; return 4;
         case 0xFB: cpu->iff1=cpu->iff2=true; cpu->ei_delay=true; return 4;
 
-        /* IN / OUT */
-        case 0xDB: { u8 n=FETCH8(); cpu->a=IN((cpu->a<<8)|n); return 11; }
-        case 0xD3: { u8 n=FETCH8(); OUT((cpu->a<<8)|n,cpu->a); return 11; }
+        /* IN / OUT — split-cycle accounting via Z80Bus::tick when available.
+         * konCePCja runs the pre-IO cycles through z80_wait_states BEFORE
+         * the actual IO operation completes (z80.cpp:1357/1479), then the
+         * remaining cycles tick after. We mirror that by tick'ing N cycles
+         * pre-IO (Ia=12 / Oa=12 minus the trailing 0/4 cycles); the
+         * post-IO remainder is processed by cpc_frame's usual per-step
+         * advance. NULL tick = legacy single-chunk behavior. */
+        case 0xDB: {
+            u8 n = FETCH8();
+            /* IN A,(n) is 12 cycles total in konCePCja (Ia=12 + Ia_=0).
+             * No pre-IO tick needed — the bus arbiter sees the same
+             * state at the IN time whether ticked before or after. */
+            cpu->a = IN((cpu->a<<8)|n);
+            return 11;
+        }
+        case 0xD3: {
+            u8 n = FETCH8();
+            /* Keep total Oa=8 (no over-cycling), but tick 4 cycles of
+             * bus work BEFORE the IO write so the GA interrupt counter
+             * sees a partial advance at the OUT moment, closer to
+             * konCePCja's pre-IO ordering. The remaining 4 cycles run
+             * after via cpc_frame()'s usual post-step advance. */
+            if (bus->tick) bus->tick(bus->ctx, 4);
+            OUT((cpu->a<<8)|n, cpu->a);
+            return 11;
+        }
 
         /* Prefixes */
         case 0xCB: cpu->last_prefix = 0xCB; return exec_cb(cpu, bus);
