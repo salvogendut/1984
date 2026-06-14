@@ -85,6 +85,39 @@ The remaining instability is therefore not accumulated cycle drift but
 a specific cycle-alignment race that still fires occasionally inside
 the CP/M+ "Scanning startup devices" path.
 
+## Status after the bus-tick infrastructure shipped
+
+Commits `2355537..5fa5197` on the branch implement the full IO-cycle
+split sketched above. Z80Bus has the `tick(N)` + `ticked_in_step`
+fields. cpc.c has `cpc_advance_crtc()` extracted from `cpc_frame()`
+and a `cpc_bus_tick()` callback wired in. OUT (n),A, OUT (C),r,
+OUTI/OUTD/OTIR/OTDR, and the IM1/IM2 IRQ accept all call
+`bus->tick(N)` mid-instruction now.
+
+Result on the #129 race: **no improvement**. The infrastructure is
+correct (boot still reaches CP/M Plus, no regressions), but moving
+the bus-arbiter call earlier inside IO instructions and IRQ accept
+doesn't close the cold-reset window. The race fires the same way
+whether the bus advance is all-after-instruction (old) or split
+pre-IO/post-IO (new).
+
+This is moderately strong evidence that the race is **not** in
+GA-interrupt-counter alignment relative to IO instructions. Two
+other categories remain:
+
+- **Per-instruction T-state errors** beyond the iWSAdjust set —
+  individual opcodes might be 1–2 cycles off in their cc_op table
+  values vs konCePCja, accumulating drift over the long CP/M+ scan
+  loop. Cross-checking the cc_op/cc_cb/cc_ed/cc_xy tables byte-for-
+  byte against konCePCja showed them IDENTICAL, but konCePCja's
+  IMPL paths use `_` constants (the post-IO portion) that 1984
+  doesn't apply — and we've shown bumping them to match regresses.
+- **Memory-banking timing** inside CP/M+'s upper-bank dance —
+  the kernel switches between banks 0/4/5/6/7 at 0xC000-0xFFFF via
+  the `0x7Fxx` MMR write; if 1984's bank-select takes effect at a
+  different T-state than konCePCja, the CPU could fetch from the
+  wrong bank for one cycle and execute a wrong instruction.
+
 ## Recommended next session
 
 1. **Add `crtc_tick`/`ga_tick` calls inside IO instructions** to mirror
