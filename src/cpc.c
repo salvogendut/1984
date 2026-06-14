@@ -742,10 +742,13 @@ void cpc_frame(CPC *cpc) {
                         halt_loop ? "  <<< HALT LOOP at $BE54!" : "");
             hits++;
         }
-        /* Capture CRTC state BEFORE tick for this character clock */
-        u16  cur_ma = cpc->crtc.ma;
-        u8   cur_ra = cpc->crtc.vlc;
-        bool cur_de = cpc->crtc.display_enable;
+        /* Capture CRTC state BEFORE tick for this character clock. Stored
+         * on the struct (not stack-local) so the Z80 bus tick hook can
+         * run a partial CRTC advance in the middle of an instruction and
+         * the resumed chunk picks up where the previous one left off. */
+        cpc->crtc_pre_ma = cpc->crtc.ma;
+        cpc->crtc_pre_ra = cpc->crtc.vlc;
+        cpc->crtc_pre_de = cpc->crtc.display_enable;
 
         /* Reset-PC ring fill, gated on the global trace flag — needs to
          * record every Z80 instruction, not just the panic-trace one,
@@ -1097,11 +1100,11 @@ void cpc_frame(CPC *cpc) {
 
             if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px < CPC_SCREEN_W) {
                 u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
-                if (cur_de) {
+                if (cpc->crtc_pre_de) {
                     /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
-                    u16 bank = (cur_ma >> 12) & 3;
-                    u16 col  = cur_ma & 0x3FF;
-                    u16 addr = (u16)((bank << 14) | ((cur_ra & 7) << 11) | (col << 1));
+                    u16 bank = (cpc->crtc_pre_ma >> 12) & 3;
+                    u16 col  = cpc->crtc_pre_ma & 0x3FF;
+                    u16 addr = (u16)((bank << 14) | ((cpc->crtc_pre_ra & 7) << 11) | (col << 1));
                     u8  b0   = mem_read_video(&cpc->mem, addr);
                     u8  b1   = mem_read_video(&cpc->mem, (u16)(addr + 1));
                     render_char(row, px, &cpc->ga, b0, b1);
@@ -1118,9 +1121,9 @@ void cpc_frame(CPC *cpc) {
             cpc->raster_x++;
 
             /* Capture next char's pre-tick state */
-            cur_ma = cpc->crtc.ma;
-            cur_ra = cpc->crtc.vlc;
-            cur_de = cpc->crtc.display_enable;
+            cpc->crtc_pre_ma = cpc->crtc.ma;
+            cpc->crtc_pre_ra = cpc->crtc.vlc;
+            cpc->crtc_pre_de = cpc->crtc.display_enable;
         }
 
         /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
