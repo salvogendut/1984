@@ -97,6 +97,11 @@ typedef struct {
  * Returns 0 on success, -1 if a value is invalid (error printed to stderr). */
 int config_load(Config *cfg);
 
+/* Same as config_load but reads from path_override (if non-NULL and non-empty)
+ * instead of ~/.config/1984/1984.conf. config_save() still targets the user's
+ * default path, so an override is read-only. */
+int config_load_from(Config *cfg, const char *path_override);
+
 /* Fill cfg with compiled-in defaults. */
 void config_defaults(Config *cfg);
 

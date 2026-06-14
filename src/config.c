@@ -215,16 +215,30 @@ static void config_create_default(const char *path, const char *home) {
 }
 
 int config_load(Config *cfg) {
+    return config_load_from(cfg, NULL);
+}
+
+int config_load_from(Config *cfg, const char *path_override) {
     config_defaults(cfg);
 
-    const char *home = getenv("HOME");
-    if (!home) return 0;
-
     char path[CONFIG_PATH_MAX];
-    snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+    bool using_override = (path_override && *path_override);
+
+    if (using_override) {
+        snprintf(path, sizeof(path), "%s", path_override);
+    } else {
+        const char *home = getenv("HOME");
+        if (!home) return 0;
+        snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+    }
 
     FILE *f = fopen(path, "r");
     if (!f) {
+        if (using_override) {
+            fprintf(stderr, "1984: --config: cannot open '%s'\n", path);
+            return -1;
+        }
+        const char *home = getenv("HOME");
         config_create_default(path, home);
         return 0;
     }

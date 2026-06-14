@@ -75,6 +75,11 @@ void kbd_pty_tick(Paste *p) {
          * line endings ("\r") fire Enter correctly. */
         if (c == '\r') c = '\n';
         s_in[s_in_len++] = c;
+        if (getenv("ONE_K_TRACE_KBDPTY")) {
+            fprintf(stderr, "[kbd_pty] read byte 0x%02X (%c)\n",
+                    (unsigned)c, (c >= 32 && c < 127) ? c : '.');
+            fflush(stderr);
+        }
     }
     s_in[s_in_len] = '\0';
 

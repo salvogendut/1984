@@ -229,6 +229,8 @@ static void usage(const char *prog, int code) {
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
+        "  --config=PATH       Use PATH as the config file instead of ~/.config/1984/1984.conf\n"
+        "                      (read-only; config_save still targets the default path)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
@@ -283,6 +285,7 @@ int main(int argc, char *argv[]) {
     net_compat_init();   /* initialise Winsock (no-op on POSIX) */
     SD_LOG("net_compat_init done");
 
+    const char *config_path     = NULL;   /* --config=PATH overrides ~/.config/1984/1984.conf */
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
     const char *load_sna_arg    = NULL;
@@ -311,6 +314,8 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
             usage(argv[0], 0);
+        else if (strncmp(argv[i], "--config=", 9) == 0 && argv[i][9] != '\0')
+            config_path = argv[i] + 9;
         else if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
@@ -412,7 +417,7 @@ int main(int argc, char *argv[]) {
 
     SD_LOG("args parsed, calling config_load");
     Config cfg;
-    if (config_load(&cfg) < 0) {
+    if (config_load_from(&cfg, config_path) < 0) {
         SD_LOG("config_load FAILED (returned <0)");
         return 1;
     }
