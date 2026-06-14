@@ -323,10 +323,12 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
             cpu->f = (cpu->f & Z80_FLAG_C) | sz(v) | par(v);
             return 12;
         }
-        /* OUT (C),r */
+        /* OUT (C),r — pre-tick 4 bus cycles before the IO write to mirror
+         * konCePCja's z80_wait_states-then-IO pattern (z80.cpp:1479-1496). */
         case 0x41: case 0x49: case 0x51: case 0x59:
         case 0x61: case 0x69: case 0x71: case 0x79: {
             int ri = (op >> 3) & 7;
+            if (bus->tick) bus->tick(bus->ctx, 4);
             OUT(cpu->bc, ri == 6 ? 0 : get_r(cpu, bus, ri, cpu->hl));
             return 12;
         }
@@ -391,15 +393,17 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xA9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); return 16; }
         case 0xB1: { u8 v=READ8(cpu->hl++); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
         case 0xB9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
-        /* Block I/O */
+        /* Block I/O — IN ops: 16 cycles total, no pre-IO tick needed
+         * (konCePCja Iy=16 + Iy_=0). OUT ops: pre-tick 4 cycles before
+         * the IO write to mirror konCePCja's Oy=12 + Oy_=4 split. */
         case 0xA2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xAA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xB2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         case 0xBA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xA3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xAB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        case 0xA3: { u8 v=READ8(cpu->hl++); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
+        case 0xAB: { u8 v=READ8(cpu->hl--); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
+        case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         default:
             /* All undefined ED-prefix opcodes are documented to behave as
              * 2-byte 8-T-state NOPs on real Z80 hardware. CP/M+ kernels
