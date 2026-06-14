@@ -122,20 +122,33 @@ the CP/M+ "Scanning startup devices" path.
    typedef struct {
        ... existing fields ...
        void (*tick)(void *ctx, int cycles);   /* new: bus arbiter */
+       int  *ticked_in_step;                  /* zeroed per z80_step */
    } Z80Bus;
 
+   /* In z80_step (wrapper), zero *ticked_in_step at entry. */
    /* In z80_step_impl(), for OUT (n),A: */
    case 0xD3: {
        u8 n = FETCH8();                /* 4-cycle fetch */
        bus->tick(bus->ctx, 8);         /* pre-IO bus arbiter (Oa) */
        OUT((cpu->a<<8)|n, cpu->a);     /* IO write */
-       return 4;                       /* post-IO cycles (Oa_) */
+       return 12;                      /* total cycles */
    }
+
+   /* cpc_frame() main loop, after z80_step returns t cycles: */
+   int remaining = t - cpc->bus_ticked_in_step;
+   if (remaining > 0) cpc_advance_bus(cpc, remaining);
    ```
 
-   `cpc_frame()` would gain a `cpc_tick_bus(int cycles)` that runs
-   the existing CRTC/PSG/FDC accumulators for N cycles and is hooked
-   into the new `bus->tick` slot.
+   **Refactor prerequisite identified this session**: the CRTC tick
+   loop in `cpc_frame()` uses three function-scope locals —
+   `cur_ma`, `cur_ra`, `cur_de` (cpc.c:746-748) — captured before
+   the step and updated at each char-clock tick (cpc.c:1121-1123).
+   For a mid-instruction `bus->tick(N)` to work, those locals have
+   to move into the `CPC` struct so the second chunk of CRTC work
+   resumes from the state the first chunk left in them. Without
+   that move, the second chunk would still see the pre-step values
+   and render incorrect addresses. This is a contained ~30-line
+   refactor of `cpc_frame()` that must precede the Z80Bus tick hook.
 
 ## Files for this session
 
