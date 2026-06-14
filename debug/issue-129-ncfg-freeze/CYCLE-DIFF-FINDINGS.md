@@ -100,15 +100,42 @@ the CP/M+ "Scanning startup devices" path.
    `step trace` + filter). If 1984 sees a different number of
    executions, the LD I,A regression has a structural explanation.
 3. ~~Bisect block-IO patterns by bumping cc_op for OUT~~ (TRIED,
-   regresses). Setting `Oa=12, Ox=12, Oy=16` to match konCePCja's
-   split-totals corrupted PSG / keyboard-matrix timing — at frame 4000
-   the screen shows BASIC Ready with garbled keystrokes typed in
-   (random arrow / cursor characters mixed into the line buffer), then
-   `|hdcpm` → "Syntax error". So the per-OUT cycle delta CAN'T just be
-   collapsed into the table — it has to interleave with the bus arbiter
-   the way konCePCja does. The right fix is a real `z80_step()`
-   restructure to split each IO into "pre-cycles | IO | post-cycles"
-   with `cpc_frame()`'s per-cycle hooks called between segments.
+   regresses two ways):
+   - Setting all three (`Oa=12, Ox=12, Oy=16`) at once corrupted
+     PSG / keyboard-matrix timing — frame 4000 shows BASIC Ready with
+     garbled keystrokes (arrow chars + `|hdcpm` → "Syntax error").
+   - Setting just `Oa=12` (OUT (n),A) alone — to target HDCPM's IDE
+     port writes specifically — also failed: cold-reset back to BASIC
+     by frame 4500 with no CP/M+ at all.
+
+   Both confirm the same root cause: the per-IO cycle delta CAN'T be
+   collapsed into the cc_op table. konCePCja's `z80_wait_states`
+   processes the **pre-IO** cycles, lets the bus update (CRTC tick,
+   IRQ counter, PSG, etc.) **before** the IO completes, then accounts
+   for **post-IO** cycles separately. 1984 lumps everything into one
+   chunk after the IO returns. The right fix is to add a tick(N)
+   callback to `Z80Bus` and have `z80_step_impl()` call it inside IO
+   ops, mirroring konCePCja's split-then-IO-then-split dance.
+
+   Sketch:
+   ```c
+   typedef struct {
+       ... existing fields ...
+       void (*tick)(void *ctx, int cycles);   /* new: bus arbiter */
+   } Z80Bus;
+
+   /* In z80_step_impl(), for OUT (n),A: */
+   case 0xD3: {
+       u8 n = FETCH8();                /* 4-cycle fetch */
+       bus->tick(bus->ctx, 8);         /* pre-IO bus arbiter (Oa) */
+       OUT((cpu->a<<8)|n, cpu->a);     /* IO write */
+       return 4;                       /* post-IO cycles (Oa_) */
+   }
+   ```
+
+   `cpc_frame()` would gain a `cpc_tick_bus(int cycles)` that runs
+   the existing CRTC/PSG/FDC accumulators for N cycles and is hooked
+   into the new `bus->tick` slot.
 
 ## Files for this session
 
