@@ -20,11 +20,11 @@
  *
  * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
  * ------------------------------------------------------------------ */
-/* IO cycle constants: 1984 uses these as table values for total cycles.
- * konCePCja splits each into pre-IO + post-IO portions (Oa=8+Oa_=4, etc.)
- * via z80_wait_states; we don't model that split. The Oa=12 bump (matching
- * konCePCja's split-total) is being tested under the LDIR+DD/FD-RET fix
- * landscape — earlier (without RET cc bumps) it regressed boot. */
+/* IO cycle constants. Oa matches konCePCja's split-total
+ * (Oa+Oa_=12); Ox/Oy left at the pre-IO portion only because raising
+ * them to konCePCja's split-totals (Ox=12, Oy=16) regresses boot —
+ * the bus-arbiter split timing inside those instructions matters for
+ * the HDCPM IDE block ops that hammer Ox/Oy. */
 #define Oa  12
 #define Ia  12
 #define Ox   8
