@@ -575,6 +575,11 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         use_tables = (e && e[0] == '0') ? 0 : 1;
     }
 
+    /* Reset the mid-step bus-tick counter before each instruction so IO
+     * opcodes can advance the bus arbiter partway through (see
+     * Z80Bus::tick / Z80Bus::ticked_in_step comments). */
+    if (bus->ticked_in_step) *bus->ticked_in_step = 0;
+
     if (!use_tables)
         return z80_step_impl(cpu, bus);
 
