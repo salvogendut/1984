@@ -30,7 +30,7 @@
  * to split-totals regresses HDCPM IDE block-op timing. */
 #define Oa  12   /* OUT (n),A           — pre 8 + post 4 */
 #define Ia  12   /* IN A,(n)            — pre 12 + post 0 */
-#define Ox   8   /* OUT (C),r — kept at pre-IO portion; split-total Ox=12 regresses */
+#define Ox   8   /* OUT (C),r: bare cycle bump regresses; needs split */
 #define Oy  12   /* OUTI/OUTD/OTIR/OTDR — split-total Oy=16 regresses */
 #define Ix  12
 #define Iy  16
