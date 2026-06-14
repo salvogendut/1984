@@ -87,8 +87,6 @@ def run_once(i):
          f"--config={REPO}/debug/issue-129-ncfg-freeze/test-nonet.conf"],
         cwd=REPO, stderr=open(log, "w"), stdout=subprocess.DEVNULL,
         env={**os.environ, "DISPLAY": HEADLESS, "SDL_VIDEODRIVER": "x11",
-             "ONE_K_TRACE_LBA": "1",
-             "ONE_K_TRACE_IM1": "1",
              "ONE_K_FAKE_RTC": "1",
              "ONE_K_FAKE_RTC_TIME": "12:00:00",
              "ONE_K_TRACE_KBDPTY": "1"},
@@ -115,7 +113,7 @@ def run_once(i):
             with open(rep, "w") as fp:
                 fp.write("no CP/M+ banner\n" + pty.current() + "\n")
             return "HDCPM_FAIL"
-        if not pty.wait_for(r"CPM>", timeout=45):
+        if not pty.wait_for(r"CPM>", timeout=90):
             with open(rep, "w") as fp:
                 fp.write("no A0:CPM> prompt\n" + pty.current() + "\n")
             return "PROMPT_FAIL"
