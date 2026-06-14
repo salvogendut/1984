@@ -329,6 +329,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         if (dbg_getenv("ONE_K_TRACE_FE58") && (val & 0xC0) == 0xC0)
             fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
                     cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
+        /* Interrupt reset also cancels a request already latched by the CPU. */
+        if ((val & 0xC0) == 0x80 && (val & 0x10))
+            cpc->cpu.pending_irq = false;
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
@@ -1136,6 +1139,10 @@ void cpc_frame(CPC *cpc) {
             ring[ringp & (LDIR_RING_N-1)] = cpc->cpu.pc;
             ringp++;
         }
+        /* The GA acknowledges an interrupt as the CPU accepts it, before
+         * interrupt-entry cycles advance the scanline counter. */
+        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay)
+            ga_irq_ack(&cpc->ga);
         int t = z80_step(&cpc->cpu, &cpc->bus);
         /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
          * "TXT WR CHAR" at &BB5A — A holds the byte to print. By
@@ -1156,19 +1163,13 @@ void cpc_frame(CPC *cpc) {
         if (remaining < 0) remaining = 0;
         cpc_advance_bus(cpc, remaining);
 
-        /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
-         * wait until the Z80 actually accepts the IRQ (IFF1=1, not in EI delay)
-         * — otherwise we'd reset the GA's scanline counter prematurely when
-         * IRQs are masked, throwing off the 300 Hz IRQ cadence the firmware
-         * (and HDCPM/CP/M+ kernel) depend on. konCePCja/Caprice32 ack inside
-         * the CPU IRQ-acceptance path; we mirror that via int_accepted. */
+        /* Deliver pending Gate Array interrupt. */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
             z80_interrupt(&cpc->cpu);
         }
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;
-            ga_irq_ack(&cpc->ga);
             if (dbg_getenv("ONE_K_TRACE_IRQ")) {
                 extern long long g_total_t;
                 static int irq_n = 0;
