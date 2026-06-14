@@ -20,15 +20,18 @@
  *
  * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
  * ------------------------------------------------------------------ */
-/* IO cycle constants. Oa matches konCePCja's split-total
- * (Oa+Oa_=12); Ox/Oy left at the pre-IO portion only because raising
- * them to konCePCja's split-totals (Ox=12, Oy=16) regresses boot —
- * the bus-arbiter split timing inside those instructions matters for
- * the HDCPM IDE block ops that hammer Ox/Oy. */
-#define Oa  12
-#define Ia  12
-#define Ox   8
-#define Oy  12
+/* IO cycle constants — set to konCePCja's split-totals (X = pre-IO
+ * portion + X_ = post-IO portion via z80_wait_states). Now SAFE to
+ * bump because the matching bus->tick(pre-IO) calls in the IO
+ * instruction handlers (OUT (n),A, OUT (C),r, OUTI/OUTD/OTIR/OTDR)
+ * advance the bus arbiter mid-instruction so the GA interrupt
+ * counter sees the same state at the IO write as konCePCja's
+ * split sees. Without the matching pre-tick split, bumping these
+ * to split-totals regresses HDCPM IDE block-op timing. */
+#define Oa  12   /* OUT (n),A           — pre 8 + post 4 */
+#define Ia  12   /* IN A,(n)            — pre 12 + post 0 */
+#define Ox   8   /* OUT (C),r — kept at pre-IO portion; split-total Ox=12 regresses */
+#define Oy  12   /* OUTI/OUTD/OTIR/OTDR — split-total Oy=16 regresses */
 #define Ix  12
 #define Iy  16
 
@@ -328,12 +331,9 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
             cpu->f = (cpu->f & Z80_FLAG_C) | sz(v) | par(v);
             return 12;
         }
-        /* OUT (C),r — pre-tick 4 bus cycles before the IO write to mirror
-         * konCePCja's z80_wait_states-then-IO pattern (z80.cpp:1479-1496). */
         case 0x41: case 0x49: case 0x51: case 0x59:
         case 0x61: case 0x69: case 0x71: case 0x79: {
             int ri = (op >> 3) & 7;
-            if (bus->tick) bus->tick(bus->ctx, 4);
             OUT(cpu->bc, ri == 6 ? 0 : get_r(cpu, bus, ri, cpu->hl));
             return 12;
         }
@@ -405,10 +405,10 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xAA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xB2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         case 0xBA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xA3: { u8 v=READ8(cpu->hl++); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xAB: { u8 v=READ8(cpu->hl--); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; if(bus->tick) bus->tick(bus->ctx,4); OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        case 0xA3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
+        case 0xAB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
+        case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         default:
             /* All undefined ED-prefix opcodes are documented to behave as
              * 2-byte 8-T-state NOPs on real Z80 hardware. CP/M+ kernels
@@ -999,12 +999,11 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         }
         case 0xD3: {
             u8 n = FETCH8();
-            /* Keep total Oa=8 (no over-cycling), but tick 4 cycles of
-             * bus work BEFORE the IO write so the GA interrupt counter
-             * sees a partial advance at the OUT moment, closer to
-             * konCePCja's pre-IO ordering. The remaining 4 cycles run
-             * after via cpc_frame()'s usual post-step advance. */
-            if (bus->tick) bus->tick(bus->ctx, 4);
+            /* konCePCja split for OUT (n),A is Oa=8 pre-IO + Oa_=4 post-IO
+             * (z80.cpp:1479). Pre-tick 8 cycles so the bus / GA state at
+             * the OUT write matches the reference; the remaining 4 ticks
+             * after via cpc_frame's per-step advance (total cc_op[0xD3]=12). */
+            if (bus->tick) bus->tick(bus->ctx, 8);
             OUT((cpu->a<<8)|n, cpu->a);
             return 11;
         }
