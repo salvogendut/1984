@@ -60,16 +60,6 @@ typedef struct {
     void (*mem_write)(void *ctx, u16 addr, u8 val);
     u8   (*io_read)  (void *ctx, u16 port);
     void (*io_write) (void *ctx, u16 port, u8 val);
-    /* Mid-instruction bus arbiter (mirror of konCePCja's
-     * z80_wait_states pattern). z80_step() zeroes *ticked_in_step
-     * before each instruction; IO opcodes may call tick(N) to advance
-     * the bus state by N cycles BEFORE the IO write completes, which
-     * also bumps *ticked_in_step. The outer cpc_frame() loop then
-     * subtracts ticked_in_step from the instruction's total before
-     * advancing the bus for the remaining post-IO cycles. NULL
-     * callbacks mean "no mid-step ticking" — preserves old behavior. */
-    void (*tick)    (void *ctx, int cycles);
-    int  *ticked_in_step;
     void *ctx;
 } Z80Bus;
 

@@ -503,10 +503,6 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 static void build_pen_tables(void);
 static bool g_pen_tables_built;
 
-/* Forward decl — definition lives near cpc_frame() with the rest of
- * the CRTC/bus advance code. */
-static void cpc_bus_tick(void *ctx, int cycles);
-
 int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic) {
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
@@ -539,13 +535,11 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     tape_init(&cpc->tape);
     net4cpc_reset();
 
-    cpc->bus.mem_read       = bus_mem_read;
-    cpc->bus.mem_write      = bus_mem_write;
-    cpc->bus.io_read        = bus_io_read;
-    cpc->bus.io_write       = bus_io_write;
-    cpc->bus.tick           = cpc_bus_tick;
-    cpc->bus.ticked_in_step = &cpc->bus_ticked_in_step;
-    cpc->bus.ctx            = cpc;
+    cpc->bus.mem_read  = bus_mem_read;
+    cpc->bus.mem_write = bus_mem_write;
+    cpc->bus.io_read   = bus_io_read;
+    cpc->bus.io_write  = bus_io_write;
+    cpc->bus.ctx       = cpc;
 
     const char *title = (model == MODEL_464)
         ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
@@ -701,90 +695,6 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
  * 16 (vsync pulse) + 56 (7 top border char rows × 8) = 72 */
 #define VSYNC_TO_DISPLAY_LINES 40
 
-/* Advance CRTC/Gate Array/render state by `cycles` CPU T-states. CRTC
- * ticks at 1 MHz = once per 4 T-states; crtc_cycle_acc holds the
- * sub-tick remainder so consecutive partial calls add up correctly.
- *
- * Callable both from the per-instruction tail of cpc_frame() AND from
- * the Z80Bus::tick hook mid-instruction (for konCePCja-style IO split
- * timing). The pre-tick CRTC snapshot used by the render block lives
- * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
-static void cpc_advance_crtc(CPC *cpc, int cycles) {
-    cpc->crtc_cycle_acc += cycles;
-    while (cpc->crtc_cycle_acc >= 4) {
-        cpc->crtc_cycle_acc -= 4;
-        crtc_tick(&cpc->crtc);
-
-        bool new_hsync = crtc_hsync(&cpc->crtc);
-        bool new_vsync = crtc_vsync(&cpc->crtc);
-
-        /* GA interrupt counter on hsync falling edge (matches Caprice32) */
-        if (!new_hsync && cpc->prev_hsync)
-            ga_hsync(&cpc->ga);
-
-        ppi_set_vsync(&cpc->ppi, new_vsync);
-
-        /* --- Edge detection BEFORE render so raster resets apply this tick --- */
-
-        /* HSYNC falling edge → start of new scan line */
-        if (!new_hsync && cpc->prev_hsync) {
-            cpc->raster_x = RASTER_X_AFTER_HSYNC;
-            cpc->raster_y++;
-        }
-
-        /* VSYNC rising edge → start of new frame */
-        if (new_vsync && !cpc->prev_vsync) {
-            cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
-            ga_vsync_start(&cpc->ga);
-            display_upload(&cpc->display);
-        }
-
-        cpc->prev_hsync = new_hsync;
-        cpc->prev_vsync = new_vsync;
-
-        /* --- Render 16 pixels for this char clock --- */
-        int px = cpc->raster_x * 16;
-        int py = cpc->raster_y;
-
-        if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px < CPC_SCREEN_W) {
-            u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
-            if (cpc->crtc_pre_de) {
-                /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
-                u16 bank = (cpc->crtc_pre_ma >> 12) & 3;
-                u16 col  = cpc->crtc_pre_ma & 0x3FF;
-                u16 addr = (u16)((bank << 14) | ((cpc->crtc_pre_ra & 7) << 11) | (col << 1));
-                u8  b0   = mem_read_video(&cpc->mem, addr);
-                u8  b1   = mem_read_video(&cpc->mem, (u16)(addr + 1));
-                render_char(row, px, &cpc->ga, b0, b1);
-            } else {
-                u32 c = cpc->ga.resolved_ink[16]; /* border */
-                u32 *out = row + px;
-                out[0]=c;  out[1]=c;  out[2]=c;  out[3]=c;
-                out[4]=c;  out[5]=c;  out[6]=c;  out[7]=c;
-                out[8]=c;  out[9]=c;  out[10]=c; out[11]=c;
-                out[12]=c; out[13]=c; out[14]=c; out[15]=c;
-            }
-        }
-
-        cpc->raster_x++;
-
-        /* Capture next char's pre-tick state */
-        cpc->crtc_pre_ma = cpc->crtc.ma;
-        cpc->crtc_pre_ra = cpc->crtc.vlc;
-        cpc->crtc_pre_de = cpc->crtc.display_enable;
-    }
-}
-
-/* Z80Bus::tick callback: advance CRTC by `cycles` mid-instruction and
- * remember how many cycles we already accounted for so cpc_frame()
- * doesn't double-tick. Wired in cpc_init(). */
-static void cpc_bus_tick(void *ctx, int cycles) {
-    CPC *cpc = (CPC *)ctx;
-    if (cycles <= 0) return;
-    cpc_advance_crtc(cpc, cycles);
-    cpc->bus_ticked_in_step += cycles;
-}
-
 void cpc_frame(CPC *cpc) {
     if (cpc->paused && !cpc->step_once) return;
     bool was_stepping = cpc->step_once;
@@ -832,13 +742,10 @@ void cpc_frame(CPC *cpc) {
                         halt_loop ? "  <<< HALT LOOP at $BE54!" : "");
             hits++;
         }
-        /* Capture CRTC state BEFORE tick for this character clock. Stored
-         * on the struct (not stack-local) so the Z80 bus tick hook can
-         * run a partial CRTC advance in the middle of an instruction and
-         * the resumed chunk picks up where the previous one left off. */
-        cpc->crtc_pre_ma = cpc->crtc.ma;
-        cpc->crtc_pre_ra = cpc->crtc.vlc;
-        cpc->crtc_pre_de = cpc->crtc.display_enable;
+        /* Capture CRTC state BEFORE tick for this character clock */
+        u16  cur_ma = cpc->crtc.ma;
+        u8   cur_ra = cpc->crtc.vlc;
+        bool cur_de = cpc->crtc.display_enable;
 
         /* Reset-PC ring fill, gated on the global trace flag — needs to
          * record every Z80 instruction, not just the panic-trace one,
@@ -1148,13 +1055,73 @@ void cpc_frame(CPC *cpc) {
             cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
         }
 
-        /* CRTC/GA/render advance for this instruction. The bus->tick
-         * hook (cpc_bus_tick) may have already advanced part of this
-         * step from inside an IO opcode; subtract that so we only
-         * tick the post-IO portion here. */
-        int remaining = t - cpc->bus_ticked_in_step;
-        if (remaining < 0) remaining = 0;
-        cpc_advance_crtc(cpc, remaining);
+        /* CRTC ticks at 1 MHz = every 4 CPU cycles. Track leftover cycles so we
+         * don't over-tick across instructions whose cycle count isn't a multiple
+         * of 4 (Caprice32 uses CPC-rounded cycles per opcode; we use raw Z80
+         * cycle counts and accumulate the remainder here). */
+        cpc->crtc_cycle_acc += t;
+        while (cpc->crtc_cycle_acc >= 4) {
+            cpc->crtc_cycle_acc -= 4;
+            crtc_tick(&cpc->crtc);
+
+            bool new_hsync = crtc_hsync(&cpc->crtc);
+            bool new_vsync = crtc_vsync(&cpc->crtc);
+
+            /* GA interrupt counter on hsync falling edge (matches Caprice32) */
+            if (!new_hsync && cpc->prev_hsync)
+                ga_hsync(&cpc->ga);
+
+            ppi_set_vsync(&cpc->ppi, new_vsync);
+
+            /* --- Edge detection BEFORE render so raster resets apply this tick --- */
+
+            /* HSYNC falling edge → start of new scan line */
+            if (!new_hsync && cpc->prev_hsync) {
+                cpc->raster_x = RASTER_X_AFTER_HSYNC;
+                cpc->raster_y++;
+            }
+
+            /* VSYNC rising edge → start of new frame */
+            if (new_vsync && !cpc->prev_vsync) {
+                cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
+                ga_vsync_start(&cpc->ga);
+                display_upload(&cpc->display);
+            }
+
+            cpc->prev_hsync = new_hsync;
+            cpc->prev_vsync = new_vsync;
+
+            /* --- Render 16 pixels for this char clock --- */
+            int px = cpc->raster_x * 16;
+            int py = cpc->raster_y;
+
+            if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px < CPC_SCREEN_W) {
+                u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
+                if (cur_de) {
+                    /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
+                    u16 bank = (cur_ma >> 12) & 3;
+                    u16 col  = cur_ma & 0x3FF;
+                    u16 addr = (u16)((bank << 14) | ((cur_ra & 7) << 11) | (col << 1));
+                    u8  b0   = mem_read_video(&cpc->mem, addr);
+                    u8  b1   = mem_read_video(&cpc->mem, (u16)(addr + 1));
+                    render_char(row, px, &cpc->ga, b0, b1);
+                } else {
+                    u32 c = cpc->ga.resolved_ink[16]; /* border */
+                    u32 *out = row + px;
+                    out[0]=c;  out[1]=c;  out[2]=c;  out[3]=c;
+                    out[4]=c;  out[5]=c;  out[6]=c;  out[7]=c;
+                    out[8]=c;  out[9]=c;  out[10]=c; out[11]=c;
+                    out[12]=c; out[13]=c; out[14]=c; out[15]=c;
+                }
+            }
+
+            cpc->raster_x++;
+
+            /* Capture next char's pre-tick state */
+            cur_ma = cpc->crtc.ma;
+            cur_ra = cpc->crtc.vlc;
+            cur_de = cpc->crtc.display_enable;
+        }
 
         /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
          * wait until the Z80 actually accepts the IRQ (IFF1=1, not in EI delay)
