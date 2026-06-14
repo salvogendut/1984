@@ -20,7 +20,12 @@
  *
  * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
  * ------------------------------------------------------------------ */
-#define Oa   8
+/* IO cycle constants: 1984 uses these as table values for total cycles.
+ * konCePCja splits each into pre-IO + post-IO portions (Oa=8+Oa_=4, etc.)
+ * via z80_wait_states; we don't model that split. The Oa=12 bump (matching
+ * konCePCja's split-total) is being tested under the LDIR+DD/FD-RET fix
+ * landscape — earlier (without RET cc bumps) it regressed boot. */
+#define Oa  12
 #define Ia  12
 #define Ox   8
 #define Oy  12
@@ -681,6 +686,7 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         case 0xA0: case 0xA8:                          /* LDI, LDD            */
         case 0xB0: case 0xB8:                          /* LDIR, LDDR          */
         case 0x57: case 0x5F:                          /* LD A,I / LD A,R     */
+        case 0x47: case 0x4F:                          /* LD I,A / LD R,A     */
             bump = true; break;
         }
     }
