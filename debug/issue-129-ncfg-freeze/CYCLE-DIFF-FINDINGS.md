@@ -68,35 +68,47 @@ mid-instruction differently in the two emulators.
 arbiter between instruction sub-phases**, not just at the end. It's
 a real refactor — bigger than a one-line cycle-table patch.
 
-### 3. Speed delta still ~80% slower than konCePCja
+### 3. ~~Speed delta still ~80% slower than konCePCja~~ (RESOLVED — apparent only)
 
-konCePCja reaches `A0:CPM>` in ~44 s. 1984 (with current fixes)
-reaches it in ~80 s when it succeeds. The remaining 36 seconds of
-extra emulator time has to come from somewhere — either many
-instructions running slightly slow, or a few hot loops running
-substantially slow.
+Initial reading of the konCePCja-vs-1984 boot timings (44 s vs 80 s
+wall-clock to A0:CPM>) suggested a major remaining cycle deficit. That
+was an apples-to-oranges comparison: **konCePCja in headless mode
+free-runs the Z80** (`if (CPC.limit_speed && ...) sleep` at
+`kon_cpc_ja.cpp:3626`), only pacing when the speed limit is enabled.
+1984's main loop always paces to 50 fps via `SDL_DelayNS`
+(`src/main.c:1032-1036`). So konCePCja's headless ran the same
+emulator workload faster in **wall-clock** but identical in **emulator
+T-states**. Both reach A0:CPM> in roughly the same emulator-time;
+1984's effective cycle count is close to konCePCja's.
 
-A `ONE_K_TRACE_IM1` IRQ count comparison between the two would pin
-down whether 1984 is running fewer T-states *per IRQ accept* (matches
-konCePCja) but emitting *more IRQs* per CPC second (clock-rate
-mismatch), or running *more T-states per accept* (instruction-level
-slowdown still present).
+The remaining instability is therefore not accumulated cycle drift but
+a specific cycle-alignment race that still fires occasionally inside
+the CP/M+ "Scanning startup devices" path.
 
 ## Recommended next session
 
-1. **Compare IRQ counts at equivalent CPC time**: capture IRQ totals
-   from both emulators at, say, +30 s into a known-good boot. If 1984
-   has 30 % more IRQs than konCePCja, the extra cost is in instruction
-   cycles, not in IRQ overhead.
+1. **Add `crtc_tick`/`ga_tick` calls inside IO instructions** to mirror
+   konCePCja's `z80_wait_states`-then-IO-then-`z80_wait_states` split.
+   The CRTC tick advance ratio (4 T-states per tick) means landing the
+   IRQ-acceptance check at a different T-state inside an OUT (n),A
+   could change the GA interrupt counter state at the next instruction
+   boundary — which is exactly the kind of fine-grained alignment that
+   triggers the residual #129 race.
 2. **Trace LD I,A occurrences**: instrument `src/z80.c` to log every
    ED 47 / ED 4F execution with `frame`, `PC`, and `IFF1`. Compare
    counts in the failing path with konCePCja's count (via its IPC
    `step trace` + filter). If 1984 sees a different number of
-   executions, the regression has a structural explanation.
-3. **Audit `z80_step()` for instruction-mid bus activity**: even just
-   inserting a `crtc_tick(4); ga_tick(); ppi_tick();` between FETCH
-   and IO for OUT (n),A could close part of the gap. Risky but
-   straightforward.
+   executions, the LD I,A regression has a structural explanation.
+3. ~~Bisect block-IO patterns by bumping cc_op for OUT~~ (TRIED,
+   regresses). Setting `Oa=12, Ox=12, Oy=16` to match konCePCja's
+   split-totals corrupted PSG / keyboard-matrix timing — at frame 4000
+   the screen shows BASIC Ready with garbled keystrokes typed in
+   (random arrow / cursor characters mixed into the line buffer), then
+   `|hdcpm` → "Syntax error". So the per-OUT cycle delta CAN'T just be
+   collapsed into the table — it has to interleave with the bus arbiter
+   the way konCePCja does. The right fix is a real `z80_step()`
+   restructure to split each IO into "pre-cycles | IO | post-cycles"
+   with `cpc_frame()`'s per-cycle hooks called between segments.
 
 ## Files for this session
 
