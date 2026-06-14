@@ -725,8 +725,18 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         int adj = cpu->iWSAdjust ? -4 : 0;
         cpu->iWSAdjust = 0;
         switch (cpu->im) {
-            case 0: case 1: cpu->pc = 0x0038; return 20 + adj;
-            case 2: cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF)); return 28 + adj;
+            case 0: case 1:
+                /* konCePCja calls z80_wait_states inside the IRQ accept
+                 * (z80.cpp:1046) so the bus advances mid-acceptance, not
+                 * all-after. Pre-tick the IRQ-accept cycles before the
+                 * IM1 handler entry so the firmware sees the bus state
+                 * konCePCja would have at PC=0x0038 fetch. */
+                if (bus->tick) bus->tick(bus->ctx, 20 + adj);
+                cpu->pc = 0x0038; return 20 + adj;
+            case 2:
+                if (bus->tick) bus->tick(bus->ctx, 28 + adj);
+                cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF));
+                return 28 + adj;
         }
     }
     cpu->ei_delay = false;
