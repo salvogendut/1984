@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.6" date="2026-06-14">
+      <description>
+        <p>Closes the residual HDCPM / CP/M+ cold-reset race (#129): the Gate Array now acknowledges its 300 Hz interrupt before the Z80's interrupt-entry cycles advance the bus, matching Caprice32 / konCePCja and reaching 13/13 PASS on the canonical |hdcpm arrival-frame sweep with Net4CPC disabled. Net4CPC gains IPRAW socket mode so PING.COM works end-to-end, a brief ARP retry on miss before reporting failure, the PHYSR0 register alias / W5100S-correct default, and a full silicon-defaults reset on MR.RST. Z80 cycle accuracy: IM1=20 / IM2=28 plus a complete iWSAdjust pipeline-hint set (LDIR/LDDR, LD A,I/R, DD/FD INC/DEC and RET cc not-taken), and OUT (n),A now splits into pre-IO tick and post-IO settle so peripherals see the correct mid-instruction bus phase.</p>
+      </description>
+    </release>
     <release version="0.4.5" date="2026-06-10">
       <description>
         <p>Renderer perf: cached resolved inks + precomputed pen tables collapse the per-pixel scalar work in render_char to a flat 16-pixel write, freeing meaningful frame headroom on slower hardware. Video capture: F6 records a GIF (in-tree encoder, no extra dependencies) and Overlay → Capture video saves WebM/VP9 via ffmpeg when available. Snapshot load/save with .sna v1-v3 support. Net4CPC gains a one-click TAP backend on Linux with built-in DHCP server, DNS proxy and NAT, plus an if_tap backend on FreeBSD / NetBSD / OpenBSD. Per-board ROM groupings: ROMs follow the M4 / Albireo / Cyboard toggle automatically. Stability: konCePCja cc_op cycle-table port fixes the HDCPM / CP/M+ kernel-ISR bank-save/restore race, plus several segfault hazards in the file-dialog callback, video capture, FDC and snapshot paths.</p>
