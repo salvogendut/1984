@@ -663,6 +663,15 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         switch (op) {
         case 0xB1: case 0xB9:                          /* CPIR, CPDR — bump on repeat */
             bump = taken; break;
+        /* LDI/LDD/LDIR/LDDR, LD A,I / LD A,R, LD I,A / LD R,A always bump
+         * (konCePCja z80.cpp:2572-2587). 1984 historically left these out
+         * and the cycle drift accumulated through any block move — the
+         * residual #129 cold-reset window (~frame 3266 with frozen RTC)
+         * goes away once the bumps are restored. */
+        case 0xA0: case 0xA8:                          /* LDI, LDD            */
+        case 0xB0: case 0xB8:                          /* LDIR, LDDR          */
+        case 0x57: case 0x5F:                          /* LD A,I / LD A,R     */
+            bump = true; break;
         }
     }
     cpu->iWSAdjust = bump ? 1 : 0;
