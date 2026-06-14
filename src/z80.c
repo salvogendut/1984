@@ -655,9 +655,19 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     } else if (cpu->last_prefix == 0xDD || cpu->last_prefix == 0xFD) {
         switch (op) {
         case 0x23: case 0x2B:                          /* INC/DEC IX/IY          */
+        case 0x03: case 0x0B: case 0x13: case 0x1B:    /* INC/DEC BC/DE under DD/FD */
+        case 0x33: case 0x3B:                          /* INC/DEC SP under DD/FD */
         case 0xE3:                                     /* EX (SP),IX/IY          */
         case 0xF9:                                     /* LD SP,IX/IY            */
             bump = true; break;
+        /* RET cc bumps when NOT taken — konCePCja's DD/FD-prefix dispatch
+         * has the full RET cc set at z80.cpp:2031-2040 and 2844-2851.
+         * 1984 had only the unprefixed RET cc bumps; the DD/FD-prefix
+         * forms fall through to the same RET cc impl but were missing
+         * the iWSAdjust bump. */
+        case 0xC0: case 0xC8: case 0xD0: case 0xD8:
+        case 0xE0: case 0xE8: case 0xF0: case 0xF8:
+            bump = !taken; break;
         }
     } else if (cpu->last_prefix == 0xED) {
         switch (op) {
