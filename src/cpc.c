@@ -701,15 +701,29 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
  * 16 (vsync pulse) + 56 (7 top border char rows × 8) = 72 */
 #define VSYNC_TO_DISPLAY_LINES 40
 
-/* Advance CRTC/Gate Array/render state by `cycles` CPU T-states. CRTC
- * ticks at 1 MHz = once per 4 T-states; crtc_cycle_acc holds the
- * sub-tick remainder so consecutive partial calls add up correctly.
+/* Advance ALL per-cycle peripheral state by `cycles` CPU T-states.
+ * Covers: tape, audio sampling, CRTC/GA/render. Mirrors konCePCja's
+ * z80_wait_states macro which advances CRTC + PSG + FDC + tape in
+ * one bundle. 1984 doesn't model per-cycle PSG/FDC (PSG renders
+ * once per frame in cpc_frame; FDC is event-driven, not per-cycle).
  *
  * Callable both from the per-instruction tail of cpc_frame() AND from
  * the Z80Bus::tick hook mid-instruction (for konCePCja-style IO split
  * timing). The pre-tick CRTC snapshot used by the render block lives
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
-static void cpc_advance_crtc(CPC *cpc, int cycles) {
+static void cpc_advance_bus(CPC *cpc, int cycles) {
+    if (cycles <= 0) return;
+    /* Tape (no-op when no tape loaded / motor off) */
+    tape_step(&cpc->tape, cycles);
+    ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
+    /* Audio sampling at 44.1 kHz from the cassette signal */
+    cpc->tape_audio_cycles += cycles * AUDIO_SAMPLE_RATE;
+    while (cpc->tape_audio_cycles >= cpc->cpu_clk_hz &&
+           cpc->tape_audio_pos < AUDIO_SAMPLES_FRAME) {
+        cpc->tape_audio[cpc->tape_audio_pos++] =
+            (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+        cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
+    }
     cpc->crtc_cycle_acc += cycles;
     while (cpc->crtc_cycle_acc >= 4) {
         cpc->crtc_cycle_acc -= 4;
@@ -781,7 +795,7 @@ static void cpc_advance_crtc(CPC *cpc, int cycles) {
 static void cpc_bus_tick(void *ctx, int cycles) {
     CPC *cpc = (CPC *)ctx;
     if (cycles <= 0) return;
-    cpc_advance_crtc(cpc, cycles);
+    cpc_advance_bus(cpc, cycles);
     cpc->bus_ticked_in_step += cycles;
 }
 
@@ -1134,27 +1148,13 @@ void cpc_frame(CPC *cpc) {
             kbd_pty_emit_char(cpc->cpu.a);
         done += t;
         g_total_t += t;
-        /* Advance the cassette by this instruction's T-states and push
-         * the resulting level into the PPI's Port B bit 7 mirror. */
-        tape_step(&cpc->tape, t);
-        ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
-        /* Sample the cassette signal at audio rate (~90.7 cycles/sample
-         * for 4 MHz / 44.1 kHz) so it can be mixed into PSG output. */
-        cpc->tape_audio_cycles += t * AUDIO_SAMPLE_RATE;
-        while (cpc->tape_audio_cycles >= cpc->cpu_clk_hz &&
-               cpc->tape_audio_pos < AUDIO_SAMPLES_FRAME) {
-            cpc->tape_audio[cpc->tape_audio_pos++] =
-                (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
-            cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
-        }
-
-        /* CRTC/GA/render advance for this instruction. The bus->tick
-         * hook (cpc_bus_tick) may have already advanced part of this
-         * step from inside an IO opcode; subtract that so we only
-         * tick the post-IO portion here. */
+        /* Post-instruction bus advance — tape, audio sampling, CRTC,
+         * GA interrupt counter, render. The bus->tick hook may have
+         * already advanced part of this step from inside an IO opcode;
+         * subtract that count so we don't double-tick. */
         int remaining = t - cpc->bus_ticked_in_step;
         if (remaining < 0) remaining = 0;
-        cpc_advance_crtc(cpc, remaining);
+        cpc_advance_bus(cpc, remaining);
 
         /* Deliver pending Gate Array interrupt. The GA bit-5 acknowledge MUST
          * wait until the Z80 actually accepts the IRQ (IFF1=1, not in EI delay)

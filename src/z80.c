@@ -30,7 +30,12 @@
  * to split-totals regresses HDCPM IDE block-op timing. */
 #define Oa  12   /* OUT (n),A           — pre 8 + post 4 */
 #define Ia  12   /* IN A,(n)            — pre 12 + post 0 */
-#define Ox   8   /* OUT (C),r: bare cycle bump regresses; needs split */
+#define Ox   8   /* OUT (C),r — even with cpc_advance_bus covering all
+                  * peripherals and matching bus->tick(8) pre-IO split,
+                  * bumping Ox to 12 regresses sweep to 0/13. The remaining
+                  * gap vs konCePCja must be in the actual IO write
+                  * timing relative to bus arbitration — needs reading
+                  * the OUT instruction execution more carefully. */
 #define Oy  12   /* OUTI/OUTD/OTIR/OTDR — split-total Oy=16 regresses */
 #define Ix  12
 #define Iy  16
