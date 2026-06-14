@@ -20,10 +20,23 @@
  *
  * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
  * ------------------------------------------------------------------ */
-#define Oa   8
-#define Ia  12
-#define Ox   8
-#define Oy  12
+/* IO cycle constants — set to konCePCja's split-totals (X = pre-IO
+ * portion + X_ = post-IO portion via z80_wait_states). Now SAFE to
+ * bump because the matching bus->tick(pre-IO) calls in the IO
+ * instruction handlers (OUT (n),A, OUT (C),r, OUTI/OUTD/OTIR/OTDR)
+ * advance the bus arbiter mid-instruction so the GA interrupt
+ * counter sees the same state at the IO write as konCePCja's
+ * split sees. Without the matching pre-tick split, bumping these
+ * to split-totals regresses HDCPM IDE block-op timing. */
+#define Oa  12   /* OUT (n),A           — pre 8 + post 4 */
+#define Ia  12   /* IN A,(n)            — pre 12 + post 0 */
+#define Ox   8   /* OUT (C),r — even with cpc_advance_bus covering all
+                  * peripherals and matching bus->tick(8) pre-IO split,
+                  * bumping Ox to 12 regresses sweep to 0/13. The remaining
+                  * gap vs konCePCja must be in the actual IO write
+                  * timing relative to bus arbitration — needs reading
+                  * the OUT instruction execution more carefully. */
+#define Oy  12   /* OUTI/OUTD/OTIR/OTDR — split-total Oy=16 regresses */
 #define Ix  12
 #define Iy  16
 
@@ -323,7 +336,6 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
             cpu->f = (cpu->f & Z80_FLAG_C) | sz(v) | par(v);
             return 12;
         }
-        /* OUT (C),r */
         case 0x41: case 0x49: case 0x51: case 0x59:
         case 0x61: case 0x69: case 0x71: case 0x79: {
             int ri = (op >> 3) & 7;
@@ -391,7 +403,9 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xA9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); return 16; }
         case 0xB1: { u8 v=READ8(cpu->hl++); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
         case 0xB9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
-        /* Block I/O */
+        /* Block I/O — IN ops: 16 cycles total, no pre-IO tick needed
+         * (konCePCja Iy=16 + Iy_=0). OUT ops: pre-tick 4 cycles before
+         * the IO write to mirror konCePCja's Oy=12 + Oy_=4 split. */
         case 0xA2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xAA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xB2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
@@ -575,6 +589,11 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
         use_tables = (e && e[0] == '0') ? 0 : 1;
     }
 
+    /* Reset the mid-step bus-tick counter before each instruction so IO
+     * opcodes can advance the bus arbiter partway through (see
+     * Z80Bus::tick / Z80Bus::ticked_in_step comments). */
+    if (bus->ticked_in_step) *bus->ticked_in_step = 0;
+
     if (!use_tables)
         return z80_step_impl(cpu, bus);
 
@@ -655,14 +674,34 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     } else if (cpu->last_prefix == 0xDD || cpu->last_prefix == 0xFD) {
         switch (op) {
         case 0x23: case 0x2B:                          /* INC/DEC IX/IY          */
+        case 0x03: case 0x0B: case 0x13: case 0x1B:    /* INC/DEC BC/DE under DD/FD */
+        case 0x33: case 0x3B:                          /* INC/DEC SP under DD/FD */
         case 0xE3:                                     /* EX (SP),IX/IY          */
         case 0xF9:                                     /* LD SP,IX/IY            */
             bump = true; break;
+        /* RET cc bumps when NOT taken — konCePCja's DD/FD-prefix dispatch
+         * has the full RET cc set at z80.cpp:2031-2040 and 2844-2851.
+         * 1984 had only the unprefixed RET cc bumps; the DD/FD-prefix
+         * forms fall through to the same RET cc impl but were missing
+         * the iWSAdjust bump. */
+        case 0xC0: case 0xC8: case 0xD0: case 0xD8:
+        case 0xE0: case 0xE8: case 0xF0: case 0xF8:
+            bump = !taken; break;
         }
     } else if (cpu->last_prefix == 0xED) {
         switch (op) {
         case 0xB1: case 0xB9:                          /* CPIR, CPDR — bump on repeat */
             bump = taken; break;
+        /* LDI/LDD/LDIR/LDDR, LD A,I / LD A,R, LD I,A / LD R,A always bump
+         * (konCePCja z80.cpp:2572-2587). 1984 historically left these out
+         * and the cycle drift accumulated through any block move — the
+         * residual #129 cold-reset window (~frame 3266 with frozen RTC)
+         * goes away once the bumps are restored. */
+        case 0xA0: case 0xA8:                          /* LDI, LDD            */
+        case 0xB0: case 0xB8:                          /* LDIR, LDDR          */
+        case 0x57: case 0x5F:                          /* LD A,I / LD A,R     */
+        case 0x47: case 0x4F:                          /* LD I,A / LD R,A     */
+            bump = true; break;
         }
     }
     cpu->iWSAdjust = bump ? 1 : 0;
@@ -707,8 +746,18 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         int adj = cpu->iWSAdjust ? -4 : 0;
         cpu->iWSAdjust = 0;
         switch (cpu->im) {
-            case 0: case 1: cpu->pc = 0x0038; return 20 + adj;
-            case 2: cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF)); return 28 + adj;
+            case 0: case 1:
+                /* Mid-IRQ-accept bus tick: konCePCja calls z80_wait_states
+                 * inside the IRQ accept handler (z80.cpp:1046/1063) so the
+                 * GA interrupt counter advances mid-acceptance rather than
+                 * all-after. Empirically: removing this tick regresses the
+                 * sweep from 8/13 to 4/13. */
+                if (bus->tick) bus->tick(bus->ctx, 20 + adj);
+                cpu->pc = 0x0038; return 20 + adj;
+            case 2:
+                if (bus->tick) bus->tick(bus->ctx, 28 + adj);
+                cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF));
+                return 28 + adj;
         }
     }
     cpu->ei_delay = false;
@@ -938,9 +987,30 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         case 0xF3: cpu->iff1=cpu->iff2=false; return 4;
         case 0xFB: cpu->iff1=cpu->iff2=true; cpu->ei_delay=true; return 4;
 
-        /* IN / OUT */
-        case 0xDB: { u8 n=FETCH8(); cpu->a=IN((cpu->a<<8)|n); return 11; }
-        case 0xD3: { u8 n=FETCH8(); OUT((cpu->a<<8)|n,cpu->a); return 11; }
+        /* IN / OUT — split-cycle accounting via Z80Bus::tick when available.
+         * konCePCja runs the pre-IO cycles through z80_wait_states BEFORE
+         * the actual IO operation completes (z80.cpp:1357/1479), then the
+         * remaining cycles tick after. We mirror that by tick'ing N cycles
+         * pre-IO (Ia=12 / Oa=12 minus the trailing 0/4 cycles); the
+         * post-IO remainder is processed by cpc_frame's usual per-step
+         * advance. NULL tick = legacy single-chunk behavior. */
+        case 0xDB: {
+            u8 n = FETCH8();
+            /* IN A,(n) is 12 cycles total. Pre-ticking 12 cycles before
+             * the IN regressed sweep to 3/13, so kept as single-chunk. */
+            cpu->a = IN((cpu->a<<8)|n);
+            return 11;
+        }
+        case 0xD3: {
+            u8 n = FETCH8();
+            /* konCePCja split for OUT (n),A is Oa=8 pre-IO + Oa_=4 post-IO
+             * (z80.cpp:1479). Pre-tick 8 cycles so the bus / GA state at
+             * the OUT write matches the reference; the remaining 4 ticks
+             * after via cpc_frame's per-step advance (total cc_op[0xD3]=12). */
+            if (bus->tick) bus->tick(bus->ctx, 8);
+            OUT((cpu->a<<8)|n, cpu->a);
+            return 11;
+        }
 
         /* Prefixes */
         case 0xCB: cpu->last_prefix = 0xCB; return exec_cb(cpu, bus);

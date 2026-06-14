@@ -25,6 +25,40 @@ REPO = os.path.abspath(os.path.dirname(__file__) + "/../..")
 ART  = "/tmp/ncfg-probe"
 os.makedirs(ART, exist_ok=True)
 
+# Headless display so 1984 windows stay off the user's screen.
+HEADLESS_DISPLAY = ":99"
+
+def ensure_xvfb():
+    """Start Xvfb on $HEADLESS_DISPLAY if not already there."""
+    try:
+        subprocess.run(["distrobox", "enter", "my-distrobox", "--",
+                        "xdpyinfo", "-display", HEADLESS_DISPLAY],
+                       capture_output=True, timeout=3)
+        # Probe whether the display is responsive.
+        r = subprocess.run(["distrobox", "enter", "my-distrobox", "--",
+                            "xdpyinfo", "-display", HEADLESS_DISPLAY],
+                           capture_output=True, timeout=3)
+        if r.returncode == 0: return
+    except Exception:
+        pass
+    subprocess.Popen(
+        ["distrobox", "enter", "my-distrobox", "--",
+         "bash", "-c",
+         f"Xvfb {HEADLESS_DISPLAY} -screen 0 1024x768x24 >/dev/null 2>&1 &"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(2)
+
+def child_env():
+    """Env for the 1984 child process — headless display + IRQ/IDE traces."""
+    e = {**os.environ,
+         "DISPLAY": HEADLESS_DISPLAY,
+         "SDL_VIDEODRIVER": "x11",
+         "ONE_K_TRACE_LBA": "1",
+         "ONE_K_TRACE_IM1": "1"}
+    e.pop("WAYLAND_DISPLAY", None)
+    return e
+
 
 class Pty:
     """Manage the kbd PTY: spawn a drainer thread that captures every
@@ -83,6 +117,28 @@ class Pty:
             time.sleep(0.1)
         return None
 
+    def wait_new_prompt(self, baseline_prompt_count: int, timeout: float):
+        """Wait for at least one new "CPM>" prompt to appear vs the
+        baseline count — i.e., the previous command finished and CP/M+
+        printed a fresh prompt. Returns the frame, or None on timeout.
+
+        OCR-tolerant — the "CPM>" string is part of the kernel font but
+        the C/P/M are reliable enough to match. (Earlier patterns based
+        on "?.?.?.?" broke after the hamming-distance fuzzy matcher
+        started returning O for kernel '0'.)"""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self.lock:
+                frame = self.last_frame
+            if frame.count("CPM>") > baseline_prompt_count:
+                return frame
+            time.sleep(0.1)
+        return None
+
+    def count_prompts(self):
+        with self.lock:
+            return self.last_frame.count("CPM>")
+
     def current_frame(self):
         with self.lock:
             return self.last_frame
@@ -121,9 +177,7 @@ def run_once(run_id):
         ["./1984", "--memory=576", "--ocr-monitor", "--monitor-pty"],
         cwd=REPO,
         stderr=open(log_path, "w"), stdout=subprocess.DEVNULL,
-        env={**os.environ,
-             "ONE_K_TRACE_LBA": "1",
-             "ONE_K_TRACE_IM1": "1"},
+        env=child_env(),
         preexec_fn=os.setsid,
     )
     kbd_pty = mon_pty = None
@@ -166,49 +220,62 @@ def run_once(run_id):
         rep.write("→ CP/M+ banner\n")
 
         # Phase 3: wait for the actual prompt. CP/M+ prompt looks like
-        # "16:23 A0:CPM>" — the digits are kernel-font and OCR shows '?'.
-        # The line ending in "CPM>" is reliable enough.
+        # "16:23 A0:CPM>" — the digits OCR with the hamming-distance
+        # fallback so we settle for the "CPM>" suffix.
         if not pty.wait_for(r"CPM>", timeout=45):
             rep.write("PROMPT_FAIL: A0:CPM> never appeared\n")
             return "PROMPT_FAIL"
         rep.write("→ A0:CPM> prompt\n")
 
-        # Phase 4: ncfg -r prints "### KCNet IP Configuration ###" with
-        # zeroed values. The CPC clears the screen first, so the boot-time
-        # header from auto-NCFG isn't present in the current frame — we
-        # can reliably wait for the header to REappear.
-        baseline = pty.current_frame()
+        # Each command should print SOME output and then a fresh prompt.
+        # We count "CPM>" occurrences in the OCR frame as a stable signal:
+        # one for the post-boot prompt, then one more after each completed
+        # command. wait_new_prompt blocks until the count grows.
+        n = pty.count_prompts()
+        rep.write(f"baseline prompts: {n}\n")
+
+        # Phase 4: ncfg -r
         pty.send(b"ncfg -r\r")
-        if not pty.wait_for_change(baseline, r"\?\.\?\.\?\.\?", timeout=25):
-            rep.write("NCFG_R_FREEZE\n")
+        if not pty.wait_new_prompt(n, timeout=25):
+            rep.write("FREEZE_NCFG_R\n")
             rep.write("--- last frame ---\n" + pty.current_frame() + "\n")
             return "FREEZE_NCFG_R"
-        rep.write("→ ncfg -r completed\n")
+        n = pty.count_prompts()
+        rep.write(f"→ ncfg -r completed (prompts={n})\n")
 
-        # Phase 5: ncfg -a:cpc, wait for DHCP-acquired non-zero IP-Address.
-        # The DHCP-acquired IP starts with a digit other than 0, which OCR
-        # may render as '1??' or similar; the static "?ddr???" (Address) is
-        # the safer match.
-        baseline = pty.current_frame()
+        # Phase 5: ncfg -a:cpc — DHCP cycle, allow longer.
         pty.send(b"ncfg -a:cpc\r")
-        # DHCP-acquired IP shows non-zero digits which OCR garbles, but the
-        # post-config "###" header reprint changes screen content.
-        if not pty.wait_for_change(baseline, r"\?ddr", timeout=45):
-            rep.write("NCFG_A_FREEZE\n")
+        if not pty.wait_new_prompt(n, timeout=45):
+            rep.write("FREEZE_NCFG_A\n")
             rep.write("--- last frame ---\n" + pty.current_frame() + "\n")
             return "FREEZE_NCFG_A"
-        rep.write("→ ncfg -a:cpc completed\n")
+        n = pty.count_prompts()
+        rep.write(f"→ ncfg -a:cpc completed (prompts={n})\n")
 
-        # Phase 6: ping. PASS if we see "packets transmitted"; otherwise
-        # FREEZE.
-        baseline = pty.current_frame()
+        # Phase 6: ping. Accept either a new prompt OR the ping statistic
+        # line itself — the prompt sometimes hasn't redrawn yet by the
+        # time we check, even though ping has clearly finished.
         pty.send(b"ping -c5 slashdot.org\r")
-        if not pty.wait_for_change(baseline, r"PING |packets|ARP", timeout=45):
-            rep.write("PING_FREEZE\n")
+        deadline = time.monotonic() + 75
+        while time.monotonic() < deadline:
+            if pty.count_prompts() > n:
+                break
+            f = pty.current_frame()
+            if "packets transmitted" in f or "statistic" in f or "Error" in f:
+                break
+            time.sleep(0.2)
+        else:
+            rep.write("FREEZE_PING\n")
             rep.write("--- last frame ---\n" + pty.current_frame() + "\n")
             return "FREEZE_PING"
         rep.write("→ ping completed\n")
         rep.write("--- final frame ---\n" + pty.current_frame() + "\n")
+
+        # Classify: if final frame still has CPM> prompt, it's a clean PASS.
+        # Catastrophic reboots leave a BASIC banner instead.
+        final = pty.current_frame()
+        if "Amstrad 128K" in final or "Locomotive" in final:
+            return "REBOOTED"
         return "PASS"
 
     finally:
@@ -216,14 +283,28 @@ def run_once(run_id):
         pty.close()
         try: os.close(mfd)
         except: pass
+        # Aggressive cleanup: SIGTERM, wait, SIGKILL, then nuke any
+        # surviving 1984 process holding cpc-tap0. The headless harness
+        # depends on this — a single leaked process hogs the TAP and
+        # every subsequent run gets DHCP timeouts.
         try: os.killpg(proc.pid, signal.SIGTERM)
         except: pass
         try: proc.wait(timeout=2)
-        except: proc.kill()
+        except subprocess.TimeoutExpired:
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except: pass
+            try: proc.wait(timeout=2)
+            except: pass
+        # Belt and braces — kill any other 1984 instances that survived
+        # prior runs (e.g. orphaned by a probe.py crash mid-batch).
+        subprocess.run(["pkill", "-9", "-f", "1984 --memory=576 --ocr-monitor"],
+                       capture_output=True)
+        time.sleep(0.5)
 
 
 def main():
     N = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    ensure_xvfb()
     tally = {}
     for i in range(1, N+1):
         out = run_once(i)

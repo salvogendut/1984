@@ -229,6 +229,8 @@ static void usage(const char *prog, int code) {
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
+        "  --config=PATH       Use PATH as the config file instead of ~/.config/1984/1984.conf\n"
+        "                      (read-only; config_save still targets the default path)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
@@ -283,6 +285,7 @@ int main(int argc, char *argv[]) {
     net_compat_init();   /* initialise Winsock (no-op on POSIX) */
     SD_LOG("net_compat_init done");
 
+    const char *config_path     = NULL;   /* --config=PATH overrides ~/.config/1984/1984.conf */
     const char *autostart       = NULL;
     const char *paste_arg       = NULL;
     const char *load_sna_arg    = NULL;
@@ -311,6 +314,8 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
             usage(argv[0], 0);
+        else if (strncmp(argv[i], "--config=", 9) == 0 && argv[i][9] != '\0')
+            config_path = argv[i] + 9;
         else if (strncmp(argv[i], "--autostart=", 12) == 0 && argv[i][12] != '\0')
             autostart = argv[i] + 12;
         else if (strncmp(argv[i], "--paste=", 8) == 0 && argv[i][8] != '\0')
@@ -412,7 +417,7 @@ int main(int argc, char *argv[]) {
 
     SD_LOG("args parsed, calling config_load");
     Config cfg;
-    if (config_load(&cfg) < 0) {
+    if (config_load_from(&cfg, config_path) < 0) {
         SD_LOG("config_load FAILED (returned <0)");
         return 1;
     }
@@ -644,6 +649,72 @@ int main(int argc, char *argv[]) {
     while (running) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
+            /* #129 instrumentation: log every host-side SDL event with
+             * frame number + a short type name. Used to test the
+             * hypothesis that interactive boots are non-deterministic
+             * because spurious window/keyboard/mouse events from X11
+             * fire at variable frames and shift HDCPM's boot path.
+             * Gated on ONE_K_TRACE_SDL_EV so it costs nothing in
+             * normal use. */
+            if (dbg_getenv("ONE_K_TRACE_SDL_EV")) {
+                const char *name = NULL;
+                switch (ev.type) {
+                case SDL_EVENT_QUIT:                  name = "QUIT"; break;
+                case SDL_EVENT_KEY_DOWN:              name = "KEY_DOWN"; break;
+                case SDL_EVENT_KEY_UP:                name = "KEY_UP"; break;
+                case SDL_EVENT_MOUSE_MOTION:          name = "MOUSE_MOTION"; break;
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:     name = "MOUSE_BUTTON_DOWN"; break;
+                case SDL_EVENT_MOUSE_BUTTON_UP:       name = "MOUSE_BUTTON_UP"; break;
+                case SDL_EVENT_MOUSE_WHEEL:           name = "MOUSE_WHEEL"; break;
+                case SDL_EVENT_WINDOW_SHOWN:          name = "WINDOW_SHOWN"; break;
+                case SDL_EVENT_WINDOW_HIDDEN:         name = "WINDOW_HIDDEN"; break;
+                case SDL_EVENT_WINDOW_EXPOSED:        name = "WINDOW_EXPOSED"; break;
+                case SDL_EVENT_WINDOW_MOVED:          name = "WINDOW_MOVED"; break;
+                case SDL_EVENT_WINDOW_RESIZED:        name = "WINDOW_RESIZED"; break;
+                case SDL_EVENT_WINDOW_MINIMIZED:      name = "WINDOW_MINIMIZED"; break;
+                case SDL_EVENT_WINDOW_MAXIMIZED:      name = "WINDOW_MAXIMIZED"; break;
+                case SDL_EVENT_WINDOW_RESTORED:       name = "WINDOW_RESTORED"; break;
+                case SDL_EVENT_WINDOW_MOUSE_ENTER:    name = "WINDOW_MOUSE_ENTER"; break;
+                case SDL_EVENT_WINDOW_MOUSE_LEAVE:    name = "WINDOW_MOUSE_LEAVE"; break;
+                case SDL_EVENT_WINDOW_FOCUS_GAINED:   name = "WINDOW_FOCUS_GAINED"; break;
+                case SDL_EVENT_WINDOW_FOCUS_LOST:     name = "WINDOW_FOCUS_LOST"; break;
+                case SDL_EVENT_WINDOW_CLOSE_REQUESTED:name = "WINDOW_CLOSE_REQUESTED"; break;
+                case SDL_EVENT_DROP_FILE:             name = "DROP_FILE"; break;
+                case SDL_EVENT_GAMEPAD_ADDED:         name = "GAMEPAD_ADDED"; break;
+                case SDL_EVENT_GAMEPAD_REMOVED:       name = "GAMEPAD_REMOVED"; break;
+                case SDL_EVENT_GAMEPAD_BUTTON_DOWN:   name = "GAMEPAD_BUTTON_DOWN"; break;
+                case SDL_EVENT_GAMEPAD_BUTTON_UP:     name = "GAMEPAD_BUTTON_UP"; break;
+                case SDL_EVENT_GAMEPAD_AXIS_MOTION:   name = "GAMEPAD_AXIS_MOTION"; break;
+                case SDL_EVENT_GAMEPAD_REMAPPED:      name = "GAMEPAD_REMAPPED"; break;
+                case SDL_EVENT_KEYBOARD_ADDED:        name = "KEYBOARD_ADDED"; break;
+                case SDL_EVENT_KEYBOARD_REMOVED:      name = "KEYBOARD_REMOVED"; break;
+                case SDL_EVENT_MOUSE_ADDED:           name = "MOUSE_ADDED"; break;
+                case SDL_EVENT_MOUSE_REMOVED:         name = "MOUSE_REMOVED"; break;
+                case SDL_EVENT_JOYSTICK_ADDED:        name = "JOYSTICK_ADDED"; break;
+                case SDL_EVENT_JOYSTICK_REMOVED:      name = "JOYSTICK_REMOVED"; break;
+                case SDL_EVENT_TEXT_INPUT:            name = "TEXT_INPUT"; break;
+                case SDL_EVENT_TEXT_EDITING:          name = "TEXT_EDITING"; break;
+                }
+                if (name) {
+                    /* For KEY events log the scancode + repeat flag so
+                     * we can spot auto-repeat decay from before launch. */
+                    if (ev.type == SDL_EVENT_KEY_DOWN ||
+                        ev.type == SDL_EVENT_KEY_UP) {
+                        fprintf(stderr, "[SDL_EV] frame=%d type=%s scancode=%u repeat=%u\n",
+                                frame_count, name,
+                                (unsigned)ev.key.scancode,
+                                (unsigned)ev.key.repeat);
+                    } else {
+                        fprintf(stderr, "[SDL_EV] frame=%d type=%s\n",
+                                frame_count, name);
+                    }
+                } else {
+                    fprintf(stderr, "[SDL_EV] frame=%d type=0x%X (other)\n",
+                            frame_count, (unsigned)ev.type);
+                }
+                fflush(stderr);
+            }
+
             if (ev.type == SDL_EVENT_QUIT) {
                 running = false;
                 continue;

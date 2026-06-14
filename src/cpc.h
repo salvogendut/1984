@@ -70,6 +70,20 @@ typedef struct {
     bool prev_hsync;
     bool prev_vsync;
 
+    /* Pre-tick snapshot of CRTC state used by the per-char-clock render
+     * loop. Lives in the struct (rather than as cpc_frame() locals) so
+     * the Z80 bus tick hook can run a partial CRTC advance in the
+     * middle of an IO instruction and the next chunk resumes from the
+     * state the previous chunk left here. Updated after each CRTC tick. */
+    u16  crtc_pre_ma;
+    u8   crtc_pre_ra;
+    bool crtc_pre_de;
+
+    /* Cycles advanced via Z80Bus::tick mid-step; reset to 0 before each
+     * z80_step. Subtracted from the instruction's total in cpc_frame()
+     * so the post-IO chunk doesn't double-advance the bus. */
+    int  bus_ticked_in_step;
+
     /* Debugger */
 #define CPC_MAX_BREAKPOINTS 16
     bool paused;
