@@ -74,7 +74,8 @@ noinst_HEADERS = \
 	src/z80dis.h
 
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
-               -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\"
+               -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\" \
+               -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
 # $(WIN_SUBSYSTEM) (-mconsole) must come LAST so it wins over the -mwindows
 # that $(SDL3_LIBS) drags in.
 1984_LDADD   = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_SUBSYSTEM)

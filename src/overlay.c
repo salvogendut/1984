@@ -34,7 +34,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 8 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 9 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -363,6 +363,11 @@ static void item_text(const Overlay *ov, int row,
             } else {
                 snprintf(val, vsz, "[Enter to pick .webm]");
             }
+            *readonly = true;
+            break;
+        case 8:
+            snprintf(lbl, lsz, "Version");
+            snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
             break;
         }
