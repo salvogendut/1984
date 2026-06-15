@@ -550,33 +550,25 @@ The PTY exposes the full command set. Output lines that contain reverse-video AS
 
 ---
 
-## M4 board (`src/m4.c` / `src/m4.h`) — UNSTABLE
+## M4 board (`src/m4.c` / `src/m4.h`)
 
 The M4 board is a CPC expansion that adds an SD card and ESP8266 WiFi networking. Our emulation handles:
 
 - **M4ROM signature scan and helper-table publication.** The real M4ROM at `0xC000-0xFFFF` (slot 6) contains pointers at fixed offsets (`0xFF02` = response buffer, `0xFF06` = sock_info table, `0xFF08` = helper-function table). The daemon's `m4crom` routine scans for the `"M4 BOAR\xC4"` signature, then reads these pointers. We host its emulator-side memory in `M4Card::bus_mem` (0xC00 bytes at 0xE800-0xF3FF), `cfg_mem` (256 bytes at 0xF400-0xF4FF), and `sock_mem` (80 bytes at 0xFE00-0xFE4F).
 
-- **Bus bypass.** When the M4ROM slot is the active upper ROM, reads in those three windows return from our internal buffers instead of CPC RAM. There's also a stateful `ram_mode` that mimics the real board's "RAM mode" — set on network strobes so the SymbOS daemon's banked response reader works even with slot 0 selected, and cleared by its bulk-receive helper or when another command supersedes it.
+- **Bus bypass.** When the M4ROM slot is the active upper ROM, reads in those three windows return from our internal buffers instead of CPC RAM. The real SymbOS daemon banks M4ROM in for its response copies, so we do not need a broader "RAM mode" overlay outside that.
 
-- **File API.** `C_OPEN`, `C_READ`, `C_WRITE`, `C_CLOSE`, `C_SEEK`, `C_GETPATH`, `C_DSKEXT`, `C_READDIR`, `C_FSIZE`, `C_RENAME`, etc. — backed either by a host directory tree (set via `m4_path` in config) or a single raw FAT16/FAT32 image (set via `m4_image`). `src/fat.c` is a minimal in-house FAT reader/writer used in image mode.
+- **File API.** `C_OPEN`, `C_READ`, `C_WRITE`, `C_CLOSE`, `C_SEEK`, `C_GETPATH`, `C_DSKEXT`, `C_READDIR`, `C_FSIZE`, `C_RENAME`, etc. — backed either by a host directory tree (set via `m4_path` in config) or a single raw FAT16/FAT32 image (set via `m4_image`). `src/fat.c` is a minimal in-house FAT reader/writer used in image mode. `C_CLOSE` returns `BADFD` for unknown fds including the AMSDOS-compatible fixed handles 1 and 2 — M4ROM's boot sequence closes those at startup and uses BADFD as a flow gate for the banner / autoboot path. Returning OK there breaks boot.
 
-- **Networking.** All sockets are backed by host POSIX sockets. `C_NETSOCKET` allocates from a 5-slot table (slot 0 reserved for DNS). `C_NETCONNECT` uses non-blocking `connect()` with up to 5-second polling completion so the daemon sees `status=IDLE` synchronously (matches what `cpc-sdcc`'s SOCKET-poll loop assumes after SDCC hoisted the status read outside the loop). `C_NETRECV` writes the payload starting at `bus_mem[6]` (NOT `[8]` — that's a common misread of the M4 protocol). `C_NETHOSTIP` resolves synchronously via `getaddrinfo` and writes the IP into sock_info[0]. `C_NETRSSI` returns 2 bytes (signal + state); the daemon's UI reads `D` (state) to drive its "Online" / "Unknown error" display.
+- **Command parsing.** Packets are parsed at `cmd_buf` offset 0 with `cmd_len` as total length. `cmd_buf[0]` is the count of header bytes after itself (per the daemon's `m4ccmd0`), NOT total packet length — for variable-payload commands like `C_NETSEND` the payload is written after the header via a separate fast-block transfer (`m4csnd`) before the ACK strobe, so `cmd_len` at ACK time = header + payload. A defensive fallback scans `cmd_buf` for the 0x43 sentinel if offset 0 doesn't look like a valid header.
+
+- **Networking.** All sockets are backed by host POSIX sockets. `C_NETSOCKET` allocates from a 5-slot table (slot 0 reserved for DNS). `C_NETCONNECT` uses non-blocking `connect()`; the socket stays in `status=1` (connecting) for one `m4_tick` after a synchronous `r==0` so the SymbOS daemon's `nettcp` observes the `1→0` edge that triggers `MSR_NET_TCPEVT`. `C_NETRECV` writes the payload starting at `bus_mem[6]` (NOT `[8]` — that's a common misread of the M4 protocol). `C_NETHOSTIP` resolves synchronously via `getaddrinfo` and writes the IP into sock_info[0]. `C_NETRSSI` returns 2 bytes (signal + state); the daemon's UI reads `D` (state) to drive its "Online" / "Unknown error" display. `C_GETNETWORK` returns the full 196-byte structure including the synthetic MAC at offsets 190..195.
 
 - **"1984 compatibility shim".** The SymbOS daemon's `m4crcv` performs a `JP <m4cromhrc>` after switching upper-ROM slot to 0, expecting the M4 board's hardware to keep M4ROM accessible at that address. We can't replicate that bus arbitration without breaking unrelated screen-RAM reads. Instead, on every command strobe we patch the in-memory copy of the helper-pointer table at `M4ROM 0xE430` to point at trap stubs we install in `bus_mem` at `0xF300` (hsend) / `0xF310` (hreceive). The stubs are a 5-byte `LD BC, 0xFD3{E,F} ; OUT (C), A`. The `bus_io_write` in `src/cpc.c` catches that OUT, reads the CPU registers (HL=src, DE=dest, length from IYH|C, A=dest bank, IX=return), runs the equivalent bank-aware bulk copy in C, and sets PC = IX.
 
-- **`last_tcp_sock` workaround.** The SymbOS daemon's `m4cscktrn[]` translation table appears to be corrupted between commands in a way we haven't pinned down — see status below. As a pragmatic stop-gap, any TCP command (`CONNECT`/`SEND`/`RECV`/`CLOSE`) whose socket argument doesn't resolve to a valid open TCP socket of ours gets routed to the most-recently-opened TCP socket. Single-connection flows (telnet) limp along with this.
+- **`last_tcp_sock` workaround.** Single-connection guest code occasionally hits `m4csct` with a daemon-socket index that doesn't translate to a live host socket. As a stop-gap, any TCP command (`CONNECT`/`SEND`/`RECV`/`CLOSE`) whose socket argument doesn't resolve to a valid open TCP socket gets routed to the most-recently-opened TCP socket. Single-connection flows (settime, symtel, wget) work cleanly with this.
 
-- **Tracing.** `--trace-m4` logs every command's opcode + args + response and every NMI transition to stderr. Useful for diagnosing daemon behaviour.
-
-### Known limitation (M4 + SymbOS daemon)
-
-`netd-m4c.exe` launches, registers, displays "Online", resolves DNS, opens sockets, and connects — but interactive TCP sessions (telnet to telehack.com or aardwolf.org) stall shortly after the initial server banner. Tracing the daemon's runtime memory at the verified `m4cscktrn` location (runtime `0x94A0` in bank `0x1A`, derived by matching the m4ccmd-strobe pattern in the binary and observing `--trace-m4`'s strobe PC) confirms:
-
-1. `m4cscktrn[0] = 0x01` consistently after SOCKET.
-2. `m4csct`'s `ld a,(hl)` (PC `0x98C2`) reads `0x01` every time.
-3. Yet m4ctrx's immediately-following `ld (m4ctrxcmd+3), a` (PC `0x9702-9705`) writes varying junk (`0x54`, `0x91`, `0xF1`, …).
-
-IRQs do fire in the m4csct/m4ctrx critical path. Best hypotheses: SymbOS's ISR mishandles A across the m4csct→m4ctrx sequence, or our Z80 IRQ servicing has a subtle issue with SymbOS's specific register-save/restore expectations. Without a real-M4 hardware reference trace, the next path forward is to assemble the daemon ourselves to get exact symbol+IRQ-vector locations — which requires Prodatron's internal SymbOS source tree (not in the public SDK).
+- **Tracing.** `--trace-m4` logs every command's opcode + args + response and every NMI transition to stderr. For SymbOS-side debugging, `--trace-symbos-msg` hooks Z80 RST #10 (the SymbOS message-send vector) and logs net-daemon-class messages — useful for confirming whether the daemon ever emits `MSR_NET_TCPEVT` (= 0x9F) or the client ever issues `FNC_NET_TCPSND` (= 0x14) without having to instrument the daemon binary itself. Set `ONE_K_TRACE_SYMBOS_ALL=1` to widen the filter to every RST #10.
 
 ### Trap port summary
 
@@ -592,6 +584,7 @@ IRQs do fire in the m4csct/m4ctrx critical path. Best hypotheses: SymbOS's ISR m
 - `src/m4.c` / `src/m4.h` — command dispatcher, socket state, helper shim install
 - `src/fat.c` / `src/fat.h` — minimal FAT16/FAT32 image accessor
 - `src/symbnet.c` / `src/symbnet.h` — synthetic SymbOS network port at `0xFD30/0xFD31`; routes guest-side bytes through the M4 dispatcher. Companion daemon source in `~/Dev/symsys-networkdaemon-1984/` (paused).
+- `src/symbos_trace.c` / `src/symbos_trace.h` — `--trace-symbos-msg` RST #10 message hook. The hook is NULL by default (zero hot-path overhead) and is only installed when the flag is given.
 
 ## Building on Haiku
 
