@@ -196,6 +196,78 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 
 ---
 
+## CLI options
+
+`./1984 --help` prints the full list. Below is the same set grouped by purpose so it's easier to scan when you need a specific behaviour. CLI flags ALWAYS win over the persisted config when both are set; `config_save` still targets the default path even when `--config=PATH` was used (i.e. CLI config loads are read-only by design).
+
+### Machine config (override `1984.conf` for this session)
+
+| Flag | Effect |
+|------|--------|
+| `--464` / `--6128` | Force the CPC model |
+| `--dd1` | Enable the DDI-1 floppy interface (464 only) |
+| `--memory=KB` | RAM size: 64, 128, 256, 512, 576 (also 768 / 1024 via overlay) |
+| `--config=PATH` | Read from PATH instead of `~/.config/1984/1984.conf` |
+| `--rom-os=PATH` | Replace the OS (lower) ROM |
+| `--rom-slot=N:PATH` | Load a ROM into upper-ROM slot N (0–31). Repeatable |
+
+### Media
+
+| Flag | Effect |
+|------|--------|
+| `--disk-a=PATH` / `--disk-b=PATH` | Mount a DSK image in drive A/B |
+| `--load-sna=PATH` | Load a .sna snapshot (v1–v3) after init |
+| `--tap=DEVNAME` | Bind Net4CPC to a Linux TAP device for real LAN access. `--tap=` (empty) lets the kernel auto-name (`tap0`…). Needs `CAP_NET_ADMIN` or a pre-created persistent TAP — see the Net4CPC section |
+
+### Boot automation
+
+| Flag | Effect |
+|------|--------|
+| `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
+| `--paste=TEXT` | After boot, types TEXT verbatim (`\n` becomes Enter). Used for end-to-end tests (e.g. `--paste='\|sym'` autoboots SymbOS through M4ROM) |
+
+### Headless test harness
+
+| Flag | Effect |
+|------|--------|
+| `--screenshot-at=N:PATH` | Save a `.ppm` screenshot at frame N, then exit. The one-shot variant of F4 — drives most QA scripts |
+| `--save-sna-at=N:PATH` | Save a .sna snapshot at frame N. Typically pairs with `--paste` / `--autostart` to capture a known boot state |
+| `--save-sna-at-ide=N:PATH` | Save a .sna at the Nth ATA command. Used for cross-emulator bisection of CP/M+ / HDCPM boot races |
+| `--monitor-pty` | Open a PTY for the F8 memory monitor (connect with `minicom -b 9600 -D <path>` printed to stderr) |
+| `--kbd-pty` | Open a PTY that injects writes as keystrokes and streams the firmware text-out (`&BB5A`) — for external test harnesses driving BASIC / CP/M sessions |
+| `--ocr-monitor` | Adds an in-memory screen-text reader: scans video RAM each frame, decodes against the firmware font, streams the 80×25 (or 40×25) char grid on change out the kbd PTY. Lets probes follow CP/M+ output that bypasses `&BB5A`. Implies `--kbd-pty` |
+
+### Tracing (stderr)
+
+All of these are off by default. They are independent (combine freely).
+
+| Flag | What it logs |
+|------|--------------|
+| `--trace-io` | CRTC + Gate Array register writes |
+| `--trace-palette` | Palette writes + the firmware-flush fallback |
+| `--trace-input` | Keyboard + joystick events (row-9 scans, key up/down, gamepad/joystick events) |
+| `--trace-m4` | Every M4 board command opcode + args + response, plus NMI transitions |
+| `--trace-symbos-msg` | SymbOS RST #10 message sends in the net-daemon range. See M4 section for `ONE_K_TRACE_SYMBOS_ALL` |
+| `--trace-albireo` | Every Albireo / CH376 command + interrupt status |
+| `--trace-net4cpc` | W5100S register access + socket commands + TX/RX bursts |
+| `--trace-tap` | TAP-backed network stack events (ARP, IP, UDP, ICMP, TCP) |
+
+### Debug env vars (not CLI flags)
+
+These are read via `dbg_getenv()` so they only fire when the master `cfg.debug` is on (toggle in Overlay → Advanced → Debugging). They print to stderr like the `--trace-*` flags.
+
+| Env var | What it logs |
+|---------|--------------|
+| `ONE_K_TRACE_AUDIO` | SDL audio open/resume errors, periodic queued-bytes + min/max sample stats |
+| `ONE_K_TRACE_PSG` | Every AY register select and write with PC + I/O port |
+| `ONE_K_TRACE_M4_IO` | Every M4 ACKPORT strobe with the cmd_buf head (16 bytes) and CPU state |
+| `ONE_K_TRACE_SYMBOS_ALL` | Widens `--trace-symbos-msg` from "net-daemon messages only" to every RST #10 (very chatty — for cross-daemon startup bugs) |
+| `ONE_K_TRACE_HDCPM` | Upper-ROM-select trace into the HDCPM ROM (legacy from #102) |
+| `ONE_K_TRACE_BDF4` | Firmware tick-vector and reset-detection trace (legacy from #102 / #129) |
+| `ONE_K_RESET_SNA=PATH` | When the firmware reset is detected (via the `$BDF4` trigger), dump a snapshot to PATH |
+
+---
+
 ## Options overlay
 
 The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `SDL_RenderDebugText` at 1.5× scale. It has three tabs:

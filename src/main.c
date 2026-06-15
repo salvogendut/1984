@@ -241,7 +241,6 @@ static void usage(const char *prog, int code) {
         "  --trace-palette     Log palette writes and the firmware-flush fallback to stderr\n"
         "  --trace-input       Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down)\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
-        "                      (M4 emulation is currently unstable — see README.md)\n"
         "  --trace-symbos-msg  Log SymbOS RST #10 message sends (net-daemon range) to stderr\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
         "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
