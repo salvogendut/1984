@@ -14,6 +14,7 @@
 #include "z80.h"
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* SymbOS message type ranges (from SymbOS-Constants.asm in the
  * ASM-Developer-kit). Daemon→app messages are MSR_NET_* in 128..191
@@ -30,11 +31,13 @@ static void hook_rst10(Z80 *cpu, Z80Bus *bus) {
     u8 dst = (u8)(cpu->ix >> 8);
 
     /* Filter: only messages that touch the net daemon (typically proc id
-     * 0x07) OR fall in the MSR_NET_* range. Avoids flooding the trace
-     * with unrelated kernel/desktop messaging. */
-    bool is_net_msr = (msg >= 128 && msg <= 191);
-    bool touches_netd = (src == 0x07 || dst == 0x07);
-    if (!is_net_msr && !touches_netd) return;
+     * 0x07) OR fall in the MSR_NET_* range. ONE_K_TRACE_SYMBOS_ALL is a
+     * focused debugging escape hatch for cross-daemon startup failures. */
+    if (!getenv("ONE_K_TRACE_SYMBOS_ALL")) {
+        bool is_net_msr = (msg >= 128 && msg <= 191);
+        bool touches_netd = (src == 0x07 || dst == 0x07);
+        if (!is_net_msr && !touches_netd) return;
+    }
 
     fprintf(stderr,
             "[symbos f%d] RST10 msg=%02X src=%02X dst=%02X IY=%04X PC=%04X buf:",

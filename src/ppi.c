@@ -17,6 +17,11 @@ void ppi_write(PPI *p, u8 port, u8 val) {
         case 3:
             if (val & 0x80) {
                 p->control = val;
+                /* An 8255 mode-set control word clears all output latches. */
+                p->port_a = 0;
+                p->port_b = 0;
+                p->port_c = 0;
+                p->kbd_row = 0;
             } else {
                 /* bit set/reset mode for port C */
                 u8 bit = (val >> 1) & 0x07;

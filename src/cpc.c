@@ -396,13 +396,34 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
-        ppi_write(&cpc->ppi, hi & 0x03, val);
+        u8 ppi_port = hi & 0x03;
+        ppi_write(&cpc->ppi, ppi_port, val);
         /* Cassette motor follows PPI port C bit 4. */
         tape_set_motor(&cpc->tape, (cpc->ppi.port_c & 0x10) != 0);
-        /* Route PSG control bits from PPI port C */
+        /* The AY bus is driven only when a write can change PPI port A or
+         * upper port C. Port B and mode-set writes must not replay stale
+         * BDIR/BC1 levels. */
+        bool drives_psg = (ppi_port == 0 && !(cpc->ppi.control & 0x10))
+                       || (ppi_port == 2 && !(cpc->ppi.control & 0x08))
+                       || (ppi_port == 3 && !(val & 0x80)
+                                         && !(cpc->ppi.control & 0x08));
+        if (!drives_psg)
+            return;
+
         u8 psg_ctrl = (cpc->ppi.port_c >> 6) & 0x03;
-        if (psg_ctrl == 0x03) psg_select(&cpc->psg, cpc->ppi.port_a);
-        else if (psg_ctrl == 0x02) psg_write(&cpc->psg, cpc->ppi.port_a);
+        if (psg_ctrl == 0x03) {
+            if (dbg_getenv("ONE_K_TRACE_PSG"))
+                fprintf(stderr, "[PSG f%d] select=%02X PC=%04X port=%04X\n",
+                        cpc_frame_count, cpc->ppi.port_a, cpc->cpu.pc, port);
+            psg_select(&cpc->psg, cpc->ppi.port_a);
+        }
+        else if (psg_ctrl == 0x02) {
+            if (dbg_getenv("ONE_K_TRACE_PSG"))
+                fprintf(stderr, "[PSG f%d] R%u <- %02X PC=%04X port=%04X\n",
+                        cpc_frame_count, cpc->psg.selected, cpc->ppi.port_a,
+                        cpc->cpu.pc, port);
+            psg_write(&cpc->psg, cpc->ppi.port_a);
+        }
         else if (psg_ctrl == 0x01) {
             psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
             /* PSG read mode on CPC always reads I/O port A (reg 14 = keyboard matrix).
@@ -432,6 +453,15 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* M4 ACKPORT: hi=0xFC — trigger command execution */
     if (cpc->mx4 && cpc->m4 && hi == 0xFC) {
+        if (dbg_getenv("ONE_K_TRACE_M4_IO")) {
+            fprintf(stderr,
+                    "[M4ACK f%d] port=%04X val=%02X PC=%04X SP=%04X len=%d head:",
+                    cpc_frame_count, port, val, cpc->cpu.pc, cpc->cpu.sp,
+                    cpc->m4_card.cmd_len);
+            for (int i = 0; i < cpc->m4_card.cmd_len && i < 16; i++)
+                fprintf(stderr, " %02X", cpc->m4_card.cmd_buf[i]);
+            fprintf(stderr, "\n");
+        }
         if (m4_ackport_write(&cpc->m4_card, &cpc->mem))
             z80_nmi(&cpc->cpu);
         return;
@@ -595,8 +625,14 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };
     cpc->audio_stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-    if (cpc->audio_stream)
-        SDL_ResumeAudioStreamDevice(cpc->audio_stream);
+    if (!cpc->audio_stream) {
+        fprintf(stderr, "SDL_OpenAudioDeviceStream: %s\n", SDL_GetError());
+    } else if (!SDL_ResumeAudioStreamDevice(cpc->audio_stream)) {
+        fprintf(stderr, "SDL_ResumeAudioStreamDevice: %s\n", SDL_GetError());
+    } else if (dbg_getenv("ONE_K_TRACE_AUDIO")) {
+        fprintf(stderr, "[audio] opened S16 mono %d Hz playback stream\n",
+                AUDIO_SAMPLE_RATE);
+    }
 
     return 0;
 }
@@ -1327,8 +1363,20 @@ void cpc_frame(CPC *cpc) {
         }
         cpc->tape_audio_pos = 0;
         cpc->tape_audio_cycles = 0;
-        SDL_PutAudioStreamData(cpc->audio_stream,
-                               audio_buf, (int)sizeof(audio_buf));
+        if (!SDL_PutAudioStreamData(cpc->audio_stream,
+                                    audio_buf, (int)sizeof(audio_buf))) {
+            fprintf(stderr, "SDL_PutAudioStreamData: %s\n", SDL_GetError());
+        } else if (dbg_getenv("ONE_K_TRACE_AUDIO") &&
+                   (cpc_frame_count % 50) == 0) {
+            s16 min = audio_buf[0], max = audio_buf[0];
+            for (int i = 1; i < AUDIO_SAMPLES_FRAME; i++) {
+                if (audio_buf[i] < min) min = audio_buf[i];
+                if (audio_buf[i] > max) max = audio_buf[i];
+            }
+            fprintf(stderr, "[audio f%d] samples=%d..%d queued=%d bytes\n",
+                    cpc_frame_count, min, max,
+                    SDL_GetAudioStreamQueued(cpc->audio_stream));
+        }
     }
 }
 
