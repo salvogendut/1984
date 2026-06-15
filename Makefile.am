@@ -76,9 +76,18 @@ noinst_HEADERS = \
 1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\" \
                -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
-# $(WIN_SUBSYSTEM) (-mconsole) must come LAST so it wins over the -mwindows
-# that $(SDL3_LIBS) drags in.
-1984_LDADD   = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_SUBSYSTEM)
+# On Windows the resource object compiled below carries the .ico into
+# the .exe; SDL3's -mwindows (linked via $(SDL3_LIBS)) suppresses the
+# console window. _DEPENDENCIES is needed so make builds the .o before
+# the link step — items only in _LDADD are linked but not built.
+1984_LDADD        = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
+1984_DEPENDENCIES = $(WIN_RC_OBJ)
+
+icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico
+	@mkdir -p icons
+	$(WINDRES) -I$(srcdir)/icons -i $< -O coff -o $@
+
+CLEANFILES = icons/1984-rc.o
 
 # Bundled ROM images installed to $(datadir)/1984/roms/
 # (CPC firmware are freely redistributable for emulator use; M4ROM and
@@ -116,4 +125,4 @@ dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
-EXTRA_DIST = Makefile LICENSE Development.md
+EXTRA_DIST = Makefile LICENSE Development.md icons/1984.rc icons/1984.ico
