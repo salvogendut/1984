@@ -21,7 +21,6 @@ int ch376_disable_disk_read = 0;
 #define USB_INT_DISK_READ  0x1D
 #define USB_INT_DISK_WRITE 0x1E
 #define USB_INT_DISK_ERR   0x1F
-#define USB_INT_USB_NAK    0x2A   /* device has no data right now */
 #define ERR_OPEN_DIR       0x41
 #define ERR_MISS_FILE      0x42
 #define ERR_FOUND_NAME     0x43
@@ -800,8 +799,9 @@ static void execute(CH376 *ch) {
         }
         else if (ep == 1 && pid == 0x09) {
             /* HID IN on endpoint 1 — return 3-byte boot-mouse report when
-             * there's something to deliver, otherwise NAK so SymbOS yields
-             * back to its other tasks (disk I/O, UI redraw, ...). */
+             * there's something to deliver. Complete idle polls with a
+             * zero-length SUCCESS: SymbOS retries NAK immediately, which
+             * starves storage work on the second CH376. */
             if (ch->mouse_dx == 0 && ch->mouse_dy == 0 &&
                 ch->mouse_buttons == ch->mouse_last_buttons) {
                 /* Zero out the full 4-byte report so the host's
@@ -811,7 +811,7 @@ static void execute(CH376 *ch) {
                  * from past-end reads (drifts up-left at -1,-1 per poll). */
                 u8 zero[4] = { 0, 0, 0, 0 };
                 set_response(ch, zero, 4);
-                raise_int(ch, USB_INT_USB_NAK);
+                raise_int(ch, USB_INT_SUCCESS);
             } else {
                 int dx = ch->mouse_dx;
                 int dy = ch->mouse_dy;

@@ -50,9 +50,10 @@ typedef struct {
     SymbNet    symbnet_card;
     bool       albireo;        /* Albireo / dual-CH376 card present       */
     bool       albireo_mouse;  /* Populate the second chip + accept HID   */
-    CH376      ch376;          /* Left chip  @ 0xFE80/81 — storage + mouse */
-    CH376      ch376_b;        /* Right chip @ 0xFE40/41 — storage (only
-                                  wired when albireo_mouse is true)        */
+    CH376      ch376;          /* Left chip  @ 0xFE80/81 — storage, or HID
+                                  mouse when albireo_mouse is true         */
+    CH376      ch376_b;        /* Right chip @ 0xFE40/41 — storage in
+                                  dual-chip mouse mode                     */
     Tape       tape;           /* cassette / .cdt image */
     /* Per-sample snapshot of the cassette data line, captured inside the
      * Z80 step loop at audio rate. Mixed into the PSG output frame so the

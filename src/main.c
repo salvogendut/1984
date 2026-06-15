@@ -490,15 +490,11 @@ int main(int argc, char *argv[]) {
         ide_open(&cpc.ide_chip, cfg.ide_image);
     cpc.albireo       = cfg.albireo && cfg.rom_board;
     cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
-    cpc.ch376.has_mouse = cpc.albireo_mouse;
+    cpc.ch376.has_mouse   = cpc.albireo_mouse;
+    cpc.ch376_b.has_mouse = false;
     if (cpc.albireo && cfg.albireo_image[0]) {
-        ch376_open(&cpc.ch376, cfg.albireo_image);
-        if (cpc.albireo_mouse) {
-            /* Dual-chip mode: open the same image on chip B so SymbOS
-             * has a working storage path after chip A is pinned in
-             * USB-host mode for the mouse. */
-            ch376_open(&cpc.ch376_b, cfg.albireo_image);
-        }
+        CH376 *storage = cpc.albireo_mouse ? &cpc.ch376_b : &cpc.ch376;
+        ch376_open(storage, cfg.albireo_image);
     }
     ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
     /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
@@ -940,13 +936,13 @@ int main(int argc, char *argv[]) {
                 ide_open(&cpc.ide_chip, cfg.ide_image);
             cpc.albireo       = cfg.albireo && cfg.rom_board;
             cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
-            cpc.ch376.has_mouse = cpc.albireo_mouse;
+            cpc.ch376.has_mouse   = cpc.albireo_mouse;
+            cpc.ch376_b.has_mouse = false;
             ch376_close(&cpc.ch376);
             ch376_close(&cpc.ch376_b);
             if (cpc.albireo && cfg.albireo_image[0]) {
-                ch376_open(&cpc.ch376, cfg.albireo_image);
-                if (cpc.albireo_mouse)
-                    ch376_open(&cpc.ch376_b, cfg.albireo_image);
+                CH376 *storage = cpc.albireo_mouse ? &cpc.ch376_b : &cpc.ch376;
+                ch376_open(storage, cfg.albireo_image);
             }
             ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
             if (cpc.albireo && cpc.m4) {

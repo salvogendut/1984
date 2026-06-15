@@ -261,8 +261,8 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
-    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage) or
-     * 0x40/0x41 (right chip, USB host — present on dual-chip cards).
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
+     * mouse) or 0x40/0x41 (right chip, dual-mode storage).
      * Claim before M4 wide decode. */
     else if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
@@ -412,8 +412,9 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
-    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage) or
-     * 0x40/0x41 (right chip, USB host). Claim before M4 wide decode. */
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
+     * mouse) or 0x40/0x41 (right chip, dual-mode storage).
+     * Claim before M4 wide decode. */
     if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         ch376_write(&cpc->ch376, (u8)(port & 0x01), val);
         return;

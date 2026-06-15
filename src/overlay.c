@@ -685,15 +685,18 @@ static void activate_item(Overlay *ov) {
                 if (ov->cpc) {
                     ov->cpc->albireo_mouse = false;
                     ov->cpc->ch376.has_mouse = false;
+                    ch376_close(&ov->cpc->ch376);
                     ch376_close(&ov->cpc->ch376_b);
+                    if (ov->cfg->albireo_image[0])
+                        ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
                 }
                 ov->needs_cold_boot = true;
             }
             ov->dirty = true;
             break;
         case 9:
-            /* Albireo Mouse toggle (opt-in HID polling on chip A +
-             * second storage chip at 0xFE40). Requires the dual-CH376
+            /* Albireo Mouse toggle (opt-in HID polling on chip A plus
+             * storage on chip B at 0xFE40). Requires the dual-CH376
              * card to be enabled; mutually exclusive with the SymbIface
              * PS/2 mouse. */
             if (!ov->cfg->rom_board || !ov->cfg->albireo) break;
@@ -705,10 +708,14 @@ static void activate_item(Overlay *ov) {
             if (ov->cpc) {
                 ov->cpc->albireo_mouse = ov->cfg->albireo_mouse;
                 ov->cpc->ch376.has_mouse = ov->cfg->albireo_mouse;
-                if (ov->cfg->albireo_mouse && ov->cfg->albireo_image[0])
-                    ch376_open(&ov->cpc->ch376_b, ov->cfg->albireo_image);
-                else
-                    ch376_close(&ov->cpc->ch376_b);
+                ov->cpc->ch376_b.has_mouse = false;
+                ch376_close(&ov->cpc->ch376);
+                ch376_close(&ov->cpc->ch376_b);
+                if (ov->cfg->albireo_image[0]) {
+                    CH376 *storage = ov->cfg->albireo_mouse
+                                   ? &ov->cpc->ch376_b : &ov->cpc->ch376;
+                    ch376_open(storage, ov->cfg->albireo_image);
+                }
             }
             ov->needs_cold_boot = true;
             ov->dirty = true;
@@ -1001,11 +1008,14 @@ void overlay_tick(Overlay *ov) {
         ov->cfg->albireo = true;
         if (ov->cpc) {
             ov->cpc->albireo = true;
+            ov->cpc->albireo_mouse = ov->cfg->albireo_mouse;
             ch376_close(&ov->cpc->ch376);
             ch376_close(&ov->cpc->ch376_b);
-            ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
-            if (ov->cfg->albireo_mouse)
-                ch376_open(&ov->cpc->ch376_b, ov->cfg->albireo_image);
+            ov->cpc->ch376.has_mouse = ov->cfg->albireo_mouse;
+            ov->cpc->ch376_b.has_mouse = false;
+            CH376 *storage = ov->cfg->albireo_mouse
+                           ? &ov->cpc->ch376_b : &ov->cpc->ch376;
+            ch376_open(storage, ov->cfg->albireo_image);
         }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_SNAPSHOT_LOAD) {
