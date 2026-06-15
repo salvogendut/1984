@@ -488,9 +488,14 @@ int main(int argc, char *argv[]) {
         m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
-    cpc.albireo = cfg.albireo && cfg.rom_board;
-    if (cpc.albireo && cfg.albireo_image[0])
-        ch376_open(&cpc.ch376, cfg.albireo_image);
+    cpc.albireo       = cfg.albireo && cfg.rom_board;
+    cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
+    cpc.ch376.has_mouse   = cpc.albireo_mouse;
+    cpc.ch376_b.has_mouse = false;
+    if (cpc.albireo && cfg.albireo_image[0]) {
+        CH376 *storage = cpc.albireo_mouse ? &cpc.ch376_b : &cpc.ch376;
+        ch376_open(storage, cfg.albireo_image);
+    }
     ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
     /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
     if (cpc.albireo && cpc.m4) {
@@ -725,7 +730,7 @@ int main(int argc, char *argv[]) {
                 if (ev.type == SDL_EVENT_MOUSE_MOTION) {
                     if (cpc.symbiface_mouse)
                         mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
-                    if (cpc.albireo)
+                    if (cpc.albireo_mouse)
                         ch376_mouse_move(&cpc.ch376, (int)ev.motion.xrel, (int)ev.motion.yrel);
                     continue;
                 }
@@ -738,7 +743,7 @@ int main(int argc, char *argv[]) {
                     if (btn >= 0) {
                         if (cpc.symbiface_mouse)
                             mouse_button(&cpc.mouse, btn, pressed);
-                        if (cpc.albireo)
+                        if (cpc.albireo_mouse)
                             ch376_mouse_button(&cpc.ch376, btn, pressed);
                     }
                     continue;
@@ -758,13 +763,10 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            /* Click in emulator window captures mouse only when the
-             * SYMBiFACE II PS/2 mouse is enabled. Albireo on its own
-             * doesn't drive a usable mouse path in the current build
-             * (SymbOS abandons USB HID after SETUP returns DISCONNECT),
-             * so capturing for it would just trap the host pointer for
-             * nothing. Ctrl+Enter releases capture. */
-            if (!mouse_captured && cpc.symbiface_mouse &&
+            /* Click in emulator window captures mouse when either the
+             * SYMBiFACE II PS/2 mouse or the Albireo USB HID mouse is
+             * enabled. Ctrl+Enter releases capture. */
+            if (!mouse_captured && (cpc.symbiface_mouse || cpc.albireo_mouse) &&
                 !overlay.visible &&
                 ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
@@ -773,8 +775,12 @@ int main(int argc, char *argv[]) {
                 int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
                           (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
                           (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
-                if (btn >= 0)
-                    mouse_button(&cpc.mouse, btn, true);
+                if (btn >= 0) {
+                    if (cpc.symbiface_mouse)
+                        mouse_button(&cpc.mouse, btn, true);
+                    if (cpc.albireo_mouse)
+                        ch376_mouse_button(&cpc.ch376, btn, true);
+                }
                 continue;
             }
 
@@ -928,10 +934,16 @@ int main(int argc, char *argv[]) {
             ide_close(&cpc.ide_chip);
             if (cpc.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
-            cpc.albireo = cfg.albireo && cfg.rom_board;
+            cpc.albireo       = cfg.albireo && cfg.rom_board;
+            cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
+            cpc.ch376.has_mouse   = cpc.albireo_mouse;
+            cpc.ch376_b.has_mouse = false;
             ch376_close(&cpc.ch376);
-            if (cpc.albireo && cfg.albireo_image[0])
-                ch376_open(&cpc.ch376, cfg.albireo_image);
+            ch376_close(&cpc.ch376_b);
+            if (cpc.albireo && cfg.albireo_image[0]) {
+                CH376 *storage = cpc.albireo_mouse ? &cpc.ch376_b : &cpc.ch376;
+                ch376_open(storage, cfg.albireo_image);
+            }
             ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
             if (cpc.albireo && cpc.m4) {
                 cpc.m4 = false;

@@ -51,7 +51,7 @@ static void raise_int(CH376 *ch, u8 code) {
     ch->int_status  = code;
     ch->int_pending = true;
     if (ch376_trace)
-        fprintf(stderr, "[albireo]   int=%02X\n", code);
+        fprintf(stderr, "[%s]   int=%02X\n", ch->tag ? ch->tag : "albireo", code);
 }
 
 static const char *cmd_name(u8 c) {
@@ -359,6 +359,7 @@ void ch376_reset(CH376 *ch) {
     ch->filename[0] = '\0';
     ch->mouse_dx = ch->mouse_dy = 0;
     ch->mouse_buttons = 0;
+    ch->mouse_last_buttons = 0;
     ch->sec_reading = ch->sec_writing = false;
     ch->sec_remaining = 0;
     ch->sec_pos = 0;
@@ -434,7 +435,8 @@ static void execute(CH376 *ch) {
     u8 *p  = ch->params;
 
     if (ch376_trace) {
-        fprintf(stderr, "[albireo] cmd %02X %-14s", cmd, cmd_name(cmd));
+        fprintf(stderr, "[%s] cmd %02X %-14s",
+                ch->tag ? ch->tag : "albireo", cmd, cmd_name(cmd));
         for (int i = 0; i < ch->param_count && i < 16; i++)
             fprintf(stderr, " %02X", p[i]);
         if (cmd == 0x2F && ch->param_count > 0)
@@ -783,24 +785,60 @@ static void execute(CH376 *ch) {
         raise_int(ch, USB_INT_DISK_WRITE);
         break;
 
-    case 0x4E: { /* ISSUE_TKN_X — params: (token, endpoint+pid).
-                  * SymbOS / Albireo HID mouse path uses endpoint 0x19
-                  * (read endpoint 1) with token DATA0/DATA1 alternating.
-                  * Stage a 3-byte boot-mouse report (buttons, dx, dy). */
+    case 0x4E: { /* ISSUE_TKN_X — params: (toggle-sync, endpoint+pid).
+                  * The endpoint+pid byte is (ep << 4) | pid where pid
+                  * is the CH376 PID code: 1=OUT, 9=IN, D=SETUP. */
         u8 endpoint = p[1];
-        if ((endpoint & 0x0F) == 0x09 && (endpoint & 0xF0) == 0x10) {
-            /* IN token on endpoint 1 — return mouse HID report. */
-            int dx = ch->mouse_dx;
-            int dy = ch->mouse_dy;
-            if (dx >  127) dx =  127; else if (dx < -128) dx = -128;
-            if (dy >  127) dy =  127; else if (dy < -128) dy = -128;
-            ch->mouse_dx -= dx;
-            ch->mouse_dy -= dy;
-            u8 v[4] = { 3, ch->mouse_buttons, (u8)(s8)dx, (u8)(s8)dy };
-            set_response(ch, v, 4);
+        u8 pid = endpoint & 0x0F;
+        u8 ep  = (endpoint >> 4) & 0x0F;
+        if (!ch->has_mouse) {
+            /* USB HID mouse path is opt-in (Albireo Mouse toggle).
+             * Refuse all USB tokens so SymbOS gives up on HID and
+             * keeps the chip available for storage. */
+            raise_int(ch, USB_INT_DISCONNECT);
+        }
+        else if (ep == 1 && pid == 0x09) {
+            /* HID IN on endpoint 1 — return 3-byte boot-mouse report when
+             * there's something to deliver. Complete idle polls with a
+             * zero-length SUCCESS: SymbOS retries NAK immediately, which
+             * starves storage work on the second CH376. */
+            if (ch->mouse_dx == 0 && ch->mouse_dy == 0 &&
+                ch->mouse_buttons == ch->mouse_last_buttons) {
+                /* Zero out the full 4-byte report so the host's
+                 * RD_USB_DATA0 reads back length=0, buttons=0, dx=0, dy=0
+                 * regardless of how many bytes it consumes. Without this,
+                 * SymbOS reads the previous report (drift) or 0xFF padding
+                 * from past-end reads (drifts up-left at -1,-1 per poll). */
+                u8 zero[4] = { 0, 0, 0, 0 };
+                set_response(ch, zero, 4);
+                raise_int(ch, USB_INT_SUCCESS);
+            } else {
+                int dx = ch->mouse_dx;
+                int dy = ch->mouse_dy;
+                if (dx >  127) dx =  127; else if (dx < -128) dx = -128;
+                if (dy >  127) dy =  127; else if (dy < -128) dy = -128;
+                ch->mouse_dx -= dx;
+                ch->mouse_dy -= dy;
+                ch->mouse_last_buttons = ch->mouse_buttons;
+                u8 v[4] = { 3, ch->mouse_buttons, (u8)(s8)dx, (u8)(s8)dy };
+                set_response(ch, v, 4);
+                raise_int(ch, USB_INT_SUCCESS);
+            }
+        } else if (ep == 0) {
+            /* Control transfer on EP0. The CH376 high-level commands
+             * SET_ADDRESS (0x45) and SET_CONFIG (0x49) already handle
+             * standard device-level requests internally; SymbOS still
+             * probes EP0 with raw SETUP / IN / OUT tokens for HID
+             * class requests (SET_IDLE, SET_PROTOCOL, GET_REPORT).
+             * We don't model the device descriptors, so acknowledge
+             * every stage with a zero-length response — that keeps the
+             * enumeration alive so SymbOS moves on to polling EP1. */
+            if (pid == 0x09) {
+                u8 zero = 0;
+                set_response(ch, &zero, 1);   /* len=0, no data */
+            }
             raise_int(ch, USB_INT_SUCCESS);
         } else {
-            /* Anything else on the USB token path — nothing to emulate. */
             raise_int(ch, USB_INT_DISCONNECT);
         }
         break;

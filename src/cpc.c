@@ -261,9 +261,15 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (hi == 0xFA) {
         result = 0xFF;
     }
-    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
+     * mouse) or 0x40/0x41 (right chip, dual-mode storage).
+     * Claim before M4 wide decode. */
     else if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
+    }
+    else if (cpc->mx4 && cpc->albireo && cpc->albireo_mouse &&
+             hi == 0xFE && (port & 0xFE) == 0x40) {
+        result = ch376_read(&cpc->ch376_b, (u8)(port & 0x01));
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
     else if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
@@ -406,9 +412,16 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
-    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (claim before M4 wide decode) */
+    /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
+     * mouse) or 0x40/0x41 (right chip, dual-mode storage).
+     * Claim before M4 wide decode. */
     if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
         ch376_write(&cpc->ch376, (u8)(port & 0x01), val);
+        return;
+    }
+    if (cpc->mx4 && cpc->albireo && cpc->albireo_mouse &&
+            hi == 0xFE && (port & 0xFE) == 0x40) {
+        ch376_write(&cpc->ch376_b, (u8)(port & 0x01), val);
         return;
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF — accumulate command byte */
@@ -539,6 +552,9 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     m4_init(&cpc->m4_card, "");
     symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
     ch376_init(&cpc->ch376);
+    cpc->ch376.tag = "albireo-a";
+    ch376_init(&cpc->ch376_b);
+    cpc->ch376_b.tag = "albireo-b";
     tape_init(&cpc->tape);
     net4cpc_reset();
 
@@ -578,6 +594,7 @@ void cpc_reset(CPC *cpc) {
     mouse_init(&cpc->mouse);    /* clear accumulated deltas; capture state managed by main */
     m4_reset(&cpc->m4_card);
     ch376_reset(&cpc->ch376);
+    ch376_reset(&cpc->ch376_b);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -594,6 +611,7 @@ void cpc_destroy(CPC *cpc) {
     disk_eject(&cpc->drive[1]);
     ide_close(&cpc->ide_chip);
     ch376_close(&cpc->ch376);
+    ch376_close(&cpc->ch376_b);
     tape_eject(&cpc->tape);
     display_destroy(&cpc->display);
 }

@@ -73,6 +73,12 @@ typedef struct {
     bool symbnet;     /* 1984 emulator synthetic SymbOS network port (0xFD30/31) */
     bool albireo;
     char albireo_image[CONFIG_PATH_MAX];
+    /* When the dual-CH376 card is enabled, populate the second chip at
+     * 0xFE40/41 so SymbOS can enumerate a USB HID mouse on chip A and
+     * still serve disk I/O from chip B. When false, only chip A is
+     * wired — matches a single-chip Albireo card and avoids the
+     * polling overhead SymbOS's HID driver adds. */
+    bool albireo_mouse;
     /* If true, the CH376 emulation refuses raw-sector DISK_READ commands so
      * SymbOS falls back to the chip's built-in FS via FILE_OPEN/BYTE_READ.
      * Works around a current rendering bug where SymbOS-FAT-driver-via-raw-

@@ -48,8 +48,12 @@ typedef struct {
     M4         m4_card;
     bool       symbnet;        /* 1984 emulator synthetic SymbOS network port */
     SymbNet    symbnet_card;
-    bool       albireo;        /* Albireo USB host add-on (CH376) */
-    CH376      ch376;
+    bool       albireo;        /* Albireo / dual-CH376 card present       */
+    bool       albireo_mouse;  /* Populate the second chip + accept HID   */
+    CH376      ch376;          /* Left chip  @ 0xFE80/81 — storage, or HID
+                                  mouse when albireo_mouse is true         */
+    CH376      ch376_b;        /* Right chip @ 0xFE40/41 — storage in
+                                  dual-chip mouse mode                     */
     Tape       tape;           /* cassette / .cdt image */
     /* Per-sample snapshot of the cassette data line, captured inside the
      * Z80 step loop at audio rate. Mixed into the PSG output frame so the
