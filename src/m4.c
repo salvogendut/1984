@@ -94,9 +94,12 @@ static void resp_str(M4 *m, u16 *off, const char *s) {
     resp_u8(m, off, 0);
 }
 
-/* Write error at base, return for use in switch cases */
-static void resp_err(M4 *m, u8 err) {
-    m->bus_mem[0] = err;
+/* Responses use the same framing as commands: byte 0 is the number of
+ * following bytes, then the echoed command word and command-specific data. */
+static void resp_frame(M4 *m, u16 cmd, u16 end) {
+    m->bus_mem[0] = (u8)(end - 1);
+    m->bus_mem[1] = (u8)(cmd & 0xFF);
+    m->bus_mem[2] = (u8)(cmd >> 8);
 }
 
 /* ---- Path helpers ---- */
@@ -241,11 +244,15 @@ static void fat_abs_path(const M4 *m, const char *cpc_path,
 static void m4_open_image(M4 *m) {
     if (m->image_mounted) { fat_unmount(&m->image_vol); m->image_mounted = false; }
     if (m->image_fp) { fclose(m->image_fp); m->image_fp = NULL; }
+    m->image_read_only = false;
     if (!m->image_path[0]) return;
     struct stat st;
     if (stat(m->image_path, &st) != 0 || !S_ISREG(st.st_mode)) return;
     m->image_fp = fopen(m->image_path, "r+b");
-    if (!m->image_fp) m->image_fp = fopen(m->image_path, "rb"); /* read-only fallback */
+    if (!m->image_fp) {
+        m->image_fp = fopen(m->image_path, "rb");
+        m->image_read_only = m->image_fp != NULL;
+    }
     if (m->image_fp)
         m->image_mounted = fat_mount(&m->image_vol, m->image_fp);
 }
@@ -291,6 +298,46 @@ static void net_close_socket(M4 *m, int s) {
     m->sockets[s].fd     = -1;
     m->sockets[s].status = 0;
     sync_sock_mem(m, s);
+}
+
+static u16 telnet_filter_inplace(u8 *buf, u16 len) {
+    u16 r = 0;
+    u16 w = 0;
+    while (r < len) {
+        u8 c = buf[r++];
+        if (c != 0xFF) {
+            buf[w++] = c;
+            continue;
+        }
+        if (r >= len) break;
+
+        u8 cmd = buf[r++];
+        if (cmd == 0xFF) {
+            buf[w++] = 0xFF;
+            continue;
+        }
+
+        /* Skip a simple IAC command triplet: IAC WILL/WONT/DO/DONT option. */
+        if (cmd == 0xFB || cmd == 0xFC || cmd == 0xFD || cmd == 0xFE) {
+            if (r < len) r++;
+            continue;
+        }
+
+        /* Skip subnegotiation blocks: IAC SB ... IAC SE. */
+        if (cmd == 0xFA) {
+            while (r + 1 < len) {
+                if (buf[r] == 0xFF && buf[r + 1] == 0xF0) {
+                    r += 2;
+                    break;
+                }
+                r++;
+            }
+            continue;
+        }
+
+        /* Other IAC commands are control-only; drop them. */
+    }
+    return w;
 }
 
 /* Probe an in-flight connect on socket s; updates status to connected (0) or
@@ -351,12 +398,6 @@ void m4_tick(M4 *m) {
      * the status byte without sending any M4 commands. */
     for (int i = 0; i < M4_NSOCKS; i++)
         if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
-
-    /* Safety net: if the daemon's read never came (CPU was off doing
-     * other work), clear ram_mode after the frame so the bypass doesn't
-     * stay armed indefinitely. */
-    m->ram_mode = false;
-    m->ram_mode_reads = 0;
 }
 
 void m4_reset(M4 *m) {
@@ -378,6 +419,7 @@ void m4_reset(M4 *m) {
     /* Tear down any open TCP sockets and clear sock_info */
     for (int i = 0; i < M4_NSOCKS; i++) net_close_socket(m, i);
     m->nmi_enabled = false;
+    m->last_error = M4_OK;
 }
 
 void m4_dataport_write(M4 *m, u8 val) {
@@ -437,34 +479,43 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
 
     if (m->cmd_len < 3) {
-        resp_err(m, M4_ERR_IO);
+        m->last_error = M4_ERR_IO;
+        resp_frame(m, 0, 3);
         m->cmd_len = 0;
         return m->nmi_enabled;
     }
 
-    u16 cmd = (u16)m->cmd_buf[1] | ((u16)m->cmd_buf[2] << 8);
-
-    /* Real M4 board enters "RAM mode" on every command strobe — its RAM
-     * (rom_response, sock_info, cfg) then wins reads at 0xE800/0xF400/0xFE00
-     * regardless of the CPU's upper ROM selection. We gate it to network
-     * opcodes only: file/config strobes from M4ROM init at boot would
-     * otherwise leave RAM mode stuck on and the firmware sees M4 buffers
-     * instead of CPC RAM at 0xE800-0xFE4F. Network responses are the only
-     * ones the SymbOS daemon polls via slot-0 reads, so that's where the
-     * trick actually has to work. */
-    /* C_READMEM is excluded on purpose: M4ROM's own init issues 43FD at boot
-     * and the bus bypass at 0xE800-0xFE4F would corrupt firmware reads of
-     * screen RAM there. Our own use of READMEM (1984-only daemon) reads the
-     * response via the FD30 FIFO, not bus_mem, so it doesn't need this. */
-    if (cmd == 0x4321 || (cmd >= 0x4331 && cmd <= 0x433C)) {
-        m->ram_mode = true;
-        m->ram_mode_reads = 24;
-    } else {
-        m->ram_mode = false;
-        m->ram_mode_reads = 0;
+    /* Find the packet header. Normal case: cmd_buf[0] is the header-byte
+     * count (per daemon's m4ccmd0) and cmd_buf[2] holds the command's
+     * high byte (always 0x43 for M4 ops). Fall back to a scan only if
+     * offset 0 doesn't look like a valid header — this handles the case
+     * where unrelated bus writes to the broadly-decoded 0xFExx port range
+     * land in cmd_buf before a legitimate M4 command. We CAN'T validate
+     * total packet length against cmd_buf[0] (variable-payload commands
+     * like C_NETSEND have payload bytes written after the header via
+     * m4csnd before the ACK strobe), so we trust the 0x43 sentinel. */
+    int packet_start = 0;
+    if (m->cmd_len < 3 || m->cmd_buf[2] != 0x43) {
+        packet_start = -1;
+        for (int i = 1; i <= m->cmd_len - 3; i++) {
+            if (m->cmd_buf[i + 2] == 0x43) { packet_start = i; break; }
+        }
+        if (packet_start < 0) {
+            m->last_error = M4_ERR_IO;
+            resp_frame(m, 0, 3);
+            m->cmd_len = 0;
+            return m->nmi_enabled;
+        }
     }
-    const u8 *p = m->cmd_buf + 3;   /* params */
-    int plen    = m->cmd_len - 3;
+
+    const u8 *packet = &m->cmd_buf[packet_start];
+    int packet_len = m->cmd_len - packet_start;
+    u16 cmd = (u16)packet[1] | ((u16)packet[2] << 8);
+
+    m->ram_mode = false;
+    m->ram_mode_reads = 0;
+    const u8 *p = packet + 3;       /* params */
+    int plen    = packet_len - 3;
     u8  err     = M4_ERR_NOTSUP;
     u16 roff    = 3;                 /* response data written starting at RESP_BASE+3 (M4 protocol) */
 
@@ -955,6 +1006,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             err = M4_OK;
             close_res = 0x00;
         } else {
+            /* Always BADFD for unknown fds (including fd=1/2). M4ROM's boot
+             * sequence closes fd=1 and fd=2 expecting BADFD ("nothing was
+             * open") and uses that to gate its banner/autoboot. Returning
+             * M4_OK here breaks boot. The SymbOS daemon's cleanup closes on
+             * fd=1/2 must tolerate BADFD too — that's what real M4
+             * hardware returns. */
             err = M4_ERR_BADFD;
             close_res = 0xFF;
         }
@@ -1072,6 +1129,11 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             err = M4_OK;
             break;
         }
+        if (m->image_read_only) {
+            resp_u8(m, &roff, 2);
+            err = M4_OK;
+            break;
+        }
         u32 lba  = (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
         u8  nsec = p[4];
         if (nsec == 0 || nsec > 4 || plen < 5 + (int)nsec * 512) {
@@ -1135,8 +1197,9 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_GETNETWORK: {
-        /* 192-byte structure — fill enough so the daemon doesn't reject it. */
-        u8 cfg[192];
+        /* Network configuration structure. M4ROM reads the six-byte MAC at
+         * offsets 190..195, so the response must include all 196 bytes. */
+        u8 cfg[196];
         memset(cfg, 0, sizeof(cfg));
         strncpy((char *)&cfg[0],   "1984",   16);
         strncpy((char *)&cfg[16],  "emulator", 32);
@@ -1146,6 +1209,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         cfg[124]=8;   cfg[125]=8;   cfg[126]=8;   cfg[127]=8; /* dns1 */
         cfg[128]=8;   cfg[129]=8;   cfg[130]=4;   cfg[131]=4; /* dns2 */
         cfg[132]=0;                                            /* dhcp off (static IP, we provide one) */
+        cfg[190]=0x02; cfg[191]=0x19; cfg[192]=0x84;           /* locally administered MAC */
+        cfg[193]=0x00; cfg[194]=0x00; cfg[195]=0x01;
         err = M4_OK;
         for (size_t i = 0; i < sizeof(cfg); i++) resp_u8(m, &roff, cfg[i]);
         break;
@@ -1193,6 +1258,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 m->sockets[idx].status  = 0;
                 m->sockets[idx].lastcmd = 0;
                 m->sockets[idx].rx_count = 0;
+                m->sockets[idx].telnet_mode = false;
                 sync_sock_mem(m, idx);
                 sid = (u8)idx;
                 m->last_tcp_sock = idx;
@@ -1225,30 +1291,19 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 sa.sin_port = htons((u16)p[5] | ((u16)p[6] << 8));
                 memcpy(m->sockets[s].peer_ip, &p[1], 4);
                 m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
+                m->sockets[s].telnet_mode = (m->sockets[s].peer_port == 23);
                 m->sockets[s].lastcmd = 3;
                 int r = connect(m->sockets[s].fd, (struct sockaddr *)&sa, sizeof(sa));
                 bool inprog = sock_in_progress();
-                if (r == 0) {
-                    m->sockets[s].status = 0;  /* connected */
+                if (r == 0 || inprog) {
+                    /* Keep the socket in the connecting state until the next
+                     * poll tick so the SymbOS daemon observes a real status
+                     * transition and emits NET_TCPEVT. If connect() completed
+                     * immediately, collapsing straight to status=0 can skip
+                     * the event path and leave TCP_OpenWait spinning. */
+                    m->sockets[s].connecting = true;
+                    m->sockets[s].status = 1;
                     ok = 0;
-                } else if (inprog) {
-                    /* Real M4 firmware blocks inside C_NETCONNECT until the ESP8266
-                     * has resolved the connect, so the host code sees status=IDLE
-                     * (or an error) on the first sock[0] read after the strobe.
-                     * cpc-sdcc relies on this — its busy-wait loop hoists the read
-                     * outside the loop, so it never observes a transition from
-                     * CONN to IDLE. Block here for up to 5 s. */
-                    struct pollfd pfd = { .fd = m->sockets[s].fd, .events = POLLOUT };
-                    int pr = poll(&pfd, 1, 5000);
-                    if (pr > 0 && (pfd.revents & (POLLOUT | POLLERR | POLLHUP))) {
-                        int soerr = 0; socklen_t l = sizeof(soerr);
-                        getsockopt(m->sockets[s].fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &l);
-                        m->sockets[s].status = soerr ? 240 : 0;
-                        ok = soerr ? 0xFF : 0;
-                    } else {
-                        m->sockets[s].status = 240;  /* timeout */
-                        ok = 0xFF;
-                    }
                 } else {
                     m->sockets[s].status = 240;
                 }
@@ -1339,6 +1394,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                                  MSG_DONTWAIT);
                 if (n >= 0) {
                     actual = (u16)n;
+                    if (actual > 0 && m->sockets[s].telnet_mode)
+                        actual = telnet_filter_inplace(&m->bus_mem[6], actual);
                     result = 0;
                 } else if (sock_would_block()) {
                     actual = 0;
@@ -1425,11 +1482,20 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
     }
 
-    resp_err(m, err);
+    m->last_error = err;
+    resp_frame(m, cmd, roff);
     /* Track how many bytes this command's caller is expected to read so
      * we know when it's safe to restore a pending RSSI snapshot (see
      * bus_mem_read in cpc.c). */
     m->last_resp_len = (roff > 3) ? (int)(roff - 3) : 0;
+    /* Network clients such as SymbOS read responses while another upper ROM
+     * is selected. Keep M4 RAM mode alive for the complete response, not just
+     * the small sock_info-sized transfers. C_GETNETWORK alone returns 196
+     * bytes; the old fixed 24-read budget exposed only its prefix and made
+     * netd-m4c.exe abort during startup. RAM mode is cleared when the caller
+     * consumes the response or when the next command supersedes it. */
+    if (m->ram_mode && m->ram_mode_reads < m->last_resp_len + 16)
+        m->ram_mode_reads = m->last_resp_len + 16;
     if (m4_trace) {
         int rlen = (roff > 3) ? (roff - 3) : 0;
         fprintf(stderr, "[m4]      RSP err=%02X (%d payload):", err, rlen);
@@ -1437,6 +1503,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             fprintf(stderr, " %02X", m->bus_mem[3 + i]);
         if (rlen > 16) fprintf(stderr, " ...(+%d)", rlen - 16);
         fprintf(stderr, "\n");
+        if (m->ram_mode)
+            fprintf(stderr, "[m4]      RAMMODE reads=%d\n", m->ram_mode_reads);
     }
     m->cmd_len = 0;
     return m->nmi_enabled;

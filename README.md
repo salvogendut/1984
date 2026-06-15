@@ -10,7 +10,7 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 
 **HDCPM / CP/M+ boots from FAT-formatted SYMBiFACE II / Cyboard IDE drives**, mounting up to four `CPMDSKxx.IMG` images as CP/M drives A–D with the M: ramdisk, ZCPR shell, and SYMBiFACE RTC sync. **SymbOS desktop runs on both Albireo (USB / CH376) and Cyboard (Net4CPC + RTC + SYMBiFACE IDE).**
 
-**M4 board emulation is partial.** The ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, and TCP connect plus the cpc-sdcc network examples (TCPTEST, NTP, TELNET, WGET) all work. SymbOS's `netd-m4c.exe` launches, resolves hosts, and HTTP downloads via `wget` complete end-to-end. SymbOS interactive telnet sessions stall shortly after the initial server banner — the same stall is observed on real Net4CPC hardware, so this appears to be a SymbOS-side limitation rather than an emulator bug.
+**M4 board emulation runs SymbOS unmodified.** ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, TCP connect, send, and receive all work — both for cpc-sdcc network examples (TCPTEST, NTP, TELNET, WGET) and for SymbOS-native apps through `netd-m4c.exe`. The daemon may be left in SymbOS autostart; `settime.com` fetches the time over HTTP and the desktop clock updates end-to-end, `symtel` connects to telnet servers, `wget` downloads complete.
 
 ## Features
 

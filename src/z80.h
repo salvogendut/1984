@@ -78,3 +78,9 @@ void z80_reset(Z80 *cpu);
 int  z80_step(Z80 *cpu, Z80Bus *bus);   /* Execute one instruction; returns T-states */
 void z80_interrupt(Z80 *cpu);           /* Assert maskable interrupt */
 void z80_nmi(Z80 *cpu);
+
+/* Optional pre-execution hook for RST #10 (the SymbOS message-send vector).
+ * NULL = no hook (zero overhead). Set by symbos_trace.c when --trace-symbos-msg
+ * is given. The hook is called with the CPU + bus right before RST #10 runs;
+ * it must not modify CPU state. */
+extern void (*z80_rst10_hook)(Z80 *cpu, Z80Bus *bus);

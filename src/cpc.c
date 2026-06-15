@@ -86,19 +86,13 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
      *                   enough for 2KB C_READ payload starting at resp+4)
      *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count)
      *   0xFE00-0xFE4F → m4_card.sock_mem (sock_info: 5 × 16 bytes for NETAPI) */
-    /* Bus bypass: triggers either with M4ROM paged in (slot 6) or while
-     * the M4 board is in "RAM mode" (set only by network-class commands —
-     * see m4_ackport_write). ram_mode auto-clears via a small frame timer
-     * driven from m4_tick.
-     *
-     * Under ram_mode we also redirect upper-ROM code fetches at
-     * 0xC000-0xE7FF to M4ROM bytes regardless of which slot the CPU has
-     * selected — that's how real hardware lets the SymbOS daemon
-     * "out (0xDF00), 0" then "JP <m4 helper>" and still reach the helper
-     * code that lives in M4ROM. */
+    /* Bus bypass only applies while M4ROM is actually paged in.
+     * The real SymbOS daemon flips slot 6 around its banked M4 calls, so
+     * keeping the overlay active after that risks leaking response bytes
+     * into CPC screen RAM. */
     bool bypass_slot = cpc->mem.upper_rom_enabled
                        && cpc->mem.upper_rom_select == M4_ROM_SLOT;
-    if (cpc->m4 && (bypass_slot || cpc->m4_card.ram_mode)) {
+    if (cpc->m4 && bypass_slot) {
         u8 v = 0; bool hit = true;
         /* Skip the bypass for likely stack POP/RET reads (addr matches SP
          * or SP+1). The SymbOS netd-m4c.exe daemon places its stack at
@@ -125,6 +119,17 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
                 cpc->m4_card.rssi_resp_pending = false;
             }
             v = cpc->m4_card.bus_mem[addr - 0xE800];
+            if (m4_trace
+                    && (addr <= 0xE807
+                        || (addr >= 0xE8BE && addr <= 0xE8C6)
+                        || (addr >= 0xF310 && addr <= 0xF314))) {
+                fprintf(stderr,
+                        "[m4 f%d] RAMREAD addr=%04X val=%02X PC=%04X SP=%04X "
+                        "slot=%u mode=%d left=%d\n",
+                        cpc_frame_count, addr, v, cpc->cpu.pc, cpc->cpu.sp,
+                        cpc->mem.upper_rom_select, cpc->m4_card.ram_mode,
+                        cpc->m4_card.ram_mode_reads);
+            }
         }
         else if (addr >= 0xF400 && addr < 0xF500)
             v = cpc->m4_card.cfg_mem[addr - 0xF400];
@@ -133,9 +138,6 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
         else
             hit = false;
         if (hit) {
-            if (!bypass_slot && cpc->m4_card.ram_mode
-                    && --cpc->m4_card.ram_mode_reads <= 0)
-                cpc->m4_card.ram_mode = false;
             return v;
         }
     }
@@ -394,13 +396,34 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
     if (!(hi & 0x08)) {
-        ppi_write(&cpc->ppi, hi & 0x03, val);
+        u8 ppi_port = hi & 0x03;
+        ppi_write(&cpc->ppi, ppi_port, val);
         /* Cassette motor follows PPI port C bit 4. */
         tape_set_motor(&cpc->tape, (cpc->ppi.port_c & 0x10) != 0);
-        /* Route PSG control bits from PPI port C */
+        /* The AY bus is driven only when a write can change PPI port A or
+         * upper port C. Port B and mode-set writes must not replay stale
+         * BDIR/BC1 levels. */
+        bool drives_psg = (ppi_port == 0 && !(cpc->ppi.control & 0x10))
+                       || (ppi_port == 2 && !(cpc->ppi.control & 0x08))
+                       || (ppi_port == 3 && !(val & 0x80)
+                                         && !(cpc->ppi.control & 0x08));
+        if (!drives_psg)
+            return;
+
         u8 psg_ctrl = (cpc->ppi.port_c >> 6) & 0x03;
-        if (psg_ctrl == 0x03) psg_select(&cpc->psg, cpc->ppi.port_a);
-        else if (psg_ctrl == 0x02) psg_write(&cpc->psg, cpc->ppi.port_a);
+        if (psg_ctrl == 0x03) {
+            if (dbg_getenv("ONE_K_TRACE_PSG"))
+                fprintf(stderr, "[PSG f%d] select=%02X PC=%04X port=%04X\n",
+                        cpc_frame_count, cpc->ppi.port_a, cpc->cpu.pc, port);
+            psg_select(&cpc->psg, cpc->ppi.port_a);
+        }
+        else if (psg_ctrl == 0x02) {
+            if (dbg_getenv("ONE_K_TRACE_PSG"))
+                fprintf(stderr, "[PSG f%d] R%u <- %02X PC=%04X port=%04X\n",
+                        cpc_frame_count, cpc->psg.selected, cpc->ppi.port_a,
+                        cpc->cpu.pc, port);
+            psg_write(&cpc->psg, cpc->ppi.port_a);
+        }
         else if (psg_ctrl == 0x01) {
             psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
             /* PSG read mode on CPC always reads I/O port A (reg 14 = keyboard matrix).
@@ -430,6 +453,15 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* M4 ACKPORT: hi=0xFC — trigger command execution */
     if (cpc->mx4 && cpc->m4 && hi == 0xFC) {
+        if (dbg_getenv("ONE_K_TRACE_M4_IO")) {
+            fprintf(stderr,
+                    "[M4ACK f%d] port=%04X val=%02X PC=%04X SP=%04X len=%d head:",
+                    cpc_frame_count, port, val, cpc->cpu.pc, cpc->cpu.sp,
+                    cpc->m4_card.cmd_len);
+            for (int i = 0; i < cpc->m4_card.cmd_len && i < 16; i++)
+                fprintf(stderr, " %02X", cpc->m4_card.cmd_buf[i]);
+            fprintf(stderr, "\n");
+        }
         if (m4_ackport_write(&cpc->m4_card, &cpc->mem))
             z80_nmi(&cpc->cpu);
         return;
@@ -507,6 +539,24 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
             else
                 cpc->mem.ram_bank = saved_bank;
 
+            if (lo == 0x3F) {
+                /* The bank-aware helper consumed the response without going
+                 * through bus_mem_read(), so retire RAM mode explicitly. */
+                if (m4_trace) {
+                    fprintf(stderr,
+                            "[m4 f%d] HRECV src=%04X dst=%04X len=%u "
+                            "srcbank=%02X dstbank=%02X ret=%04X first=%02X\n",
+                            cpc_frame_count, src, dest, length, source_bank,
+                            dest_bank, retaddr,
+                            (src >= 0xE800 && src < 0xF400)
+                                ? cpc->m4_card.bus_mem[src - 0xE800]
+                                : mem_read(&cpc->mem, src));
+                }
+                cpc->m4_card.ram_mode = false;
+                cpc->m4_card.ram_mode_reads = 0;
+                cpc->m4_card.last_resp_len = 0;
+            }
+
             cpc->cpu.pc = cpc->cpu.ix;
             (void)retaddr;
         }
@@ -575,8 +625,14 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };
     cpc->audio_stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-    if (cpc->audio_stream)
-        SDL_ResumeAudioStreamDevice(cpc->audio_stream);
+    if (!cpc->audio_stream) {
+        fprintf(stderr, "SDL_OpenAudioDeviceStream: %s\n", SDL_GetError());
+    } else if (!SDL_ResumeAudioStreamDevice(cpc->audio_stream)) {
+        fprintf(stderr, "SDL_ResumeAudioStreamDevice: %s\n", SDL_GetError());
+    } else if (dbg_getenv("ONE_K_TRACE_AUDIO")) {
+        fprintf(stderr, "[audio] opened S16 mono %d Hz playback stream\n",
+                AUDIO_SAMPLE_RATE);
+    }
 
     return 0;
 }
@@ -1307,8 +1363,20 @@ void cpc_frame(CPC *cpc) {
         }
         cpc->tape_audio_pos = 0;
         cpc->tape_audio_cycles = 0;
-        SDL_PutAudioStreamData(cpc->audio_stream,
-                               audio_buf, (int)sizeof(audio_buf));
+        if (!SDL_PutAudioStreamData(cpc->audio_stream,
+                                    audio_buf, (int)sizeof(audio_buf))) {
+            fprintf(stderr, "SDL_PutAudioStreamData: %s\n", SDL_GetError());
+        } else if (dbg_getenv("ONE_K_TRACE_AUDIO") &&
+                   (cpc_frame_count % 50) == 0) {
+            s16 min = audio_buf[0], max = audio_buf[0];
+            for (int i = 1; i < AUDIO_SAMPLES_FRAME; i++) {
+                if (audio_buf[i] < min) min = audio_buf[i];
+                if (audio_buf[i] > max) max = audio_buf[i];
+            }
+            fprintf(stderr, "[audio f%d] samples=%d..%d queued=%d bytes\n",
+                    cpc_frame_count, min, max,
+                    SDL_GetAudioStreamQueued(cpc->audio_stream));
+        }
     }
 }
 

@@ -14,10 +14,12 @@ void psg_init(PSG *psg) {
 }
 
 void psg_select(PSG *psg, u8 reg) {
-    psg->selected = reg & 0x0F;
+    psg->selected = reg;
 }
 
 void psg_write(PSG *psg, u8 val) {
+    if (psg->selected >= PSG_NUM_REGS)
+        return;
     psg->reg[psg->selected] = val;
     if (psg->selected == 13) {
         psg->env_step    = 0;
@@ -30,6 +32,8 @@ void psg_write(PSG *psg, u8 val) {
 u8 psg_read(PSG *psg) {
     if (psg->selected == 14)
         return psg->kbd_data;
+    if (psg->selected >= PSG_NUM_REGS)
+        return 0xFF;
     return psg->reg[psg->selected];
 }
 
@@ -103,6 +107,7 @@ static int psg_tick(PSG *psg) {
 
     /* --- Mix channels --- */
     int mix = 0;
+    int active_scale = 0;
     for (int c = 0; c < 3; c++) {
         bool tone_off  = (psg->reg[7] >> c)       & 1;
         bool noise_off = (psg->reg[7] >> (c + 3)) & 1;
@@ -111,14 +116,21 @@ static int psg_tick(PSG *psg) {
         int tone_hi  = tone_off  ? 1 : (int)psg->tone_output[c];
         int noise_hi = noise_off ? 1 : noise_out;
 
-        if (tone_hi && noise_hi) {
-            u8 vr  = psg->reg[8 + c];
-            u8 vol = (vr & 0x10) ? env_level : (vr & 0x0F);
+        u8 vr  = psg->reg[8 + c];
+        u8 vol = (vr & 0x10) ? env_level : (vr & 0x0F);
+        /* With both mixer inputs disabled the AY holds the channel high,
+         * which becomes silence after the CPC audio path removes DC. */
+        if (tone_off && noise_off)
+            continue;
+        active_scale += vol_table[vol];
+        if (tone_hi && noise_hi)
             mix += vol_table[vol];
-        }
     }
 
-    return mix;
+    /* AY output is DC-coupled and positive-only, but the CPC audio path
+     * removes that DC component. Centre the emulated waveform so a square
+     * wave uses the full intended amplitude instead of losing half of it. */
+    return (mix * 2) - active_scale;
 }
 
 void psg_render(PSG *psg, s16 *buf, int n, int clock_hz, int sample_rate) {
