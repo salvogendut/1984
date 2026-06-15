@@ -270,20 +270,20 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 9:
-            snprintf(lbl, lsz, "Albireo Mouse");
+            snprintf(lbl, lsz, "CH376-A Mouse");
             if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "[needs Roms Board]");
+                snprintf(val, vsz, "(Albireo compatible) [needs Roms Board]");
                 *readonly = true;
             } else if (!ov->cfg->albireo) {
-                snprintf(val, vsz, "[needs dual-CH376 card]");
+                snprintf(val, vsz, "(Albireo compatible) [needs CH376-B Disk]");
                 *readonly = true;
             } else {
-                snprintf(val, vsz, "%s",
+                snprintf(val, vsz, "(Albireo compatible) %s",
                          ov->cfg->albireo_mouse ? "enabled" : "disabled");
             }
             break;
         case 10:
-            snprintf(lbl, lsz, "dual-CH376 card");
+            snprintf(lbl, lsz, "CH376-B Disk");
             if (!ov->cfg->rom_board) {
                 snprintf(val, vsz, "(Albireo compatible) [needs Roms Board]");
                 *readonly = true;
