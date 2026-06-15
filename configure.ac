@@ -33,26 +33,29 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
-# Platform-specific socket linkage.
-#   - Windows (MinGW): sockets live in ws2_32; also force -mconsole so
-#     SDL3's -mwindows does not swallow stderr/stdout from cmd.exe.
+# Platform-specific socket linkage and Windows extras.
+#   - Windows (MinGW): sockets live in ws2_32. The build picks up SDL3's
+#     -mwindows (no console window). icons/1984.rc is compiled with
+#     windres into a .o and linked in so the .exe gets its icon.
 #   - Haiku: sockets live in libnetwork.
 #   - Solaris/illumos: sockets live in libsocket.
 #   - Linux / *BSD / macOS: sockets are in libc; nothing extra needed.
 case $host_os in
   mingw*|cygwin*|msys*)
     WIN_LIBS="-lws2_32"
-    WIN_SUBSYSTEM="-mconsole"
+    AC_CHECK_TOOL([WINDRES], [windres], [windres])
+    WIN_RC_OBJ="icons/1984-rc.o"
     ;;
   *)
     WIN_LIBS=""
-    WIN_SUBSYSTEM=""
+    WIN_RC_OBJ=""
     AC_SEARCH_LIBS([socket],     [network socket])
     AC_SEARCH_LIBS([getsockopt], [network socket])
     ;;
 esac
 AC_SUBST([WIN_LIBS])
-AC_SUBST([WIN_SUBSYSTEM])
+AC_SUBST([WIN_RC_OBJ])
+AC_SUBST([WINDRES])
 
 # ffmpeg — optional. Enables WebM/VP9 video capture from the overlay's
 # "Capture video" menu. The F6-triggered .gif capture works without it.
