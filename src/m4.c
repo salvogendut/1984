@@ -485,34 +485,19 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         return m->nmi_enabled;
     }
 
-    /* DATAPORT broadly decodes the 0xFExx/0xFFxx ranges, so software may
-     * write unrelated bytes there before strobing ACKPORT. M4 packets are
-     * self-framing: byte 0 is the number of following bytes. Select the
-     * complete packet ending at the ACK instead of treating all accumulated
-     * bus writes as one command. */
-    int packet_start = -1;
-    for (int i = 0; i <= m->cmd_len - 3; i++) {
-        int packet_len = m->cmd_len - i;
-        if ((u8)(packet_len - 1) == m->cmd_buf[i]
-                && m->cmd_buf[i + 2] == 0x43) {
-            packet_start = i;
-            break;
-        }
-    }
-    if (packet_start < 0) {
-        m->last_error = M4_ERR_IO;
-        resp_frame(m, 0, 3);
-        m->cmd_len = 0;
-        return m->nmi_enabled;
-    }
-
-    const u8 *packet = &m->cmd_buf[packet_start];
-    int packet_len = m->cmd_len - packet_start;
+    /* Packet always starts at cmd_buf[0]. Note that cmd_buf[0] is the
+     * count of HEADER bytes after itself (per the daemon's m4ccmd0 which
+     * does `ld a,(hl); inc a` then outi's that many bytes), NOT the total
+     * packet length on the wire. For variable-payload commands like
+     * C_NETSEND, the payload is written after the header via a separate
+     * fast-block transfer (m4csnd) before the ACK strobe, so cmd_len at
+     * ACK time = header bytes + payload bytes. Parsing must use cmd_buf
+     * offset 0 as start, cmd_len as total, and let each command handler
+     * peel off its own payload length. */
+    const u8 *packet = m->cmd_buf;
+    int packet_len = m->cmd_len;
     u16 cmd = (u16)packet[1] | ((u16)packet[2] << 8);
 
-    /* The real SymbOS daemon banks M4ROM in for its response copy, so we do
-     * not need a broad bus overlay here. Leave the RAM-mode fields clear
-     * unless a compatibility path explicitly enables them. */
     m->ram_mode = false;
     m->ram_mode_reads = 0;
     const u8 *p = packet + 3;       /* params */

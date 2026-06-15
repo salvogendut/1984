@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void (*z80_rst10_hook)(Z80 *cpu, Z80Bus *bus) = NULL;
+
 /* ---- Cycle tables (Caprice32 / konCePCja convention) ----------------
  * Cycle counts are T-states. Lookups: cc_op[op] for unprefixed,
  * cc_cb[op] for CB-prefixed, cc_ed[op] for ED-prefixed,
@@ -970,7 +972,9 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
         /* RST */
         case 0xC7: push16(cpu,bus,cpu->pc); cpu->pc=0x00; return 11;
         case 0xCF: push16(cpu,bus,cpu->pc); cpu->pc=0x08; return 11;
-        case 0xD7: push16(cpu,bus,cpu->pc); cpu->pc=0x10; return 11;
+        case 0xD7:
+            if (z80_rst10_hook) z80_rst10_hook(cpu, bus);
+            push16(cpu,bus,cpu->pc); cpu->pc=0x10; return 11;
         case 0xDF: push16(cpu,bus,cpu->pc); cpu->pc=0x18; return 11;
         case 0xE7: push16(cpu,bus,cpu->pc); cpu->pc=0x20; return 11;
         case 0xEF: push16(cpu,bus,cpu->pc); cpu->pc=0x28; return 11;

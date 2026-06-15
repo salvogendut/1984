@@ -26,6 +26,7 @@
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 #include "gifcap.h"
 #include "webmcap.h"
+#include "symbos_trace.h"
 
 /* --- Video capture state. F6 → GIF (lean, no deps); overlay file
  * picker → WebM via ffmpeg when configure detected it. Dispatch is by
@@ -241,6 +242,7 @@ static void usage(const char *prog, int code) {
         "  --trace-input       Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down)\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
         "                      (M4 emulation is currently unstable — see README.md)\n"
+        "  --trace-symbos-msg  Log SymbOS RST #10 message sends (net-daemon range) to stderr\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
         "  --trace-net4cpc     Log every Net4CPC (W5100S) register access and socket command to stderr\n"
         "  --trace-tap         Log TAP-backed network stack events (ARP, IP, UDP, ICMP, TCP) to stderr\n"
@@ -376,6 +378,8 @@ int main(int argc, char *argv[]) {
             cpc_trace_input = 1;
         } else if (strcmp(argv[i], "--trace-m4") == 0) {
             m4_trace = 1;
+        } else if (strcmp(argv[i], "--trace-symbos-msg") == 0) {
+            symbos_trace_enable();
         } else if (strcmp(argv[i], "--trace-albireo") == 0) {
             ch376_trace = 1;
         } else if (strcmp(argv[i], "--trace-net4cpc") == 0) {

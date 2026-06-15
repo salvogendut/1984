@@ -30,6 +30,7 @@ bin_PROGRAMS = 1984
 	src/leds.c \
 	src/m4.c \
 	src/symbnet.c \
+	src/symbos_trace.c \
 	src/mouse.c \
 	src/n4c_stack.c \
 	src/snapshot.c \
@@ -68,6 +69,7 @@ noinst_HEADERS = \
 	src/shutter_wav.h \
 	src/snapshot.h \
 	src/symbnet.h \
+	src/symbos_trace.h \
 	src/tape.h \
 	src/types.h \
 	src/z80.h \
