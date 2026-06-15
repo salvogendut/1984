@@ -37,6 +37,5 @@ echo "Tracing to $LOG"
 echo "Click the window to engage mouse capture, boot SymbOS, then F12 or close."
 
 ./1984 \
-  --6128 \
   --trace-albireo \
   2> >(tee "$LOG" >&2)

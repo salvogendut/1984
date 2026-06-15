@@ -31,6 +31,10 @@
 #define CH376_BUF_MAX  256
 
 typedef struct {
+    /* Trace prefix for log lines — set by the owner before reset (e.g.
+     * "albireo-a" / "albireo-b" on dual-CH376 cards). */
+    const char *tag;
+
     /* --- Command/response state --- */
     u8   pending_cmd;
     int  param_needed;     /* fixed param byte count; -1 = until NUL */
@@ -111,6 +115,12 @@ typedef struct {
     int   mouse_dx;
     int   mouse_dy;
     u8    mouse_buttons;        /* bit0=left, bit1=right, bit2=middle */
+    u8    mouse_last_buttons;   /* last value delivered via ISSUE_TKN_X */
+    /* When true, ISSUE_TKN_X accepts EP0 control transfers and EP1 IN
+     * mouse-report polls; when false the chip behaves like the original
+     * single-chip Albireo emulation (DISCONNECT on EP0/EP1) so SymbOS
+     * doesn't start its polling thread. */
+    bool  has_mouse;
 } CH376;
 
 extern int ch376_trace;

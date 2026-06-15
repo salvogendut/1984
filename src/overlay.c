@@ -34,7 +34,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 11, 9 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 9 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
@@ -270,19 +270,35 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 9:
-            snprintf(lbl, lsz, "Albireo");
+            snprintf(lbl, lsz, "Albireo Mouse");
             if (!ov->cfg->rom_board) {
                 snprintf(val, vsz, "[needs Roms Board]");
                 *readonly = true;
-            } else if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
-                char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->albireo_image);
-                trunc_path(basename(tmp), val, vsz);
+            } else if (!ov->cfg->albireo) {
+                snprintf(val, vsz, "[needs dual-CH376 card]");
+                *readonly = true;
             } else {
-                snprintf(val, vsz, "%s", ov->cfg->albireo ? "enabled" : "disabled");
+                snprintf(val, vsz, "%s",
+                         ov->cfg->albireo_mouse ? "enabled" : "disabled");
             }
             break;
-        case 10: {
+        case 10:
+            snprintf(lbl, lsz, "dual-CH376 card");
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "(Albireo compatible) [needs Roms Board]");
+                *readonly = true;
+            } else if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                char base[24];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->albireo_image);
+                trunc_path(basename(tmp), base, sizeof(base));
+                snprintf(val, vsz, "(Albireo compatible) %s", base);
+            } else {
+                snprintf(val, vsz, "(Albireo compatible) %s",
+                         ov->cfg->albireo ? "enabled" : "disabled");
+            }
+            break;
+        case 11: {
             snprintf(lbl, lsz, "Cyboard");
             if (!ov->cfg->rom_board) {
                 snprintf(val, vsz, "[needs Roms Board]");
@@ -492,7 +508,7 @@ static void activate_item(Overlay *ov) {
          * down here. */
         if (!ov->cfg->rom_board &&
             (ov->row == 0 || ov->row == 7 || ov->row == 8 ||
-             ov->row == 9 || ov->row == 10))
+             ov->row == 9 || ov->row == 10 || ov->row == 11))
             break;
         switch (ov->row) {
         case 0:
@@ -662,9 +678,42 @@ static void activate_item(Overlay *ov) {
             break;
         case 8:
             ov->cfg->symbiface_mouse = !ov->cfg->symbiface_mouse;
+            /* SymbIface Mouse and Albireo Mouse both drive the host
+             * pointer — only one can own it at a time. */
+            if (ov->cfg->symbiface_mouse && ov->cfg->albireo_mouse) {
+                ov->cfg->albireo_mouse = false;
+                if (ov->cpc) {
+                    ov->cpc->albireo_mouse = false;
+                    ov->cpc->ch376.has_mouse = false;
+                    ch376_close(&ov->cpc->ch376_b);
+                }
+                ov->needs_cold_boot = true;
+            }
             ov->dirty = true;
             break;
         case 9:
+            /* Albireo Mouse toggle (opt-in HID polling on chip A +
+             * second storage chip at 0xFE40). Requires the dual-CH376
+             * card to be enabled; mutually exclusive with the SymbIface
+             * PS/2 mouse. */
+            if (!ov->cfg->rom_board || !ov->cfg->albireo) break;
+            ov->cfg->albireo_mouse = !ov->cfg->albireo_mouse;
+            if (ov->cfg->albireo_mouse && ov->cfg->symbiface_mouse) {
+                ov->cfg->symbiface_mouse = false;
+                if (ov->cpc) ov->cpc->symbiface_mouse = false;
+            }
+            if (ov->cpc) {
+                ov->cpc->albireo_mouse = ov->cfg->albireo_mouse;
+                ov->cpc->ch376.has_mouse = ov->cfg->albireo_mouse;
+                if (ov->cfg->albireo_mouse && ov->cfg->albireo_image[0])
+                    ch376_open(&ov->cpc->ch376_b, ov->cfg->albireo_image);
+                else
+                    ch376_close(&ov->cpc->ch376_b);
+            }
+            ov->needs_cold_boot = true;
+            ov->dirty = true;
+            break;
+        case 10:
             if (!ov->cfg->albireo) {
                 /* Mutually exclusive with M4 (both claim port 0xFExx). */
                 if (ov->cfg->m4) {
@@ -694,17 +743,23 @@ static void activate_item(Overlay *ov) {
                         alb_filters, 2, NULL, false);
                 }
             } else {
-                /* Keep board_albireo_image for the next enable cycle. */
+                /* Disabling the card also drops the Albireo Mouse — it
+                 * has no chip to talk to. Keep board_albireo_image for
+                 * the next enable cycle. */
                 ov->cfg->albireo = false;
                 ov->cfg->albireo_image[0] = '\0';
+                ov->cfg->albireo_mouse = false;
                 if (ov->cpc) {
                     ov->cpc->albireo = false;
+                    ov->cpc->albireo_mouse = false;
+                    ov->cpc->ch376.has_mouse = false;
                     ch376_close(&ov->cpc->ch376);
+                    ch376_close(&ov->cpc->ch376_b);
                 }
                 ov->dirty = true;
             }
             break;
-        case 10: {
+        case 11: {
             bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
                        ov->cfg->symbiface_ide && ov->cfg->symbiface_mouse;
             bool enable = !all;
@@ -947,7 +1002,10 @@ void overlay_tick(Overlay *ov) {
         if (ov->cpc) {
             ov->cpc->albireo = true;
             ch376_close(&ov->cpc->ch376);
+            ch376_close(&ov->cpc->ch376_b);
             ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
+            if (ov->cfg->albireo_mouse)
+                ch376_open(&ov->cpc->ch376_b, ov->cfg->albireo_image);
         }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_SNAPSHOT_LOAD) {
@@ -1318,13 +1376,17 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                 ov->cfg->symbiface_ide = false;
                 ov->cfg->ide_image[0] = '\0';
                 break;
-            case 9:                                /* Albireo */
+            case 10:                               /* Albireo / dual-CH376 */
                 cached = ov->cfg->board_albireo_image;
                 ov->cfg->albireo = false;
                 ov->cfg->albireo_image[0] = '\0';
+                ov->cfg->albireo_mouse = false;
                 if (ov->cpc) {
                     ov->cpc->albireo = false;
+                    ov->cpc->albireo_mouse = false;
+                    ov->cpc->ch376.has_mouse = false;
                     ch376_close(&ov->cpc->ch376);
+                    ch376_close(&ov->cpc->ch376_b);
                 }
                 break;
             }
