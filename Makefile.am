@@ -78,10 +78,13 @@ noinst_HEADERS = \
                -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
 # On Windows the resource object compiled below carries the .ico into
 # the .exe; SDL3's -mwindows (linked via $(SDL3_LIBS)) suppresses the
-# console window.
-1984_LDADD   = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
+# console window. _DEPENDENCIES is needed so make builds the .o before
+# the link step — items only in _LDADD are linked but not built.
+1984_LDADD        = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
+1984_DEPENDENCIES = $(WIN_RC_OBJ)
 
-icons/1984-rc.o: icons/1984.rc icons/1984.ico
+icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico
+	@mkdir -p icons
 	$(WINDRES) -I$(srcdir)/icons -i $< -O coff -o $@
 
 CLEANFILES = icons/1984-rc.o
