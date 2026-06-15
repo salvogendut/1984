@@ -20,7 +20,7 @@
 #include "ch376.h"
 #include "tape.h"
 
-typedef enum { MODEL_464, MODEL_6128 } CpcModel;
+typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
 
 typedef struct {
     CpcModel   model;

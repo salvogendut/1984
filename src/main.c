@@ -197,8 +197,8 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
 }
 
 static void apply_led_enables(const Config *cfg) {
-    /* Floppies: shown when an FDC is wired (6128 has it built-in; 464 needs DDI-1). */
-    bool fdc_present = (cfg->model == MODEL_6128) || cfg->dd1;
+    /* Floppies: shown when an FDC is wired (664/6128 built-in; 464 needs DDI-1). */
+    bool fdc_present = (cfg->model == MODEL_6128) || (cfg->model == MODEL_664) || cfg->dd1;
     leds_set_enabled(LED_FDC_A, fdc_present);
     leds_set_enabled(LED_FDC_B, fdc_present);
     /* MX4 expansions need both rom_board and the expansion toggle. */
@@ -210,14 +210,22 @@ static void apply_led_enables(const Config *cfg) {
 }
 
 #define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
+#define TITLE_NORMAL_664  "CPC 664  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
 #define TITLE_CAPTURED    "Mouse captured  |  Ctrl+Enter to release"
+
+static const char *title_for_model(CpcModel m) {
+    switch (m) {
+        case MODEL_464:  return TITLE_NORMAL_464;
+        case MODEL_664:  return TITLE_NORMAL_664;
+        default:         return TITLE_NORMAL_6128;
+    }
+}
 
 static void set_mouse_capture(SDL_Window *win, bool capture, bool *flag, CpcModel model) {
     SDL_SetWindowRelativeMouseMode(win, capture);
     *flag = capture;
-    SDL_SetWindowTitle(win, capture ? TITLE_CAPTURED
-        : (model == MODEL_464 ? TITLE_NORMAL_464 : TITLE_NORMAL_6128));
+    SDL_SetWindowTitle(win, capture ? TITLE_CAPTURED : title_for_model(model));
 }
 
 static void usage(const char *prog, int code) {
@@ -227,6 +235,7 @@ static void usage(const char *prog, int code) {
         "\n"
         "Options:\n"
         "  --464               Boot as CPC 464 (overrides config)\n"
+        "  --664               Boot as CPC 664 (overrides config)\n"
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
@@ -351,6 +360,8 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(argv[i], "--464") == 0) {
             model_override = MODEL_464;
+        } else if (strcmp(argv[i], "--664") == 0) {
+            model_override = MODEL_664;
         } else if (strcmp(argv[i], "--6128") == 0) {
             model_override = MODEL_6128;
         } else if (strcmp(argv[i], "--dd1") == 0) {
@@ -506,10 +517,9 @@ int main(int argc, char *argv[]) {
         cfg.m4 = false;
     }
     apply_led_enables(&cfg);
-    /* Cassette: always wired on 464, requires the external_tape toggle on 6128. */
+    /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
     if (cfg.tape[0] &&
-            (cpc.model == MODEL_464 ||
-             (cpc.model == MODEL_6128 && cfg.external_tape)))
+            (cpc.model == MODEL_464 || cfg.external_tape))
         tape_load(&cpc.tape, cfg.tape);
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
@@ -918,9 +928,7 @@ int main(int argc, char *argv[]) {
                        sizeof(cpc.m4_card.cfg_mem));
                 m4_install_helper_shim(&cpc.m4_card, &cpc.mem);
             }
-            const char *title = (cpc.model == MODEL_464)
-                ? TITLE_NORMAL_464 : TITLE_NORMAL_6128;
-            SDL_SetWindowTitle(cpc.display.window, title);
+            SDL_SetWindowTitle(cpc.display.window, title_for_model(cpc.model));
             cpc.mx4              = cfg.mx4;
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
@@ -955,8 +963,7 @@ int main(int argc, char *argv[]) {
             apply_led_enables(&cfg);
             tape_eject(&cpc.tape);
             if (cfg.tape[0] &&
-                    (cpc.model == MODEL_464 ||
-                     (cpc.model == MODEL_6128 && cfg.external_tape)))
+                    (cpc.model == MODEL_464 || cfg.external_tape))
                 tape_load(&cpc.tape, cfg.tape);
             /* Release mouse capture on cold boot */
             if (mouse_captured)

@@ -616,9 +616,18 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->bus.ticked_in_step = &cpc->bus_ticked_in_step;
     cpc->bus.ctx            = cpc;
 
-    const char *title = (model == MODEL_464)
-        ? "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen"
-        : "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
+    const char *title;
+    switch (model) {
+        case MODEL_464:
+            title = "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
+            break;
+        case MODEL_664:
+            title = "CPC 664  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
+            break;
+        default:
+            title = "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
+            break;
+    }
     if (display_init(&cpc->display, title) < 0)
         return -1;
 

@@ -150,6 +150,6 @@ int config_apply_boards(Config *cfg);
 /* Restore individual ROM paths to the compiled-in defaults for the model. */
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
-void config_default_amsdos(char *out, size_t sz);
+void config_default_amsdos(CpcModel model, char *out, size_t sz);
 void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);
