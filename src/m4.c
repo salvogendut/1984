@@ -485,17 +485,31 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         return m->nmi_enabled;
     }
 
-    /* Packet always starts at cmd_buf[0]. Note that cmd_buf[0] is the
-     * count of HEADER bytes after itself (per the daemon's m4ccmd0 which
-     * does `ld a,(hl); inc a` then outi's that many bytes), NOT the total
-     * packet length on the wire. For variable-payload commands like
-     * C_NETSEND, the payload is written after the header via a separate
-     * fast-block transfer (m4csnd) before the ACK strobe, so cmd_len at
-     * ACK time = header bytes + payload bytes. Parsing must use cmd_buf
-     * offset 0 as start, cmd_len as total, and let each command handler
-     * peel off its own payload length. */
-    const u8 *packet = m->cmd_buf;
-    int packet_len = m->cmd_len;
+    /* Find the packet header. Normal case: cmd_buf[0] is the header-byte
+     * count (per daemon's m4ccmd0) and cmd_buf[2] holds the command's
+     * high byte (always 0x43 for M4 ops). Fall back to a scan only if
+     * offset 0 doesn't look like a valid header — this handles the case
+     * where unrelated bus writes to the broadly-decoded 0xFExx port range
+     * land in cmd_buf before a legitimate M4 command. We CAN'T validate
+     * total packet length against cmd_buf[0] (variable-payload commands
+     * like C_NETSEND have payload bytes written after the header via
+     * m4csnd before the ACK strobe), so we trust the 0x43 sentinel. */
+    int packet_start = 0;
+    if (m->cmd_len < 3 || m->cmd_buf[2] != 0x43) {
+        packet_start = -1;
+        for (int i = 1; i <= m->cmd_len - 3; i++) {
+            if (m->cmd_buf[i + 2] == 0x43) { packet_start = i; break; }
+        }
+        if (packet_start < 0) {
+            m->last_error = M4_ERR_IO;
+            resp_frame(m, 0, 3);
+            m->cmd_len = 0;
+            return m->nmi_enabled;
+        }
+    }
+
+    const u8 *packet = &m->cmd_buf[packet_start];
+    int packet_len = m->cmd_len - packet_start;
     u16 cmd = (u16)packet[1] | ((u16)packet[2] << 8);
 
     m->ram_mode = false;
