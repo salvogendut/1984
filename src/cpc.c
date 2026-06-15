@@ -86,19 +86,13 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
      *                   enough for 2KB C_READ payload starting at resp+4)
      *   0xF400-0xF4FF → m4_card.cfg_mem (rom_config: jump_vec, init_count)
      *   0xFE00-0xFE4F → m4_card.sock_mem (sock_info: 5 × 16 bytes for NETAPI) */
-    /* Bus bypass: triggers either with M4ROM paged in (slot 6) or while
-     * the M4 board is in "RAM mode" (set only by network-class commands —
-     * see m4_ackport_write). ram_mode auto-clears via a small frame timer
-     * driven from m4_tick.
-     *
-     * Under ram_mode we also redirect upper-ROM code fetches at
-     * 0xC000-0xE7FF to M4ROM bytes regardless of which slot the CPU has
-     * selected — that's how real hardware lets the SymbOS daemon
-     * "out (0xDF00), 0" then "JP <m4 helper>" and still reach the helper
-     * code that lives in M4ROM. */
+    /* Bus bypass only applies while M4ROM is actually paged in.
+     * The real SymbOS daemon flips slot 6 around its banked M4 calls, so
+     * keeping the overlay active after that risks leaking response bytes
+     * into CPC screen RAM. */
     bool bypass_slot = cpc->mem.upper_rom_enabled
                        && cpc->mem.upper_rom_select == M4_ROM_SLOT;
-    if (cpc->m4 && (bypass_slot || cpc->m4_card.ram_mode)) {
+    if (cpc->m4 && bypass_slot) {
         u8 v = 0; bool hit = true;
         /* Skip the bypass for likely stack POP/RET reads (addr matches SP
          * or SP+1). The SymbOS netd-m4c.exe daemon places its stack at
@@ -125,6 +119,17 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
                 cpc->m4_card.rssi_resp_pending = false;
             }
             v = cpc->m4_card.bus_mem[addr - 0xE800];
+            if (m4_trace
+                    && (addr <= 0xE807
+                        || (addr >= 0xE8BE && addr <= 0xE8C6)
+                        || (addr >= 0xF310 && addr <= 0xF314))) {
+                fprintf(stderr,
+                        "[m4 f%d] RAMREAD addr=%04X val=%02X PC=%04X SP=%04X "
+                        "slot=%u mode=%d left=%d\n",
+                        cpc_frame_count, addr, v, cpc->cpu.pc, cpc->cpu.sp,
+                        cpc->mem.upper_rom_select, cpc->m4_card.ram_mode,
+                        cpc->m4_card.ram_mode_reads);
+            }
         }
         else if (addr >= 0xF400 && addr < 0xF500)
             v = cpc->m4_card.cfg_mem[addr - 0xF400];
@@ -133,9 +138,6 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
         else
             hit = false;
         if (hit) {
-            if (!bypass_slot && cpc->m4_card.ram_mode
-                    && --cpc->m4_card.ram_mode_reads <= 0)
-                cpc->m4_card.ram_mode = false;
             return v;
         }
     }
@@ -506,6 +508,24 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
                 cpc->mem.ram_bank = source_bank & 0x3F;
             else
                 cpc->mem.ram_bank = saved_bank;
+
+            if (lo == 0x3F) {
+                /* The bank-aware helper consumed the response without going
+                 * through bus_mem_read(), so retire RAM mode explicitly. */
+                if (m4_trace) {
+                    fprintf(stderr,
+                            "[m4 f%d] HRECV src=%04X dst=%04X len=%u "
+                            "srcbank=%02X dstbank=%02X ret=%04X first=%02X\n",
+                            cpc_frame_count, src, dest, length, source_bank,
+                            dest_bank, retaddr,
+                            (src >= 0xE800 && src < 0xF400)
+                                ? cpc->m4_card.bus_mem[src - 0xE800]
+                                : mem_read(&cpc->mem, src));
+                }
+                cpc->m4_card.ram_mode = false;
+                cpc->m4_card.ram_mode_reads = 0;
+                cpc->m4_card.last_resp_len = 0;
+            }
 
             cpc->cpu.pc = cpc->cpu.ix;
             (void)retaddr;

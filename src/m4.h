@@ -44,6 +44,7 @@ typedef struct {
     u8   peer_ip[4];         /* matches sock_info+4 */
     u16  peer_port;          /* matches sock_info+8 */
     bool connecting;         /* a non-blocking connect is in progress */
+    bool telnet_mode;        /* port 23: strip telnet IAC sequences on recv */
 } M4Socket;
 
 typedef struct {
@@ -59,6 +60,7 @@ typedef struct {
      * the file API when no host directory is configured. */
     char    image_path[M4_PATH_MAX];
     FILE   *image_fp;
+    bool    image_read_only;
     FatVol  image_vol;
     bool    image_mounted;        /* true when image_vol is a valid FAT volume */
 
@@ -74,17 +76,13 @@ typedef struct {
     char    dir_filter[64];  /* fnmatch pattern, e.g. "*.DSK" or "*" */
 
     bool    nmi_enabled;     /* true = trigger Z80 NMI after each command */
+    u8      last_error;      /* dispatcher status, separate from response header */
     /* "RAM mode" — true after a command strobe, the M4 board presents live
      * RAM (response / sock_info / cfg) on the expansion bus regardless of
      * which ROM the CPC has paged in. The CPU code re-enters "ROM mode"
      * by calling KL_ROM_SELECT 6, which we detect via the ROM-select port. */
     bool    ram_mode;
-    int     ram_mode_reads;  /* bypassed-reads budget; auto-clears ram_mode
-                                once spent. Sized just for the daemon's
-                                m4cred (≤16-byte LDIR + a couple of probes)
-                                — kept tight so SymbOS screen-RAM reads
-                                that happen to land at 0xE800-0xFE4F right
-                                after a strobe aren't intercepted. */
+    int     ram_mode_reads;  /* diagnostic count of expected response reads */
     u8      init_count;     /* tracks ROM init calls — ROM reads this via bus bypass */
 
     /* M4 board's own memory mapped on the expansion bus when M4ROM is paged in.

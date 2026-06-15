@@ -556,7 +556,7 @@ The M4 board is a CPC expansion that adds an SD card and ESP8266 WiFi networking
 
 - **M4ROM signature scan and helper-table publication.** The real M4ROM at `0xC000-0xFFFF` (slot 6) contains pointers at fixed offsets (`0xFF02` = response buffer, `0xFF06` = sock_info table, `0xFF08` = helper-function table). The daemon's `m4crom` routine scans for the `"M4 BOAR\xC4"` signature, then reads these pointers. We host its emulator-side memory in `M4Card::bus_mem` (0xC00 bytes at 0xE800-0xF3FF), `cfg_mem` (256 bytes at 0xF400-0xF4FF), and `sock_mem` (80 bytes at 0xFE00-0xFE4F).
 
-- **Bus bypass.** When the M4ROM slot is the active upper ROM, reads in those three windows return from our internal buffers instead of CPC RAM. There's also a short-budget `ram_mode` (24 reads, cleared per frame by `m4_tick`) that mimics the real board's "RAM mode" — set on small-read network strobes so the SymbOS daemon's banked `m4cred` reader works even with slot 0 selected.
+- **Bus bypass.** When the M4ROM slot is the active upper ROM, reads in those three windows return from our internal buffers instead of CPC RAM. There's also a stateful `ram_mode` that mimics the real board's "RAM mode" — set on network strobes so the SymbOS daemon's banked response reader works even with slot 0 selected, and cleared by its bulk-receive helper or when another command supersedes it.
 
 - **File API.** `C_OPEN`, `C_READ`, `C_WRITE`, `C_CLOSE`, `C_SEEK`, `C_GETPATH`, `C_DSKEXT`, `C_READDIR`, `C_FSIZE`, `C_RENAME`, etc. — backed either by a host directory tree (set via `m4_path` in config) or a single raw FAT16/FAT32 image (set via `m4_image`). `src/fat.c` is a minimal in-house FAT reader/writer used in image mode.
 

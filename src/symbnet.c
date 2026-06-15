@@ -15,12 +15,9 @@ static void execute(SymbNet *n) {
     n->m4->cmd_len = len;
     (void)m4_ackport_write(n->m4, NULL);
 
-    /* M4 dispatcher writes its err byte to bus_mem[0] and the command-
-     * specific payload starting at bus_mem[3] (matching real M4 firmware,
-     * which is what the SymbOS daemon assumes when it adds +3 to its
-     * cached response pointer). Skip the err/size header on the wire so
-     * the daemon sees payload bytes from FIFO offset 0. */
-    n->last_error = (n->m4->bus_mem[0] != 0);
+    /* Skip the three-byte M4 response header on the synthetic FIFO so the
+     * daemon sees command-specific payload bytes from offset 0. */
+    n->last_error = (n->m4->last_error != 0);
     n->resp_pos   = 3;
     n->resp_ready = true;
 }
