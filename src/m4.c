@@ -1006,13 +1006,13 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             m->fds[fd - 1].in_use = false;
             err = M4_OK;
             close_res = 0x00;
-        } else if (fd == 1 || fd == 2) {
-            /* The SymbOS daemon treats the AMSDOS-compatible fixed handles
-             * as cleanup handles and may close them even when nothing is open.
-             * Real M4 firmware tolerates that, so return success here. */
-            err = M4_OK;
-            close_res = 0x00;
         } else {
+            /* Always BADFD for unknown fds (including fd=1/2). M4ROM's boot
+             * sequence closes fd=1 and fd=2 expecting BADFD ("nothing was
+             * open") and uses that to gate its banner/autoboot. Returning
+             * M4_OK here breaks boot. The SymbOS daemon's cleanup closes on
+             * fd=1/2 must tolerate BADFD too — that's what real M4
+             * hardware returns. */
             err = M4_ERR_BADFD;
             close_res = 0xFF;
         }
