@@ -1093,6 +1093,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          *           resp+4 onwards = sector data (512 bytes per sector)
          * Only works in image mode; directory mode has no underlying sectors. */
         if (!m->image_fp || plen < 5) {
+            if (!m->image_fp && m->root[0] && !m->warned_no_sector_image) {
+                fprintf(stderr,
+                        "M4: raw sector access requested with only a host directory; "
+                        "configure m4_image for SymbOS storage\n");
+                m->warned_no_sector_image = true;
+            }
             resp_u8(m, &roff, 3); /* not ready */
             err = M4_OK;
             break;
@@ -1125,6 +1131,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          * Request:  data[0..3]=LBA, data[4]=num sectors, data[5..]=sector data
          * Response: resp+3 = status (0=OK, 1=R/W err, 2=write-protected). */
         if (!m->image_fp || plen < 5) {
+            if (!m->image_fp && m->root[0] && !m->warned_no_sector_image) {
+                fprintf(stderr,
+                        "M4: raw sector access requested with only a host directory; "
+                        "configure m4_image for SymbOS storage\n");
+                m->warned_no_sector_image = true;
+            }
             resp_u8(m, &roff, 3);
             err = M4_OK;
             break;

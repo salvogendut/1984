@@ -191,7 +191,7 @@ static void item_text(const Overlay *ov, int row,
     case OV_ADVANCED:
         switch (row) {
         case 0:
-            snprintf(lbl, lsz, "M4 (experimental)");
+            snprintf(lbl, lsz, "M4 SD Image");
             if (!ov->cfg->rom_board) {
                 snprintf(val, vsz, "[needs Roms Board]");
                 *readonly = true;
@@ -200,13 +200,21 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_image);
                 trunc_path(basename(tmp), val, vsz);
             } else {
-                snprintf(val, vsz, "%s", ov->cfg->m4 ? "enabled" : "disabled");
+                snprintf(val, vsz, "[empty]  Enter=select");
             }
             break;
         case 1:
-            snprintf(lbl, lsz, "UliFAC");
-            snprintf(val, vsz, "[unimplemented]");
-            *readonly = true;
+            snprintf(lbl, lsz, "M4 Host Directory");
+            if (!ov->cfg->rom_board) {
+                snprintf(val, vsz, "[needs Roms Board]");
+                *readonly = true;
+            } else if (ov->cfg->m4 && ov->cfg->m4_path[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->m4_path);
+                trunc_path(basename(tmp), val, vsz);
+            } else {
+                snprintf(val, vsz, "[empty]  Enter=select");
+            }
             break;
         case 2:
             snprintf(lbl, lsz, "Net4CPC");
@@ -507,7 +515,7 @@ static void activate_item(Overlay *ov) {
          * Cart / ROM Slots have their own gating; the rest are nailed
          * down here. */
         if (!ov->cfg->rom_board &&
-            (ov->row == 0 || ov->row == 7 || ov->row == 8 ||
+            (ov->row == 0 || ov->row == 1 || ov->row == 7 || ov->row == 8 ||
              ov->row == 9 || ov->row == 10 || ov->row == 11))
             break;
         switch (ov->row) {
@@ -553,19 +561,24 @@ static void activate_item(Overlay *ov) {
                                           sizeof(ov->cfg->rom_amsdos));
                 if (ov->cpc)
                     mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
-                /* Reuse cached image if present (see cyboard/albireo). */
-                if (ov->cfg->board_m4_image[0]) {
+                /* Reuse a cached image if present. A cached directory belongs
+                 * to the separate M4 Host Directory row. */
+                struct stat st;
+                if (ov->cfg->board_m4_image[0] &&
+                        stat(ov->cfg->board_m4_image, &st) == 0 &&
+                        S_ISREG(st.st_mode)) {
                     snprintf(ov->cfg->m4_image, sizeof(ov->cfg->m4_image),
                              "%s", ov->cfg->board_m4_image);
+                    ov->cfg->m4_path[0] = '\0';
                     ov->cfg->m4 = true;
                     if (ov->cpc) {
                         ov->cpc->m4 = true;
+                        ov->cpc->m4_card.root[0] = '\0';
                         m4_set_image(&ov->cpc->m4_card, ov->cfg->m4_image);
                     }
                     ov->needs_cold_boot = true;
                     ov->dirty = true;
                 } else {
-                    /* Enable: open file picker to select SD card image (raw FAT) */
                     ov->dialog_kind  = DIALOG_M4_IMAGE;
                     ov->dialog_ready = false;
                     static const SDL_DialogFileFilter m4_filters[] = {
@@ -577,23 +590,27 @@ static void activate_item(Overlay *ov) {
                         m4_filters, 2, NULL, false);
                 }
             } else {
-                /* Disable: clear flag and unload M4ROM from its slot.
-                 * Keep board_m4_image so the next enable doesn't
-                 * re-prompt; clear it via Del on this row. */
-                ov->cfg->m4 = false;
-                ov->cfg->m4_image[0] = '\0';
-                if (ov->cpc) {
-                    ov->cpc->m4 = false;
-                    m4_set_image(&ov->cpc->m4_card, "");
-                }
-                ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
-                if (ov->cpc)
-                    mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
-                ov->needs_cold_boot = true;
-                ov->dirty = true;
+                /* Already enabled: allow replacing the current backing with
+                 * a raw image. Delete/Backspace disables and clears it. */
+                ov->dialog_kind  = DIALOG_M4_IMAGE;
+                ov->dialog_ready = false;
+                static const SDL_DialogFileFilter m4_filters[] = {
+                    { "SD card images", "img;IMG;bin;BIN;raw;RAW" },
+                    { "All files",      "*"                        },
+                };
+                SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    m4_filters, 2,
+                    ov->cfg->m4_image[0] ? ov->cfg->m4_image : NULL, false);
             }
             break;
-        /* case 1 (UliFAC) is unimplemented — Enter does nothing */
+        case 1:
+            ov->dialog_kind  = DIALOG_M4_PATH;
+            ov->dialog_ready = false;
+            SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                ov->cfg->m4_path[0] ? ov->cfg->m4_path : NULL, false);
+            break;
         case 2:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
@@ -606,10 +623,12 @@ static void activate_item(Overlay *ov) {
             if (ov->cfg->rtc && ov->cfg->m4) {
                 ov->cfg->m4 = false;
                 ov->cfg->m4_image[0] = '\0';
+                ov->cfg->m4_path[0]  = '\0';
                 ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
                 if (ov->cpc) {
                     ov->cpc->m4 = false;
                     m4_set_image(&ov->cpc->m4_card, "");
+                    ov->cpc->m4_card.root[0] = '\0';
                     mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
                 }
                 ov->needs_cold_boot = true;
@@ -726,10 +745,12 @@ static void activate_item(Overlay *ov) {
                 if (ov->cfg->m4) {
                     ov->cfg->m4 = false;
                     ov->cfg->m4_image[0] = '\0';
+                    ov->cfg->m4_path[0]  = '\0';
                     ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
                     if (ov->cpc) {
                         ov->cpc->m4 = false;
                         m4_set_image(&ov->cpc->m4_card, "");
+                        ov->cpc->m4_card.root[0] = '\0';
                         mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
                     }
                     ov->needs_cold_boot = true;
@@ -776,10 +797,12 @@ static void activate_item(Overlay *ov) {
             if (enable && ov->cfg->m4) {
                 ov->cfg->m4 = false;
                 ov->cfg->m4_image[0] = '\0';
+                ov->cfg->m4_path[0]  = '\0';
                 ov->cfg->rom_ext[M4_ROM_SLOT][0] = '\0';
                 if (ov->cpc) {
                     ov->cpc->m4 = false;
                     m4_set_image(&ov->cpc->m4_card, "");
+                    ov->cpc->m4_card.root[0] = '\0';
                     mem_unload_rom_ext(&ov->cpc->mem, M4_ROM_SLOT);
                 }
                 ov->needs_cold_boot = true;
@@ -1043,32 +1066,46 @@ void overlay_tick(Overlay *ov) {
             videocap_start(path);
         }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
-        /* User picked an SD card image — enable M4, load its ROM, and seed
-         * the M4 board's config buffer from the ROM defaults.
-         * If a sibling directory exists with the same base name (e.g. picking
-         * SDCARD.img and SDCARD/ sits next to it), wire it up as the file-API
-         * backing so BASIC's cat/load/save keep working. */
+        /* Raw image mode supplies both M4ROM file calls and the sector API
+         * used by SymbOS. It is exclusive with live host-directory mode. */
         snprintf(ov->cfg->m4_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->cfg->m4_path[0] = '\0';
         snprintf(ov->cfg->board_m4_image, sizeof(ov->cfg->board_m4_image),
                  "%s", ov->dialog_path);
         ov->cfg->m4 = true;
-
-        char sibling[CONFIG_PATH_MAX];
-        snprintf(sibling, sizeof(sibling), "%s", ov->dialog_path);
-        char *dot = strrchr(sibling, '.');
-        if (dot) *dot = '\0';
-        struct stat st;
-        if (stat(sibling, &st) == 0 && S_ISDIR(st.st_mode))
-            snprintf(ov->cfg->m4_path, CONFIG_PATH_MAX, "%s", sibling);
-        else
-            ov->cfg->m4_path[0] = '\0';
 
         char m4rom[CONFIG_PATH_MAX];
         config_default_m4rom(m4rom, sizeof(m4rom));
         snprintf(ov->cfg->rom_ext[M4_ROM_SLOT], CONFIG_PATH_MAX, "%s", m4rom);
         if (ov->cpc) {
             ov->cpc->m4 = true;
-            m4_set_image(&ov->cpc->m4_card, ov->dialog_path);
+            ov->cpc->m4_card.root[0] = '\0';
+            m4_set_image(&ov->cpc->m4_card, ov->cfg->m4_image);
+            mem_load_rom_ext(&ov->cpc->mem, M4_ROM_SLOT, m4rom);
+            memcpy(ov->cpc->m4_card.cfg_mem,
+                   &ov->cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+                   sizeof(ov->cpc->m4_card.cfg_mem));
+        }
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_M4_PATH) {
+        /* User picked a host directory — wire it as M4's file-API backing
+         * (cfg.m4_path → m4_card.root). Guest BASIC's |CAT / LOAD / SAVE
+         * and cpc-sdcc file ops resolve each call straight to host filesystem
+         * ops, with no FAT cache on our side. This mode is exclusive with a
+         * raw image and therefore does not provide SymbOS sector storage. */
+        snprintf(ov->cfg->m4_path, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->cfg->m4_image[0] = '\0';
+        snprintf(ov->cfg->board_m4_image, sizeof(ov->cfg->board_m4_image),
+                 "%s", ov->dialog_path);
+        ov->cfg->m4 = true;
+
+        char m4rom[CONFIG_PATH_MAX];
+        config_default_m4rom(m4rom, sizeof(m4rom));
+        snprintf(ov->cfg->rom_ext[M4_ROM_SLOT], CONFIG_PATH_MAX, "%s", m4rom);
+        if (ov->cpc) {
+            ov->cpc->m4 = true;
+            m4_set_image(&ov->cpc->m4_card, "");
             snprintf(ov->cpc->m4_card.root, M4_PATH_MAX, "%s", ov->cfg->m4_path);
             mem_load_rom_ext(&ov->cpc->mem, M4_ROM_SLOT, m4rom);
             memcpy(ov->cpc->m4_card.cfg_mem,
@@ -1089,7 +1126,7 @@ void overlay_tick(Overlay *ov) {
     ov->dialog_kind = DIALOG_NONE;
     /* Catch board toggles that flipped via a file-dialog callback
      * (DIALOG_IDE → cfg.symbiface_ide, DIALOG_ALBIREO → cfg.albireo,
-     * DIALOG_M4_IMAGE → cfg.m4). Same effect as the call in
+     * DIALOG_M4_IMAGE / DIALOG_M4_PATH → cfg.m4). Same effect as the call in
      * overlay_handle_event after activate_item. */
     overlay_check_board_changes(ov);
 }
@@ -1372,13 +1409,22 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         if (ov->section == OV_ADVANCED) {
             char *cached = NULL;
             switch (ov->row) {
-            case 0:                                /* M4 */
+            case 0:                                /* M4 SD image */
                 cached = ov->cfg->board_m4_image;
                 ov->cfg->m4 = false;
                 ov->cfg->m4_image[0] = '\0';
                 if (ov->cpc) {
                     ov->cpc->m4 = false;
                     m4_set_image(&ov->cpc->m4_card, "");
+                }
+                break;
+            case 1:                                /* M4 host directory */
+                cached = ov->cfg->board_m4_image;
+                ov->cfg->m4 = false;
+                ov->cfg->m4_path[0] = '\0';
+                if (ov->cpc) {
+                    ov->cpc->m4 = false;
+                    ov->cpc->m4_card.root[0] = '\0';
                 }
                 break;
             case 7:                                /* Symbiface IDE (cyboard) */

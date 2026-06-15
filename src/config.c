@@ -742,6 +742,25 @@ int config_apply_boards(Config *cfg) {
         if (!board_is_active(cfg, board)) continue;
         char *cached = config_board_image(cfg, board);
         char *live   = board_live_image(cfg, board);
+        /* Host-directory M4 mode reuses board_m4_image as its cached picker
+         * path. Do not feed that directory into m4_image: SymbOS uses the
+         * latter as a raw sector device and a directory cannot satisfy
+         * C_SDREAD/C_SDWRITE. */
+        if (!strcmp(board, "m4")) {
+            struct stat st;
+            if (live && live[0] && stat(live, &st) == 0 && S_ISDIR(st.st_mode)) {
+                live[0] = '\0';
+                changed++;
+            }
+            if (cached && cached[0] &&
+                    stat(cached, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (!cfg->m4_path[0]) {
+                    snprintf(cfg->m4_path, CONFIG_PATH_MAX, "%s", cached);
+                    changed++;
+                }
+                continue;
+            }
+        }
         if (cached && live && cached[0] && !live[0]) {
             snprintf(live, CONFIG_PATH_MAX, "%s", cached);
             changed++;

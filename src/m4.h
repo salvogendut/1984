@@ -63,6 +63,7 @@ typedef struct {
     bool    image_read_only;
     FatVol  image_vol;
     bool    image_mounted;        /* true when image_vol is a valid FAT volume */
+    bool    warned_no_sector_image;
 
     /* Per-fd FAT directory iterators (one slot per dir handle).
      * dir_fat is used in image mode in place of dir_dp. */
