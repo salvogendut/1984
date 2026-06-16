@@ -37,7 +37,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
 static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 9 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
-    if (s == OV_GENERAL && ov->cfg->model == MODEL_6128) return 8;
+    if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
     return sec_row_count[s];
 }
 
@@ -76,9 +76,9 @@ static void trunc_path(const char *path, char *out, size_t sz) {
     }
 }
 
-/* True when floppy drives are accessible (6128 always; 464 only with DD1) */
+/* True when floppy drives are accessible (664/6128 always; 464 only with DD1) */
 static bool floppy_accessible(const Overlay *ov) {
-    return ov->cfg->model == MODEL_6128 || ov->cfg->dd1;
+    return ov->cfg->model != MODEL_464 || ov->cfg->dd1;
 }
 
 /* ---- Menu item text ---- */
@@ -92,18 +92,19 @@ static void item_text(const Overlay *ov, int row,
     switch (ov->section) {
 
     case OV_GENERAL: {
-        bool is_6128 = (ov->cfg->model == MODEL_6128);
-        /* On 6128 the rows are: Model, Memory, MX4, Roms Board, External
-         * Tape, OS ROM, BASIC ROM. On 464 the External Tape row is
-         * hidden (464 has a built-in deck — always available); the ROM
-         * rows then shift up by one. */
+        bool has_external_tape_row = (ov->cfg->model != MODEL_464);
+        /* On disk machines (664/6128) the rows are: Model, Memory, MX4,
+         * Roms Board, External Tape, OS ROM, BASIC ROM, Tinker. On 464 the
+         * External Tape row is hidden (464 has a built-in deck — always
+         * available); subsequent rows shift up by one. */
         int logical = row;
-        if (!is_6128 && row >= 4) logical = row + 1;   /* skip slot 4 */
+        if (!has_external_tape_row && row >= 4) logical = row + 1;
         switch (logical) {
         case 0:
             snprintf(lbl, lsz, "Model");
             snprintf(val, vsz, "%s",
-                ov->cfg->model == MODEL_464 ? "CPC 464" : "CPC 6128");
+                ov->cfg->model == MODEL_464 ? "CPC 464" :
+                (ov->cfg->model == MODEL_664 ? "CPC 664" : "CPC 6128"));
             break;
         case 1:
             snprintf(lbl, lsz, "Memory");
@@ -218,8 +219,8 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 4:
             snprintf(lbl, lsz, "DD1");
-            if (ov->cfg->model == MODEL_6128) {
-                snprintf(val, vsz, "N/A (6128 has built-in FDC)");
+            if (ov->cfg->model != MODEL_464) {
+                snprintf(val, vsz, "N/A (built-in FDC)");
                 *readonly = true;
             } else {
                 snprintf(val, vsz, "%s", ov->cfg->dd1 ? "enabled" : "disabled");
@@ -400,15 +401,22 @@ static void activate_item(Overlay *ov) {
     switch (ov->section) {
 
     case OV_GENERAL: {
-        bool is_6128 = (ov->cfg->model == MODEL_6128);
+        bool has_external_tape_row = (ov->cfg->model != MODEL_464);
         int logical = ov->row;
-        if (!is_6128 && ov->row >= 4) logical = ov->row + 1;   /* skip slot 4 (External Tape) */
+        if (!has_external_tape_row && ov->row >= 4) logical = ov->row + 1;
         switch (logical) {
         case 0: {
-            CpcModel next = (ov->cfg->model == MODEL_464) ? MODEL_6128 : MODEL_464;
+            CpcModel next;
+            switch (ov->cfg->model) {
+                case MODEL_464:  next = MODEL_664;  break;
+                case MODEL_664:  next = MODEL_6128; break;
+                default:         next = MODEL_464;  break;
+            }
             config_set_model(ov->cfg, next);
             if (next == MODEL_6128 && ov->cfg->memory_kb < 128)
                 ov->cfg->memory_kb = 128;
+            else if (next != MODEL_6128 && ov->cfg->memory_kb != 64)
+                ov->cfg->memory_kb = 64;
             ov->dirty = true;
             break;
         }
@@ -549,7 +557,7 @@ static void activate_item(Overlay *ov) {
                 config_default_basic(ov->cfg->model,
                                      ov->cfg->rom_basic, sizeof(ov->cfg->rom_basic));
                 if (!ov->cfg->rom_amsdos[0])
-                    config_default_amsdos(ov->cfg->rom_amsdos,
+                    config_default_amsdos(ov->cfg->model, ov->cfg->rom_amsdos,
                                           sizeof(ov->cfg->rom_amsdos));
                 if (ov->cpc)
                     mem_load_amsdos(&ov->cpc->mem, ov->cfg->rom_amsdos);
@@ -1305,7 +1313,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                     config_default_basic(ov->cfg->model,
                         ov->cfg->rom_basic, sizeof(ov->cfg->rom_basic));
                 } else if (slot == 7) {
-                    config_default_amsdos(
+                    config_default_amsdos(ov->cfg->model,
                         ov->cfg->rom_amsdos, sizeof(ov->cfg->rom_amsdos));
                 }
                 /* Removing the ROM also removes its board membership and

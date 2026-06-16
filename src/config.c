@@ -10,11 +10,14 @@
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
-#define ROM_FILE_OS_464     "OS_464.ROM"
-#define ROM_FILE_BASIC_464  "BASIC_1.0.ROM"
-#define ROM_FILE_OS_6128    "OS_6128.ROM"
-#define ROM_FILE_BASIC_6128 "BASIC_1.1.ROM"
-#define ROM_FILE_AMSDOS     "AMSDOS.ROM"
+#define ROM_FILE_OS_464      "OS_464.ROM"
+#define ROM_FILE_BASIC_464   "BASIC_1.0.ROM"
+#define ROM_FILE_OS_664      "OS_664.ROM"
+#define ROM_FILE_BASIC_664   "BASIC_664.ROM"   /* 664 BASIC v1.1.0 — NOT the same as BASIC_1.1.ROM (which is v1.2.0) */
+#define ROM_FILE_OS_6128     "OS_6128.ROM"
+#define ROM_FILE_BASIC_6128  "BASIC_1.1.ROM"   /* misnamed file — actually v1.2.0 */
+#define ROM_FILE_AMSDOS      "AMSDOS.ROM"
+#define ROM_FILE_AMSDOS_664  "AMSDOS_664.ROM"
 #define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 
@@ -135,9 +138,9 @@ static void config_create_default(const char *path, const char *home) {
         "# Edit and restart the emulator for changes to take effect.\n"
         "\n"
         "[machine]\n"
-        "# CPC model: 464 or 6128\n"
+        "# CPC model: 464, 664 or 6128\n"
         "model=6128\n"
-        "# RAM size in KB: 64 (CPC 464) or 128 (CPC 6128)\n"
+        "# RAM size in KB: 64 (CPC 464/664) or 128+ (CPC 6128)\n"
         "memory=128\n"
         "\n"
         "[roms]\n"
@@ -272,6 +275,7 @@ int config_load_from(Config *cfg, const char *path_override) {
         if (!strcmp(section, "machine")) {
             if (!strcmp(key, "model")) {
                 if (!strcmp(val, "464"))       cfg->model = MODEL_464;
+                else if (!strcmp(val, "664"))  cfg->model = MODEL_664;
                 else if (!strcmp(val, "6128")) cfg->model = MODEL_6128;
                 else { fprintf(stderr, "1984.conf:%d: unknown model '%s', using default\n", lineno, val); }
             } else if (!strcmp(key, "memory")) {
@@ -420,11 +424,9 @@ int config_load_from(Config *cfg, const char *path_override) {
 
     /* Restore defaults for any fields left invalid/empty by a corrupt config */
     if (!cfg->rom_os[0])
-        rom_cfg_path(cfg->model == MODEL_464 ? ROM_FILE_OS_464 : ROM_FILE_OS_6128,
-                     cfg->rom_os, sizeof(cfg->rom_os));
+        config_default_os(cfg->model, cfg->rom_os, sizeof(cfg->rom_os));
     if (!cfg->rom_basic[0])
-        rom_cfg_path(cfg->model == MODEL_464 ? ROM_FILE_BASIC_464 : ROM_FILE_BASIC_6128,
-                     cfg->rom_basic, sizeof(cfg->rom_basic));
+        config_default_basic(cfg->model, cfg->rom_basic, sizeof(cfg->rom_basic));
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
@@ -466,7 +468,8 @@ int config_save(const Config *cfg) {
         "os=%s\n"
         "basic=%s\n"
         "amsdos=%s\n",
-        cfg->model == MODEL_464 ? "464" : "6128",
+        cfg->model == MODEL_464 ? "464" :
+            (cfg->model == MODEL_664 ? "664" : "6128"),
         cfg->memory_kb,
         cfg->rom_os,
         cfg->rom_basic,
@@ -587,6 +590,12 @@ void config_set_model(Config *cfg, CpcModel model) {
         rom_cfg_path(ROM_FILE_OS_464,    cfg->rom_os,    sizeof(cfg->rom_os));
         rom_cfg_path(ROM_FILE_BASIC_464, cfg->rom_basic, sizeof(cfg->rom_basic));
         cfg->rom_amsdos[0] = '\0';   /* 464 has no built-in AMSDOS; DD1 adds it */
+    } else if (model == MODEL_664) {
+        cfg->memory_kb = 64;
+        cfg->dd1       = false;      /* 664 has built-in FDC; DD1 toggle N/A */
+        rom_cfg_path(ROM_FILE_OS_664,     cfg->rom_os,     sizeof(cfg->rom_os));
+        rom_cfg_path(ROM_FILE_BASIC_664,  cfg->rom_basic,  sizeof(cfg->rom_basic));
+        rom_cfg_path(ROM_FILE_AMSDOS_664, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
     } else {
         cfg->memory_kb = 128;
         cfg->dd1       = false;      /* 6128 has built-in FDC; DD1 not applicable */
@@ -605,15 +614,22 @@ void config_apply_dd1(Config *cfg, bool enabled) {
 }
 
 void config_default_os(CpcModel model, char *out, size_t sz) {
-    rom_cfg_path(model == MODEL_464 ? ROM_FILE_OS_464 : ROM_FILE_OS_6128, out, sz);
+    const char *file = ROM_FILE_OS_6128;
+    if (model == MODEL_464) file = ROM_FILE_OS_464;
+    else if (model == MODEL_664) file = ROM_FILE_OS_664;
+    rom_cfg_path(file, out, sz);
 }
 
 void config_default_basic(CpcModel model, char *out, size_t sz) {
-    rom_cfg_path(model == MODEL_464 ? ROM_FILE_BASIC_464 : ROM_FILE_BASIC_6128, out, sz);
+    const char *file = ROM_FILE_BASIC_6128;
+    if (model == MODEL_464) file = ROM_FILE_BASIC_464;
+    else if (model == MODEL_664) file = ROM_FILE_BASIC_664;
+    rom_cfg_path(file, out, sz);
 }
 
-void config_default_amsdos(char *out, size_t sz) {
-    rom_cfg_path(ROM_FILE_AMSDOS, out, sz);
+void config_default_amsdos(CpcModel model, char *out, size_t sz) {
+    rom_cfg_path(model == MODEL_664 ? ROM_FILE_AMSDOS_664 : ROM_FILE_AMSDOS,
+                 out, sz);
 }
 
 void config_default_m4rom(char *out, size_t sz) {

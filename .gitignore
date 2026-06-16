@@ -39,6 +39,14 @@ notes/
 # Flatpak build output
 /flatpak-repo/
 /1984.flatpak
+/Emulator1984-*.flatpak
+/local-repo/
+/repo/
+
+# Local scratch / working dirs — never commit
+/debug/
+/Attachments-git/
+/net4cpc/
 
 # Autotools regenerable bits not tracked elsewhere
 /build-aux/config.guess

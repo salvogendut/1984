@@ -96,10 +96,13 @@ CLEANFILES = icons/1984-rc.o
 # Amstrad diagnostics ROM are open source.)
 romsdir       = $(pkgdatadir)/roms
 dist_roms_DATA = roms/AMSDOS.ROM \
+                 roms/AMSDOS_664.ROM \
                  roms/BASIC_1.0.ROM \
                  roms/BASIC_1.1.ROM \
+                 roms/BASIC_664.ROM \
                  roms/M4ROM.ROM \
                  roms/OS_464.ROM \
+                 roms/OS_664.ROM \
                  roms/OS_6128.ROM \
                  roms/AmstradDiagLower.rom
 
