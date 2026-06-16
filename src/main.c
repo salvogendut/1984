@@ -1038,7 +1038,21 @@ int main(int argc, char *argv[]) {
             if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))
                 videocap_stop();
         }
+        /* Paused-state visual: greyscale the frozen frame and re-composite
+         * it each iteration (cpc_frame early-returns when paused, so it
+         * stops calling display_upload itself — the back buffer would
+         * otherwise show undefined content after RenderPresent). The
+         * PAUSED label is drawn below after overlay_render so it ends
+         * up on top of everything. */
+        static bool prev_paused = false;
+        if (cpc.paused) {
+            if (!prev_paused) display_apply_greyscale(&cpc.display);
+            display_upload(&cpc.display);
+        }
+        prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
+        if (cpc.paused)
+            display_draw_paused_label(&cpc.display);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
          * Doubles as a visual marker that debug machinery is live. */
         if (g_debug_enabled) {

@@ -51,10 +51,16 @@ static void build_root(char *out, size_t sz) {
 static bool guestmount_image(const char *image, const char *path) {
     static const char *mount_specs[] = { "/dev/sda1", "/dev/sda" };
     char cmd[1024];
+    /* -o uid/gid: by default guestmount maps the FUSE mount as root, so the
+     * invoking user can't write. Pass our real uid/gid so dragging files
+     * into the file manager works. FAT doesn't preserve groups, but the
+     * permission check is on uid alone. */
+    unsigned uid = (unsigned)getuid();
+    unsigned gid = (unsigned)getgid();
     for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
         snprintf(cmd, sizeof(cmd),
-                 "%s -a '%s' -m %s --rw '%s' 2>/dev/null",
-                 GUESTMOUNT_BIN, image, mount_specs[i], path);
+                 "%s -a '%s' -m %s --rw -o uid=%u,gid=%u '%s' 2>/dev/null",
+                 GUESTMOUNT_BIN, image, mount_specs[i], uid, gid, path);
         if (system(cmd) == 0)
             return true;
     }

@@ -103,6 +103,41 @@ void display_flip(Display *d) {
     SDL_RenderPresent(d->renderer);
 }
 
+void display_apply_greyscale(Display *d) {
+    /* XRGB8888 in CPU-native byte order. Rec. 601 luma:
+     * Y ≈ 0.299 R + 0.587 G + 0.114 B (fixed-point ×1024). */
+    u32 *p = d->pixels;
+    int  n = CPC_SCREEN_W * CPC_SCREEN_H;
+    for (int i = 0; i < n; i++) {
+        u32 px = p[i];
+        unsigned r = (px >> 16) & 0xFF;
+        unsigned g = (px >>  8) & 0xFF;
+        unsigned b =  px        & 0xFF;
+        unsigned y = (306u * r + 601u * g + 117u * b) >> 10;   /* /1024 */
+        if (y > 255) y = 255;
+        p[i] = (y << 16) | (y << 8) | y;
+    }
+}
+
+void display_draw_paused_label(Display *d) {
+    int ww, wh;
+    SDL_GetWindowSize(d->window, &ww, &wh);
+    /* SDL3's debug font glyphs are 8x8, scaled by the renderer's draw
+     * scale. Pick a chunky scale so "PAUSED" reads at any window size. */
+    float scale = (float)ww / 320.0f;
+    if (scale < 2.0f) scale = 2.0f;
+    SDL_SetRenderScale(d->renderer, scale, scale);
+    const char *txt = "PAUSED";
+    int text_w = (int)(strlen(txt) * 8);   /* in pre-scale pixels */
+    int text_h = 8;
+    float x = (ww / scale - text_w) / 2.0f;
+    float y = (wh / scale - text_h) / 2.0f;
+    SDL_SetRenderDrawBlendMode(d->renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(d->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_RenderDebugText(d->renderer, x, y, txt);
+    SDL_SetRenderScale(d->renderer, 1.0f, 1.0f);
+}
+
 void display_save_ppm(Display *d, const char *path) {
     FILE *f = fopen(path, "wb");
     if (!f) return;

@@ -37,3 +37,12 @@ void display_save_ppm(Display *d, const char *path);
 
 /* Switch texture scaling between linear (smooth) and nearest (sharp). */
 void display_set_smoothing(Display *d, bool smooth);
+
+/* In-place desaturate the current framebuffer (Rec. 601 luma). Used when
+ * the emulator pauses so the frozen frame visibly differs from a running
+ * one. The next live frame from cpc_frame() overwrites this. */
+void display_apply_greyscale(Display *d);
+
+/* Draw a "PAUSED" label centred on the renderer. Call after
+ * display_upload(), before display_flip(). */
+void display_draw_paused_label(Display *d);
