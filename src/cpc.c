@@ -379,14 +379,24 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
-    /* CRTC: A14=0 → 0xBCxx (select, A8=0) / 0xBDxx (write, A8=1) */
-    if (!(hi & 0x40)) {
+    /* CRTC write functions: A14=0 AND A9=0. A8 selects:
+     *   A8=0 → 0xBCxx select, A8=1 → 0xBDxx write.
+     * A9=1 (0xBExx/0xBFxx) is the CRTC read side — OUT to those ports
+     * is a no-op on real hardware. FUZIX's SDCC port helper at
+     * F995 issues OUT (C),B with BC=0x03FF for unrelated reasons; the
+     * old A14-only decode wrongly latched that as R12 := 0x03 and
+     * pointed the screen at block 0. */
+    if (!(hi & 0x40) && !(hi & 0x02)) {
         if (!(hi & 0x01)) {
             crtc_select(&cpc->crtc, val);
         } else {
             if (cpc_trace_io)
                 fprintf(stderr, "CRTC R%-2d = %3d (0x%02X)\n",
                         cpc->crtc.selected, val, val);
+            if (dbg_getenv("ONE_K_TRACE_CRTC_REGS"))
+                fprintf(stderr, "[CRTC] PC=%04X R%-2d = 0x%02X  BC=%04X HL=%04X DE=%04X AF=%04X\n",
+                        cpc->cpu.pc, cpc->crtc.selected, val,
+                        cpc->cpu.bc, cpc->cpu.hl, cpc->cpu.de, cpc->cpu.af);
             crtc_write(&cpc->crtc, val);
         }
         return;

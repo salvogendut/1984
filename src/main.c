@@ -1038,6 +1038,21 @@ int main(int argc, char *argv[]) {
         } else if (was_stepping && cpc.paused) {
             monitor_notify_step(monitor);
         }
+        /* DUMP_VIDEO_RAM=/path/file — once per frame, writes the base 64 KB
+         * of RAM (the only memory the CRTC ever sees) plus the CRTC reg state
+         * appended after byte 0x10000. Last frame wins; quit the emulator with
+         * the corrupted screen still on display and the file captures it. */
+        {
+            const char *vram_path = dbg_getenv("DUMP_VIDEO_RAM");
+            if (vram_path) {
+                FILE *fp = fopen(vram_path, "wb");
+                if (fp) {
+                    fwrite(cpc.mem.ram, 1, cpc.mem.ram_size, fp);
+                    fwrite(cpc.crtc.reg, 1, sizeof(cpc.crtc.reg), fp);
+                    fclose(fp);
+                }
+            }
+        }
         /* Video capture: grab the CPC framebuffer before the overlay
          * draws on top. GIF decimates to 25 fps; WebM takes every
          * frame at 50 fps (VP9 compresses interframe deltas well). */
