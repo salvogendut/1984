@@ -2,14 +2,22 @@
 #include <stdbool.h>
 #include "config.h"
 
-/* Per-card mount slot. `path` is the directory the image is FUSE-mounted
- * onto; empty when nothing is mounted. `image` is a borrowed pointer back
- * into the live Config so we know which file to call guestmount on (and
- * which one to leave alone on close). */
+/* Which backend mounted this slot — determines how to unmount. */
+typedef enum {
+    HOST_MOUNT_NONE       = 0,
+    HOST_MOUNT_UDISKS     = 1,   /* gnome-disk-image-mounter / udisksctl */
+    HOST_MOUNT_GUESTMOUNT = 2    /* libguestfs FUSE fallback */
+} HostMountVia;
+
+/* Per-card mount slot. `path` is the directory the image is mounted onto;
+ * empty when nothing is mounted. `image` is a borrowed pointer back into
+ * the live Config so we know which file the mount is backed by. */
 typedef struct {
-    char        path[256];
-    char        label[16];      /* "m4" | "ide" | "albireo" */
-    const char *image;
+    char         path[256];
+    char         label[16];     /* "m4" | "ide" | "albireo" */
+    char         loop_dev[64];  /* /dev/loopN — populated for HOST_MOUNT_UDISKS */
+    const char  *image;
+    HostMountVia via;
 } HostMountSlot;
 
 #define HOST_MOUNT_MAX_SLOTS 3
@@ -17,22 +25,17 @@ typedef struct {
 typedef struct {
     HostMountSlot slots[HOST_MOUNT_MAX_SLOTS];
     int           count;
-    char          root[256];
+    char          root[256];    /* used only for the guestmount fallback */
     bool          active;       /* F10 toggle state */
 } HostMount;
 
-/* True if the host has the tools we need (guestmount + xdg-open) and we
- * built with support for this feature. Result cached internally — cheap to
- * call repeatedly. */
+/* True if the host has at least one working mount backend plus xdg-open. */
 bool host_mount_supported(void);
 
-/* Mount every active FAT card image under /run/user/$UID/1984/<label>/ and
- * fork+exec xdg-open on the root. Returns true if at least one slot
- * mounted (so the caller knows to enter the "browsing" state); false if
- * nothing was eligible or every guestmount call failed. On false the
- * struct is left clean (no partial mounts to clean up). */
+/* Mount every active card image (M4 / IDE / Albireo) and open the host
+ * file manager at the mount root. Returns true if at least one slot
+ * mounted; false if nothing was eligible or every backend failed. */
 bool host_mount_open(HostMount *hm, const Config *cfg);
 
-/* fusermount-unmount every populated slot, rmdir the slot dirs and the
- * root. Idempotent: safe to call when nothing is mounted. */
+/* Unmount every populated slot. Idempotent. */
 bool host_mount_close(HostMount *hm);
