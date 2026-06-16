@@ -79,11 +79,11 @@ Two bytes are fetched per character clock and decoded according to the Gate Arra
 0xC000–0xFFFF   Upper ROM (slot selected by port 0xDFxx) or RAM bank
 ```
 
-RAM is configurable from 64 KB (464 minimum) up to 576 KB (DK'tronics ceiling) via the options overlay. The physical array in `Mem` is always 576 KB; `Mem.ram_size` (set from `config.memory_kb * 1024`) controls how much of it is accessible. Accesses beyond `ram_size` return 0xFF and writes are silently dropped.
+RAM is configurable from 64 KB (464/664 default) up to 576 KB (DK'tronics ceiling) via the options overlay. The physical array in `Mem` is always 576 KB; `Mem.ram_size` (set from `config.memory_kb * 1024`) controls how much of it is accessible. Accesses beyond `ram_size` return 0xFF and writes are silently dropped.
 
 **AMSDOS-headed ROMs.** All ROM loaders (`mem_load_os`, `mem_load_rom`, `mem_load_amsdos`, `mem_load_rom_ext`) go through a `read_rom_image()` helper. If the file is exactly `ROM_BASIC_SIZE + 128` bytes (16512), the 128-byte AMSDOS header is skipped and only the 16384-byte ROM body is loaded. This handles ROMs distributed in DSK-extracted form (e.g. UNIDOS, UNITOOLS, Albireo) transparently — no per-device unwrapping needed.
 
-**Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command. `Mem.ram_bank` stores bits[5:0] of that byte. Both the 464 and 6128 honour this command; on real hardware only the 6128 supports it, but the emulator enables banking on the 464 as well when RAM is expanded beyond 64 KB.
+**Banking.** When the Gate Array receives a byte with bits[7:6] = `11` (port 0x7Fxx), it is a RAM banking command. `Mem.ram_bank` stores bits[5:0] of that byte. All three models honour this command; on real hardware only the 6128 supports it, but the emulator enables banking on the 464 and 664 as well when RAM is expanded beyond 64 KB.
 
 The 8 banking modes (bits[2:0]) use a fixed page-to-region lookup table (not a raw page index). Bits[5:3] select a 64 KB expansion bank for DK'tronics-compatible expansion. The standard DK'tronics hardware supports up to 576 KB: 64 KB base (romb0–3) + 8 expansion banks × 64 KB (RAM_bank 0–7, where bank 0 is the standard 6128 extra 64 KB).
 
@@ -190,7 +190,7 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 
 `config_default_diag()` returns the compiled-in path for `AmstradDiagLower.rom` (`~/.config/1984/roms/AmstradDiagLower.rom`). Used by the overlay's Diag Cart toggle to resolve the ROM path without hardcoding the filename in the UI layer.
 
-**`memory_kb`** accepts 64, 128, 256, 512, or 576. The 464 default is 64; the 6128 default is 128. Values outside this set are rejected and the previous value is kept. The field is written directly to `Mem.ram_size` (in bytes) at startup and on every cold boot.
+**`memory_kb`** accepts 64, 128, 256, 512, or 576. The 464 and 664 default is 64; the 6128 default is 128. Values outside this set are rejected and the previous value is kept. The field is written directly to `Mem.ram_size` (in bytes) at startup and on every cold boot.
 
 **CLI ROM slot overrides.** `--rom-slot=N:PATH` (repeatable) loads a ROM into slot N after the config-based expansion ROMs are applied. This lets you test or launch with a specific ROM without modifying `1984.conf`. CLI overrides win over config-file assignments for the same slot.
 
@@ -204,7 +204,7 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 
 | Flag | Effect |
 |------|--------|
-| `--464` / `--6128` | Force the CPC model |
+| `--464` / `--664` / `--6128` | Force the CPC model |
 | `--dd1` | Enable the DDI-1 floppy interface (464 only) |
 | `--memory=KB` | RAM size: 64, 128, 256, 512, 576 (also 768 / 1024 via overlay) |
 | `--config=PATH` | Read from PATH instead of `~/.config/1984/1984.conf` |
@@ -280,7 +280,7 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
-The **Memory** row (General tab, row 1) cycles through 64 → 128 → 256 → 512 → 576 → 768 → 1024 KB on Enter for both the 464 and 6128. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
+The **Memory** row (General tab, row 1) cycles through 64 → 128 → 256 → 512 → 576 → 768 → 1024 KB on Enter for all three models. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
 The **Roms Board** row (General tab, row 3) toggles `cfg.rom_board`. When false, `main.c`'s boot and cold-boot paths skip the loop that copies `cfg.rom_ext[]` into the upper ROM slots — only the model's default OS, BASIC, and AMSDOS ROMs are loaded. The `cfg.rom_ext[]` paths themselves are *not* cleared, so re-enabling the toggle restores the previous layout from a single source of truth. The Extensions → ROM Slots row is also rendered as `[disabled]` and its sub-panel is unreachable while `rom_board` is off. Triggers a cold boot on save.
 
@@ -434,7 +434,7 @@ CDT (TZX) decoder, ported in compact form from Caprice32's `tape.cpp`. Drives th
 
 **Audio mixing.** While the motor is on, the same step loop also samples the current tape level at audio rate (`cycles * AUDIO_SAMPLE_RATE >= cpu_clk_hz` ≈ 90.7 cycles per sample at 4 MHz / 44.1 kHz) and writes ±2500 into `cpc->tape_audio[]`. After PSG render produces a frame's worth of samples, that buffer is summed into the PSG output with saturating clamp before going to SDL — that's the loading-screech sound players expect.
 
-**Model wiring.** On the 464 the deck is built in, so the tape is always wired when `cfg.tape` is non-empty. The 6128 has no built-in deck — a `cfg.external_tape` toggle (General → External Tape, row only visible when model = 6128) controls whether the cassette is virtually plugged into the 6128's tape port. Both the boot path and the cold-boot path in `main.c` consult this when calling `tape_load`. Toggling `external_tape` or changing the tape image triggers a cold boot.
+**Model wiring.** On the 464 the deck is built in, so the tape is always wired when `cfg.tape` is non-empty. The 664 and 6128 have no built-in deck — a `cfg.external_tape` toggle (General → External Tape, row only visible on disk machines) controls whether the cassette is virtually plugged into the tape port. Both the boot path and the cold-boot path in `main.c` consult this when calling `tape_load`. Toggling `external_tape` or changing the tape image triggers a cold boot.
 
 ---
 

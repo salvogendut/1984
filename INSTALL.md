@@ -101,8 +101,11 @@ The required CPC firmware ROMs and the open-source M4ROM / Amstrad Diagnostics R
 |------|----------|
 | `OS_464.ROM` | CPC 464 OS ROM (16 KB) |
 | `BASIC_1.0.ROM` | CPC 464 Locomotive BASIC 1.0 (16 KB) |
+| `OS_664.ROM` | CPC 664 OS ROM v2 (16 KB) |
+| `BASIC_664.ROM` | CPC 664 Locomotive BASIC v1.1.0 (16 KB) — note: NOT the same as `BASIC_1.1.ROM`, which is actually v1.2.0 (the 6128's BASIC) |
+| `AMSDOS_664.ROM` | CPC 664 AMSDOS (16 KB) — built-in on the 664 |
 | `OS_6128.ROM` | CPC 6128 OS ROM (16 KB) |
-| `BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC 1.1 (16 KB) |
+| `BASIC_1.1.ROM` | CPC 6128 Locomotive BASIC v1.2.0 (16 KB) — historical naming; actual ROM version is 1.2 |
 | `AMSDOS.ROM` | AMSDOS disk filing system (16 KB) — required for disk access on 6128; optional on 464 (needs DD1) |
 | `M4ROM.ROM` | M4 board firmware (16 KB) — open source ([M4Duke/m4rom](https://github.com/M4Duke/m4rom)); enables the SD-card emulation when M4 is toggled on |
 | `AmstradDiagLower.rom` | Amstrad Diagnostics lower ROM (optional — enables Diag Cart toggle in the overlay) |

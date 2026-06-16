@@ -2,7 +2,7 @@
 
 ![1984](1984.png)
 
-A cycle-stepped Amstrad CPC 464/6128 emulator written in C with SDL3.
+A cycle-stepped Amstrad CPC 464/664/6128 emulator written in C with SDL3.
 
 ## Status
 

@@ -9,6 +9,7 @@
 | Option | Description |
 |--------|-------------|
 | `--464` | Boot as CPC 464 (overrides config) |
+| `--664` | Boot as CPC 664 (overrides config) |
 | `--6128` | Boot as CPC 6128 (overrides config) |
 | `--dd1` | Enable DDI-1 floppy interface on CPC 464 (overrides config) |
 | `--memory=KB` | RAM size: 64, 128, 256, 512 or 576 (overrides config) |
@@ -103,13 +104,13 @@ The overlay lets you change the machine model, RAM size, ROM paths, and hardware
 
 Switching the model automatically sets the matching ROM paths and RAM size.
 
-**RAM size** (General → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on both the 464 and 6128. Changing RAM size triggers a cold boot on save.
+**RAM size** (General → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on all three models. Changing RAM size triggers a cold boot on save.
 
-**CPC 464 and DD1:** on the 464, the Media tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the 6128, drives are always enabled and the DD1 option is greyed out.
+**CPC 464 and DD1:** on the 464, the Media tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the **664 and 6128** the FDC and AMSDOS are built in: drives are always enabled and the DD1 row reads "N/A (built-in FDC)".
 
 **Tape** (Media → Tape): selects a `.cdt` (TZX) cassette image. The decoder supports the common TZX block types (`0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x20` pause) plus the metadata blocks (`0x21`–`0x34`, `0x5A`) which are skipped. Pulse timings are scaled from Spectrum 3.5 MHz to CPC 4 MHz (40/35 ratio). The cassette data line is OR'd into PPI Port B bit 7; PPI Port C bit 4 acts as the motor enable. While the motor is on, the level is also sampled at audio rate (~90 cycles/sample at 4 MHz / 44.1 kHz) and mixed into the PSG output at ±2500 amplitude — you hear the loading screech exactly as on real hardware.
 
-On the **CPC 464** the tape is always wired (the deck is built in). On the **CPC 6128** there's no built-in deck, so a new **External Tape** toggle appears in the General tab (between Roms Board and OS ROM, only visible when 6128 is selected); enable it to virtually plug the cassette deck into the 6128's tape port. Toggling triggers a cold boot so the firmware re-probes.
+On the **CPC 464** the tape is always wired (the deck is built in). On the **664 and 6128** there's no built-in deck, so an **External Tape** toggle appears in the General tab (between Roms Board and OS ROM, only visible on disk machines); enable it to virtually plug the cassette deck into the tape port. Toggling triggers a cold boot so the firmware re-probes.
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
 
@@ -247,13 +248,13 @@ On first run a configuration file is created at `~/.config/1984/1984.conf`. You 
 
 ```ini
 [machine]
-model=6128        # 464 or 6128
-memory=128        # 64, 128, 256, 512, or 576 (KB); default 64 for 464, 128 for 6128
+model=6128        # 464, 664, or 6128
+memory=128        # 64, 128, 256, 512, or 576 (KB); default 64 for 464/664, 128 for 6128
 
 [roms]
 os=~/.config/1984/roms/OS_6128.ROM
 basic=~/.config/1984/roms/BASIC_1.1.ROM
-amsdos=~/.config/1984/roms/AMSDOS.ROM   # 6128 only; cleared automatically for 464
+amsdos=~/.config/1984/roms/AMSDOS.ROM   # 664/6128; cleared automatically on 464 unless DD1 is on
 
 [expansion_roms]
 # Load extra ROMs into upper ROM slots 0-31.
