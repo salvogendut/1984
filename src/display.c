@@ -104,8 +104,10 @@ void display_flip(Display *d) {
 }
 
 void display_apply_greyscale(Display *d) {
-    /* XRGB8888 in CPU-native byte order. Rec. 601 luma:
-     * Y ≈ 0.299 R + 0.587 G + 0.114 B (fixed-point ×1024). */
+    /* XRGB8888 in CPU-native byte order. Rec. 601 luma then dim toward
+     * mid-grey so the foreground label has high contrast against the
+     * frozen frame. Without the dimming a bright CPC border (e.g. white
+     * paper mode) drowns out the label. */
     u32 *p = d->pixels;
     int  n = CPC_SCREEN_W * CPC_SCREEN_H;
     for (int i = 0; i < n; i++) {
@@ -114,8 +116,12 @@ void display_apply_greyscale(Display *d) {
         unsigned g = (px >>  8) & 0xFF;
         unsigned b =  px        & 0xFF;
         unsigned y = (306u * r + 601u * g + 117u * b) >> 10;   /* /1024 */
-        if (y > 255) y = 255;
-        p[i] = (y << 16) | (y << 8) | y;
+        /* Compress range to roughly 32..96 around mid-grey — keeps shapes
+         * recognisable but tones the whole frame down so white overlay
+         * text reads cleanly. */
+        unsigned dim = 32 + ((y * 64) >> 8);
+        if (dim > 255) dim = 255;
+        p[i] = (dim << 16) | (dim << 8) | dim;
     }
 }
 
@@ -123,18 +129,33 @@ void display_draw_paused_label(Display *d) {
     int ww, wh;
     SDL_GetWindowSize(d->window, &ww, &wh);
     /* SDL3's debug font glyphs are 8x8, scaled by the renderer's draw
-     * scale. Pick a chunky scale so "PAUSED" reads at any window size. */
-    float scale = (float)ww / 320.0f;
-    if (scale < 2.0f) scale = 2.0f;
-    SDL_SetRenderScale(d->renderer, scale, scale);
-    const char *txt = "PAUSED";
-    int text_w = (int)(strlen(txt) * 8);   /* in pre-scale pixels */
-    int text_h = 8;
-    float x = (ww / scale - text_w) / 2.0f;
-    float y = (wh / scale - text_h) / 2.0f;
+     * scale. Pick a chunky scale for "PAUSED"; the secondary hint sits
+     * just below at a smaller scale. */
+    float big   = (float)ww / 320.0f;       /* "PAUSED" — ~4x at 1280, 2.4x at 768 */
+    float small = (float)ww / 640.0f;       /* "Press F10 to resume" — half as big */
+    if (big   < 2.0f) big   = 2.0f;
+    if (small < 1.0f) small = 1.0f;
+
+    const char *main_txt = "PAUSED";
+    const char *hint_txt = "Press F10 to resume";
+
     SDL_SetRenderDrawBlendMode(d->renderer, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(d->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-    SDL_RenderDebugText(d->renderer, x, y, txt);
+
+    /* "PAUSED" — slightly above centre so the hint fits below. */
+    SDL_SetRenderScale(d->renderer, big, big);
+    int main_w = (int)(strlen(main_txt) * 8);
+    float main_x = (ww / big - main_w) / 2.0f;
+    float main_y = (wh / big) / 2.0f - 12.0f;   /* shift up by ~ one glyph */
+    SDL_RenderDebugText(d->renderer, main_x, main_y, main_txt);
+
+    /* Hint line just below. */
+    SDL_SetRenderScale(d->renderer, small, small);
+    int hint_w = (int)(strlen(hint_txt) * 8);
+    float hint_x = (ww / small - hint_w) / 2.0f;
+    float hint_y = (wh / small) / 2.0f + 12.0f * (big / small);
+    SDL_RenderDebugText(d->renderer, hint_x, hint_y, hint_txt);
+
     SDL_SetRenderScale(d->renderer, 1.0f, 1.0f);
 }
 

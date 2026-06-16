@@ -5,6 +5,9 @@
  * at the mount root. The caller (main.c) is responsible for triggering a
  * cold reboot on close so the guest's stale FAT cache is discarded. */
 
+/* popen/pclose live behind POSIX feature flags under -std=c11. */
+#define _POSIX_C_SOURCE 200809L
+
 #include "host_mount.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,21 +54,38 @@ static void build_root(char *out, size_t sz) {
 static bool guestmount_image(const char *image, const char *path) {
     static const char *mount_specs[] = { "/dev/sda1", "/dev/sda" };
     char cmd[1024];
-    /* -o uid/gid: by default guestmount maps the FUSE mount as root, so the
-     * invoking user can't write. Pass our real uid/gid so dragging files
-     * into the file manager works. FAT doesn't preserve groups, but the
-     * permission check is on uid alone. */
+    /* FUSE options for full user ownership:
+     *   uid/gid       — every file and directory appears owned by us
+     *   umask=0       — no permission bits are masked out (rwx for owner)
+     *   allow_other   — needed when the file manager runs in a separate
+     *                   sandbox/namespace (Flatpak Nautilus, etc.). FUSE
+     *                   only honours this if /etc/fuse.conf has
+     *                   `user_allow_other`; if it doesn't, the option is
+     *                   rejected, so we try with-and-without. */
     unsigned uid = (unsigned)getuid();
     unsigned gid = (unsigned)getgid();
-    for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
-        snprintf(cmd, sizeof(cmd),
-                 "%s -a '%s' -m %s --rw -o uid=%u,gid=%u '%s' 2>/dev/null",
-                 GUESTMOUNT_BIN, image, mount_specs[i], uid, gid, path);
-        if (system(cmd) == 0)
-            return true;
+    for (int try_allow_other = 1; try_allow_other >= 0; try_allow_other--) {
+        for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
+            snprintf(cmd, sizeof(cmd),
+                     "%s -a '%s' -m %s --rw "
+                     "-o uid=%u,gid=%u,umask=0%s '%s' 2>&1",
+                     GUESTMOUNT_BIN, image, mount_specs[i], uid, gid,
+                     try_allow_other ? ",allow_other" : "",
+                     path);
+            FILE *p = popen(cmd, "r");
+            if (!p) continue;
+            char errbuf[256] = {0};
+            (void)fread(errbuf, 1, sizeof(errbuf) - 1, p);
+            int rc = pclose(p);
+            if (rc == 0) return true;
+            if (errbuf[0])
+                fprintf(stderr, "host_mount: guestmount[%s,%s]: %s",
+                        mount_specs[i],
+                        try_allow_other ? "allow_other" : "no-allow_other",
+                        errbuf);
+        }
     }
-    fprintf(stderr, "host_mount: guestmount failed for %s (tried -m /dev/sda1 and -m /dev/sda)\n",
-            image);
+    fprintf(stderr, "host_mount: guestmount failed for %s\n", image);
     return false;
 }
 
