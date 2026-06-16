@@ -26,7 +26,7 @@ typedef struct {
     int           scan_y;
 } Display;
 
-int  display_init(Display *d, const char *title);
+int  display_init(Display *d, const char *title, int scale);
 void display_destroy(Display *d);
 void display_put_pixel(Display *d, u32 rgb);
 void display_next_line(Display *d);

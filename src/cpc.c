@@ -254,8 +254,13 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (!(hi & 0x08)) {
         result = ppi_read(&cpc->ppi, (port >> 8) & 0x03);
     }
-    /* FDC: hi=0xFB → status (lo bit 0=0) or data (lo bit 0=1) */
-    else if (hi == 0xFB) {
+    /* FDC: hi=0xFB AND lo bit 7=0 → status (lo bit 0=0) or data (lo bit 0=1).
+     * Real CPC hardware decodes the FDC at 0xFB7E/0xFB7F only; the upper
+     * half of 0xFB** is free for peripherals like Usifac (0xFBD0/D1).
+     * Without the lo-bit-7 mask FUZIX's Usifac probe reads the FDC main
+     * status register instead of 0xFF, thinks Usifac is present, and
+     * hangs in usifac_flush(). */
+    else if (hi == 0xFB && !(port & 0x80)) {
         u8 lo = port & 0xFF;
         result = (lo & 0x01) ? fdc_read_data(&cpc->fdc)
                              : fdc_read_status(&cpc->fdc);
@@ -374,14 +379,24 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         }
         return;
     }
-    /* CRTC: A14=0 → 0xBCxx (select, A8=0) / 0xBDxx (write, A8=1) */
-    if (!(hi & 0x40)) {
+    /* CRTC write functions: A14=0 AND A9=0. A8 selects:
+     *   A8=0 → 0xBCxx select, A8=1 → 0xBDxx write.
+     * A9=1 (0xBExx/0xBFxx) is the CRTC read side — OUT to those ports
+     * is a no-op on real hardware. FUZIX's SDCC port helper at
+     * F995 issues OUT (C),B with BC=0x03FF for unrelated reasons; the
+     * old A14-only decode wrongly latched that as R12 := 0x03 and
+     * pointed the screen at block 0. */
+    if (!(hi & 0x40) && !(hi & 0x02)) {
         if (!(hi & 0x01)) {
             crtc_select(&cpc->crtc, val);
         } else {
             if (cpc_trace_io)
                 fprintf(stderr, "CRTC R%-2d = %3d (0x%02X)\n",
                         cpc->crtc.selected, val, val);
+            if (dbg_getenv("ONE_K_TRACE_CRTC_REGS"))
+                fprintf(stderr, "[CRTC] PC=%04X R%-2d = 0x%02X  BC=%04X HL=%04X DE=%04X AF=%04X\n",
+                        cpc->cpu.pc, cpc->crtc.selected, val,
+                        cpc->cpu.bc, cpc->cpu.hl, cpc->cpu.de, cpc->cpu.af);
             crtc_write(&cpc->crtc, val);
         }
         return;
@@ -573,7 +588,7 @@ static bool g_pen_tables_built;
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
 
-int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic) {
+int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
     cpc->model = model;
@@ -616,19 +631,11 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->bus.ticked_in_step = &cpc->bus_ticked_in_step;
     cpc->bus.ctx            = cpc;
 
-    const char *title;
-    switch (model) {
-        case MODEL_464:
-            title = "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-        case MODEL_664:
-            title = "CPC 664  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-        default:
-            title = "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-    }
-    if (display_init(&cpc->display, title) < 0)
+    /* OS title is just "1984"; the model name and F-key hints are drawn
+     * inside the window each frame (top-left header). */
+    (void)model;
+    const char *title = "1984";
+    if (display_init(&cpc->display, title, scale) < 0)
         return -1;
 
     SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };

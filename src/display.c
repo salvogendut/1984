@@ -3,10 +3,14 @@
 #include <string.h>
 #include <stdio.h>
 
-int display_init(Display *d, const char *title) {
+int display_init(Display *d, const char *title, int scale) {
     memset(d, 0, sizeof(*d));
 
-    d->window = SDL_CreateWindow(title, WINDOW_W, WINDOW_H_TOTAL, SDL_WINDOW_RESIZABLE);
+    if (scale < 1) scale = 1;
+    if (scale > 4) scale = 4;
+    int win_w = WINDOW_W * scale;
+    int win_h = WINDOW_H * scale + LED_BAR_HEIGHT;
+    d->window = SDL_CreateWindow(title, win_w, win_h, SDL_WINDOW_RESIZABLE);
     if (!d->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         return -1;
