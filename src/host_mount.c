@@ -93,30 +93,37 @@ static bool guestmount_image(const char *image, const char *path) {
      * non-server users actually want. */
     unsigned uid = (unsigned)getuid();
     unsigned gid = (unsigned)getgid();
-    /* Try WITHOUT allow_other first — native Nautilus refuses GUI pastes
-     * on FUSE mounts that advertise allow_other (treats them as foreign
-     * filesystems). The Flatpak-sandboxed file-manager case is rare and
-     * is still covered by the fallback. */
-    for (int try_allow_other = 0; try_allow_other <= 1; try_allow_other++) {
-        for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
-            snprintf(cmd, sizeof(cmd),
-                     "LIBGUESTFS_BACKEND=direct "
-                     "%s -a '%s' -m %s --rw "
-                     "-o uid=%u,gid=%u,umask=0%s '%s' 2>&1",
-                     GUESTMOUNT_BIN, image, mount_specs[i], uid, gid,
-                     try_allow_other ? ",allow_other" : "",
-                     path);
-            FILE *p = popen(cmd, "r");
-            if (!p) continue;
-            char errbuf[512] = {0};
-            (void)fread(errbuf, 1, sizeof(errbuf) - 1, p);
-            int rc = pclose(p);
-            if (rc == 0) return true;
-            if (errbuf[0])
-                fprintf(stderr, "host_mount: guestmount[%s,%s]: %s",
-                        mount_specs[i],
-                        try_allow_other ? "allow_other" : "no-allow_other",
-                        errbuf);
+    /* Two axes of fallback:
+     *   - backend: system default first, then explicit `direct` (some
+     *     systems have a broken libvirt backend; others have a broken
+     *     direct backend — neither is universal).
+     *   - allow_other: off first (native Nautilus refuses GUI pastes on
+     *     FUSE mounts that advertise allow_other), on second (sandboxed
+     *     Flatpak file managers need it). */
+    static const char *backends[] = { "", "LIBGUESTFS_BACKEND=direct " };
+    for (size_t b = 0; b < sizeof(backends)/sizeof(backends[0]); b++) {
+        for (int try_allow_other = 0; try_allow_other <= 1; try_allow_other++) {
+            for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
+                snprintf(cmd, sizeof(cmd),
+                         "%s%s -a '%s' -m %s --rw "
+                         "-o uid=%u,gid=%u,umask=0%s '%s' 2>&1",
+                         backends[b], GUESTMOUNT_BIN, image, mount_specs[i],
+                         uid, gid,
+                         try_allow_other ? ",allow_other" : "",
+                         path);
+                FILE *p = popen(cmd, "r");
+                if (!p) continue;
+                char errbuf[512] = {0};
+                (void)fread(errbuf, 1, sizeof(errbuf) - 1, p);
+                int rc = pclose(p);
+                if (rc == 0) return true;
+                if (errbuf[0])
+                    fprintf(stderr, "host_mount: guestmount[%s%s,%s]: %s",
+                            backends[b][0] ? "direct," : "default,",
+                            mount_specs[i],
+                            try_allow_other ? "allow_other" : "no-allow_other",
+                            errbuf);
+            }
         }
     }
     fprintf(stderr, "host_mount: guestmount failed for %s\n", image);
@@ -175,12 +182,20 @@ bool host_mount_open(HostMount *hm, const Config *cfg) {
     memset(hm, 0, sizeof(*hm));
     build_root(hm->root, sizeof(hm->root));
 
-    /* M4 directory mode (cfg->m4_path) serves files from a host directory
-     * already — no sector image to mount. Skip the M4 slot in that case. */
-    if (!cfg->m4_path[0])
+    /* Only mount cards whose hardware toggle is actually on. A stale
+     * cfg->*_image from a previously-enabled card would otherwise get
+     * mounted even when that card isn't wired this session — confusing
+     * for the user and a guaranteed guestmount failure if the file is
+     * a non-FAT format (e.g. a CP/M-formatted IDE image).
+     *
+     * M4 directory mode (cfg->m4_path set) serves files from a host
+     * directory already — no sector image, so skip the M4 slot. */
+    if (cfg->m4 && !cfg->m4_path[0])
         stage_slot(hm, "m4",      cfg->m4_image);
-    stage_slot(hm, "ide",     cfg->ide_image);
-    stage_slot(hm, "albireo", cfg->albireo_image);
+    if (cfg->symbiface_ide)
+        stage_slot(hm, "ide",     cfg->ide_image);
+    if (cfg->albireo)
+        stage_slot(hm, "albireo", cfg->albireo_image);
 
     if (hm->count == 0) return false;
 
