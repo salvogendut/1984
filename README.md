@@ -14,6 +14,12 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 
 **FUZIX (ajcasado port, `cpcsme` platform) boots to a multi-user shell.** With a 6128 + 512 KB RAM + SymbIface IDE pointing at the FUZIX `disk.img`, the kernel boots through the splash, IDE probe, and partition table; entering `hda1` at the `bootdev:` prompt mounts the root filesystem and `root` logs in to the FUZIX shell. See [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md).
 
+<p align="center">
+  <img src="screenshots/fuzix-boot.png" alt="FUZIX boot splash" width="380">
+  &nbsp;&nbsp;
+  <img src="screenshots/fuzix-shell.png" alt="FUZIX shell after login" width="380">
+</p>
+
 ## Features
 
 **Core machine** — Z80 CPU (full documented set + undocumented IX/IY half-register ops), MC6845 CRTC, AY-3-8912 PSG (tone, noise, envelope), 8255 PPI, Gate Array with all 32 hardware colours, configurable RAM 64–1024 KB (DK'tronics + Yarek banking), 32 expansion ROM slots, F8 memory monitor + Z80 disassembler with breakpoints.
