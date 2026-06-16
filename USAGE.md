@@ -59,9 +59,30 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 | F6     | Toggle GIF screen recording (auto-named `1984-<timestamp>.gif` in CWD) |
 | F8     | Open/close memory monitor / debugger |
 | F9     | Open/close options overlay |
+| F10    | Mount the active card images (M4 SD / IDE / Albireo) on the host and open the file manager; press again to unmount and cold-boot. **Linux only**, needs `libguestfs-tools` (`guestmount`, `guestunmount`) and `xdg-utils` installed. |
 | F11    | Toggle fullscreen |
 | F12    | Quit |
 | Ctrl+V | Paste clipboard text into the emulator |
+
+### F10 — browse card images on the host
+
+Pressing **F10** pauses the emulated CPC and mounts every active card image (M4 SD / IDE / Albireo) on the host, then opens the file manager at the mount root. Drag files in or out as you would with any folder.
+
+To finish browsing: either **press F10 again**, or **eject the card from the file manager** (the eject button next to the mounted volume in Nautilus' sidebar). Either way 1984 unmounts, syncs, and cold-boots so the guest re-reads the FAT cleanly. Cold-boot is mandatory because the guest's in-RAM FAT cache would otherwise overwrite your changes on the next sync.
+
+Mount backend cascade (best path wins per card):
+
+1. **`gnome-disk-image-mounter`** if present (modern GNOME). Mount lands under `/run/media/$USER/<label>/` as a first-class removable volume that Nautilus / Files treat natively — drag/drop just works.
+2. **`udisksctl loop-setup + mount`** for non-GNOME desktops (KDE / XFCE). Same end result, no GTK dialog.
+3. **`guestmount`** (libguestfs) as last resort. Mount lives in `~/.cache/1984/mounts/`. GNOME Files refuses drag/drop into FUSE mounts so this tier is browse-from-CLI only.
+
+Floppies (`.DSK`) are not supported (AMSDOS filesystem, not FAT). M4 in directory mode (`m4_path` set, no `m4_image`) is skipped since the host directory is already directly accessible.
+
+Install:
+- Fedora: `sudo dnf install udisks2 gnome-disk-utility libguestfs-tools xdg-utils`
+- Debian/Ubuntu: `sudo apt install udisks2 gnome-disk-utility libguestfs-tools xdg-utils`
+
+If no backend is available, F10 logs to stderr and is otherwise a no-op.
 | Ctrl+Enter | Release captured mouse (if SYMBiFACE mouse is active) |
 
 ## Joystick / gamepad

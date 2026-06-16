@@ -8,6 +8,7 @@
 #include <strings.h>     /* strcasecmp */
 #include "config.h"
 #include "overlay.h"
+#include "host_mount.h"
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
@@ -600,6 +601,8 @@ int main(int argc, char *argv[]) {
     overlay_init(&overlay, &cfg, &cpc);
     SD_LOG("overlay_init OK");
 
+    HostMount host_mount = {0};   /* F10 toggle state; see host_mount.c */
+
     Monitor *monitor = monitor_create(&cpc);
     if (monitor_pty) {
         const char *pty_path = monitor_pty_open(monitor);
@@ -838,6 +841,29 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
+                } else if (ev.key.scancode == SDL_SCANCODE_F10) {
+                    /* Toggle host-side card browse: pause the guest, mount
+                     * every active FAT card image (M4 SD / IDE / Albireo)
+                     * under /run/user/$UID/1984/<label>/ and open the host
+                     * file manager. Press F10 again to unmount + cold-boot
+                     * so the guest's stale FAT cache is dropped on resume. */
+                    if (host_mount.active) {
+                        host_mount_close(&host_mount);
+                        cpc.paused = false;
+                        overlay.needs_cold_boot = true;
+                    } else if (host_mount_supported()) {
+                        cpc.paused = true;
+                        if (host_mount_open(&host_mount, &cfg)) {
+                            host_mount.active = true;
+                        } else {
+                            cpc.paused = false;
+                            fprintf(stderr,
+                                "F10: nothing to mount (no active FAT card image)\n");
+                        }
+                    } else {
+                        fprintf(stderr,
+                            "F10: needs libguestfs (guestmount, guestunmount) and xdg-open\n");
+                    }
                 } else if (ev.key.scancode == SDL_SCANCODE_F6) {
                     /* Toggle video capture. Auto-name in CWD when starting
                      * outside the overlay file picker. */
@@ -894,6 +920,17 @@ int main(int argc, char *argv[]) {
         }
 
         overlay_tick(&overlay);
+
+        /* Auto-finish F10 mount session if the user ejected the card from
+         * the file manager (Nautilus, Files, …). Same effect as a second
+         * F10 press: tear down anything that's still mounted, unpause,
+         * cold-boot to drop the guest's stale FAT cache. */
+        if (host_mount.active &&
+                host_mount_externally_unmounted(&host_mount)) {
+            host_mount_close(&host_mount);
+            cpc.paused = false;
+            overlay.needs_cold_boot = true;
+        }
 
         if (overlay.needs_cold_boot) {
             overlay.needs_cold_boot = false;
@@ -1012,7 +1049,21 @@ int main(int argc, char *argv[]) {
             if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))
                 videocap_stop();
         }
+        /* Paused-state visual: greyscale the frozen frame and re-composite
+         * it each iteration (cpc_frame early-returns when paused, so it
+         * stops calling display_upload itself — the back buffer would
+         * otherwise show undefined content after RenderPresent). The
+         * PAUSED label is drawn below after overlay_render so it ends
+         * up on top of everything. */
+        static bool prev_paused = false;
+        if (cpc.paused) {
+            if (!prev_paused) display_apply_greyscale(&cpc.display);
+            display_upload(&cpc.display);
+        }
+        prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
+        if (cpc.paused)
+            display_draw_paused_label(&cpc.display);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
          * Doubles as a visual marker that debug machinery is live. */
         if (g_debug_enabled) {

@@ -33,7 +33,8 @@ Each source file maps to one hardware component:
 | `src/monitor.c` / `monitor.h` | Memory monitor / debugger — 80×25 terminal window, commands, PTY interface |
 | `src/z80dis.c` / `z80dis.h` | Z80 disassembler — standalone, no external dependencies |
 | `src/joy.c` / `joy.h` | Joystick/gamepad input — SDL gamepad + raw joystick fallback, hot-plug |
-| `src/main.c` | Entry point — SDL init, event loop, F5/F9/F12/Ctrl+V handling |
+| `src/main.c` | Entry point — SDL init, event loop, F5/F9/F10/F12/Ctrl+V handling |
+| `src/host_mount.c` / `host_mount.h` | F10 toggle: pauses the guest and mounts every active FAT card image (M4 SD / IDE / Albireo) on the host so the user can drag files in / out. Backend cascade per card: `gnome-disk-image-mounter` → bare `udisksctl loop-setup`+`mount` → libguestfs `guestmount`. udisks mounts land in `/run/media/$USER/<label>/` as first-class GNOME removable volumes; the guestmount fallback uses `~/.cache/1984/mounts/`. Press F10 again, or eject the card from the file manager (polled via `findmnt` once per frame), to unmount. The main loop then sets `overlay.needs_cold_boot` so the guest's stale FAT cache is dropped on resume. Linux-only; non-Linux stubs return false from `host_mount_open`. Issue #142. |
 
 ---
 
