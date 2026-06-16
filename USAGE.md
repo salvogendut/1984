@@ -59,17 +59,21 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 
 ## Keyboard shortcuts
 
-| Key    | Action |
-|--------|--------|
-| F4     | Save screenshot (`<binary>_<timestamp>.ppm`) and play camera shutter sound |
-| F5     | Warm reset |
-| F6     | Toggle GIF screen recording (auto-named `1984-<timestamp>.gif` in CWD) |
-| F8     | Open/close memory monitor / debugger |
-| F9     | Open/close options overlay |
-| F10    | Mount the active card images (M4 SD / IDE / Albireo) on the host and open the file manager; press again to unmount and cold-boot. **Linux only**, needs `libguestfs-tools` (`guestmount`, `guestunmount`) and `xdg-utils` installed. |
-| F11    | Toggle fullscreen |
-| F12    | Quit |
-| Ctrl+V | Paste clipboard text into the emulator |
+| Key      | Action |
+|----------|--------|
+| F4       | Save screenshot (`<binary>_<timestamp>.ppm`) and play camera shutter sound |
+| F5       | Warm reset |
+| F6       | Toggle GIF screen recording (auto-named `1984-<timestamp>.gif` in CWD) |
+| F8       | Open/close memory monitor / debugger |
+| F9       | Open/close options overlay |
+| F10      | Mount the active card images (M4 SD / IDE / Albireo) on the host and open the file manager; press again to unmount and cold-boot. **Linux only**, needs `libguestfs-tools` (`guestmount`, `guestunmount`) and `xdg-utils` installed. |
+| F11      | Toggle fullscreen |
+| F12      | Quit |
+| Ctrl+V   | Paste clipboard text into the emulator |
+| Ctrl + + | Enlarge the window by one scale step (1× CPC native … 4×) |
+| Ctrl + − | Shrink the window by one scale step |
+
+A centred footer strip just above the LED bar shows the current model (`CPC 6128` / `CPC 664` / `CPC 464` in bold red) and the F-key hints, so you never need to leave the running emulator to remember a shortcut. The footer is drawn on top of the CPC display each frame and is visible in fullscreen too. The OS window title is just `1984`.
 
 ### F10 — browse card images on the host
 
@@ -332,6 +336,6 @@ albireo=false     # Albireo CPC expansion (CH376 USB host controller)
 albireo_image=    # Path to FAT16/FAT32 image used as the USB drive backing
 
 [display]
-scale=2           # 1, 2, or 3
+scale=1           # 1, 2, 3, or 4 — window starts at 768·scale × (576·scale + LED bar)
 fullscreen=false
 ```

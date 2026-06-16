@@ -33,7 +33,7 @@ Each source file maps to one hardware component:
 | `src/monitor.c` / `monitor.h` | Memory monitor / debugger — 80×25 terminal window, commands, PTY interface |
 | `src/z80dis.c` / `z80dis.h` | Z80 disassembler — standalone, no external dependencies |
 | `src/joy.c` / `joy.h` | Joystick/gamepad input — SDL gamepad + raw joystick fallback, hot-plug |
-| `src/main.c` | Entry point — SDL init, event loop, F5/F9/F10/F12/Ctrl+V handling |
+| `src/main.c` | Entry point — SDL init, event loop, F4–F12 / Ctrl+V / Ctrl± window-scale handling, in-window footer draw |
 | `src/host_mount.c` / `host_mount.h` | F10 toggle: pauses the guest and mounts every active FAT card image (M4 SD / IDE / Albireo) on the host so the user can drag files in / out. Backend cascade per card: `gnome-disk-image-mounter` → bare `udisksctl loop-setup`+`mount` → libguestfs `guestmount`. udisks mounts land in `/run/media/$USER/<label>/` as first-class GNOME removable volumes; the guestmount fallback uses `~/.cache/1984/mounts/`. Press F10 again, or eject the card from the file manager (polled via `findmnt` once per frame), to unmount. The main loop then sets `overlay.needs_cold_boot` so the guest's stale FAT cache is dropped on resume. Linux-only; non-Linux stubs return false from `host_mount_open`. Issue #142. |
 
 ---
@@ -45,7 +45,8 @@ The frame render is split into two phases to allow the overlay to composite on t
 1. **`cpc_frame()`** — runs the CPU and CRTC for one PAL frame (80,000 cycles), writes pixels into `display.pixels[]`, then renders 882 audio samples from the PSG and pushes them to the SDL audio stream
 2. **`display_upload()`** — uploads the pixel buffer to the SDL texture, clears the renderer, and blits the texture letterboxed into the window
 3. **`overlay_render()`** — draws the overlay on top of the renderer (if visible), using `SDL_SetRenderScale` at 1.5× for the bitmap font
-4. **`display_flip()`** — calls `SDL_RenderPresent`
+4. **In-window footer** (`src/main.c`) — draws a dark strip just above the LED bar with the model name in bold red and the F-key hint list in light grey, centred horizontally. Uses `SDL_RenderDebugText` at native pixel size (no scale-up; mirrors the bottom-left DBG/fps counter pattern). The OS window title is just `1984` so the footer is the single source of truth for what model is running and which F-keys do what.
+5. **`display_flip()`** — calls `SDL_RenderPresent`
 
 ---
 
