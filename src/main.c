@@ -8,6 +8,7 @@
 #include <strings.h>     /* strcasecmp */
 #include "config.h"
 #include "overlay.h"
+#include "host_mount.h"
 #include "cpc.h"
 #include "mem.h"
 #include "paste.h"
@@ -600,6 +601,8 @@ int main(int argc, char *argv[]) {
     overlay_init(&overlay, &cfg, &cpc);
     SD_LOG("overlay_init OK");
 
+    HostMount host_mount = {0};   /* F10 toggle state; see host_mount.c */
+
     Monitor *monitor = monitor_create(&cpc);
     if (monitor_pty) {
         const char *pty_path = monitor_pty_open(monitor);
@@ -838,6 +841,29 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
+                } else if (ev.key.scancode == SDL_SCANCODE_F10) {
+                    /* Toggle host-side card browse: pause the guest, mount
+                     * every active FAT card image (M4 SD / IDE / Albireo)
+                     * under /run/user/$UID/1984/<label>/ and open the host
+                     * file manager. Press F10 again to unmount + cold-boot
+                     * so the guest's stale FAT cache is dropped on resume. */
+                    if (host_mount.active) {
+                        host_mount_close(&host_mount);
+                        cpc.paused = false;
+                        overlay.needs_cold_boot = true;
+                    } else if (host_mount_supported()) {
+                        cpc.paused = true;
+                        if (host_mount_open(&host_mount, &cfg)) {
+                            host_mount.active = true;
+                        } else {
+                            cpc.paused = false;
+                            fprintf(stderr,
+                                "F10: nothing to mount (no active FAT card image)\n");
+                        }
+                    } else {
+                        fprintf(stderr,
+                            "F10: needs libguestfs (guestmount, guestunmount) and xdg-open\n");
+                    }
                 } else if (ev.key.scancode == SDL_SCANCODE_F6) {
                     /* Toggle video capture. Auto-name in CWD when starting
                      * outside the overlay file picker. */

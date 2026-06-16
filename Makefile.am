@@ -27,6 +27,7 @@ bin_PROGRAMS = 1984
 	src/ch376.c \
 	src/gifcap.c \
 	src/webmcap.c \
+	src/host_mount.c \
 	src/leds.c \
 	src/m4.c \
 	src/symbnet.c \
@@ -50,6 +51,7 @@ noinst_HEADERS = \
 	src/gate_array.h \
 	src/gifcap.h \
 	src/webmcap.h \
+	src/host_mount.h \
 	src/ide.h \
 	src/joy.h \
 	src/kbd.h \

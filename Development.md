@@ -34,6 +34,7 @@ Each source file maps to one hardware component:
 | `src/z80dis.c` / `z80dis.h` | Z80 disassembler — standalone, no external dependencies |
 | `src/joy.c` / `joy.h` | Joystick/gamepad input — SDL gamepad + raw joystick fallback, hot-plug |
 | `src/main.c` | Entry point — SDL init, event loop, F5/F9/F12/Ctrl+V handling |
+| `src/host_mount.c` / `host_mount.h` | F10 toggle: pauses the guest, calls `guestmount` on every active FAT card image (M4 SD / IDE / Albireo) under `/run/user/$UID/1984/`, opens the host file manager via `xdg-open`. Second F10 unmounts and the main loop cold-boots so the guest's stale FAT cache is dropped. Linux-only; non-Linux stubs return false from `host_mount_open`. See issue #142. |
 
 ---
 

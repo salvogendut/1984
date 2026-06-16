@@ -59,9 +59,18 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 | F6     | Toggle GIF screen recording (auto-named `1984-<timestamp>.gif` in CWD) |
 | F8     | Open/close memory monitor / debugger |
 | F9     | Open/close options overlay |
+| F10    | Mount the active card images (M4 SD / IDE / Albireo) on the host and open the file manager; press again to unmount and cold-boot. **Linux only**, needs `libguestfs-tools` (`guestmount`, `guestunmount`) and `xdg-utils` installed. |
 | F11    | Toggle fullscreen |
 | F12    | Quit |
 | Ctrl+V | Paste clipboard text into the emulator |
+
+### F10 — browse card images on the host
+
+Pressing **F10** pauses the emulated CPC and FUSE-mounts every active card image under `/run/user/$UID/1984/{m4,ide,albireo}/`, then opens that root in the host file manager (via `xdg-open`). Drag files in or out as you would with any folder. Press **F10 again** to unmount, sync, and cold-boot the emulator so the guest re-reads the FAT cleanly. Cold-boot is mandatory because the guest's in-RAM FAT cache would otherwise overwrite your changes on the next sync.
+
+Floppies (`.DSK`) are not supported (AMSDOS, not FAT — `guestmount` can't read them). M4 in directory mode (`m4_path` set, no `m4_image`) is skipped since the host directory is already directly accessible.
+
+On Fedora install with `sudo dnf install libguestfs-tools xdg-utils`; on Debian/Ubuntu `sudo apt install libguestfs-tools xdg-utils`. If either tool is missing, F10 logs to stderr and is otherwise a no-op.
 | Ctrl+Enter | Release captured mouse (if SYMBiFACE mouse is active) |
 
 ## Joystick / gamepad
