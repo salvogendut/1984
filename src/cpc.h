@@ -119,7 +119,7 @@ void videocap_stop(void);
 bool videocap_active(void);
 int  videocap_frame_count(void);
 
-int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic);
+int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_frame(CPC *cpc);        /* run one video frame (~20 ms) */

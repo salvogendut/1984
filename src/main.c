@@ -210,9 +210,11 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
 }
 
-#define TITLE_NORMAL_464  "CPC 464  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
-#define TITLE_NORMAL_664  "CPC 664  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
-#define TITLE_NORMAL_6128 "CPC 6128  |  F4=screenshot  F5=reset  F6=record  F8=monitor  F9=options  F11=fullscreen"
+/* OS title is just "1984" now; the model name and F-key hints render
+ * inside the SDL window in the top-left header drawn each frame. */
+#define TITLE_NORMAL_464  "1984"
+#define TITLE_NORMAL_664  "1984"
+#define TITLE_NORMAL_6128 "1984"
 #define TITLE_CAPTURED    "Mouse captured  |  Ctrl+Enter to release"
 
 static const char *title_for_model(CpcModel m) {
@@ -476,7 +478,7 @@ int main(int argc, char *argv[]) {
      * which exceeds the default 1 MB thread stack on Windows. BSS keeps
      * the same scope without stack pressure or heap bookkeeping. */
     static CPC cpc;
-    if (cpc_init(&cpc, cfg.model, cfg.rom_os, cfg.rom_basic) < 0) {
+    if (cpc_init(&cpc, cfg.model, cfg.rom_os, cfg.rom_basic, cfg.scale) < 0) {
         SD_LOG("cpc_init FAILED (rom_os=%s rom_basic=%s)", cfg.rom_os, cfg.rom_basic);
         fprintf(stderr, "Failed to initialise CPC (check ROM paths in ~/.config/1984/1984.conf)\n");
         SDL_Quit();
@@ -816,6 +818,24 @@ int main(int argc, char *argv[]) {
                 continue;
             /* Pass remaining key events to the CPC */
             if (ev.type == SDL_EVENT_KEY_DOWN) {
+                /* Ctrl + or Ctrl - : step the window size by one integer
+                 * scale unit (1× CPC native … 4×). The SDL key for "=/+"
+                 * is EQUALS regardless of shift state; KP_PLUS / KP_MINUS
+                 * cover the numeric keypad. */
+                bool ctrl = (ev.key.mod & SDL_KMOD_CTRL) != 0;
+                bool key_plus  = (ev.key.scancode == SDL_SCANCODE_EQUALS
+                               || ev.key.scancode == SDL_SCANCODE_KP_PLUS);
+                bool key_minus = (ev.key.scancode == SDL_SCANCODE_MINUS
+                               || ev.key.scancode == SDL_SCANCODE_KP_MINUS);
+                if (ctrl && (key_plus || key_minus)) {
+                    cfg.scale += key_plus ? 1 : -1;
+                    if (cfg.scale < 1) cfg.scale = 1;
+                    if (cfg.scale > 4) cfg.scale = 4;
+                    SDL_SetWindowSize(cpc.display.window,
+                                      WINDOW_W * cfg.scale,
+                                      WINDOW_H * cfg.scale + LED_BAR_HEIGHT);
+                    continue;
+                }
                 if (ev.key.scancode == SDL_SCANCODE_F12) {
                     running = false;
                 } else if (ev.key.scancode == SDL_SCANCODE_F8) {
@@ -1111,6 +1131,45 @@ int main(int argc, char *argv[]) {
             SDL_RenderDebugText(cpc.display.renderer, 6.0f,
                                 (float)(wh - bar_h - 13), buf);
             (void)ww;
+        }
+        /* In-window footer strip: a dark band just above the LED bar
+         * with the model name in red+bold and F-key hints in white.
+         * The OS title bar stays minimal ("1984"). */
+        {
+            const char *model_str = "CPC 6128";
+            if (cpc.model == MODEL_464) model_str = "CPC 464";
+            else if (cpc.model == MODEL_664) model_str = "CPC 664";
+            const char *keys =
+                "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
+                "F9=options  F10=open image  F11=fullscreen  F12=quit";
+
+            int hdr_ww, hdr_wh;
+            SDL_GetWindowSize(cpc.display.window, &hdr_ww, &hdr_wh);
+            const float strip_h = 16.0f;
+            const float led_bar = 24.0f; /* LED_BAR_HEIGHT */
+            float strip_y = (float)hdr_wh - led_bar - strip_h;
+            float text_y  = strip_y + 4.0f;
+            SDL_FRect strip = { 0.0f, strip_y, (float)hdr_ww, strip_h };
+            SDL_SetRenderDrawBlendMode(cpc.display.renderer, SDL_BLENDMODE_NONE);
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0x10, 0x10, 0x14, 255);
+            SDL_RenderFillRect(cpc.display.renderer, &strip);
+
+            /* Centre the model+keys block horizontally. SDL3's debug
+             * font cell is 8 px wide. */
+            float text_w = (float)(strlen(model_str) + strlen(keys)) * 8.0f;
+            float model_x = ((float)hdr_ww - text_w) * 0.5f;
+            if (model_x < 0.0f) model_x = 0.0f;
+            float keys_x  = model_x + (float)strlen(model_str) * 8.0f;
+
+            /* Model name in bold-red: render twice with 1-px X offset so
+             * the SDL debug font looks heavier. */
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0xFF, 0x40, 0x40, 255);
+            SDL_RenderDebugText(cpc.display.renderer, model_x,        text_y, model_str);
+            SDL_RenderDebugText(cpc.display.renderer, model_x + 1.0f, text_y, model_str);
+
+            /* F-key hints: light grey, drawn right after the model string. */
+            SDL_SetRenderDrawColor(cpc.display.renderer, 0xE0, 0xE0, 0xE0, 255);
+            SDL_RenderDebugText(cpc.display.renderer, keys_x, text_y, keys);
         }
         display_flip(&cpc.display);
         monitor_render(monitor);

@@ -66,7 +66,7 @@ static void rom_cfg_path(const char *file, char *out, size_t size) {
 
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
-    cfg->scale     = 2;
+    cfg->scale     = 1;
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
@@ -396,8 +396,8 @@ int config_load_from(Config *cfg, const char *path_override) {
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
                 int sc = atoi(val);
-                if (sc >= 1 && sc <= 3) cfg->scale = sc;
-                else { fprintf(stderr, "1984.conf:%d: scale must be 1, 2, or 3\n", lineno); rc = -1; }
+                if (sc >= 1 && sc <= 4) cfg->scale = sc;
+                else { fprintf(stderr, "1984.conf:%d: scale must be 1, 2, 3, or 4\n", lineno); rc = -1; }
             } else if (!strcmp(key, "fullscreen")) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->fullscreen = b;

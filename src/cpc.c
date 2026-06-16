@@ -588,7 +588,7 @@ static bool g_pen_tables_built;
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
 
-int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic) {
+int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
     cpc->model = model;
@@ -631,19 +631,11 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->bus.ticked_in_step = &cpc->bus_ticked_in_step;
     cpc->bus.ctx            = cpc;
 
-    const char *title;
-    switch (model) {
-        case MODEL_464:
-            title = "CPC 464  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-        case MODEL_664:
-            title = "CPC 664  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-        default:
-            title = "CPC 6128  |  F4 = screenshot   F5 = reset   F8 = monitor   F9 = options   F11 = fullscreen";
-            break;
-    }
-    if (display_init(&cpc->display, title) < 0)
+    /* OS title is just "1984"; the model name and F-key hints are drawn
+     * inside the window each frame (top-left header). */
+    (void)model;
+    const char *title = "1984";
+    if (display_init(&cpc->display, title, scale) < 0)
         return -1;
 
     SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };
