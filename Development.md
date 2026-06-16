@@ -104,8 +104,10 @@ The 32-slot `rom_ext[]` array allows loading any expansion ROM at any slot witho
 | Address bits | Device | Port example |
 |---|---|---|
 | A15=0, A14=1 | Gate Array | 0x7Fxx |
-| A14=0, A8=0 | CRTC select | 0xBCxx |
-| A14=0, A8=1 | CRTC write/read | 0xBDxx / 0xBFxx |
+| A14=0, A9=0, A8=0 | CRTC select | 0xBCxx |
+| A14=0, A9=0, A8=1 | CRTC write | 0xBDxx |
+| A14=0, A9=1, A8=0 | CRTC status read | 0xBExx |
+| A14=0, A9=1, A8=1 | CRTC data read | 0xBFxx |
 | A11=0 | PPI (8255) | 0xF4–0xF7xx |
 | hi=0xFA | FDC motor control | 0xFAxx |
 | hi=0xFB | FDC status / data | 0xFB7E / 0xFB7F |
@@ -466,6 +468,22 @@ Most commands raise an "interrupt" by setting `int_pending = true` and stashing 
 **Not implemented (yet):** `FILE_ERASE`, `DIR_INFO_SAVE`, the SC16C650B UART side at `0xFEB0–7`, and CH376 interrupts routed to NMI. UNIDOS polls the status register instead of relying on NMI delivery, so this last one is invisible to the guest.
 
 **Tracing.** `--trace-albireo` enables `ch376_trace = 1`; every command is logged with its mnemonic and parameter bytes (or the filename for `SET_FILE_NAME`), and every interrupt status code is logged on the next line. This is the primary debugging aid for diagnosing UNIDOS command-flow regressions — most bugs found during development surfaced as either an unexpected status code or a payload mismatch visible in the trace.
+
+---
+
+## FUZIX (ajcasado `cpcsme` port)
+
+Boots to a multi-user shell on a 6128 + ≥512 KB + SymbIface IDE. Step-by-step recipe and what's known about the platform layer are in [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md).
+
+Two emulator bugs surfaced during bring-up — both root-caused to **port decoding that was too loose** relative to real hardware:
+
+- **`1a3393a` — FDC at `0xFB**` shared the upper half with peripherals.** Real CPC decodes the µPD765 at `0xFB7E/0xFB7F` only; the upper half (`lo bit 7 = 1`) is free for expansion peripherals. We used to claim the entire `0xFB**` range, so FUZIX's Usifac probe at `0xFBD8` read the FDC main status register instead of `0xFF` and the driver hung in `usifac_flush()` polling a chip that wasn't there. Fix: gate the FDC read on `!(lo & 0x80)`.
+- **`a3877ee` — CRTC write decode ignored `A9`.** Real CPC CRTC chip-select is `A14=0`; `A9` then selects the four functions (select / write / status read / data read). Our write path checked only `A14` and `A8`, so an `OUT` to any port with `A14=0,A8=1` was treated as a register write — even `A9=1` read ports. FUZIX's SDCC port helper at kernel `F995` issues `OUT (C),B` with `BC=0x03FF` (A14=0, A9=1, A8=1 — the CRTC data-read port) for unrelated bus work; real hardware ignores it, we clobbered `R12 := 0x03`, pointed the screen at block 0 and produced the band-of-pixels-per-text-row corruption first captured in `1984-20260616-153532.gif`. Fix: add `&& !(hi & 0x02)` (A9=0) to the CRTC write-path test.
+
+Lesson worth remembering for the next OS port: **if a guest writes a CPC peripheral port we don't expect to see, suspect over-broad decode before suspecting guest behaviour.** Two debug hooks added during this investigation are kept gated behind `dbg_getenv()` for next time:
+
+- `DUMP_VIDEO_RAM=/path/file` — writes physical RAM + the 18 CRTC registers once per frame (last write wins; quit on the bad frame and the file captures it).
+- `ONE_K_TRACE_CRTC_REGS=1` — `[CRTC] PC=… R… = 0x… BC=… HL=… DE=… AF=…` for every register write; the CPU register dump is what isolated the `BC=0x03FF` smoking gun.
 
 ---
 

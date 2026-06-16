@@ -48,6 +48,13 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 
 # Multiple ROM slots can be specified
 1984 --rom-slot=5:~/.config/1984/roms/TOOLKIT.ROM --rom-slot=8:~/.config/1984/roms/OTHER.ROM
+
+# Boot FUZIX (ajcasado port). Needs 6128 + ≥512 KB + SymbIface IDE pointed at disk.img;
+# at the bootdev: prompt type hda1, then log in as root.
+1984 --model=6128 --memory=512 \
+     --disk-a=~/Downloads/fuzix-cpc/fuzix.dsk \
+     --disk-b=~/Downloads/fuzix-cpc/root.dsk \
+     --autostart=fuzix
 ```
 
 ## Keyboard shortcuts
