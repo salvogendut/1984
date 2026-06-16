@@ -41,7 +41,29 @@ bool host_mount_supported(void) {
 #ifdef __linux__
 
 static void build_root(char *out, size_t sz) {
-    snprintf(out, sz, "/run/user/%u/1984", (unsigned)getuid());
+    /* Mount under the user's home rather than /run/user/$UID. GNOME Files
+     * (Nautilus) treats /run/user/* with a different SELinux context and
+     * silently refuses pastes from the GUI even when the underlying FUSE
+     * mount is fully writable from the shell. ~/.cache is XDG-spec for
+     * ephemeral state and inherits user_home_t — Nautilus is happy. */
+    const char *home = getenv("HOME");
+    if (!home || !home[0]) home = ".";
+    snprintf(out, sz, "%s/.cache/1984/mounts", home);
+}
+
+/* mkdir -p equivalent. Returns true if the directory exists / was made. */
+static bool mkdir_p(const char *path) {
+    char tmp[256];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            mkdir(tmp, 0755);
+            *p = '/';
+        }
+    }
+    mkdir(tmp, 0755);
+    return access(path, W_OK) == 0;
 }
 
 /* Try to mount `image` at `path` via guestmount. Returns true on success.
@@ -71,7 +93,11 @@ static bool guestmount_image(const char *image, const char *path) {
      * non-server users actually want. */
     unsigned uid = (unsigned)getuid();
     unsigned gid = (unsigned)getgid();
-    for (int try_allow_other = 1; try_allow_other >= 0; try_allow_other--) {
+    /* Try WITHOUT allow_other first — native Nautilus refuses GUI pastes
+     * on FUSE mounts that advertise allow_other (treats them as foreign
+     * filesystems). The Flatpak-sandboxed file-manager case is rare and
+     * is still covered by the fallback. */
+    for (int try_allow_other = 0; try_allow_other <= 1; try_allow_other++) {
         for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
             snprintf(cmd, sizeof(cmd),
                      "LIBGUESTFS_BACKEND=direct "
@@ -158,8 +184,7 @@ bool host_mount_open(HostMount *hm, const Config *cfg) {
 
     if (hm->count == 0) return false;
 
-    /* mkdir -p root */
-    if (mkdir(hm->root, 0700) != 0 && access(hm->root, W_OK) != 0) {
+    if (!mkdir_p(hm->root)) {
         fprintf(stderr, "host_mount: cannot create %s\n", hm->root);
         hm->count = 0;
         return false;
