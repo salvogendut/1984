@@ -61,12 +61,20 @@ static bool guestmount_image(const char *image, const char *path) {
      *                   sandbox/namespace (Flatpak Nautilus, etc.). FUSE
      *                   only honours this if /etc/fuse.conf has
      *                   `user_allow_other`; if it doesn't, the option is
-     *                   rejected, so we try with-and-without. */
+     *                   rejected, so we try with-and-without.
+     *
+     * LIBGUESTFS_BACKEND=direct forces libguestfs to spawn qemu itself
+     * rather than going through libvirt. Fedora ships libguestfs with the
+     * libvirt backend by default, which fails on most desktops (libvirtd
+     * permissions, qemu-system-x86_64 stdin closure, …); the direct
+     * backend is simpler, doesn't need libvirtd running, and is what most
+     * non-server users actually want. */
     unsigned uid = (unsigned)getuid();
     unsigned gid = (unsigned)getgid();
     for (int try_allow_other = 1; try_allow_other >= 0; try_allow_other--) {
         for (size_t i = 0; i < sizeof(mount_specs)/sizeof(mount_specs[0]); i++) {
             snprintf(cmd, sizeof(cmd),
+                     "LIBGUESTFS_BACKEND=direct "
                      "%s -a '%s' -m %s --rw "
                      "-o uid=%u,gid=%u,umask=0%s '%s' 2>&1",
                      GUESTMOUNT_BIN, image, mount_specs[i], uid, gid,
@@ -74,7 +82,7 @@ static bool guestmount_image(const char *image, const char *path) {
                      path);
             FILE *p = popen(cmd, "r");
             if (!p) continue;
-            char errbuf[256] = {0};
+            char errbuf[512] = {0};
             (void)fread(errbuf, 1, sizeof(errbuf) - 1, p);
             int rc = pclose(p);
             if (rc == 0) return true;
