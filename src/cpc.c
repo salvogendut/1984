@@ -254,8 +254,13 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (!(hi & 0x08)) {
         result = ppi_read(&cpc->ppi, (port >> 8) & 0x03);
     }
-    /* FDC: hi=0xFB → status (lo bit 0=0) or data (lo bit 0=1) */
-    else if (hi == 0xFB) {
+    /* FDC: hi=0xFB AND lo bit 7=0 → status (lo bit 0=0) or data (lo bit 0=1).
+     * Real CPC hardware decodes the FDC at 0xFB7E/0xFB7F only; the upper
+     * half of 0xFB** is free for peripherals like Usifac (0xFBD0/D1).
+     * Without the lo-bit-7 mask FUZIX's Usifac probe reads the FDC main
+     * status register instead of 0xFF, thinks Usifac is present, and
+     * hangs in usifac_flush(). */
+    else if (hi == 0xFB && !(port & 0x80)) {
         u8 lo = port & 0xFF;
         result = (lo & 0x01) ? fdc_read_data(&cpc->fdc)
                              : fdc_read_status(&cpc->fdc);
