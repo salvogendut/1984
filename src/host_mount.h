@@ -39,3 +39,8 @@ bool host_mount_open(HostMount *hm, const Config *cfg);
 
 /* Unmount every populated slot. Idempotent. */
 bool host_mount_close(HostMount *hm);
+
+/* Poll once per frame while the mount is active: return true if the user
+ * ejected any card from the host file manager (Nautilus etc.) so the
+ * caller can finish the close-and-cold-boot cycle automatically. */
+bool host_mount_externally_unmounted(const HostMount *hm);

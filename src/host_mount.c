@@ -398,6 +398,23 @@ bool host_mount_open(HostMount *hm, const Config *cfg) {
     return true;
 }
 
+bool host_mount_externally_unmounted(const HostMount *hm) {
+    for (int i = 0; i < hm->count; i++) {
+        const HostMountSlot *s = &hm->slots[i];
+        if (!s->path[0]) continue;
+        /* findmnt returns 0 only if the path is currently a mount point.
+         * Nautilus eject removes the entry; we then know the user is done. */
+        char cmd[512], buf[256];
+        snprintf(cmd, sizeof(cmd),
+                 "findmnt -n --target '%s' -o TARGET 2>/dev/null", s->path);
+        if (run_capture(cmd, buf, sizeof(buf)) != 0) return true;
+        size_t n = strlen(buf);
+        while (n && (buf[n-1] == '\n' || buf[n-1] == ' ')) buf[--n] = '\0';
+        if (strcmp(buf, s->path) != 0) return true;
+    }
+    return false;
+}
+
 bool host_mount_close(HostMount *hm) {
     for (int i = 0; i < hm->count; i++) {
         HostMountSlot *s = &hm->slots[i];
@@ -424,6 +441,11 @@ bool host_mount_open(HostMount *hm, const Config *cfg) {
 bool host_mount_close(HostMount *hm) {
     (void)hm;
     return true;
+}
+
+bool host_mount_externally_unmounted(const HostMount *hm) {
+    (void)hm;
+    return false;
 }
 
 #endif

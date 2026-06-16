@@ -921,6 +921,17 @@ int main(int argc, char *argv[]) {
 
         overlay_tick(&overlay);
 
+        /* Auto-finish F10 mount session if the user ejected the card from
+         * the file manager (Nautilus, Files, …). Same effect as a second
+         * F10 press: tear down anything that's still mounted, unpause,
+         * cold-boot to drop the guest's stale FAT cache. */
+        if (host_mount.active &&
+                host_mount_externally_unmounted(&host_mount)) {
+            host_mount_close(&host_mount);
+            cpc.paused = false;
+            overlay.needs_cold_boot = true;
+        }
+
         if (overlay.needs_cold_boot) {
             overlay.needs_cold_boot = false;
             cpc.model = cfg.model;
