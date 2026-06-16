@@ -84,6 +84,7 @@ static const char *cmd_name(u8 c) {
     case 0x3E: return "DISK_CAPACITY";
     case 0x3F: return "DISK_QUERY";
     case 0x40: return "DIR_CREATE";
+    case 0x51: return "DISK_INIT";
     case 0x4A: return "SEC_LOCATE";
     case 0x4B: return "SEC_READ";
     case 0x4C: return "SEC_WRITE";
@@ -420,6 +421,7 @@ static int param_count_for(u8 cmd) {
     case 0x3E: return 0;   /* DISK_CAPACITY */
     case 0x3F: return 0;   /* DISK_QUERY */
     case 0x45: return 1;   /* SET_ADDRESS — 1 byte */
+    case 0x51: return 0;   /* DISK_INIT (FUZIX path) */
     case 0x49: return 1;   /* SET_CONFIG  — 1 byte */
     case 0x4E: return 2;   /* ISSUE_TKN_X — token + endpoint */
     case 0x54: return 5;   /* DISK_READ  — LBA[4] + count[1] */
@@ -463,6 +465,18 @@ static void execute(CH376 *ch) {
     case 0x15: /* SET_USB_MODE — host reads CMD_RET_SUCCESS from DATA */
         ch->usb_mode = p[0];
         set_oneshot(ch, 0x51);
+        /* Real chip raises INT when entering host mode (mode>=0x04) — the
+         * code path that signals a USB-storage device is now attached.
+         * FUZIX's probe polls INT here and expects USB_INT_CONNECT before
+         * it will issue DISK_INIT; UNIDOS doesn't poll, so unaffected. */
+        if (p[0] >= 0x04)
+            raise_int(ch, USB_INT_CONNECT);
+        break;
+
+    case 0x51: /* DISK_INIT — initialise attached USB-MSC device. We
+                  always have a backing image; report SUCCESS so FUZIX
+                  registers the device with tinydisk. */
+        raise_int(ch, ch->mounted ? USB_INT_SUCCESS : USB_INT_DISK_ERR);
         break;
 
     case 0x22: /* GET_STATUS */

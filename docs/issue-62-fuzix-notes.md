@@ -41,6 +41,23 @@ At `bootdev:` type `hda1` ⏎. Then at `login:` type `root` ⏎ — no password 
 |---|---|---|
 | `1a3393a` | FDC port decode now requires `lo bit 7 = 0` | Real FDC lives at `0xFB7E/0xFB7F`; we used to claim the whole `0xFB**` range. FUZIX's Usifac probe at `0xFBD8` was reading the FDC main status register instead of `0xFF`, the driver thought a Usifac chip was present, and hung in `usifac_flush()`. |
 | `a3877ee` | CRTC port decode now also requires `A9=0` for the write side | Real CPC CRTC chip-select is `A14=0`; `A9` selects function: `A9=0,A8=0` → select (`BCxx`), `A9=0,A8=1` → write (`BDxx`), `A9=1` → read side (`BExx/BFxx`). Our old decode latched any `A14=0,A8=1` port as a write. FUZIX's SDCC port helper at kernel `F995` issues `OUT (C),B` with `BC=0x03FF` (`A14=0,A9=1,A8=1` — read port) for unrelated bus work; on real hardware the CRTC ignores it, but we clobbered `R12 := 0x03`, pointed the screen at block 0, and produced the band-of-pixels-per-text-row corruption captured in `1984-20260616-153532.gif`. |
+| `020e9a1` | CH376 raises INT# on host-mode `SET_USB_MODE` + implements `DISK_INIT` (0x51) | UNIDOS polls the DATA port for one-shot replies; FUZIX's `ch375` driver polls the STATUS port for INT# going active, then issues `GET_STATUS` to read the interrupt code. Without `int_pending` set on the host-enable path the probe printed `ch375: timeout, rstat=80`. Now Albireo (CH376) is a valid FUZIX boot device — see "Booting from Albireo" below. |
+
+## Booting from Albireo (CH376)
+
+Point `albireo_image` in `~/.config/1984/1984.conf` at a FUZIX `disk.img` (the same partitioned image SymbIface IDE uses):
+
+```
+mx4=true
+albireo=true
+albireo_image=~/Downloads/fuzix-cpc/fuzix.img
+```
+
+FUZIX's `ch375_probe` finds the chip at `0xFE80`, prints `ch375: version 43` / `ch376: firmware version 3`, then registers it via `td_register` and enumerates the MBR. With `disk.img` as the backing file you get `hda: hda1 hda2 hda3 hda4`. At the `bootdev:` prompt type `hda1`.
+
+**Keep a pristine copy.** FUZIX filesystems are easy to dirty if the guest isn't cleanly shut down (`halt` from the shell). Keep `fuzix.img` as the master and point 1984's config at a working copy (`cp fuzix.img fuzix-work.img`) so you can revert when fsck loses patience.
+
+If both SymbIface IDE and Albireo point at the same file FUZIX will only register the first one it sees — `ch375_probe` runs before `ide_probe` so Albireo wins and IDE prints `0000 : - absent`. That's expected; if you need both at the same time use separate images.
 
 ## What we cross-checked along the way (still useful as reference)
 
