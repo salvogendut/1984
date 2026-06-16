@@ -55,6 +55,11 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
      --disk-a=~/Downloads/fuzix-cpc/fuzix.dsk \
      --disk-b=~/Downloads/fuzix-cpc/root.dsk \
      --autostart=fuzix
+
+# FUZIX also boots from an Albireo (CH376) USB image — point albireo_image at
+# the same disk.img in ~/.config/1984/1984.conf and FUZIX registers it as hda
+# (hda1–hda4). Keep a pristine copy of disk.img and work on a copy; FUZIX
+# filesystems are easy to dirty if the guest isn't shut down cleanly.
 ```
 
 ## Keyboard shortcuts
