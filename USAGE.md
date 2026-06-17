@@ -265,6 +265,8 @@ Press **F8** to open a separate 80×25 green-phosphor terminal window. All comma
 | `M <addr> [<end>]` | Hex + ASCII dump (page default; ASCII in reverse video) |
 | `B [<addr>]` | Set a breakpoint / list all breakpoints |
 | `BC <n>` | Clear breakpoint slot n (0 – 15) |
+| `S [<name>]` | Show the symbol+offset for the current PC, or jump-disassemble at `<name>` (requires `--symbols`) |
+| `BS <name>` | Set a breakpoint at the address of `<name>` (requires `--symbols`) |
 | `N` | Single-step one instruction (when paused) |
 | `G` | Resume execution |
 | `GA` | Gate Array: screen mode + all 16 inks |

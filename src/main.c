@@ -13,6 +13,7 @@
 #include "mem.h"
 #include "paste.h"
 #include "kbd_pty.h"
+#include "symbols.h"
 #include "screen_text.h"
 #include "joy.h"
 #include "net4cpc.h"
@@ -272,6 +273,10 @@ static void usage(const char *prog, int code) {
         "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
         "  --gif-out=PATH      Record a GIF from boot (finalised on exit; pairs with --exit-after)\n"
         "  --exit-after=N      Quit after frame N (deterministic headless capture)\n"
+        "  --symbols=PATH      Load an SDCC .map file and annotate the disassembler/monitor\n"
+        "                      output with the closest preceding symbol. Repeatable.\n"
+        "                      Use --symbols=HEX:PATH to apply the map only when the live\n"
+        "                      RAM bank (GA MMR) equals HEX, useful for paged OSes like FUZIX.\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  --kbd-pty           Open a PTY that injects writes as keystrokes and streams\n"
         "                      the firmware text-out (&BB5A) for external test harnesses\n"
@@ -385,6 +390,26 @@ int main(int argc, char *argv[]) {
                 return 2;
             }
             memory_override = kb;
+        } else if (strncmp(argv[i], "--symbols=", 10) == 0 && argv[i][10] != '\0') {
+            /* Two forms:
+             *   --symbols=PATH               (matches any MMR)
+             *   --symbols=HEX:PATH           (only when ram_bank == HEX)
+             * Repeatable. */
+            const char *arg = argv[i] + 10;
+            const char *colon = strchr(arg, ':');
+            int mmr = SYMBOLS_ANY_MMR;
+            const char *path = arg;
+            if (colon) {
+                /* Try parsing the prefix as a hex byte. If it fails (e.g.
+                 * a Windows path like C:\), fall back to "any MMR". */
+                char *endp = NULL;
+                long v = strtol(arg, &endp, 16);
+                if (endp == colon && v >= 0 && v <= 0xFF) {
+                    mmr  = (int)v;
+                    path = colon + 1;
+                }
+            }
+            symbols_load(path, mmr);
         } else if (strcmp(argv[i], "--monitor-pty") == 0) {
             monitor_pty = true;
         } else if (strcmp(argv[i], "--kbd-pty") == 0) {
