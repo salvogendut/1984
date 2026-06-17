@@ -76,6 +76,8 @@ void config_defaults(Config *cfg) {
     snprintf(cfg->net4cpc_tap_netmask,    sizeof(cfg->net4cpc_tap_netmask),    "255.255.255.0");
     snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "10.0.0.100");
     snprintf(cfg->net4cpc_tap_lease_end,  sizeof(cfg->net4cpc_tap_lease_end),  "10.0.0.150");
+    snprintf(cfg->usifac_backend, sizeof(cfg->usifac_backend), "pty");
+    cfg->usifac_tcp_port = 4001;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -180,7 +182,10 @@ static void config_create_default(const char *path, const char *home) {
         "m4=false\n"
         "m4_path=\n"
         "m4_image=\n"
-        "ulifac=false\n"
+        "# USIfAC II serial interface (port &FBD0/D1)\n"
+        "usifac=false\n"
+        "usifac_backend=pty\n"
+        "usifac_tcp_port=4001\n"
         "net4cpc=false\n"
         "net4cpc_tap=false\n"
         "net4cpc_tap_host_ip=10.0.0.1\n"
@@ -350,8 +355,26 @@ int config_load_from(Config *cfg, const char *path_override) {
                 snprintf(cfg->m4_path, CONFIG_PATH_MAX, "%s", val);
             } else if (!strcmp(key, "m4_image")) {
                 snprintf(cfg->m4_image, CONFIG_PATH_MAX, "%s", val);
+            } else if (!strcmp(key, "usifac")) {
+                if (parse_bool(val, &b)) cfg->usifac = b;
+                else { fprintf(stderr, "1984.conf:%d: usifac must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "usifac_backend")) {
+                if (strcmp(val, "pty") && strcmp(val, "tcp"))
+                    fprintf(stderr, "1984.conf:%d: usifac_backend must be 'pty' or 'tcp' (got '%s')\n", lineno, val);
+                else
+                    snprintf(cfg->usifac_backend, sizeof(cfg->usifac_backend), "%s", val);
+            } else if (!strcmp(key, "usifac_tcp_port")) {
+                int p = atoi(val);
+                if (p > 0 && p < 65536) cfg->usifac_tcp_port = p;
+                else { fprintf(stderr, "1984.conf:%d: usifac_tcp_port must be 1..65535\n", lineno); rc = -1; }
             } else if (!strcmp(key, "ulifac")) {
-                if (parse_bool(val, &b)) cfg->ulifac = b;
+                /* Legacy key — renamed to 'usifac' in v0.4.8. Accept and warn. */
+                static bool warned = false;
+                if (!warned) {
+                    fprintf(stderr, "1984.conf:%d: 'ulifac' has been renamed to 'usifac' — please update your config\n", lineno);
+                    warned = true;
+                }
+                if (parse_bool(val, &b)) cfg->usifac = b;
                 else { fprintf(stderr, "1984.conf:%d: ulifac must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "net4cpc")) {
                 if (parse_bool(val, &b)) cfg->net4cpc = b;
@@ -522,7 +545,9 @@ int config_save(const Config *cfg) {
         "m4=%s\n"
         "m4_path=%s\n"
         "m4_image=%s\n"
-        "ulifac=%s\n"
+        "usifac=%s\n"
+        "usifac_backend=%s\n"
+        "usifac_tcp_port=%d\n"
         "net4cpc=%s\n"
         "net4cpc_tap=%s\n"
         "net4cpc_tap_host_ip=%s\n"
@@ -555,7 +580,9 @@ int config_save(const Config *cfg) {
         cfg->m4      ? "true" : "false",
         cfg->m4_path,
         cfg->m4_image,
-        cfg->ulifac  ? "true" : "false",
+        cfg->usifac           ? "true" : "false",
+        cfg->usifac_backend,
+        cfg->usifac_tcp_port,
         cfg->net4cpc          ? "true" : "false",
         cfg->net4cpc_tap      ? "true" : "false",
         cfg->net4cpc_tap_host_ip,

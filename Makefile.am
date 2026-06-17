@@ -25,6 +25,7 @@ bin_PROGRAMS = 1984
 	src/ide.c \
 	src/fat.c \
 	src/ch376.c \
+	src/usifac.c \
 	src/gifcap.c \
 	src/webmcap.c \
 	src/host_mount.c \

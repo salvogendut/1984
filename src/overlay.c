@@ -6,6 +6,7 @@
 #include "mem.h"
 #include "snapshot.h"
 #include "webmcap.h"   /* WEBMCAP_SUPPORTED */
+#include "leds.h"
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
@@ -34,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 9 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 10 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -205,9 +206,17 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 1:
-            snprintf(lbl, lsz, "UliFAC");
-            snprintf(val, vsz, "[unimplemented]");
-            *readonly = true;
+            snprintf(lbl, lsz, "USIfAC RS232");
+            if (ov->cfg->usifac) {
+                if (!strcmp(ov->cfg->usifac_backend, "tcp"))
+                    snprintf(val, vsz, "TCP:%d", ov->cfg->usifac_tcp_port);
+                else if (ov->cpc && ov->cpc->usifac.pty_slave[0])
+                    snprintf(val, vsz, "PTY:%s", ov->cpc->usifac.pty_slave);
+                else
+                    snprintf(val, vsz, "enabled");
+            } else {
+                snprintf(val, vsz, "disabled");
+            }
             break;
         case 2:
             snprintf(lbl, lsz, "Net4CPC");
@@ -383,6 +392,17 @@ static void item_text(const Overlay *ov, int row,
             *readonly = true;
             break;
         case 8:
+            snprintf(lbl, lsz, "USIfAC mode");
+            if (!ov->cfg->usifac) {
+                snprintf(val, vsz, "[USIfAC RS232 disabled]");
+                *readonly = true;
+            } else if (!strcmp(ov->cfg->usifac_backend, "tcp")) {
+                snprintf(val, vsz, "TCP:%d", ov->cfg->usifac_tcp_port);
+            } else {
+                snprintf(val, vsz, "PTY");
+            }
+            break;
+        case 9:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -601,7 +621,17 @@ static void activate_item(Overlay *ov) {
                 ov->dirty = true;
             }
             break;
-        /* case 1 (UliFAC) is unimplemented — Enter does nothing */
+        case 1:
+            ov->cfg->usifac = !ov->cfg->usifac;
+            if (ov->cpc) {
+                usifac_shutdown(&ov->cpc->usifac);
+                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+                leds_set_enabled(LED_USIFAC,
+                                 ov->cpc->mx4 && ov->cfg->usifac);
+            }
+            ov->dirty = true;
+            break;
         case 2:
             ov->cfg->net4cpc = !ov->cfg->net4cpc;
             ov->dirty = true;
@@ -893,6 +923,22 @@ static void activate_item(Overlay *ov) {
                     ov->cpc ? ov->cpc->display.window : NULL,
                     webm_filters, 2, NULL);
             }
+            break;
+        case 8:
+            if (!ov->cfg->usifac) break;
+            /* Flip pty ↔ tcp; re-init the device on the new backend. */
+            if (!strcmp(ov->cfg->usifac_backend, "tcp"))
+                snprintf(ov->cfg->usifac_backend,
+                         sizeof(ov->cfg->usifac_backend), "pty");
+            else
+                snprintf(ov->cfg->usifac_backend,
+                         sizeof(ov->cfg->usifac_backend), "tcp");
+            if (ov->cpc) {
+                usifac_shutdown(&ov->cpc->usifac);
+                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+            }
+            ov->dirty = true;
             break;
         }
         break;
