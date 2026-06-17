@@ -1,34 +1,32 @@
 # Building FUZIX for the Amstrad CPC from source
 
 This is the working recipe for building ajcasado's FUZIX port (the `cpcsme`
-platform — CPC with Standard Memory Expansion) from a clean checkout, on
-Fedora 44 inside our `my-distrobox` container.
+platform — CPC with Standard Memory Expansion) from a clean checkout.
 
 Upstream: https://github.com/ajcasado/FUZIX
 
 ## One-time setup
 
-Everything below runs inside `my-distrobox`. Enter it once per shell:
-
-```bash
-distrobox enter my-distrobox
-```
+Prepare your development environment, be it in a container or plain — the
+recipe assumes a Linux toolchain (`gcc`, `make`, `cmake`, `git`) and root via
+`sudo` for the package installs and the one hardcoded prefix. The reference
+build below was carried out on **Fedora 44**; package names use `dnf`, but
+the steps translate directly to any other distro (`apt`, `pacman`, …).
 
 ### 1. Cross-compiler
 
-SDCC is already installed at `~/Dev/sdcc/bin/sdcc` (v4.5.24 or later — anything
-recent works). Make sure it's on PATH:
+SDCC v4.5.24 or later — anything recent works. Make sure it's on PATH:
 
 ```bash
 sdcc --version | head -1   # SDCC ... 4.5.24 ...
 ```
 
-### 2. CPC packaging tools — not in Fedora repos, build from source
+### 2. CPC packaging tools — not commonly packaged, build from source
 
 #### cpctools (`createSnapshot`, `cpcfs`, etc.)
 
 ```bash
-sudo dnf install -y libdsk-devel
+sudo dnf install -y libdsk-devel   # or: apt install libdsk-dev
 cd ~/Dev
 git clone https://github.com/cpcsdk/cpctools.git
 cd cpctools/cpctools
@@ -67,7 +65,7 @@ FUZIX Makefile only uses `flip -m`, which converts a text file to MS-DOS
 (CR/LF) line endings — `unix2dos` does exactly that.
 
 ```bash
-sudo dnf install -y dos2unix
+sudo dnf install -y dos2unix   # or: apt install dos2unix
 sudo tee /usr/local/bin/flip > /dev/null << 'EOF'
 #!/bin/sh
 # flip shim for FUZIX builds — only -m is needed (MS-DOS line endings).
