@@ -254,12 +254,19 @@ static u8 bus_io_read(void *ctx, u16 port) {
     else if (!(hi & 0x08)) {
         result = ppi_read(&cpc->ppi, (port >> 8) & 0x03);
     }
+    /* USIfAC II serial @ 0xFBD0..FBDF. Decoded before the FDC clause so
+     * even if the FDC's lo-bit-7 gate ever changes, USIfAC keeps its
+     * range. Internally dispatches on the low nibble (D0/D1/D8/DD). */
+    else if (cpc->mx4 && cpc->usifac.present && hi == 0xFB &&
+             (port & 0xF0) == 0xD0) {
+        result = usifac_read(&cpc->usifac, (u8)(port & 0x0F));
+    }
     /* FDC: hi=0xFB AND lo bit 7=0 → status (lo bit 0=0) or data (lo bit 0=1).
      * Real CPC hardware decodes the FDC at 0xFB7E/0xFB7F only; the upper
-     * half of 0xFB** is free for peripherals like Usifac (0xFBD0/D1).
-     * Without the lo-bit-7 mask FUZIX's Usifac probe reads the FDC main
-     * status register instead of 0xFF, thinks Usifac is present, and
-     * hangs in usifac_flush(). */
+     * half (0xFB80–0xFBFF) is free for peripherals like USIfAC at
+     * 0xFBD0/D1. Without the lo-bit-7 gate, generic IN A,(0xFBxx) probes
+     * from other software read the FDC main status register instead of
+     * 0xFF and mistake the FDC for a different device. */
     else if (hi == 0xFB && !(port & 0x80)) {
         u8 lo = port & 0xFF;
         result = (lo & 0x01) ? fdc_read_data(&cpc->fdc)
@@ -483,6 +490,12 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     }
     /* FDC motor: hi=0xFA, write */
     if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
+    /* USIfAC II serial @ 0xFBD0..FBDF (write). */
+    if (cpc->mx4 && cpc->usifac.present && hi == 0xFB &&
+        (port & 0xF0) == 0xD0) {
+        usifac_write(&cpc->usifac, (u8)(port & 0x0F), val);
+        return;
+    }
     /* FDC data: hi=0xFB, lo bit 7 = 0, write */
     if (hi == 0xFB) {
         u8 lo = port & 0xFF;

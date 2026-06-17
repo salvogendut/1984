@@ -1,0 +1,64 @@
+/* usifac — USIfAC II RS232 serial interface emulation.
+ *
+ * The USIfAC II (John Konstantopoulos) is a PIC18F47Q10-based serial
+ * board for the Amstrad CPC. We emulate the wire-level RS232 surface
+ * only — the host-side ROM (RSX commands, USB host, FDC/ROM
+ * emulation) is out of scope.
+ *
+ * Ports (CPC I/O, all gated on the MX4 expansion bus):
+ *   &FBD0  r/w  DATA      — pop/push one byte from the RX/TX queue
+ *   &FBD1  r    STATUS    — 0xFF when RX non-empty, 0x01 when empty
+ *   &FBD1  w    CONTROL   — see usifac_write() comments for the command map
+ *   &FBD8  r    EXISTS    — 0x00 when board enabled (0xFF means absent)
+ *   &FBDD  r    BAUDCODE  — last x written to &FBD1 in range 10..23
+ *
+ * Backend: a host-side PTY or a TCP listener, selected via cfg.
+ * Polled once per emulated frame; drains backend into RX, pushes
+ * TX out to backend.
+ */
+#pragma once
+
+#include "types.h"
+#include <stdbool.h>
+#include <stddef.h>
+
+#define USIFAC_RING (4096)  /* power of two; >= 3100 (firmware RX buffer) */
+
+typedef enum {
+    USIFAC_BACKEND_PTY = 0,
+    USIFAC_BACKEND_TCP = 1,
+} UsifacBackend;
+
+typedef struct {
+    bool present;             /* mirror of cfg->usifac at init time */
+    UsifacBackend backend;
+
+    /* PTY backend */
+    int  pty_master;          /* -1 when closed */
+    char pty_slave[64];       /* /dev/pts/N for the overlay */
+
+    /* TCP backend */
+    int  tcp_listen;          /* -1 when closed */
+    int  tcp_client;          /* -1 when no client */
+    int  tcp_port;
+
+    /* Ring buffers — power-of-two sized, masked indices */
+    u8     rx_buf[USIFAC_RING];
+    size_t rx_head, rx_tail;  /* head=push (backend), tail=pop (Z80) */
+    u8     tx_buf[USIFAC_RING];
+    size_t tx_head, tx_tail;  /* head=push (Z80),     tail=pop (backend) */
+
+    bool burst_mode;
+    u8   baud_code;           /* last 10..23 command via OUT &FBD1,x */
+} USIfAC;
+
+/* `backend` must be "pty" or "tcp"; `tcp_port` is ignored for PTY. */
+void    usifac_init    (USIfAC *u, bool enable, const char *backend, int tcp_port);
+void    usifac_shutdown(USIfAC *u);
+
+/* CPC bus interface. `lo` is the low byte of the I/O port (D0/D1/D8/DD/...). */
+u8   usifac_read (USIfAC *u, u8 lo);
+void usifac_write(USIfAC *u, u8 lo, u8 val);
+
+/* Drain backend → RX, push TX → backend. Call once per frame from cpc.c. */
+void usifac_poll(USIfAC *u);

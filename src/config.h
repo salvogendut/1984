@@ -51,7 +51,9 @@ typedef struct {
     bool m4;
     char m4_path[CONFIG_PATH_MAX];   /* host directory for M4 file API (cat/load/save) */
     char m4_image[CONFIG_PATH_MAX];  /* optional raw FAT32 image for C_SDREAD/C_SDWRITE */
-    bool ulifac;
+    bool usifac;                       /* USIfAC II serial interface (port &FBD0/D1) */
+    char usifac_backend[16];           /* "pty" or "tcp" */
+    int  usifac_tcp_port;              /* TCP listen port when backend=tcp (default 4001) */
     bool net4cpc;
     bool net4cpc_tap;  /* Use TAP backend: 1984 auto-creates the tap device,
                         * runs a built-in DHCP server, adds the interface to

@@ -24,6 +24,7 @@ typedef enum {
     LED_USB,
     LED_SD,
     LED_NET,
+    LED_USIFAC,    /* Split red/green: left half = RX, right half = TX. */
     LED_COUNT
 } LedId;
 
@@ -32,6 +33,11 @@ void leds_set_enabled(LedId id, bool enabled);
 
 /* Signal one frame of activity for the given LED. */
 void leds_ping(LedId id);
+
+/* Signal one frame of activity for the RX or TX half of a split LED.
+ * Currently only LED_USIFAC is split. Calling with tx=false lights the
+ * red (RX) half; tx=true lights the green (TX) half. */
+void leds_ping_split(LedId id, bool tx);
 
 /* Render the LED bar across (x,y,w,h). The caller has already cleared the
  * renderer and drawn the CPC screen above this rect. */

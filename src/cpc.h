@@ -18,6 +18,7 @@
 #include "m4.h"
 #include "symbnet.h"
 #include "ch376.h"
+#include "usifac.h"
 #include "tape.h"
 
 typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
@@ -54,6 +55,7 @@ typedef struct {
                                   mouse when albireo_mouse is true         */
     CH376      ch376_b;        /* Right chip @ 0xFE40/41 — storage in
                                   dual-chip mouse mode                     */
+    USIfAC     usifac;         /* USIfAC II RS232 serial @ 0xFBD0/D1       */
     Tape       tape;           /* cassette / .cdt image */
     /* Per-sample snapshot of the cassette data line, captured inside the
      * Z80 step loop at audio rate. Mixed into the PSG output frame so the

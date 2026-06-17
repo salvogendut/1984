@@ -208,6 +208,7 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_USB, mx4 && cfg->albireo);
     leds_set_enabled(LED_SD,  mx4 && cfg->m4);
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
+    leds_set_enabled(LED_USIFAC, mx4 && cfg->usifac);
 }
 
 /* OS title is just "1984" now; the model name and F-key hints render
@@ -519,6 +520,7 @@ int main(int argc, char *argv[]) {
         cpc.m4 = false;
         cfg.m4 = false;
     }
+    usifac_init(&cpc.usifac, cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port);
     apply_led_enables(&cfg);
     /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
     if (cfg.tape[0] &&
@@ -1013,6 +1015,9 @@ int main(int argc, char *argv[]) {
                 ch376_open(storage, cfg.albireo_image);
             }
             ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
+            usifac_shutdown(&cpc.usifac);
+            usifac_init(&cpc.usifac, cfg.usifac,
+                        cfg.usifac_backend, cfg.usifac_tcp_port);
             if (cpc.albireo && cpc.m4) {
                 cpc.m4 = false;
                 cfg.m4 = false;
@@ -1037,6 +1042,7 @@ int main(int argc, char *argv[]) {
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
+        usifac_poll(&cpc.usifac);
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {
