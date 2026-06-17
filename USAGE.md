@@ -251,6 +251,8 @@ Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_M
 
 **Cyboard** (Extensions → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
+**USIfAC RS232** (Extensions → USIfAC RS232): enables wire-level emulation of the USIfAC II serial board at I/O ports `&FBD0..&FBDF`. The host-side endpoint is a PTY (default — shown as `PTY:/dev/pts/N` in the overlay) or a TCP listener (`TCP:4001`). Choose the backend from **Advanced → USIfAC mode** (Tinker must be enabled). Bytes written to `&FBD0` by the CPC emerge on the host endpoint; bytes sent in arrive on the CPC's RX FIFO and `INP(&FBD1)` flips to `0xFF` until they're read. FUZIX completes its `usifexists` / `usifgetbaud` handshake at boot (verified end-to-end). A new split LED in the activity bar shows RX traffic in red (host → CPC) and TX in green (CPC → host). See [docs/USIFAC.md](docs/USIFAC.md) for the full port map, control-byte table, and connection recipes.
+
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, SYMBiFACE Mouse, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
 ## Memory monitor / debugger (F8)
@@ -339,6 +341,9 @@ ide_image=        # path to a raw FAT16/FAT32 disk image (.img)
 symbiface_mouse=false
 albireo=false     # Albireo CPC expansion (CH376 USB host controller)
 albireo_image=    # Path to FAT16/FAT32 image used as the USB drive backing
+usifac=false      # USIfAC II RS232 serial interface (ports &FBD0..&FBDF)
+usifac_backend=pty   # "pty" exposes /dev/pts/N; "tcp" listens on localhost
+usifac_tcp_port=4001 # TCP listen port when backend=tcp
 
 [display]
 scale=1           # 1, 2, 3, or 4 — window starts at 768·scale × (576·scale + LED bar)

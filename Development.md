@@ -25,6 +25,7 @@ Each source file maps to one hardware component:
 | `src/ide.c` / `ide.h` | ATA PIO IDE — SYMBiFACE II / Cyboard port mapping, raw disk image backend, IDENTIFY/READ/WRITE |
 | `src/mouse.c` / `mouse.h` | SYMBiFACE II PS/2 mouse — port 0xFD10, variable-length burst protocol, SDL relative mouse capture |
 | `src/ch376.c` / `ch376.h` | Albireo CH376 USB host controller — ports 0xFE80/0xFE81, file-system command set backed by `src/fat.c`; mutually exclusive with M4 (shared 0xFExx decode) |
+| `src/usifac.c` / `usifac.h` | USIfAC II RS232 serial interface — ports 0xFBD0..0xFBDF, PTY or TCP host backend polled once per frame, split RX/TX LED |
 | `src/tape.c` / `tape.h` | Cassette / .cdt (TZX) tape decoder — drives PPI Port B bit 7, motor from PPI Port C bit 4, audio mixed into PSG output |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |

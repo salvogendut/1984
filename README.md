@@ -32,7 +32,7 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 
 **Capture** — F4 still-screenshot (`.ppm`), F6 GIF screen-recording (in-tree LZW encoder, no dependencies), and WebM/VP9 recording via `ffmpeg` (optional, detected by `./configure`) — YouTube-native.
 
-**Extensions** — DDI-1 floppy interface (464), DS12887 RTC (Cyboard / SYMBiFACE II), SYMBiFACE II / Cyboard IDE (FAT16/FAT32 disk images), SYMBiFACE II PS/2 mouse, Albireo USB mass-storage (CH376 host controller, driven by UNIDOS), **Net4CPC Ethernet (W5100S) with one-click TAP backend on Linux — auto-creates the tap device, runs a built-in DHCP server, DNS proxy, and NAT to the host network. The CPC is fully on the LAN: pingable from the host, accepts inbound connections, and DHCP works end-to-end (verified in HDCPM + SymbOS)**, Amstrad Diagnostics ROM as a one-click toggle. Per-board ROM groupings (`Ins` in the ROM Slots menu) tag each slot with the boards that need it — M4 / Albireo / Cyboard — so enabling a board auto-loads its ROMs and cached disk image; disabling clears them. No re-prompt for paths between sessions.
+**Extensions** — DDI-1 floppy interface (464), DS12887 RTC (Cyboard / SYMBiFACE II), SYMBiFACE II / Cyboard IDE (FAT16/FAT32 disk images), SYMBiFACE II PS/2 mouse, Albireo USB mass-storage (CH376 host controller, driven by UNIDOS), **USIfAC II RS232 serial interface — wire-level emulation of the PIC-based board's serial pipe at `&FBD0`/`&FBD1`, with a host-side PTY or TCP listener as the backend, switchable live in the overlay. FUZIX completes its USIfAC handshake at boot; a new split LED in the activity bar shows RX (red) and TX (green) traffic. See [docs/USIFAC.md](docs/USIFAC.md)**, **Net4CPC Ethernet (W5100S) with one-click TAP backend on Linux — auto-creates the tap device, runs a built-in DHCP server, DNS proxy, and NAT to the host network. The CPC is fully on the LAN: pingable from the host, accepts inbound connections, and DHCP works end-to-end (verified in HDCPM + SymbOS)**, Amstrad Diagnostics ROM as a one-click toggle. Per-board ROM groupings (`Ins` in the ROM Slots menu) tag each slot with the boards that need it — M4 / Albireo / Cyboard — so enabling a board auto-loads its ROMs and cached disk image; disabling clears them. No re-prompt for paths between sessions.
 
 ## Supported platforms
 
@@ -78,6 +78,8 @@ Per-expansion guides:
 - **[CYBOARD.md](CYBOARD.md)** — Cyboard pack (Net4CPC + RTC + SYMBiFACE IDE/Mouse); UNIDOS + UNITOOLS + FATFS ROM layout
 - **[ALBIREO.md](ALBIREO.md)** — Albireo USB host (CH376); UNIDOS + ALBIREO.ROM layout; coexistence with Cyboard
 - **[NET4CPC.md](NET4CPC.md)** — Net4CPC (W5100S) TAP backend; host-side device setup, bridge vs point-to-point, KCNet `NCFG.INI` profiles, `--trace-tap` walkthrough
+- **[docs/USIFAC.md](docs/USIFAC.md)** — USIfAC II RS232 serial interface; PTY and TCP backend wiring, port map (`&FBD0/D1/D8/DD`), BASIC smoke tests
+- **[docs/FUZIX_BUILD.md](docs/FUZIX_BUILD.md)** — building ajcasado/FUZIX from source against this emulator; cpctools/hex2bin/iDSK/flip shim, `CONFIG_USIFAC_SERIAL` mode toggle
 
 ## Acknowledgements
 
