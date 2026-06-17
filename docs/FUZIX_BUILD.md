@@ -15,7 +15,17 @@ the steps translate directly to any other distro (`apt`, `pacman`, …).
 
 ### 1. Cross-compiler
 
-SDCC v4.5.24 or later — anything recent works. Make sure it's on PATH:
+Install **SDCC** v4.5.24 or later — anything recent works. Fedora ships an
+older build that's fine for FUZIX:
+
+```bash
+sudo dnf install -y sdcc     # or: apt install sdcc / pacman -S sdcc
+```
+
+If your distro's SDCC is too old or you need a specific build, grab a
+release tarball from <https://sourceforge.net/projects/sdcc/files/sdcc/> and
+unpack it somewhere on `PATH` (the reference environment used
+`~/Dev/sdcc/bin/sdcc`). Verify:
 
 ```bash
 sdcc --version | head -1   # SDCC ... 4.5.24 ...
