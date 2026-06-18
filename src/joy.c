@@ -14,6 +14,61 @@
 
 #define AXIS_DEAD 8000   /* ±8000 out of ±32767 */
 
+/* --- Scripted joystick injection (--joy-script), see joy.h ------------------ */
+
+bool joyscript_init(JoyScript *js, const char *spec) {
+    memset(js, 0, sizeof(*js));
+    const char *p = spec;
+    while (*p && js->nsteps < JOYSCRIPT_MAX_STEPS) {
+        unsigned char mask = 0;
+        while (*p && *p != ':' && *p != ',') {       /* direction letters */
+            switch (*p) {
+            case 'u': case 'U': mask |= 1 << JOY_UP;    break;
+            case 'd': case 'D': mask |= 1 << JOY_DOWN;  break;
+            case 'l': case 'L': mask |= 1 << JOY_LEFT;  break;
+            case 'r': case 'R': mask |= 1 << JOY_RIGHT; break;
+            case '1':           mask |= 1 << JOY_FIRE1; break;
+            case '2':           mask |= 1 << JOY_FIRE2; break;
+            case '-': case 'n': case 'N': break;        /* neutral */
+            default:
+                fprintf(stderr, "[joy-script] bad direction '%c' in spec\n", *p);
+                memset(js, 0, sizeof(*js)); js->done = true; return false;
+            }
+            p++;
+        }
+        int frames = 0;
+        if (*p == ':') { p++; while (*p >= '0' && *p <= '9') frames = frames*10 + (*p++ - '0'); }
+        if (frames <= 0) frames = 1;
+        js->step[js->nsteps].mask   = mask;
+        js->step[js->nsteps].frames = frames;
+        js->nsteps++;
+        if (*p == ',') p++;
+    }
+    js->cur   = 0;
+    js->timer = js->nsteps ? js->step[0].frames : 0;
+    js->done  = (js->nsteps == 0);
+    return !js->done;
+}
+
+void joyscript_tick(JoyScript *js, Keyboard *k) {
+    if (js->done) return;
+    unsigned char mask = js->step[js->cur].mask;
+    for (int c = JOY_UP; c <= JOY_FIRE2; c++) {       /* set row 9 to this step */
+        if (mask & (1 << c)) kbd_key_down(k, JOY_ROW, c);
+        else                 kbd_key_up  (k, JOY_ROW, c);
+    }
+    if (--js->timer <= 0) {                           /* advance to the next step */
+        js->cur++;
+        if (js->cur >= js->nsteps) {
+            js->done = true;
+            for (int c = JOY_UP; c <= JOY_FIRE2; c++) /* release everything at the end */
+                kbd_key_up(k, JOY_ROW, c);
+        } else {
+            js->timer = js->step[js->cur].frames;
+        }
+    }
+}
+
 void joy_init(Joy *j) {
     memset(j, 0, sizeof(*j));
 
