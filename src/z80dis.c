@@ -171,12 +171,12 @@ static int dis_main(const u8 *m, u16 *pc, char *out, size_t sz, const char *xy) 
         case 2:
             switch (y) {
             case 0: snprintf(out, sz, "LD (BC),A"); break;
-            case 1: snprintf(out, sz, "LD (DE),A"); break;
-            case 2: { u16 nn=rw(m,pc); snprintf(out, sz, "LD (%04Xh),%s", nn, HL); break; }
-            case 3: { u16 nn=rw(m,pc); snprintf(out, sz, "LD (%04Xh),A",  nn); break; }
-            case 4: snprintf(out, sz, "LD A,(BC)"); break;
-            case 5: snprintf(out, sz, "LD A,(DE)"); break;
-            case 6: { u16 nn=rw(m,pc); snprintf(out, sz, "LD %s,(%04Xh)", HL, nn); break; }
+            case 1: snprintf(out, sz, "LD A,(BC)"); break;
+            case 2: snprintf(out, sz, "LD (DE),A"); break;
+            case 3: snprintf(out, sz, "LD A,(DE)"); break;
+            case 4: { u16 nn=rw(m,pc); snprintf(out, sz, "LD (%04Xh),%s", nn, HL); break; }
+            case 5: { u16 nn=rw(m,pc); snprintf(out, sz, "LD %s,(%04Xh)", HL, nn); break; }
+            case 6: { u16 nn=rw(m,pc); snprintf(out, sz, "LD (%04Xh),A",  nn); break; }
             case 7: { u16 nn=rw(m,pc); snprintf(out, sz, "LD A,(%04Xh)",  nn); break; }
             }
             break;
