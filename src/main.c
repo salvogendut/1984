@@ -267,6 +267,11 @@ static void usage(const char *prog, int code) {
         "  --save-sna-at=N:PATH  Save a .sna snapshot at frame N (typically pairs with --paste / --autostart)\n"
         "  --save-sna-at-ide=N:PATH  Save a .sna snapshot when the Nth ATA command is issued (for cross-emulator bisection)\n"
         "  --screenshot-at=N:PATH  Save a screenshot at frame N to PATH, then exit\n"
+        "  --joy-script=SPEC   Scripted joystick (row 9). SPEC = comma-separated DIRS:FRAMES\n"
+        "                      steps; DIRS = u d l r 1 2 (Fire1/2) or - (neutral).\n"
+        "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
+        "  --gif-out=PATH      Record a GIF from boot (finalised on exit; pairs with --exit-after)\n"
+        "  --exit-after=N      Quit after frame N (deterministic headless capture)\n"
         "  --monitor-pty       Open a PTY for the memory monitor (minicom -b 9600 -D <path>)\n"
         "  --kbd-pty           Open a PTY that injects writes as keystrokes and streams\n"
         "                      the firmware text-out (&BB5A) for external test harnesses\n"
@@ -313,6 +318,9 @@ int main(int argc, char *argv[]) {
     const char *save_sna_path    = NULL;
     int         save_sna_ide_cmd = -1;
     const char *save_sna_ide_path = NULL;
+    const char *joyscript_arg    = NULL;  /* --joy-script=SPEC: scripted joystick */
+    const char *gifout_arg       = NULL;  /* --gif-out=PATH: record a GIF from boot */
+    int         exit_after       = -1;    /* --exit-after=N: quit at frame N */
     bool        trace_io         = false;
     bool        monitor_pty      = false;
     bool        kbd_pty_enabled  = false;
@@ -409,6 +417,12 @@ int main(int argc, char *argv[]) {
             }
             screenshot_frame = atoi(arg);
             screenshot_path  = colon + 1;
+        } else if (strncmp(argv[i], "--joy-script=", 13) == 0 && argv[i][13] != '\0') {
+            joyscript_arg = argv[i] + 13;
+        } else if (strncmp(argv[i], "--gif-out=", 10) == 0 && argv[i][10] != '\0') {
+            gifout_arg = argv[i] + 10;
+        } else if (strncmp(argv[i], "--exit-after=", 13) == 0 && argv[i][13] != '\0') {
+            exit_after = atoi(argv[i] + 13);
         } else if (strncmp(argv[i], "--save-sna-at=", 14) == 0 && argv[i][14] != '\0') {
             const char *arg = argv[i] + 14;
             char *colon = strchr(arg, ':');
@@ -634,6 +648,21 @@ int main(int argc, char *argv[]) {
     Joy joy;
     joy_init(&joy);
 
+    /* --joy-script: deterministic scripted joystick (row 9), the joystick analogue
+     * of --paste. Drives automated UI tests headlessly (e.g. sweep the GEOBENCH
+     * pointer to a screen edge to reproduce a moving-cursor artifact). */
+    JoyScript joyscript;
+    bool have_joyscript = false;
+    if (joyscript_arg) {
+        if (joyscript_init(&joyscript, joyscript_arg)) {
+            have_joyscript = true;
+            fprintf(stderr, "[joy-script] %d step(s) queued\n", joyscript.nsteps);
+        } else {
+            fprintf(stderr, "%s: invalid --joy-script spec\n", argv[0]);
+            return 1;
+        }
+    }
+
     /* Load a snapshot AFTER all machine init (ROMs, IDE, Albireo, joysticks
      * etc.) is done — the snapshot overrides only the CPU + GA + CRTC + PPI
      * + RAM state. Suppress autostart/paste so a typed sequence doesn't fight
@@ -670,6 +699,8 @@ int main(int argc, char *argv[]) {
 
     int  frame_count = 0;
     bool running = true;
+    if (gifout_arg)            /* --gif-out: record from boot (finalised on exit) */
+        videocap_start(gifout_arg);
     SD_LOG("entering main loop — startup complete");
     while (running) {
         SDL_Event ev;
@@ -1039,6 +1070,7 @@ int main(int argc, char *argv[]) {
         kbd_pty_tick(&paste);
         screen_text_tick(&cpc);
         paste_tick(&paste, &cpc.kbd);
+        if (have_joyscript) joyscript_tick(&joyscript, &cpc.kbd);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
@@ -1181,6 +1213,8 @@ int main(int argc, char *argv[]) {
         monitor_render(monitor);
 
         frame_count++;
+        if (exit_after >= 0 && frame_count >= exit_after)
+            running = false;        /* --exit-after: deterministic headless quit */
         if (trace_io && frame_count == 210)
             cpc_trace_io = 1;
         if (trace_io && frame_count == 600)
