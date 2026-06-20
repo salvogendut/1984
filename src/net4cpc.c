@@ -689,6 +689,20 @@ static u8 reg_read(u16 addr) {
     if (addr == 0x0082 || addr == 0x0083) {
         set16(0x0082, tcntr_read());
     }
+    /* Chip-wide IR at 0x0015: bits 0-3 ("Sn_INT" summary) reflect
+     * "socket n has at least one pending Sn_IR bit". FUZIX's
+     * net_w5x00 driver polls this register and short-circuits if
+     * zero — without this summary, FUZIX never knows there's data
+     * waiting in the RX ring and the screen stays blank even though
+     * TCP-level data has arrived. Computed on-read from the live
+     * Sn_IR state of each socket; bits 4-7 (other chip-wide sources)
+     * stay as stored. Matches W5100 datasheet § 4.2.4 behaviour. */
+    if (addr == 0x0015) {
+        u8 ir = regs[0x0015] & 0xF0;
+        for (int s = 0; s < 4; s++)
+            if (regs[SOCK_BASE[s] + SR_IR] != 0) ir |= (u8)(1u << s);
+        regs[0x0015] = ir;
+    }
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
             poll_connect(s);
