@@ -899,7 +899,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_READ: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         /* Request:  data[0]=fd, data[1..2]=size
          * Response: resp+3 = result (0=OK)
          *           resp+4 onwards = exactly `size` bytes (zero-padded on EOF).
@@ -938,7 +938,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_READ2: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         /* Same as C_READ but skips AMSDOS header detection. Used by
          * char_in for unbuffered reads.
          * Request:  data[0]=fd, data[1..2]=size
@@ -983,7 +983,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_WRITE: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         if (plen < 1) { err = M4_ERR_IO; break; }
         u8 fd = p[0];
         if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
@@ -998,7 +998,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_WRITE2: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         if (plen < 2) { err = M4_ERR_IO; break; }
         u8 fd = p[0];
         u8 ch = p[1];
@@ -1107,7 +1107,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_SDREAD: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         /* Raw block read from the SD card image.
          * Request:  data[0..3]=LBA (little-endian 32-bit), data[4]=num sectors
          * Response: resp+3 = status (0=OK, 3=not ready, 4=invalid param)
@@ -1141,7 +1141,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_SDWRITE: {
-        leds_ping(LED_SD);
+        leds_ping_m4_disk();
         /* Raw block write to the SD card image.
          * Request:  data[0..3]=LBA, data[4]=num sectors, data[5..]=sector data
          * Response: resp+3 = status (0=OK, 1=R/W err, 2=write-protected). */
@@ -1264,6 +1264,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         break;
 
     case C_NETSOCKET: {
+        leds_ping_m4_net();
         /* Allocate a TCP socket. Return socket id 1..4 at resp+3, or 0xFF. */
         int idx = -1;
         for (int i = 1; i < M4_NSOCKS; i++)
@@ -1291,6 +1292,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETCONNECT: {
+        leds_ping_m4_net();
         u8 ok = 0xFF;
         if (plen >= 7) {
             int s = p[0];
@@ -1337,6 +1339,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETCLOSE: {
+        leds_ping_m4_net();
         if (plen >= 1) {
             int s = p[0];
             /* SymbOS daemon workaround: it appears to pass arbitrary garbage
@@ -1359,6 +1362,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETSEND: {
+        leds_ping_m4_net();
         u8 ok = 0xFF;
         if (plen >= 3) {
             int s = p[0];
@@ -1388,6 +1392,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETRECV: {
+        leds_ping_m4_net();
         /* Response: resp+3 = result (0=OK), resp+4..5 = actual size,
          *           resp+6.. = data (up to 2KB). Both cpc-sdcc's net_recv
          *           and the SymbOS daemon's m4ctrx (which fetches from
@@ -1438,6 +1443,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_NETHOSTIP: {
+        leds_ping_m4_net();
         /* Synchronous resolution into socket 0's sock_info entry. */
         if (plen < 1) { err = M4_OK; resp_u8(m, &roff, 0xFF); break; }
         char host[256];

@@ -25,6 +25,7 @@ typedef enum {
     LED_SD,
     LED_NET,
     LED_USIFAC,    /* Split red/green: left half = RX, right half = TX. */
+    LED_M4,        /* Triple-segment, 1.5× width: blue=power, red=disk, white=net. */
     LED_COUNT
 } LedId;
 
@@ -38,6 +39,11 @@ void leds_ping(LedId id);
  * Currently only LED_USIFAC is split. Calling with tx=false lights the
  * red (RX) half; tx=true lights the green (TX) half. */
 void leds_ping_split(LedId id, bool tx);
+
+/* M4 board has three segments: power (always lit while enabled), disk,
+ * and network. These ping the disk and net segments respectively. */
+void leds_ping_m4_disk(void);
+void leds_ping_m4_net(void);
 
 /* Render the LED bar across (x,y,w,h). The caller has already cleared the
  * renderer and drawn the CPC screen above this rect. */

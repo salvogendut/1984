@@ -207,7 +207,8 @@ static void apply_led_enables(const Config *cfg) {
     bool mx4 = cfg->rom_board;
     leds_set_enabled(LED_IDE, mx4 && cfg->symbiface_ide);
     leds_set_enabled(LED_USB, mx4 && cfg->albireo);
-    leds_set_enabled(LED_SD,  mx4 && cfg->m4);
+    leds_set_enabled(LED_SD,  false);            /* retired — replaced by LED_M4 */
+    leds_set_enabled(LED_M4,  mx4 && cfg->m4);
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
     leds_set_enabled(LED_USIFAC, mx4 && cfg->usifac);
 }
