@@ -291,13 +291,35 @@ static void handle_command(int s, u8 cmd) {
 
     case SCMD_OPEN:
         close_sock(s);
+        /* Real W5100S OPEN clears Sn_IR (datasheet § 4.2.10). Without
+         * this, a stale DISCON bit from a prior CLOSE survives into
+         * the new socket; FUZIX's net_w5x00 driver sees it on the
+         * first event poll after OPEN, calls w5x00_eof() and
+         * connect() returns ECONNREFUSED. Matches the "first telnet
+         * refused, second works" pattern observed 2026-06-20. */
+        regs[SOCK_BASE[s] + SR_IR] = 0;
         /* TAP backend for TCP: tell the stack about the new socket and
          * reflect INIT immediately. UDP keeps using the POSIX backend
          * even with TAP because n4c_stack_send_udp() is selected per
          * call inside SCMD_SEND, so we still want the host socket open
          * to receive DHCP-style replies before SIPR is set. */
         if (mode == SMODE_TCP && n4c_stack_active()) {
-            n4c_stack_tcp_open(s, get16(SOCK_BASE[s] + 0x04));
+            /* Sn_PORT (offset 0x04) is the local TCP port. Some guests
+             * (FUZIX cpcsme) don't set it for outbound connects and
+             * expect the chip to use an ephemeral port; real W5100S
+             * likely accepts port 0 because routers/peers don't care,
+             * but it confuses host-side NAT trackers and breaks
+             * conntrack on at least some kernels. Auto-assign a port
+             * in the IANA ephemeral range (49152-65535) when zero, and
+             * mirror back to the register so reads stay consistent. */
+            u16 lport = get16(SOCK_BASE[s] + 0x04);
+            if (lport == 0) {
+                static u16 ephemeral_next = 49152;
+                lport = ephemeral_next++;
+                if (ephemeral_next == 0) ephemeral_next = 49152;
+                set16(SOCK_BASE[s] + 0x04, lport);
+            }
+            n4c_stack_tcp_open(s, lport);
             regs[SOCK_BASE[s] + SR_SR] = SSTAT_INIT;
             set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
             set16(SOCK_BASE[s] + SR_TX_WR,  0);
@@ -666,6 +688,20 @@ static u8 reg_read(u16 addr) {
      * see a coherent value. */
     if (addr == 0x0082 || addr == 0x0083) {
         set16(0x0082, tcntr_read());
+    }
+    /* Chip-wide IR at 0x0015: bits 0-3 ("Sn_INT" summary) reflect
+     * "socket n has at least one pending Sn_IR bit". FUZIX's
+     * net_w5x00 driver polls this register and short-circuits if
+     * zero — without this summary, FUZIX never knows there's data
+     * waiting in the RX ring and the screen stays blank even though
+     * TCP-level data has arrived. Computed on-read from the live
+     * Sn_IR state of each socket; bits 4-7 (other chip-wide sources)
+     * stay as stored. Matches W5100 datasheet § 4.2.4 behaviour. */
+    if (addr == 0x0015) {
+        u8 ir = regs[0x0015] & 0xF0;
+        for (int s = 0; s < 4; s++)
+            if (regs[SOCK_BASE[s] + SR_IR] != 0) ir |= (u8)(1u << s);
+        regs[0x0015] = ir;
     }
     for (int s = 0; s < 4; s++) {
         if (addr == SOCK_BASE[s] + SR_SR) {
