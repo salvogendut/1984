@@ -38,6 +38,19 @@ typedef struct {
     bool upper_rom_enabled;
     u8   upper_rom_select;  /* current upper ROM slot (written via port 0xDFxx) */
     u8   ram_bank;          /* 6128 banking config (Gate Array port 0x7F) */
+    /* When non-NULL and the lower ROM is enabled, reads in 0x0000-0x3FFF
+     * come from this buffer instead of rom_os. Used by the M4 board's
+     * C_ROMLOW (0x433D) "hack low rom" mode that FUZIX v2.0.7+ uses to
+     * detect the board (reads byte 0x100, expects 'M' — start of the
+     * "MV - SNA" snapshot header) and to fetch the M4 rom slot number
+     * from offset 0x0. Set/cleared by m4.c's C_ROMLOW handler. */
+    const u8 *lower_rom_override;
+    /* Stub "M4 snapshot ROM" used by FUZIX detection. Real M4 firmware
+     * exposes a full snapshot loader here; FUZIX only reads two bytes
+     * (rom number at 0x0, 'M' identifier at 0x100) so a 16 KB blob with
+     * just those is enough to pass detection and let FUZIX proceed to
+     * use C_SDREAD/C_SDWRITE, which we already emulate. */
+    u8   m4_snapshot_rom_stub[ROM_OS_SIZE];
 } Mem;
 
 void mem_init(Mem *m);
