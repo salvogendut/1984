@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.5
+Version:        0.4.7
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -65,20 +65,31 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %license LICENSE
 %doc README.md INSTALL.md USAGE.md
 %{_bindir}/%{name}
+%{_mandir}/man1/%{name}.1*
 %{_datadir}/applications/io.github.salvogendut.Emulator1984.desktop
 %{_datadir}/metainfo/io.github.salvogendut.Emulator1984.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/io.github.salvogendut.Emulator1984.png
 %dir %{_datadir}/%{name}
 %dir %{_datadir}/%{name}/roms
 %{_datadir}/%{name}/roms/AMSDOS.ROM
+%{_datadir}/%{name}/roms/AMSDOS_664.ROM
 %{_datadir}/%{name}/roms/AmstradDiagLower.rom
 %{_datadir}/%{name}/roms/BASIC_1.0.ROM
 %{_datadir}/%{name}/roms/BASIC_1.1.ROM
+%{_datadir}/%{name}/roms/BASIC_664.ROM
 %{_datadir}/%{name}/roms/M4ROM.ROM
 %{_datadir}/%{name}/roms/OS_464.ROM
+%{_datadir}/%{name}/roms/OS_664.ROM
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sat Jun 20 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.7-1
+- Add 1984(1) man page (#159)
+- Add Monochrome display tint: off / green / amber / white (#158)
+- Ship 664 ROMs (OS_664, BASIC_664, AMSDOS_664) in the package
+- Distribute all in-tree headers and USAGE.md so `make dist` produces
+  a buildable tarball
+
 * Tue Jun 10 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.5-1
 - Segfault fixes: file-dialog cancel state, NULL videocap path, dead
   FDC ternary, unguarded snapshot load (#120)

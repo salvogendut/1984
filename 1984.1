@@ -1,0 +1,314 @@
+.TH 1984 1 "June 2026" "1984 0.4.7" "User Commands"
+.SH NAME
+1984 \- Amstrad CPC 464/664/6128 emulator
+.SH SYNOPSIS
+.B 1984
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B 1984
+is a cycle-stepped Amstrad CPC 464/664/6128 emulator written in C
+with SDL3. It boots commercial games, BASIC, AMSDOS, CP/M 2.2 and
+CP/M Plus disk images, and a wide range of expansion hardware
+(M4 board, Albireo USB host, SYMBiFACE II / Cyboard, Net4CPC
+W5100S Ethernet, USIfAC II serial, RTC, mouse). The emulated core
+covers the Z80 CPU (including undocumented IX/IY half-register
+opcodes), MC6845 CRTC, AY-3-8912 PSG audio, \[mc]PD765 FDC, the
+Gate Array, the keyboard matrix, joystick/gamepad input, and
+cassette tape (.cdt / TZX images, with the loading screech mixed
+into PSG audio).
+.PP
+On first run
+.B 1984
+creates a configuration file at
+.IR ~/.config/1984/1984.conf
+with sensible defaults; the in-emulator overlay (F9) is the
+recommended way to edit it.
+.SH OPTIONS
+.SS Model selection
+.TP
+.B --464
+Boot as CPC 464 (overrides config).
+.TP
+.B --664
+Boot as CPC 664 (overrides config).
+.TP
+.B --6128
+Boot as CPC 6128 (overrides config).
+.TP
+.B --dd1
+Enable the DDI-1 floppy interface on the CPC 464 (overrides config).
+.TP
+.BI --memory= KB
+RAM size in kilobytes: 64, 128, 256, 512 or 576 (overrides config).
+.SS Files
+.TP
+.BI --config= PATH
+Read configuration from
+.I PATH
+instead of
+.IR ~/.config/1984/1984.conf .
+The override is read-only;
+.B 1984
+still writes saved settings to the default path.
+.TP
+.BI --disk-a= PATH
+Mount a .dsk image in drive A (overrides config).
+.TP
+.BI --disk-b= PATH
+Mount a .dsk image in drive B (overrides config).
+.TP
+.BI --rom-os= PATH
+Replace the OS (lower) ROM image.
+.TP
+.BI --rom-slot= N:PATH
+Load a ROM image into upper ROM slot
+.I N
+(0\(en31). May be repeated.
+.SS Networking
+.TP
+.BI --tap= DEVNAME
+Bind Net4CPC to a Linux TAP device for real LAN access. Pass
+.B --tap=
+(empty) to let the kernel auto-name (tap0\(en).
+Requires
+.B CAP_NET_ADMIN
+or a pre-created persistent TAP device. See
+.B NET4CPC
+for the built-in DHCP/DNS proxy options.
+.SS Automation and headless capture
+.TP
+.BI --autostart= NAME
+After boot, type
+.RB \(lq run\(rq NAME
+into BASIC.
+.TP
+.BI --paste= TEXT
+After boot, type
+.I TEXT
+verbatim (\fB\\n\fR becomes Enter).
+.TP
+.BI --load-sna= PATH
+Load an Amstrad .sna snapshot after init (v1 / v2 / v3).
+.TP
+.BI --save-sna-at= N:PATH
+Save a .sna snapshot at frame
+.IR N .
+Typically pairs with
+.B --paste
+or
+.BR --autostart .
+.TP
+.BI --save-sna-at-ide= N:PATH
+Save a .sna snapshot when the
+.IR N -th
+ATA command is issued (used for cross-emulator bisection).
+.TP
+.BI --screenshot-at= N:PATH
+Save a PPM screenshot at frame
+.IR N ,
+then exit.
+.TP
+.BI --gif-out= PATH
+Record a GIF from boot to
+.IR PATH ,
+finalised on exit. Pairs with
+.BR --exit-after .
+.TP
+.BI --exit-after= N
+Quit after frame
+.I N
+(deterministic headless capture).
+.TP
+.BI --joy-script= SPEC
+Scripted joystick (row 9). SPEC is a comma-separated list of
+.IB DIRS : FRAMES
+steps where
+.I DIRS
+is one or more of
+.BR u\ d\ l\ r\ 1\ 2
+(Fire1 / Fire2) or
+.B -
+(neutral). Example:
+.B --joy-script=d:150,-:30,u:150
+\(em down 150 frames, rest 30, up 150.
+.SS Debugging
+.TP
+.B --trace-io
+Log CRTC / Gate Array register writes to stderr.
+.TP
+.B --trace-palette
+Log palette writes and the firmware-flush fallback.
+.TP
+.B --trace-input
+Log keyboard, joystick, and gamepad events.
+.TP
+.B --trace-m4
+Log every M4 board command and response.
+.TP
+.B --trace-albireo
+Log every Albireo (CH376) command and response.
+.TP
+.B --trace-net4cpc
+Log every Net4CPC (W5100S) register access and socket command.
+.TP
+.B --trace-tap
+Log TAP-backed network stack events (ARP, IP, UDP, ICMP, TCP).
+.TP
+.B --trace-symbos-msg
+Log SymbOS RST #10 message sends (net-daemon range).
+.TP
+.BI --symbols= PATH
+Load an SDCC
+.B .map
+file and annotate the disassembler / monitor with the nearest
+preceding symbol. Repeatable. Use
+.BI --symbols= HEX:PATH
+to apply the map only when the live RAM bank (GA MMR) equals
+.IR HEX ,
+useful for paged operating systems such as FUZIX.
+.TP
+.B --monitor-pty
+Open a PTY for the memory monitor
+.RB ( "minicom -b 9600 -D" " " <path>).
+.TP
+.B --kbd-pty
+Open a PTY that injects writes as keystrokes and streams the
+firmware text-out
+.RB ( &BB5A )
+for external test harnesses.
+.TP
+.B --ocr-monitor
+Adds an in-memory screen-text reader: each frame the emulator
+scans video RAM, decodes it against the firmware font, and streams
+the 80x25 (or 40x25) character grid out the kbd PTY whenever it
+changes. Lets probes follow CP/M+ output that bypasses
+.BR &BB5A .
+Implies
+.BR --kbd-pty .
+.TP
+.BR -h ", " --help
+Show help and exit.
+.SH KEYBOARD SHORTCUTS
+.TP
+.B F4
+Save screenshot (.ppm).
+.TP
+.B F5
+Warm reset.
+.TP
+.B F6
+Toggle video capture (.gif in the current directory).
+.TP
+.B F8
+Open / close the memory monitor and disassembler.
+.TP
+.B F9
+Open the options overlay.
+.TP
+.B F11
+Toggle fullscreen.
+.TP
+.B F12
+Quit.
+.TP
+.B Ctrl+V
+Paste clipboard text into the emulator.
+.SH OVERLAY
+Press
+.B F9
+to open the in-emulator settings overlay. Four tabs are available:
+.TP
+.B General
+Model (464 / 664 / 6128), RAM size, MX4 expansion bus, Roms Board,
+DDI-1.
+.TP
+.B Media
+Floppy drives A and B, cassette tape, external tape toggle (CPC
+6128).
+.TP
+.B Extensions
+M4 board, Albireo USB, SYMBiFACE II IDE / mouse, Cyboard RTC,
+Net4CPC, USIfAC II, SymbNet, expansion ROM slots 0\(en31.
+.TP
+.B Advanced
+Smoothing (linear vs nearest scaling), snapshot load/save, Net4CPC
+TAP toggle, debug machinery, video capture, USIfAC mode (PTY /
+TCP), and the
+.B Monochrome
+phosphor tint (off, green, amber, white). The Advanced tab is
+hidden unless
+.B tinker=true
+is set in the config.
+.SH CONFIGURATION FILE
+.I ~/.config/1984/1984.conf
+is a small INI-style file with sections
+.BR [machine] ", " [roms] ", " [expansion_roms] ", "
+.BR [storage] ", " [hardware] ", " [display] ", and " [advanced] .
+A self-documented default is written on first run; the overlay
+edits it in place. Per-board ROM groupings are stored under
+.BI [board: NAME ]
+sections (m4, albireo, cyboard) and follow the matching hardware
+toggle automatically.
+.SH ENVIRONMENT
+Most environment variables are
+.B debug-only
+and are silently ignored unless
+.B debug=true
+is set in the
+.B [advanced]
+section of the config (or toggled via
+.BR "Overlay -> Advanced -> Debugging" ).
+.TP
+.B ONE_K_TRACE_*
+Per-subsystem trace flags
+.RB ( ONE_K_TRACE_IDE ", " ONE_K_TRACE_HDCPM ", "
+.BR ONE_K_TRACE_AUDIO ", " ONE_K_TRACE_PSG ", "
+.BR ONE_K_TRACE_PALETTE ", " ONE_K_TRACE_IRQ ", "
+.BR ONE_K_TRACE_KBDPTY ", " ONE_K_TRACE_SDL_EV ", " "and others)" .
+Set to any non-empty value to enable.
+.TP
+.B ONE_K_CAP_TEXT
+Capture the firmware text stream to stderr (frame-stamped).
+.TP
+.BR ONE_K_DUMP_PC ", " ONE_K_DUMP_RAM
+Panic-time PC trace and RAM dump.
+.TP
+.BR ONE_K_STOP_AT_LOOP ", " ONE_K_RESET_SNA
+Bisection helpers for tight loops and snapshot replay.
+.TP
+.B FAKE_RTC, FAKE_RTC_TIME
+Force the emulated RTC to a fixed wall-clock time (always honoured,
+not gated on debug).
+.TP
+.B CC_TABLES
+Force a specific cycle table variant. Always honoured.
+.TP
+.B AUTOSTART_FRAMES, PASTE_GAP
+Tune the autostart / paste pacing. Always honoured.
+.SH FILES
+.TP
+.I ~/.config/1984/1984.conf
+Configuration file.
+.TP
+.I ~/.config/1984/roms/
+Default location for user-supplied CPC ROMs and expansion ROMs.
+.TP
+.I /usr/share/1984/roms/
+System-wide ROM directory used when the user directory is empty
+(populated by the
+.B 1984
+RPM and equivalents with the bundled CPC firmware, M4ROM, and the
+Amstrad Diagnostics ROM).
+.SH BUGS
+Report issues at
+.UR https://github.com/salvogendut/1984/issues
+.UE .
+.SH AUTHOR
+Salvatore Bognanni
+.MT salvogendut@gmail.com
+.ME .
+.SH COPYRIGHT
+Copyright (C) 2025\(en2026 Salvatore Bognanni. License GPL-2.0-only.
+.SH SEE ALSO
+.BR caprice32 (1),
+.BR mame (6)

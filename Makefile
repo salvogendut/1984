@@ -110,12 +110,12 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
 mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(desktopdir)" \
-	"$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" \
-	"$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" \
-	"$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" \
-	"$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" \
-	"$(DESTDIR)$(romsdir)"
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
+	"$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" \
+	"$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" \
+	"$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" \
+	"$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" \
+	"$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
@@ -228,6 +228,9 @@ am__uninstall_files_from_dir = { \
   || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
        $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
   }
+man1dir = $(mandir)/man1
+NROFF = nroff
+MANS = $(dist_man1_MANS)
 DATA = $(dist_desktop_DATA) $(dist_icon128_DATA) $(dist_icon16_DATA) \
 	$(dist_icon256_DATA) $(dist_icon32_DATA) $(dist_icon48_DATA) \
 	$(dist_icon512_DATA) $(dist_icon64_DATA) $(dist_metainfo_DATA) \
@@ -251,7 +254,7 @@ am__define_uniq_tagged_files = \
     if test -f "$$i"; then echo $$i; else echo $(srcdir)/$$i; fi; \
   done | $(am__uniquify_input)`
 AM_RECURSIVE_TARGETS = cscope
-am__DIST_COMMON = $(srcdir)/Makefile.in \
+am__DIST_COMMON = $(dist_man1_MANS) $(srcdir)/Makefile.in \
 	$(top_srcdir)/build-aux/compile \
 	$(top_srcdir)/build-aux/config.guess \
 	$(top_srcdir)/build-aux/config.sub \
@@ -327,7 +330,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PROG_GIT_COMMIT = 1728715
+PROG_GIT_COMMIT = 85133e2
 SDL3_CFLAGS = 
 SDL3_LIBS = -lSDL3
 SET_MAKE = 
@@ -390,6 +393,9 @@ target_alias =
 top_build_prefix = 
 top_builddir = .
 top_srcdir = .
+
+# Man page — installed under $(mandir)/man1/, included in `make dist`.
+dist_man1_MANS = 1984.1
 1984_SOURCES = \
 	src/config.c \
 	src/cpc.c \
@@ -433,6 +439,7 @@ top_srcdir = .
 
 noinst_HEADERS = \
 	src/ch376.h \
+	src/compat_win.h \
 	src/config.h \
 	src/cpc.h \
 	src/crtc.h \
@@ -447,6 +454,7 @@ noinst_HEADERS = \
 	src/ide.h \
 	src/joy.h \
 	src/kbd.h \
+	src/kbd_pty.h \
 	src/leds.h \
 	src/m4.h \
 	src/mem.h \
@@ -460,12 +468,16 @@ noinst_HEADERS = \
 	src/ppi.h \
 	src/psg.h \
 	src/rtc.h \
+	src/screen_text.h \
 	src/shutter_wav.h \
 	src/snapshot.h \
+	src/startup_debug.h \
 	src/symbnet.h \
+	src/symbols.h \
 	src/symbos_trace.h \
 	src/tape.h \
 	src/types.h \
+	src/usifac.h \
 	src/z80.h \
 	src/z80dis.h
 
@@ -519,7 +531,7 @@ dist_icon512_DATA = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
-EXTRA_DIST = Makefile LICENSE Development.md icons/1984.rc icons/1984.ico
+EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico
 all: all-am
 
 .SUFFIXES:
@@ -1302,6 +1314,47 @@ src/1984-z80.obj: src/z80.c
 #	$(AM_V_CC)source='src/z80.c' object='src/1984-z80.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-z80.obj `if test -f 'src/z80.c'; then $(CYGPATH_W) 'src/z80.c'; else $(CYGPATH_W) '$(srcdir)/src/z80.c'; fi`
+install-man1: $(dist_man1_MANS)
+	@$(NORMAL_INSTALL)
+	@list1='$(dist_man1_MANS)'; \
+	list2=''; \
+	test -n "$(man1dir)" \
+	  && test -n "`echo $$list1$$list2`" \
+	  || exit 0; \
+	echo " $(MKDIR_P) '$(DESTDIR)$(man1dir)'"; \
+	$(MKDIR_P) "$(DESTDIR)$(man1dir)" || exit 1; \
+	{ for i in $$list1; do echo "$$i"; done;  \
+	if test -n "$$list2"; then \
+	  for i in $$list2; do echo "$$i"; done \
+	    | sed -n '/\.1[a-z]*$$/p'; \
+	fi; \
+	} | while read p; do \
+	  if test -f $$p; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; echo "$$p"; \
+	done | \
+	sed -e 'n;s,.*/,,;p;h;s,.*\.,,;s,^[^1][0-9a-z]*$$,1,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,' | \
+	sed 'N;N;s,\n, ,g' | { \
+	list=; while read file base inst; do \
+	  if test "$$base" = "$$inst"; then list="$$list $$file"; else \
+	    echo " $(INSTALL_DATA) '$$file' '$(DESTDIR)$(man1dir)/$$inst'"; \
+	    $(INSTALL_DATA) "$$file" "$(DESTDIR)$(man1dir)/$$inst" || exit $$?; \
+	  fi; \
+	done; \
+	for i in $$list; do echo "$$i"; done | $(am__base_list) | \
+	while read files; do \
+	  test -z "$$files" || { \
+	    echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(man1dir)'"; \
+	    $(INSTALL_DATA) $$files "$(DESTDIR)$(man1dir)" || exit $$?; }; \
+	done; }
+
+uninstall-man1:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_man1_MANS)'; test -n "$(man1dir)" || exit 0; \
+	files=`{ for i in $$list; do echo "$$i"; done; \
+	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^1][0-9a-z]*$$,1,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
+	dir='$(DESTDIR)$(man1dir)'; $(am__uninstall_files_from_dir)
 install-dist_desktopDATA: $(dist_desktop_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(dist_desktop_DATA)'; test -n "$(desktopdir)" || list=; \
@@ -1752,9 +1805,9 @@ distcleancheck: distclean
 	       exit 1; } >&2
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS) $(DATA) $(HEADERS)
+all-am: Makefile $(PROGRAMS) $(MANS) $(DATA) $(HEADERS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1855,7 +1908,7 @@ install-data-am: install-dist_desktopDATA install-dist_icon128DATA \
 	install-dist_icon16DATA install-dist_icon256DATA \
 	install-dist_icon32DATA install-dist_icon48DATA \
 	install-dist_icon512DATA install-dist_icon64DATA \
-	install-dist_metainfoDATA install-dist_romsDATA
+	install-dist_metainfoDATA install-dist_romsDATA install-man
 
 install-dvi: install-dvi-am
 
@@ -1871,7 +1924,7 @@ install-info: install-info-am
 
 install-info-am:
 
-install-man:
+install-man: install-man1
 
 install-pdf: install-pdf-am
 
@@ -1945,7 +1998,9 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_desktopDATA \
 	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
 	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
 	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
-	uninstall-dist_romsDATA
+	uninstall-dist_romsDATA uninstall-man
+
+uninstall-man: uninstall-man1
 
 .MAKE: install-am install-strip
 
@@ -1964,9 +2019,9 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_desktopDATA \
 	install-dist_icon64DATA install-dist_metainfoDATA \
 	install-dist_romsDATA install-dvi install-dvi-am install-exec \
 	install-exec-am install-html install-html-am install-info \
-	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
+	install-info-am install-man install-man1 install-pdf \
+	install-pdf-am install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-binPROGRAMS uninstall-dist_desktopDATA \
@@ -1974,7 +2029,7 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_desktopDATA \
 	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
 	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
 	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
-	uninstall-dist_romsDATA
+	uninstall-dist_romsDATA uninstall-man uninstall-man1
 
 .PRECIOUS: Makefile
 
