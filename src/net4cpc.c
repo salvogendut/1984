@@ -291,6 +291,13 @@ static void handle_command(int s, u8 cmd) {
 
     case SCMD_OPEN:
         close_sock(s);
+        /* Real W5100S OPEN clears Sn_IR (datasheet § 4.2.10). Without
+         * this, a stale DISCON bit from a prior CLOSE survives into
+         * the new socket; FUZIX's net_w5x00 driver sees it on the
+         * first event poll after OPEN, calls w5x00_eof() and
+         * connect() returns ECONNREFUSED. Matches the "first telnet
+         * refused, second works" pattern observed 2026-06-20. */
+        regs[SOCK_BASE[s] + SR_IR] = 0;
         /* TAP backend for TCP: tell the stack about the new socket and
          * reflect INIT immediately. UDP keeps using the POSIX backend
          * even with TAP because n4c_stack_send_udp() is selected per
