@@ -21,7 +21,7 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Demo
 </p>
 
 <p align="center">
-  <img src="https://i.postimg.cc/76BhNJcF/1984-20260620-111400.gif" alt="FUZIX networking works" width="600"><br>
+  <img src="screenshots/fuzix-network.gif" alt="FUZIX networking works" width="600"><br>
   <sub><b>FUZIX networking works</b></sub>
 </p>
 
