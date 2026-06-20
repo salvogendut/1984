@@ -526,6 +526,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     SD_LOG("cpc_init OK");
+    ga_set_monochrome(&cpc.ga, cfg.monochrome);
     cpc.mem.ram_size    = cfg.memory_kb * 1024;
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;

@@ -14,8 +14,30 @@ const u32 ga_hw_palette[32] = {
     0x800000, 0x8000FF, 0x808000, 0x8080FF,
 };
 
+/* Map a colour RGB through the active monochrome tint. MONO_OFF returns
+ * rgb unchanged so the cold path is a single compare + branch. */
+static u32 apply_mono(u32 rgb, MonoMode m) {
+    if (m == MONO_OFF) return rgb;
+    u32 r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = rgb & 0xff;
+    /* Rec. 601 luma; matches display_apply_greyscale in src/display.c. */
+    u32 L = (306u * r + 601u * g + 117u * b) >> 10;
+    if (L > 255) L = 255;
+    switch (m) {
+        case MONO_GREEN: return L << 8;                            /* 0,L,0 */
+        case MONO_AMBER: return (L << 16) | ((L * 3 / 4) << 8);    /* L,0.75L,0 */
+        case MONO_WHITE: return (L << 16) | (L << 8) | L;
+        default:         return rgb;
+    }
+}
+
 void ga_init(GateArray *ga) {
+    /* Preserve the user's monochrome selection across hard resets: a
+     * warm reboot via the overlay shouldn't flip the screen back to
+     * colour. ga_set_monochrome() is still the one entrypoint that
+     * changes the field. */
+    MonoMode keep_mono = ga->monochrome;
     memset(ga, 0, sizeof(*ga));
+    ga->monochrome = keep_mono;
     ga->lower_rom = true;
     ga->upper_rom = true;
     ga->screen_mode = 1;
@@ -26,7 +48,14 @@ void ga_init(GateArray *ga) {
     ga->ink[0]  = 0x1A;   /* typical border */
     ga->ink[1]  = 0x04;
     for (int i = 0; i < GA_NUM_INKS; i++)
-        ga->resolved_ink[i] = ga_hw_palette[ga->ink[i] & 0x1F];
+        ga->resolved_ink[i] = apply_mono(ga_hw_palette[ga->ink[i] & 0x1F],
+                                          ga->monochrome);
+}
+
+void ga_set_monochrome(GateArray *ga, MonoMode m) {
+    ga->monochrome = m;
+    for (int i = 0; i < GA_NUM_INKS; i++)
+        ga->resolved_ink[i] = apply_mono(ga_hw_palette[ga->ink[i] & 0x1F], m);
 }
 
 void ga_write(GateArray *ga, u8 val) {
@@ -38,7 +67,8 @@ void ga_write(GateArray *ga, u8 val) {
         case 0x01:   /* Set ink colour */
             if (ga->selected_pen < GA_NUM_INKS) {
                 ga->ink[ga->selected_pen] = val & 0x1F;
-                ga->resolved_ink[ga->selected_pen] = ga_hw_palette[val & 0x1F];
+                ga->resolved_ink[ga->selected_pen] =
+                    apply_mono(ga_hw_palette[val & 0x1F], ga->monochrome);
             }
             break;
         case 0x02:   /* Screen mode + ROM control */

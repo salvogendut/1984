@@ -92,6 +92,7 @@ typedef struct {
     int  scale;             /* 1, 2, or 3 */
     bool fullscreen;
     bool fullscreen_smoothing; /* linear (smooth) vs nearest (sharp) texture scale */
+    MonoMode monochrome;       /* off / green / amber / white phosphor tint */
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
