@@ -13,12 +13,24 @@
 
 #define GA_NUM_INKS 17   /* 16 inks + 1 border */
 
+/* Monochrome display tint applied to resolved_ink[]. MONO_OFF preserves
+ * the original colour palette bit-for-bit. The non-off modes map each
+ * CPC ink to a shade of the chosen tint via a Rec. 601 luma transform,
+ * emulating a period-typical monochrome monitor (e.g. CPC GT65 green). */
+typedef enum {
+    MONO_OFF = 0,
+    MONO_GREEN,
+    MONO_AMBER,
+    MONO_WHITE,
+} MonoMode;
+
 typedef struct {
     u8  ink[GA_NUM_INKS];    /* hardware colour index (0-31) */
     /* Resolved RGB888 cache of ink[]; kept in sync by ga_init / ga_write so
      * the per-pixel render path can do a single u32 load instead of two
      * dependent array lookups (ink[pen] then ga_hw_palette[idx]). */
     u32 resolved_ink[GA_NUM_INKS];
+    MonoMode monochrome;     /* tint applied when resolving inks; OFF = colour */
     u8  selected_pen;        /* current pen register (bit 4 = border) */
     u8  screen_mode;         /* 0/1/2 — active mode (latched on HSYNC) */
     u8  requested_mode;      /* mode written via ga_write; copied to screen_mode on next HSYNC */
@@ -34,6 +46,11 @@ extern const u32 ga_hw_palette[32];
 
 void ga_init(GateArray *ga);
 void ga_write(GateArray *ga, u8 val);   /* port 0x7F (A15=0) */
+
+/* Switch the monochrome tint mode. Re-resolves all 17 inks so the new
+ * tint takes effect on the next rendered frame without waiting for the
+ * program to rewrite its palette. */
+void ga_set_monochrome(GateArray *ga, MonoMode m);
 u8   ga_mode(GateArray *ga);
 void ga_hsync(GateArray *ga);           /* called by CRTC on each HSYNC */
 void ga_vsync_start(GateArray *ga);     /* called on CRTC VSYNC rising edge */

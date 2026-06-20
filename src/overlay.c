@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 10 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 11 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -403,6 +403,15 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 9:
+            snprintf(lbl, lsz, "Monochrome");
+            switch (ov->cfg->monochrome) {
+                case MONO_GREEN: snprintf(val, vsz, "green"); break;
+                case MONO_AMBER: snprintf(val, vsz, "amber"); break;
+                case MONO_WHITE: snprintf(val, vsz, "white"); break;
+                default:         snprintf(val, vsz, "off");   break;
+            }
+            break;
+        case 10:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -940,6 +949,19 @@ static void activate_item(Overlay *ov) {
             }
             ov->dirty = true;
             break;
+        case 9: {
+            MonoMode next;
+            switch (ov->cfg->monochrome) {
+                case MONO_OFF:   next = MONO_GREEN; break;
+                case MONO_GREEN: next = MONO_AMBER; break;
+                case MONO_AMBER: next = MONO_WHITE; break;
+                default:         next = MONO_OFF;   break;
+            }
+            ov->cfg->monochrome = next;
+            if (ov->cpc) ga_set_monochrome(&ov->cpc->ga, next);
+            ov->dirty = true;
+            break;
+        }
         }
         break;
 
@@ -1612,10 +1634,24 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-        if (readonly)
+        if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
-        else
+        } else if (ov->section == OV_TINKER && i == 9
+                   && ov->cfg->monochrome != MONO_OFF) {
+            /* Render the tint name in its own phosphor colour so the
+             * choice is recognisable at a glance. Bright values picked
+             * to read against both the selected-row blue and the bar. */
+            Uint8 R = 255, G = 200, B = 50;
+            switch (ov->cfg->monochrome) {
+                case MONO_GREEN: R =  90; G = 255; B =  90; break;
+                case MONO_AMBER: R = 255; G = 191; B =   0; break;
+                case MONO_WHITE: R = 255; G = 255; B = 255; break;
+                default: break;
+            }
+            draw_text(r, VAL_X, ty, val, R, G, B);
+        } else {
             draw_text(r, VAL_X, ty, val, 255, 200, 50);
+        }
     }
 
     /* ---- Confirm dialog ---- */

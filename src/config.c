@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>      /* strcasecmp */
 #include <ctype.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -100,6 +101,23 @@ static char *trim(char *s) {
     while (end > s && isspace((unsigned char)*(end - 1))) end--;
     *end = '\0';
     return s;
+}
+
+static const char *mono_to_str(MonoMode m) {
+    switch (m) {
+        case MONO_GREEN: return "green";
+        case MONO_AMBER: return "amber";
+        case MONO_WHITE: return "white";
+        default:         return "off";
+    }
+}
+
+static bool parse_mono(const char *val, MonoMode *out) {
+    if (!strcasecmp(val, "off"))   { *out = MONO_OFF;   return true; }
+    if (!strcasecmp(val, "green")) { *out = MONO_GREEN; return true; }
+    if (!strcasecmp(val, "amber")) { *out = MONO_AMBER; return true; }
+    if (!strcasecmp(val, "white")) { *out = MONO_WHITE; return true; }
+    return false;
 }
 
 static bool parse_bool(const char *val, bool *out) {
@@ -209,6 +227,9 @@ static void config_create_default(const char *path, const char *home) {
         "fullscreen=false\n"
         "# Smooth (linear) vs sharp (nearest) texture scaling\n"
         "fullscreen_smoothing=true\n"
+        "# Monochrome monitor tint: off | green | amber | white\n"
+        "# Maps the CPC palette to shades of one phosphor colour.\n"
+        "monochrome=off\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
@@ -429,6 +450,10 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->fullscreen_smoothing = b;
                 else { fprintf(stderr, "1984.conf:%d: fullscreen_smoothing must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "monochrome")) {
+                MonoMode m;
+                if (parse_mono(val, &m)) cfg->monochrome = m;
+                else { fprintf(stderr, "1984.conf:%d: monochrome must be off/green/amber/white\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "advanced")) {
             if (!strcmp(key, "tinker")) {
@@ -566,7 +591,8 @@ int config_save(const Config *cfg) {
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n"
-        "fullscreen_smoothing=%s\n\n"
+        "fullscreen_smoothing=%s\n"
+        "monochrome=%s\n\n"
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n",
@@ -601,6 +627,7 @@ int config_save(const Config *cfg) {
         cfg->scale,
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",
+        mono_to_str(cfg->monochrome),
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false"
     );
