@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 int net4cpc_trace = 0;
 
@@ -314,7 +315,14 @@ static void handle_command(int s, u8 cmd) {
              * mirror back to the register so reads stay consistent. */
             u16 lport = get16(SOCK_BASE[s] + 0x04);
             if (lport == 0) {
-                static u16 ephemeral_next = 49152;
+                /* Seeded from time+pid on first call so successive 1984
+                 * processes don't all start at 49152 and collide with
+                 * stale half-open conns on long-lived servers. */
+                static u16 ephemeral_next = 0;
+                if (ephemeral_next == 0) {
+                    u32 mix = (u32)time(NULL) ^ ((u32)getpid() << 8);
+                    ephemeral_next = (u16)(49152 + (mix % (65536u - 49152u)));
+                }
                 lport = ephemeral_next++;
                 if (ephemeral_next == 0) ephemeral_next = 49152;
                 set16(SOCK_BASE[s] + 0x04, lport);
