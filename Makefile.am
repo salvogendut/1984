@@ -1,5 +1,8 @@
 bin_PROGRAMS = 1984
 
+# Man page — installed under $(mandir)/man1/, included in `make dist`.
+dist_man1_MANS = 1984.1
+
 1984_SOURCES = \
 	src/config.c \
 	src/cpc.c \
@@ -43,6 +46,7 @@ bin_PROGRAMS = 1984
 
 noinst_HEADERS = \
 	src/ch376.h \
+	src/compat_win.h \
 	src/config.h \
 	src/cpc.h \
 	src/crtc.h \
@@ -57,6 +61,7 @@ noinst_HEADERS = \
 	src/ide.h \
 	src/joy.h \
 	src/kbd.h \
+	src/kbd_pty.h \
 	src/leds.h \
 	src/m4.h \
 	src/mem.h \
@@ -70,12 +75,16 @@ noinst_HEADERS = \
 	src/ppi.h \
 	src/psg.h \
 	src/rtc.h \
+	src/screen_text.h \
 	src/shutter_wav.h \
 	src/snapshot.h \
+	src/startup_debug.h \
 	src/symbnet.h \
+	src/symbols.h \
 	src/symbos_trace.h \
 	src/tape.h \
 	src/types.h \
+	src/usifac.h \
 	src/z80.h \
 	src/z80dis.h
 
@@ -134,4 +143,4 @@ dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
-EXTRA_DIST = Makefile LICENSE Development.md icons/1984.rc icons/1984.ico
+EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico
