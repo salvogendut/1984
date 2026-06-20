@@ -1,7 +1,7 @@
 # Symbol-import for the 1984 debugger — scope
 
-Tracking issue: TBD. Feature requested by Antonio Casado (ajcasado, FUZIX-CPC
-maintainer) to make FUZIX kernel/userspace debugging in 1984 tractable.
+Tracking issue: TBD. Feature requested by ajcasado (FUZIX-CPC maintainer)
+to make FUZIX kernel/userspace debugging in 1984 tractable.
 
 ## Why
 

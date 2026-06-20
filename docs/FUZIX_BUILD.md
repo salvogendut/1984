@@ -22,7 +22,7 @@ Newer SDCC (4.1+) changed the default Z80 calling convention to
 the shipped `z80.lib` (assembled for the old `sdcccall 0`). Building
 with `--sdcccall 0` on SDCC 4.6 still produces a broken binary because
 the link-time mix is unsound. Patching `z80.lib` is possible but tracks
-a moving target; Antonio (the cpcsme maintainer) builds with the Alan
+a moving target; ajcasado (the cpcsme maintainer) builds with the Alan
 Cox fork and recommends others do the same. Forward-looking caveat:
 Cox is shifting FUZIX toward the FuzixCompilerKit (`fcc`), which would
 moot this discussion eventually.
