@@ -57,6 +57,7 @@ int m4_trace = 0;
 #define C_NETRECV     0x4335
 #define C_NETHOSTIP   0x4336
 #define C_NETRSSI     0x4337
+#define C_ROMLOW      0x433D
 #define C_NETBIND     0x4338
 #define C_NETLISTEN   0x4339
 #define C_NETACCEPT   0x433A
@@ -571,6 +572,26 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         m->nmi_enabled = (plen > 0) ? (p[0] == 0) : false;
         if (m4_trace) fprintf(stderr, "[m4]      NMI -> %s\n",
                               m->nmi_enabled ? "ENABLED" : "DISABLED");
+        err = M4_OK;
+        break;
+
+    case C_ROMLOW:
+        /* M4 firmware v2.0.7+ board-detection helper used by FUZIX.
+         * arg = 2 → "hack" mode: route subsequent lower-ROM reads to
+         *           the M4 snapshot-ROM image instead of OS_6128.ROM.
+         *           FUZIX reads byte 0x100 expecting 'M' ("MV - SNA"
+         *           header) and byte 0x0 expecting the M4 rom number.
+         * arg = 1 → restore default lower ROM.
+         * We back this with a stub (mem->m4_snapshot_rom_stub) that
+         * has just the two bytes FUZIX checks; enough to pass
+         * detection. */
+        if (plen > 0) {
+            if (p[0] == 2) mem->lower_rom_override = mem->m4_snapshot_rom_stub;
+            else if (p[0] == 1) mem->lower_rom_override = NULL;
+        }
+        if (m4_trace) fprintf(stderr, "[m4]      ROMLOW arg=%u -> override %s\n",
+                              plen ? p[0] : 0,
+                              mem->lower_rom_override ? "STUB" : "OFF");
         err = M4_OK;
         break;
 

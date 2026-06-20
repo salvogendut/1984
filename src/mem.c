@@ -26,6 +26,13 @@ void mem_init(Mem *m) {
     m->upper_rom_select  = 0;
     m->ram_bank          = 0;
     m->ram_size          = 0x20000;  /* default 128 KB; caller sets from config */
+    /* Populate the M4 snapshot-ROM stub: FUZIX reads two bytes —
+     * 'M' (0x4D) at 0x100 (the "MV - SNA" header), and a rom slot
+     * number at 0x0. Filling rest with 0xFF mirrors blank ROM. */
+    memset(m->m4_snapshot_rom_stub, 0xFF, sizeof(m->m4_snapshot_rom_stub));
+    m->m4_snapshot_rom_stub[0x000] = 0x06;  /* M4_ROM_SLOT in m4.h — must match where M4ROM.ROM loads */
+    m->m4_snapshot_rom_stub[0x100] = 0x4D;  /* 'M' — start of "MV - SNA" */
+    m->lower_rom_override = NULL;
 }
 
 int mem_load_os(Mem *m, const char *path) {
@@ -152,8 +159,11 @@ static inline u8 read_ram(const Mem *m, u32 off) {
 
 u8 mem_read(Mem *m, u16 addr) {
     /* Lower ROM overlay */
-    if (addr < 0x4000 && m->lower_rom_enabled)
+    if (addr < 0x4000 && m->lower_rom_enabled) {
+        if (m->lower_rom_override)
+            return m->lower_rom_override[addr];
         return m->rom_os[addr];
+    }
 
     /* Upper ROM overlay — always wins on reads at 0xC000 when enabled,
      * even when banking is active (writes still go to banked RAM). */
