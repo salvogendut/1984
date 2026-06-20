@@ -3,7 +3,8 @@
 This is the working recipe for building ajcasado's FUZIX port (the `cpcsme`
 platform — CPC with Standard Memory Expansion) from a clean checkout.
 
-Upstream: https://github.com/ajcasado/FUZIX
+Upstream: https://codeberg.org/ajcasado/FUZIX  (the project migrated from
+GitHub to Codeberg; the old `github.com/ajcasado/FUZIX` may be stale.)
 
 ## One-time setup
 
@@ -15,21 +16,35 @@ the steps translate directly to any other distro (`apt`, `pacman`, …).
 
 ### 1. Cross-compiler
 
-Install **SDCC** v4.5.24 or later — anything recent works. Fedora ships an
-older build that's fine for FUZIX:
+**Use SDCC < 4.1, ideally Alan Cox's FUZIX fork** (based on SDCC 3.9).
+Newer SDCC (4.1+) changed the default Z80 calling convention to
+`sdcccall 1`, which is incompatible with the precompiled routines in
+the shipped `z80.lib` (assembled for the old `sdcccall 0`). Building
+with `--sdcccall 0` on SDCC 4.6 still produces a broken binary because
+the link-time mix is unsound. Patching `z80.lib` is possible but tracks
+a moving target; Antonio (the cpcsme maintainer) builds with the Alan
+Cox fork and recommends others do the same. Forward-looking caveat:
+Cox is shifting FUZIX toward the FuzixCompilerKit (`fcc`), which would
+moot this discussion eventually.
+
+Sources for SDCC 3.9 / the Cox fork:
 
 ```bash
-sudo dnf install -y sdcc     # or: apt install sdcc / pacman -S sdcc
+# Alan Cox's SDCC fork (FUZIX-friendly)
+git clone https://github.com/EtchedPixels/sdcc-z80.git ~/Dev/sdcc-fuzix
+# Or grab an SDCC 3.9 / 4.0 tarball from
+# https://sourceforge.net/projects/sdcc/files/sdcc/
 ```
 
-If your distro's SDCC is too old or you need a specific build, grab a
-release tarball from <https://sourceforge.net/projects/sdcc/files/sdcc/> and
-unpack it somewhere on `PATH` (the reference environment used
+Then build and put it on `PATH` (the reference environment uses
 `~/Dev/sdcc/bin/sdcc`). Verify:
 
 ```bash
-sdcc --version | head -1   # SDCC ... 4.5.24 ...
+sdcc --version | head -1   # SDCC ... 3.9.x ... (Cox fork or upstream 3.9/4.0)
 ```
+
+Distro-packaged SDCC (`dnf install sdcc`) is almost certainly too new —
+do not use it for the cpcsme kernel.
 
 ### 2. CPC packaging tools — not commonly packaged, build from source
 
@@ -104,7 +119,7 @@ sudo chown $USER:$USER /opt/fcc
 
 ```bash
 cd ~/Dev
-git clone https://github.com/ajcasado/FUZIX.git
+git clone https://codeberg.org/ajcasado/FUZIX.git
 ```
 
 ## Building the kernel only (what 1984 actually needs)
@@ -143,7 +158,7 @@ and rebuild:
 | Variable | Default | What it enables |
 |---|---|---|
 | `CONFIG_USIFAC_CH376` | **on** | USIfAC's on-board CH376 as USB mass storage |
-| `CONFIG_USIFAC_SERIAL` | off (forced off by CH376) | USIfAC as a serial TTY (`/dev/tty3`) |
+| `CONFIG_USIFAC_SERIAL` | off (forced off by CH376) | USIfAC as a serial TTY (`/dev/tty5`) |
 | `CONFIG_USIFAC_SLIP` | off | SLIP networking on top of `_SERIAL` |
 | `CONFIG_ALBIREO` | on | Albireo CH376 USB host |
 | `CONFIG_TD_IDE` | on | SYMBiFACE II / Cyboard IDE |
@@ -173,17 +188,20 @@ strings ~/Dev/FUZIX/Kernel/fuzix.bin | grep -i usifac
 # SERIAL mode prints "Usifac serial port configured at 115200 baud"
 ```
 
-The TTY appears as `/dev/tty3`. To use it as a login console, edit
+The TTY appears as `/dev/tty5` (the cpcsme platform now uses the first
+64 KB entirely as video RAM and exposes four ttys plus the serial port,
+so the USIfAC serial line is `tty5`, not `tty3` as in older builds).
+To use it as a login console, edit
 `/etc/inittab` on the running system and change:
 
 ```
-03:3:off:getty /dev/tty3
+03:3:off:getty /dev/tty5
 ```
 
 to
 
 ```
-03:3:respawn:getty /dev/tty3
+03:3:respawn:getty /dev/tty5
 ```
 
 ## Running in 1984

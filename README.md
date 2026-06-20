@@ -85,6 +85,7 @@ Per-expansion guides:
 - **[NET4CPC.md](NET4CPC.md)** — Net4CPC (W5100S) TAP backend; host-side device setup, bridge vs point-to-point, KCNet `NCFG.INI` profiles, `--trace-tap` walkthrough
 - **[docs/USIFAC.md](docs/USIFAC.md)** — USIfAC II RS232 serial interface; PTY and TCP backend wiring, port map (`&FBD0/D1/D8/DD`), BASIC smoke tests
 - **[docs/FUZIX_BUILD.md](docs/FUZIX_BUILD.md)** — building ajcasado/FUZIX from source against this emulator; cpctools/hex2bin/iDSK/flip shim, `CONFIG_USIFAC_SERIAL` mode toggle
+- **[docs/SYMBOLS.md](docs/SYMBOLS.md)** — loading SDCC `.map` files for symbol-annotated disassembly in the F8 monitor; per-MMR matching, `S` / `BS` commands
 
 ## Acknowledgements
 

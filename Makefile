@@ -130,13 +130,14 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
 	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
 	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
-	src/1984-usifac.$(OBJEXT) src/1984-gifcap.$(OBJEXT) \
-	src/1984-webmcap.$(OBJEXT) src/1984-host_mount.$(OBJEXT) \
-	src/1984-leds.$(OBJEXT) src/1984-m4.$(OBJEXT) \
-	src/1984-symbnet.$(OBJEXT) src/1984-symbos_trace.$(OBJEXT) \
-	src/1984-mouse.$(OBJEXT) src/1984-n4c_stack.$(OBJEXT) \
-	src/1984-snapshot.$(OBJEXT) src/1984-tap.$(OBJEXT) \
-	src/1984-tape.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-usifac.$(OBJEXT) src/1984-symbols.$(OBJEXT) \
+	src/1984-gifcap.$(OBJEXT) src/1984-webmcap.$(OBJEXT) \
+	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
+	src/1984-symbos_trace.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
+	src/1984-n4c_stack.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
+	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
+	src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -172,6 +173,7 @@ am__depfiles_remade = src/$(DEPDIR)/1984-ch376.Po \
 	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
 	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-screen_text.Po \
 	src/$(DEPDIR)/1984-snapshot.Po src/$(DEPDIR)/1984-symbnet.Po \
+	src/$(DEPDIR)/1984-symbols.Po \
 	src/$(DEPDIR)/1984-symbos_trace.Po src/$(DEPDIR)/1984-tap.Po \
 	src/$(DEPDIR)/1984-tape.Po src/$(DEPDIR)/1984-usifac.Po \
 	src/$(DEPDIR)/1984-webmcap.Po src/$(DEPDIR)/1984-z80.Po \
@@ -325,7 +327,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PROG_GIT_COMMIT = 6141119
+PROG_GIT_COMMIT = 1728715
 SDL3_CFLAGS = 
 SDL3_LIBS = -lSDL3
 SET_MAKE = 
@@ -414,6 +416,7 @@ top_srcdir = .
 	src/fat.c \
 	src/ch376.c \
 	src/usifac.c \
+	src/symbols.c \
 	src/gifcap.c \
 	src/webmcap.c \
 	src/host_mount.c \
@@ -652,6 +655,8 @@ src/1984-ch376.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-usifac.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-symbols.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-gifcap.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-webmcap.$(OBJEXT): src/$(am__dirstamp) \
@@ -721,6 +726,7 @@ include src/$(DEPDIR)/1984-rtc.Po # am--include-marker
 include src/$(DEPDIR)/1984-screen_text.Po # am--include-marker
 include src/$(DEPDIR)/1984-snapshot.Po # am--include-marker
 include src/$(DEPDIR)/1984-symbnet.Po # am--include-marker
+include src/$(DEPDIR)/1984-symbols.Po # am--include-marker
 include src/$(DEPDIR)/1984-symbos_trace.Po # am--include-marker
 include src/$(DEPDIR)/1984-tap.Po # am--include-marker
 include src/$(DEPDIR)/1984-tape.Po # am--include-marker
@@ -1100,6 +1106,20 @@ src/1984-usifac.obj: src/usifac.c
 #	$(AM_V_CC)source='src/usifac.c' object='src/1984-usifac.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-usifac.obj `if test -f 'src/usifac.c'; then $(CYGPATH_W) 'src/usifac.c'; else $(CYGPATH_W) '$(srcdir)/src/usifac.c'; fi`
+
+src/1984-symbols.o: src/symbols.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-symbols.o -MD -MP -MF src/$(DEPDIR)/1984-symbols.Tpo -c -o src/1984-symbols.o `test -f 'src/symbols.c' || echo '$(srcdir)/'`src/symbols.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-symbols.Tpo src/$(DEPDIR)/1984-symbols.Po
+#	$(AM_V_CC)source='src/symbols.c' object='src/1984-symbols.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-symbols.o `test -f 'src/symbols.c' || echo '$(srcdir)/'`src/symbols.c
+
+src/1984-symbols.obj: src/symbols.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-symbols.obj -MD -MP -MF src/$(DEPDIR)/1984-symbols.Tpo -c -o src/1984-symbols.obj `if test -f 'src/symbols.c'; then $(CYGPATH_W) 'src/symbols.c'; else $(CYGPATH_W) '$(srcdir)/src/symbols.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-symbols.Tpo src/$(DEPDIR)/1984-symbols.Po
+#	$(AM_V_CC)source='src/symbols.c' object='src/1984-symbols.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-symbols.obj `if test -f 'src/symbols.c'; then $(CYGPATH_W) 'src/symbols.c'; else $(CYGPATH_W) '$(srcdir)/src/symbols.c'; fi`
 
 src/1984-gifcap.o: src/gifcap.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-gifcap.o -MD -MP -MF src/$(DEPDIR)/1984-gifcap.Tpo -c -o src/1984-gifcap.o `test -f 'src/gifcap.c' || echo '$(srcdir)/'`src/gifcap.c
@@ -1807,6 +1827,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po
 	-rm -f src/$(DEPDIR)/1984-snapshot.Po
 	-rm -f src/$(DEPDIR)/1984-symbnet.Po
+	-rm -f src/$(DEPDIR)/1984-symbols.Po
 	-rm -f src/$(DEPDIR)/1984-symbos_trace.Po
 	-rm -f src/$(DEPDIR)/1984-tap.Po
 	-rm -f src/$(DEPDIR)/1984-tape.Po
@@ -1896,6 +1917,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po
 	-rm -f src/$(DEPDIR)/1984-snapshot.Po
 	-rm -f src/$(DEPDIR)/1984-symbnet.Po
+	-rm -f src/$(DEPDIR)/1984-symbols.Po
 	-rm -f src/$(DEPDIR)/1984-symbos_trace.Po
 	-rm -f src/$(DEPDIR)/1984-tap.Po
 	-rm -f src/$(DEPDIR)/1984-tape.Po

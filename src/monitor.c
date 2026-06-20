@@ -3,6 +3,7 @@
 #endif
 #include "monitor.h"
 #include "z80dis.h"
+#include "symbols.h"
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -185,7 +186,16 @@ static bool dis_emit_line(Monitor *mon) {
         strncat(hexbuf, tmp, sizeof(hexbuf) - strlen(hexbuf) - 1);
     }
     char line[MON_COLS + 32];
-    snprintf(line, sizeof(line), "%04X  %-12s %s", addr, hexbuf, mnem);
+    /* Append a symbol annotation when available — checked cheaply via
+     * the no-op short-circuit in symbols_format() when no .map loaded. */
+    char sym[64];
+    symbols_format(addr, mon->cpc->mem.ram_bank, sym, sizeof(sym));
+    if (sym[0])
+        snprintf(line, sizeof(line), "%04X  %-12s %-20s ; %s",
+                 addr, hexbuf, mnem, sym);
+    else
+        snprintf(line, sizeof(line), "%04X  %-12s %s",
+                 addr, hexbuf, mnem);
     screen_puts(mon, line);
 
     mon->dis.addr = (u16)(addr + bytes);
@@ -416,6 +426,65 @@ static void mon_exec(Monitor *mon, const char *raw) {
                  cr->hsync, cr->vsync, cr->display_enable);
         screen_puts(mon, line);
 
+    } else if (strcmp(cmd_buf, "S") == 0) {
+        /* S            — name + offset for current PC
+         * S <name>     — show address of <name> + start disasm there */
+        if (*args == '\0') {
+            char buf[64];
+            symbols_format(mon->cpc->cpu.pc, mon->cpc->mem.ram_bank,
+                           buf, sizeof(buf));
+            char line[MON_COLS + 32];
+            if (buf[0])
+                snprintf(line, sizeof(line), "PC %04X = %s",
+                         mon->cpc->cpu.pc, buf);
+            else
+                snprintf(line, sizeof(line), "PC %04X — no matching symbol",
+                         mon->cpc->cpu.pc);
+            screen_puts(mon, line);
+        } else {
+            const Symbol *s = symbols_lookup_name(args);
+            if (!s) {
+                char line[MON_COLS + 32];
+                snprintf(line, sizeof(line), "symbol '%s' not found", args);
+                screen_puts(mon, line);
+            } else {
+                take_mem_snap(mon);
+                mon->dis.addr       = s->addr;
+                mon->dis.has_end    = false;
+                mon->dis.lines_left = 10;
+                mon->dis.active     = true;
+                dis_run_page(mon);
+            }
+        }
+
+    } else if (strcmp(cmd_buf, "BS") == 0) {
+        /* BS <name> — set breakpoint at symbol */
+        if (*args == '\0') {
+            screen_puts(mon, "Usage: BS <name>");
+        } else {
+            const Symbol *s = symbols_lookup_name(args);
+            if (!s) {
+                char line[MON_COLS + 32];
+                snprintf(line, sizeof(line), "symbol '%s' not found", args);
+                screen_puts(mon, line);
+            } else {
+                int slot = -1;
+                for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
+                    if (!mon->cpc->bp_enabled[i]) { slot = i; break; }
+                if (slot < 0) {
+                    screen_puts(mon, "No free breakpoint slots (max 16)");
+                } else {
+                    mon->cpc->breakpoints[slot] = s->addr;
+                    mon->cpc->bp_enabled[slot]  = true;
+                    char line[MON_COLS + 32];
+                    snprintf(line, sizeof(line),
+                             "Breakpoint %d set at %04X (%s)",
+                             slot, s->addr, s->name);
+                    screen_puts(mon, line);
+                }
+            }
+        }
+
     } else if (strcmp(cmd_buf, "X") == 0 || strcmp(cmd_buf, "Q") == 0) {
         mon->open = false;
         SDL_StopTextInput(mon->window);
@@ -427,6 +496,8 @@ static void mon_exec(Monitor *mon, const char *raw) {
         screen_puts(mon, "  M <addr> [<end>]    hex+ASCII dump");
         screen_puts(mon, "  B [<addr>]          set / list breakpoints");
         screen_puts(mon, "  BC <n>              clear breakpoint n");
+        screen_puts(mon, "  S [<name>]          show PC symbol / disasm at <name>");
+        screen_puts(mon, "  BS <name>           breakpoint at symbol <name>");
         screen_puts(mon, "  N                   single step (when paused)");
         screen_puts(mon, "  G                   resume (clear pause)");
         screen_puts(mon, "  GA                  show Gate Array inks / mode");
