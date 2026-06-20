@@ -1185,8 +1185,14 @@ static void tcp_tick(void) {
                     continue;
                 }
                 tcp_tx(s, TCP_SYN, NULL, 0);
-                /* snd_nxt got bumped — undo so we retransmit identically */
-                cb->snd_nxt = cb->snd_una;
+                /* SYN logically occupies 1 sequence number. tcp_tx bumped
+                 * snd_nxt; for a SYN retransmit we want snd_nxt to stay at
+                 * ISN+1 (not ISN+N after N retries) so the inbound SYN-ACK
+                 * handler's `ack == snd_nxt` check matches and we send a
+                 * proper ACK rather than mis-detecting simultaneous-open
+                 * and emitting another SYN-ACK. Pin to snd_una+1, which is
+                 * the invariant after the first successful SYN transmit. */
+                cb->snd_nxt = cb->snd_una + 1;
             }
         }
         /* Retransmit pending data */

@@ -297,7 +297,22 @@ static void handle_command(int s, u8 cmd) {
          * call inside SCMD_SEND, so we still want the host socket open
          * to receive DHCP-style replies before SIPR is set. */
         if (mode == SMODE_TCP && n4c_stack_active()) {
-            n4c_stack_tcp_open(s, get16(SOCK_BASE[s] + 0x04));
+            /* Sn_PORT (offset 0x04) is the local TCP port. Some guests
+             * (FUZIX cpcsme) don't set it for outbound connects and
+             * expect the chip to use an ephemeral port; real W5100S
+             * likely accepts port 0 because routers/peers don't care,
+             * but it confuses host-side NAT trackers and breaks
+             * conntrack on at least some kernels. Auto-assign a port
+             * in the IANA ephemeral range (49152-65535) when zero, and
+             * mirror back to the register so reads stay consistent. */
+            u16 lport = get16(SOCK_BASE[s] + 0x04);
+            if (lport == 0) {
+                static u16 ephemeral_next = 49152;
+                lport = ephemeral_next++;
+                if (ephemeral_next == 0) ephemeral_next = 49152;
+                set16(SOCK_BASE[s] + 0x04, lport);
+            }
+            n4c_stack_tcp_open(s, lport);
             regs[SOCK_BASE[s] + SR_SR] = SSTAT_INIT;
             set16(SOCK_BASE[s] + SR_TX_FSR, BUF_SIZE);
             set16(SOCK_BASE[s] + SR_TX_WR,  0);
