@@ -965,7 +965,7 @@ int main(int argc, char *argv[]) {
                     cpc_key_event(&cpc, SDL_SCANCODE_LCTRL, false);
                     cpc_key_event(&cpc, SDL_SCANCODE_RCTRL, false);
                     char *text = SDL_GetClipboardText();
-                    if (text) { paste_text(&paste, text); SDL_free(text); }
+                    if (text) { paste_text_raw(&paste, text); SDL_free(text); }
                 } else {
                     if (cpc_trace_input)
                         fprintf(stderr, "[input] KEY_DOWN scancode=%d name=%s\n",

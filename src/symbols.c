@@ -257,19 +257,37 @@ const Symbol *symbols_lookup(u16 addr, u8 ram_bank, u16 max_offset) {
 
     const Symbol *best = NULL;
     u16 best_off = 0xFFFF;
+    bool best_mmr_match = false;
 
+    /* Two-tier preference: a map whose mmr_match equals ram_bank beats a
+     * SYMBOLS_ANY_MMR map, which beats a map tagged for a *different*
+     * bank. The last tier matters in practice — users routinely run
+     * `--symbols=01:fuzix.map` and then disassemble before the bank
+     * register has been set, expecting to still see annotations. */
     for (SymbolMap *m = g_maps; m; m = m->next) {
-        if (m->mmr_match != SYMBOLS_ANY_MMR && m->mmr_match != (int)ram_bank)
-            continue;
+        bool exact_mmr = (m->mmr_match == (int)ram_bank);
+        bool any_mmr   = (m->mmr_match == SYMBOLS_ANY_MMR);
         ssize_t i = bsearch_floor(m->syms, m->n, addr);
         if (i < 0) continue;
         u16 off = (u16)(addr - m->syms[i].addr);
         if (off > max_offset) continue;
-        /* Prefer the closest match; ties go to the later-loaded map. */
-        if (best == NULL || off < best_off
-                         || (off == best_off && m->mmr_match != SYMBOLS_ANY_MMR)) {
+
+        bool take;
+        if (best == NULL) {
+            take = true;
+        } else if (exact_mmr && !best_mmr_match) {
+            take = true;  /* upgrade to a bank-exact match */
+        } else if (!exact_mmr && best_mmr_match) {
+            take = false; /* keep the bank-exact match we already have */
+        } else {
+            /* Same tier: closer offset wins; ties go to non-ANY (more specific). */
+            take = (off < best_off)
+                || (off == best_off && m->mmr_match != SYMBOLS_ANY_MMR && !any_mmr);
+        }
+        if (take) {
             best = &m->syms[i];
             best_off = off;
+            best_mmr_match = exact_mmr;
         }
     }
     return best;
