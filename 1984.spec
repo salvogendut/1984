@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.7
+Version:        0.4.8
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,9 +83,20 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
-* Sat Jun 20 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.7-1
+* Sun Jun 21 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.8-1
 - Add 1984(1) man page (#159)
 - Add Monochrome display tint: off / green / amber / white (#158)
+- LED activity bar: 3-segment M4 LED (power / disk / net) (#154)
+- Document LED slot map in docs/LEDS.md (#156)
+- net4cpc: randomize ephemeral source port per-process (#153)
+- symbols: import SDCC .map files into the F8 monitor (#152)
+- m4: implement C_ROMLOW (0x433D) so FUZIX v2.0.7+ detects the board
+  (#151)
+- Fix FUZIX over Net4CPC: W5100S handshake, ephemeral port, Sn_IR
+  clear, chip-wide IR summary (#150)
+- Add scripted joystick + headless capture for automated UI tests
+  (#149)
+- usifac: add USIfAC II RS232 emulation (closes #36) (#148)
 - Ship 664 ROMs (OS_664, BASIC_664, AMSDOS_664) in the package
 - Distribute all in-tree headers and USAGE.md so `make dist` produces
   a buildable tarball

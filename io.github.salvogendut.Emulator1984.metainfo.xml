@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.8" date="2026-06-21">
+      <description>
+        <p>New Monochrome display tint (off / green / amber / white) under Advanced — emulates a period GT65 green-phosphor monitor (and amber / paper-white variants) by mapping the CPC hardware palette through a Rec. 601 luma transform at ink-resolve time; border tints with the inks (#158). 1984(1) man page shipped and installed under $mandir/man1 (#159). Activity LED bar now has a 1.5× wide 3-segment M4 indicator (power / disk / net) and a documented slot map at docs/LEDS.md (#154, #156). FUZIX over Net4CPC works end-to-end after fixing the W5100S handshake, auto-assigned source port, Sn_IR clear, and chip-wide IR summary (#150); ephemeral port is now randomized per process so reconnects don't loop on challenge-ACK (#153). M4 board implements C_ROMLOW (0x433D) so FUZIX v2.0.7+ detects it (#151). SDCC .map files can now be imported into the F8 monitor with --symbols, including per-bank scoping for FUZIX (#152). New USIfAC II RS232 emulation (closes #36) (#148). Scripted joystick driver + headless capture for automated UI tests (#149). 664 ROMs (OS_664, BASIC_664, AMSDOS_664) are now shipped in the RPM, and `make dist` produces a buildable tarball.</p>
+      </description>
+    </release>
     <release version="0.4.6" date="2026-06-14">
       <description>
         <p>Closes the residual HDCPM / CP/M+ cold-reset race (#129): the Gate Array now acknowledges its 300 Hz interrupt before the Z80's interrupt-entry cycles advance the bus, matching Caprice32 / konCePCja and reaching 13/13 PASS on the canonical |hdcpm arrival-frame sweep with Net4CPC disabled. Net4CPC gains IPRAW socket mode so PING.COM works end-to-end, a brief ARP retry on miss before reporting failure, the PHYSR0 register alias / W5100S-correct default, and a full silicon-defaults reset on MR.RST. Z80 cycle accuracy: IM1=20 / IM2=28 plus a complete iWSAdjust pipeline-hint set (LDIR/LDDR, LD A,I/R, DD/FD INC/DEC and RET cc not-taken), and OUT (n),A now splits into pre-IO tick and post-IO settle so peripherals see the correct mid-instruction bus phase.</p>
