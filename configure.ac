@@ -33,6 +33,22 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([SDL3], [sdl3], [], [AC_MSG_ERROR([SDL3 not found])])
 AC_CHECK_LIB([m], [sqrt], [], [AC_MSG_ERROR([libm not found])])
 
+# Cairo is optional: it backs the host-side PDF printer sink. Without
+# it, the printer compiles to a no-op (port 0xEFxx writes are still
+# decoded for status/LED purposes but nothing is captured to disk).
+# Pass --without-cairo to skip detection.
+AC_ARG_WITH([cairo],
+  [AS_HELP_STRING([--without-cairo],
+                  [build without the PDF printer backend])],
+  [], [with_cairo=yes])
+if test "x$with_cairo" != "xno"; then
+  PKG_CHECK_MODULES([CAIRO], [cairo], [],
+    [AC_MSG_WARN([cairo not found — building without PDF printer])
+     with_cairo=no])
+fi
+AM_CONDITIONAL([WITH_CAIRO], [test "x$with_cairo" = "xyes"])
+AC_MSG_NOTICE([PDF printer backend: $with_cairo])
+
 # Platform-specific socket linkage and Windows extras.
 #   - Windows (MinGW): sockets live in ws2_32. The build picks up SDL3's
 #     -mwindows (no console window). icons/1984.rc is compiled with

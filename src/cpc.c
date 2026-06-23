@@ -334,6 +334,15 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     CPC *cpc = ctx;
     u8 hi = port >> 8;
 
+    /* Parallel printer port: any write with A12 LOW (0xEFxx). The
+     * printer module handles the strobe-edge detect and bit-7 invert.
+     * Side-effect only — fall through so any expansion that happens to
+     * decode the same address space (none in the stock CPC, but the
+     * decoder is permissive) still sees the write. Caprice32
+     * cap32.cpp:768. */
+    if (!(hi & 0x10))
+        printer_out(&cpc->printer, val);
+
     /* Gate Array: A15=0, A14=1 → 0x7Fxx */
     if (!(hi & 0x80) && (hi & 0x40)) {
         if (cpc_trace_palette && cpc_frame_count > 520 && (val & 0xC0) == 0x40)
@@ -634,6 +643,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ch376_init(&cpc->ch376_b);
     cpc->ch376_b.tag = "albireo-b";
     tape_init(&cpc->tape);
+    printer_init(&cpc->printer);
     net4cpc_reset();
 
     cpc->bus.mem_read       = bus_mem_read;

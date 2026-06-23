@@ -437,6 +437,18 @@ int config_load_from(Config *cfg, const char *path_override) {
                 if (parse_bool(val, &b)) cfg->albireo_disable_disk_read = b;
                 else { fprintf(stderr, "1984.conf:%d: albireo_disable_disk_read must be true/false\n", lineno); rc = -1; }
             }
+        } else if (!strcmp(section, "printer")) {
+            if (!strcmp(key, "pdf_printer")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->pdf_printer = b;
+                else { fprintf(stderr, "1984.conf:%d: pdf_printer must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "pdf_printer_dir")) {
+                if (val[0]) expand_path(val, cfg->pdf_printer_dir, sizeof(cfg->pdf_printer_dir));
+            } else if (!strcmp(key, "print_sink")) {
+                if (!strcasecmp(val, "pdf"))            cfg->print_sink = PRINTER_SINK_PDF;
+                else if (!strcasecmp(val, "real"))      cfg->print_sink = PRINTER_SINK_REAL_PRINTER;
+                else { fprintf(stderr, "1984.conf:%d: print_sink must be pdf/real\n", lineno); rc = -1; }
+            }
         } else if (!strcmp(section, "display")) {
             if (!strcmp(key, "scale")) {
                 int sc = atoi(val);
@@ -588,6 +600,10 @@ int config_save(const Config *cfg) {
         "albireo_image=%s\n"
         "albireo_mouse=%s\n"
         "albireo_disable_disk_read=%s\n\n"
+        "[printer]\n"
+        "pdf_printer=%s\n"
+        "pdf_printer_dir=%s\n"
+        "print_sink=%s\n\n"
         "[display]\n"
         "scale=%d\n"
         "fullscreen=%s\n"
@@ -624,6 +640,9 @@ int config_save(const Config *cfg) {
         cfg->albireo_image,
         cfg->albireo_mouse    ? "true" : "false",
         cfg->albireo_disable_disk_read ? "true" : "false",
+        cfg->pdf_printer ? "true" : "false",
+        cfg->pdf_printer_dir,
+        cfg->print_sink == PRINTER_SINK_REAL_PRINTER ? "real" : "pdf",
         cfg->scale,
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",

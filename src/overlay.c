@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 12, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 5, 12, 11 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -185,6 +185,24 @@ static void item_text(const Overlay *ov, int row,
             } else {
                 snprintf(val, vsz, "[empty]  Enter=load");
             }
+            break;
+        case 3:
+            snprintf(lbl, lsz, "PDF printer");
+            if (!ov->cfg->pdf_printer)
+                snprintf(val, vsz, "off  Enter=on");
+            else if (ov->cfg->pdf_printer_dir[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->pdf_printer_dir);
+                trunc_path(tmp, val, vsz);
+            } else {
+                snprintf(val, vsz, "on (no dir set — see ~/.config/1984/1984.conf)");
+            }
+            break;
+        case 4:
+            snprintf(lbl, lsz, "Printer mode");
+            snprintf(val, vsz, "%s",
+                     ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                         ? "Real printer (CUPS lp)" : "PDF file");
             break;
         }
         break;
@@ -535,6 +553,31 @@ static void activate_item(Overlay *ov) {
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
                 tape_filters, 2, NULL, false);
+        } else if (ov->row == 3) {
+            /* Toggle PDF printer capture. Default the dir to $HOME on
+             * first enable so the user doesn't have to edit the conf
+             * just to try it. Picking a different dir is handled via
+             * 1984.conf or --printer-pdf=DIR for now. */
+            ov->cfg->pdf_printer = !ov->cfg->pdf_printer;
+            if (ov->cfg->pdf_printer && !ov->cfg->pdf_printer_dir[0]) {
+                const char *home = getenv("HOME");
+                snprintf(ov->cfg->pdf_printer_dir, sizeof(ov->cfg->pdf_printer_dir),
+                         "%s", (home && home[0]) ? home : ".");
+            }
+            if (ov->cpc) {
+                printer_set_pdf_output_dir(&ov->cpc->printer, ov->cfg->pdf_printer_dir);
+                printer_set_pdf_enabled(&ov->cpc->printer,
+                                        ov->cfg->pdf_printer && ov->cfg->pdf_printer_dir[0]);
+            }
+            ov->dirty = true;
+        } else if (ov->row == 4) {
+            ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
+                                  ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
+            if (ov->cpc)
+                printer_set_sink(&ov->cpc->printer,
+                                 ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                                     ? PRINT_SINK_REAL : PRINT_SINK_PDF);
+            ov->dirty = true;
         }
         break;
 
