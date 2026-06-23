@@ -90,6 +90,10 @@ Per-expansion guides:
 - **[docs/SYMBOLS.md](docs/SYMBOLS.md)** — loading SDCC `.map` files for symbol-annotated disassembly in the F8 monitor; per-MMR matching, `S` / `BS` commands
 - **[docs/LEDS.md](docs/LEDS.md)** — what each LED in the activity bar means; M4's 3-segment split (power / disk / net), USIfAC's RX/TX split, colour map per slot
 
+## Related projects
+
+- **[1985](https://github.com/salvogendut/1985)** — sibling project: Amstrad PCW 8256 emulator built on the same SDL3 + autotools foundation as 1984.
+
 ## Acknowledgements
 
 - **[ColinPitrat/caprice32](https://github.com/ColinPitrat/caprice32)** — well-maintained CPC emulator used extensively as a behavioural reference. Hardware colour palette RGB values in `src/gate_array.c` were derived from Caprice32's colour table; the µPD765 FDC semantics in `src/fdc.c` (status register layout per phase, ST0.AT/ST1.EN on EOT termination, settling delay on first EXEC MSR read, port 0xFB lo-byte bit-7 gating) and several Z80/Gate Array timing details (hsync falling-edge interrupt counter advance, CRTC tick cycle accumulator) follow Caprice32's implementation.
