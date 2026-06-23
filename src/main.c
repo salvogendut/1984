@@ -211,6 +211,9 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_M4,  mx4 && cfg->m4);
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
     leds_set_enabled(LED_USIFAC, mx4 && cfg->usifac);
+    /* Printer is gated on the MX4 expansion bus (parallel port wired
+     * through the MX4 connector in this emulator). */
+    leds_set_enabled(LED_PRINTER, mx4);
 }
 
 /* OS title is just "1984" now; the model name and F-key hints render
@@ -274,6 +277,8 @@ static void usage(const char *prog, int code) {
         "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
         "  --gif-out=PATH      Record a GIF from boot (finalised on exit; pairs with --exit-after)\n"
         "  --exit-after=N      Quit after frame N (deterministic headless capture)\n"
+        "  --printer-pdf=DIR   Capture parallel-printer output to timestamped PDFs in DIR\n"
+        "  --printer-real      Spool captured pages to the host's default CUPS printer (lp)\n"
         "  --symbols=PATH      Load an SDCC .map file and annotate the disassembler/monitor\n"
         "                      output with the closest preceding symbol. Repeatable.\n"
         "                      Use --symbols=HEX:PATH to apply the map only when the live\n"
@@ -327,6 +332,8 @@ int main(int argc, char *argv[]) {
     const char *joyscript_arg    = NULL;  /* --joy-script=SPEC: scripted joystick */
     const char *gifout_arg       = NULL;  /* --gif-out=PATH: record a GIF from boot */
     int         exit_after       = -1;    /* --exit-after=N: quit at frame N */
+    const char *printer_pdf_dir_arg = NULL; /* --printer-pdf=DIR */
+    bool        printer_real_arg = false;   /* --printer-real */
     bool        trace_io         = false;
     bool        monitor_pty      = false;
     bool        kbd_pty_enabled  = false;
@@ -447,6 +454,10 @@ int main(int argc, char *argv[]) {
             joyscript_arg = argv[i] + 13;
         } else if (strncmp(argv[i], "--gif-out=", 10) == 0 && argv[i][10] != '\0') {
             gifout_arg = argv[i] + 10;
+        } else if (strncmp(argv[i], "--printer-pdf=", 14) == 0 && argv[i][14] != '\0') {
+            printer_pdf_dir_arg = argv[i] + 14;
+        } else if (strcmp(argv[i], "--printer-real") == 0) {
+            printer_real_arg = true;
         } else if (strncmp(argv[i], "--exit-after=", 13) == 0 && argv[i][13] != '\0') {
             exit_after = atoi(argv[i] + 13);
         } else if (strncmp(argv[i], "--save-sna-at=", 14) == 0 && argv[i][14] != '\0') {
@@ -505,6 +516,14 @@ int main(int argc, char *argv[]) {
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
+    if (printer_pdf_dir_arg) {
+        snprintf(cfg.pdf_printer_dir, sizeof(cfg.pdf_printer_dir), "%s", printer_pdf_dir_arg);
+        cfg.pdf_printer = true;
+    }
+    if (printer_real_arg) {
+        cfg.print_sink  = PRINTER_SINK_REAL_PRINTER;
+        cfg.pdf_printer = true;   /* needed so capture is active */
+    }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SD_LOG("calling SDL_Init(VIDEO|AUDIO|GAMEPAD)");
@@ -562,6 +581,12 @@ int main(int argc, char *argv[]) {
         cfg.m4 = false;
     }
     usifac_init(&cpc.usifac, cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port);
+    printer_set_connected(&cpc.printer, cfg.mx4);
+    printer_set_pdf_output_dir(&cpc.printer, cfg.pdf_printer_dir);
+    printer_set_pdf_enabled(&cpc.printer, cfg.pdf_printer && cfg.pdf_printer_dir[0]);
+    printer_set_sink(&cpc.printer,
+                     cfg.print_sink == PRINTER_SINK_REAL_PRINTER ? PRINT_SINK_REAL
+                                                                 : PRINT_SINK_PDF);
     apply_led_enables(&cfg);
     /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
     if (cfg.tape[0] &&
@@ -1102,6 +1127,7 @@ int main(int argc, char *argv[]) {
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
         usifac_poll(&cpc.usifac);
+        printer_tick(&cpc.printer);
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {
@@ -1326,6 +1352,7 @@ int main(int argc, char *argv[]) {
     if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
     if (sfx_buf)    SDL_free(sfx_buf);
     videocap_stop();   /* finalise GIF if recording */
+    printer_shutdown(&cpc.printer);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

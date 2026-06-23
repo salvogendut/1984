@@ -26,6 +26,7 @@ typedef enum {
     LED_NET,
     LED_USIFAC,    /* Split red/green: left half = RX, right half = TX. */
     LED_M4,        /* Triple-segment, 1.5× width: blue=power, red=disk, white=net. */
+    LED_PRINTER,   /* Centronics parallel printer activity (port 0xEFxx). */
     LED_COUNT
 } LedId;
 

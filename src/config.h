@@ -2,6 +2,10 @@
 #include <stdbool.h>
 #include "cpc.h"
 
+/* Re-declared here because including printer.h pulls in <limits.h>
+ * and we want config.h to stay narrow. PrintSink: see src/printer.h. */
+typedef enum { PRINTER_SINK_PDF = 0, PRINTER_SINK_REAL_PRINTER } ConfigPrintSink;
+
 #define CONFIG_PATH_MAX 512
 
 typedef struct {
@@ -93,6 +97,16 @@ typedef struct {
     bool fullscreen;
     bool fullscreen_smoothing; /* linear (smooth) vs nearest (sharp) texture scale */
     MonoMode monochrome;       /* off / green / amber / white phosphor tint */
+
+    /* [printer] — host-side Centronics capture (port 0xEFxx).
+     * pdf_printer=true  + pdf_printer_dir non-empty: write PDFs there.
+     * sink=real         spools the PDF to the host's default CUPS
+     *                   printer via `lp` (Linux/macOS).
+     * Disabling pdf_printer makes the emulated port a no-op host-side
+     * (the guest still sees "not busy" via PPI port B). */
+    bool            pdf_printer;
+    char            pdf_printer_dir[CONFIG_PATH_MAX];
+    ConfigPrintSink print_sink;
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */

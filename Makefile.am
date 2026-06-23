@@ -21,6 +21,7 @@ dist_man1_MANS = 1984.1
 	src/overlay.c \
 	src/paste.c \
 	src/kbd_pty.c \
+	src/printer.c \
 	src/screen_text.c \
 	src/ppi.c \
 	src/psg.c \
@@ -73,6 +74,7 @@ noinst_HEADERS = \
 	src/tap.h \
 	src/paste.h \
 	src/ppi.h \
+	src/printer.h \
 	src/psg.h \
 	src/rtc.h \
 	src/screen_text.h \
@@ -88,14 +90,20 @@ noinst_HEADERS = \
 	src/z80.h \
 	src/z80dis.h
 
-1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
+if WITH_CAIRO
+CAIRO_DEFINE = -DHAVE_CAIRO=1
+else
+CAIRO_DEFINE =
+endif
+
+1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) $(CAIRO_CFLAGS) $(CAIRO_DEFINE) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\" \
                -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
 # On Windows the resource object compiled below carries the .ico into
 # the .exe; SDL3's -mwindows (linked via $(SDL3_LIBS)) suppresses the
 # console window. _DEPENDENCIES is needed so make builds the .o before
 # the link step — items only in _LDADD are linked but not built.
-1984_LDADD        = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
+1984_LDADD        = $(SDL3_LIBS) $(CAIRO_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
 1984_DEPENDENCIES = $(WIN_RC_OBJ)
 
 icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico

@@ -16,6 +16,7 @@ static const LedPalette palette[LED_COUNT] = {
     [LED_NET]    = { 80, 70, 18,  255, 224,  32 },   /* Net4CPC — yellow */
     [LED_USIFAC] = { 0 },   /* Split LED renders both halves; entries unused. */
     [LED_M4]     = { 0 },   /* Triple LED renders three segments; entries unused. */
+    [LED_PRINTER]= { 70, 50, 18,  255, 200,  90 },   /* warm amber */
 };
 
 /* Idle/active colours for the split-LED halves (USIfAC RS232). The left
