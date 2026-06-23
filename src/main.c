@@ -211,8 +211,9 @@ static void apply_led_enables(const Config *cfg) {
     leds_set_enabled(LED_M4,  mx4 && cfg->m4);
     leds_set_enabled(LED_NET, mx4 && cfg->net4cpc);
     leds_set_enabled(LED_USIFAC, mx4 && cfg->usifac);
-    /* Printer port is part of the stock CPC: always on. */
-    leds_set_enabled(LED_PRINTER, true);
+    /* Printer is gated on the MX4 expansion bus (parallel port wired
+     * through the MX4 connector in this emulator). */
+    leds_set_enabled(LED_PRINTER, mx4);
 }
 
 /* OS title is just "1984" now; the model name and F-key hints render
@@ -580,6 +581,7 @@ int main(int argc, char *argv[]) {
         cfg.m4 = false;
     }
     usifac_init(&cpc.usifac, cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port);
+    printer_set_connected(&cpc.printer, cfg.mx4);
     printer_set_pdf_output_dir(&cpc.printer, cfg.pdf_printer_dir);
     printer_set_pdf_enabled(&cpc.printer, cfg.pdf_printer && cfg.pdf_printer_dir[0]);
     printer_set_sink(&cpc.printer,

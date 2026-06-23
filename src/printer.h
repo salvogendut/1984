@@ -71,6 +71,14 @@ void printer_set_pdf_output_dir(Printer *p, const char *dir);
 void printer_set_pdf_enabled(Printer *p, bool enabled);
 void printer_set_sink(Printer *p, PrintSink sink);
 
+/* Gate the whole printer at the bus level. When disconnected, every
+ * OUT (&EFxx),A becomes a no-op host-side: no LED ping, no PDF byte,
+ * no CUPS spool. The CPC firmware still sees PPI BUSY = not busy
+ * (handled in src/ppi.c), so guest software won't hang. Wired to
+ * cfg->mx4 in main.c / the overlay so the printer appears only when
+ * the MX4 expansion bus is connected. */
+void printer_set_connected(Printer *p, bool connected);
+
 /* CPC Z80 OUT (0xEFxx),A — passes the full latched byte. The module
  * does the strobe-edge detect and bit-7 invert internally. */
 void printer_out(Printer *p, u8 val);

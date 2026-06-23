@@ -79,6 +79,12 @@ void printer_init(Printer *p) {
     printer_reset_text(p);
 }
 
+void printer_set_connected(Printer *p, bool connected) {
+    if (p->connected == connected) return;
+    if (!connected) printer_shutdown(p);
+    p->connected = connected;
+}
+
 static void printer_make_pdf_path(Printer *p) {
     time_t now = time(NULL);
     struct tm *lt = localtime(&now);

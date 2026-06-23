@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 5, 12, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 11 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -186,24 +186,6 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[empty]  Enter=load");
             }
             break;
-        case 3:
-            snprintf(lbl, lsz, "PDF printer");
-            if (!ov->cfg->pdf_printer)
-                snprintf(val, vsz, "off  Enter=on");
-            else if (ov->cfg->pdf_printer_dir[0]) {
-                char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->pdf_printer_dir);
-                trunc_path(tmp, val, vsz);
-            } else {
-                snprintf(val, vsz, "on (no dir set — see ~/.config/1984/1984.conf)");
-            }
-            break;
-        case 4:
-            snprintf(lbl, lsz, "Printer mode");
-            snprintf(val, vsz, "%s",
-                     ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
-                         ? "Real printer (CUPS lp)" : "PDF file");
-            break;
         }
         break;
     }
@@ -340,6 +322,32 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         }
+        case 12:
+            snprintf(lbl, lsz, "PDF printer");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
+                *readonly = true;
+            } else if (!ov->cfg->pdf_printer) {
+                snprintf(val, vsz, "off  Enter=on");
+            } else if (ov->cfg->pdf_printer_dir[0]) {
+                char tmp[CONFIG_PATH_MAX];
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->pdf_printer_dir);
+                trunc_path(tmp, val, vsz);
+            } else {
+                snprintf(val, vsz, "on (no dir)");
+            }
+            break;
+        case 13:
+            snprintf(lbl, lsz, "Printer mode");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                             ? "Real printer (CUPS lp)" : "PDF file");
+            }
+            break;
         }
         break;
 
@@ -481,6 +489,11 @@ static void activate_item(Overlay *ov) {
         }
         case 2:
             ov->cfg->mx4 = !ov->cfg->mx4;
+            if (ov->cpc) {
+                ov->cpc->mx4 = ov->cfg->mx4;
+                printer_set_connected(&ov->cpc->printer, ov->cfg->mx4);
+            }
+            leds_set_enabled(LED_PRINTER, ov->cfg->mx4);
             ov->dirty = true;
             break;
         case 3:
@@ -553,31 +566,6 @@ static void activate_item(Overlay *ov) {
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
                 tape_filters, 2, NULL, false);
-        } else if (ov->row == 3) {
-            /* Toggle PDF printer capture. Default the dir to $HOME on
-             * first enable so the user doesn't have to edit the conf
-             * just to try it. Picking a different dir is handled via
-             * 1984.conf or --printer-pdf=DIR for now. */
-            ov->cfg->pdf_printer = !ov->cfg->pdf_printer;
-            if (ov->cfg->pdf_printer && !ov->cfg->pdf_printer_dir[0]) {
-                const char *home = getenv("HOME");
-                snprintf(ov->cfg->pdf_printer_dir, sizeof(ov->cfg->pdf_printer_dir),
-                         "%s", (home && home[0]) ? home : ".");
-            }
-            if (ov->cpc) {
-                printer_set_pdf_output_dir(&ov->cpc->printer, ov->cfg->pdf_printer_dir);
-                printer_set_pdf_enabled(&ov->cpc->printer,
-                                        ov->cfg->pdf_printer && ov->cfg->pdf_printer_dir[0]);
-            }
-            ov->dirty = true;
-        } else if (ov->row == 4) {
-            ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
-                                  ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
-            if (ov->cpc)
-                printer_set_sink(&ov->cpc->printer,
-                                 ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
-                                     ? PRINT_SINK_REAL : PRINT_SINK_PDF);
-            ov->dirty = true;
         }
         break;
 
@@ -908,6 +896,37 @@ static void activate_item(Overlay *ov) {
             }
             break;
         }
+        case 12:
+            /* PDF printer: when turning ON, pop a folder picker so the
+             * user can name the output directory. Picker callback path
+             * (DIALOG_PRINTER_DIR in overlay_tick) finishes the enable
+             * by setting pdf_printer + pdf_printer_dir and arming the
+             * printer module. Turning OFF is immediate. */
+            if (!ov->cfg->mx4) break;
+            if (ov->cfg->pdf_printer) {
+                ov->cfg->pdf_printer = false;
+                if (ov->cpc)
+                    printer_set_pdf_enabled(&ov->cpc->printer, false);
+                ov->dirty = true;
+            } else {
+                ov->dialog_kind  = DIALOG_PRINTER_DIR;
+                ov->dialog_ready = false;
+                SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    ov->cfg->pdf_printer_dir[0] ? ov->cfg->pdf_printer_dir : NULL,
+                    false);
+            }
+            break;
+        case 13:
+            if (!ov->cfg->mx4) break;
+            ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
+                                  ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
+            if (ov->cpc)
+                printer_set_sink(&ov->cpc->printer,
+                                 ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                                     ? PRINT_SINK_REAL : PRINT_SINK_PDF);
+            ov->dirty = true;
+            break;
         }
         break;
 
@@ -1097,6 +1116,15 @@ void overlay_tick(Overlay *ov) {
     } else if (ov->dialog_kind == DIALOG_TAPE) {
         /* Stub — just record the path. PSG cassette input not wired yet. */
         snprintf(ov->cfg->tape, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_PRINTER_DIR) {
+        snprintf(ov->cfg->pdf_printer_dir, sizeof(ov->cfg->pdf_printer_dir),
+                 "%s", ov->dialog_path);
+        ov->cfg->pdf_printer = true;
+        if (ov->cpc) {
+            printer_set_pdf_output_dir(&ov->cpc->printer, ov->cfg->pdf_printer_dir);
+            printer_set_pdf_enabled(&ov->cpc->printer, true);
+        }
         ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_LOWER_ROM) {
         snprintf(ov->cfg->rom_os, CONFIG_PATH_MAX, "%s", ov->dialog_path);
