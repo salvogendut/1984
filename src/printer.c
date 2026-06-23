@@ -76,7 +76,6 @@ static void printer_reset_text(Printer *p) {
 void printer_init(Printer *p) {
     memset(p, 0, sizeof(*p));
     p->connected = true;
-    p->strobe_high = true;
     printer_reset_text(p);
 }
 
@@ -263,13 +262,10 @@ static void printer_emit(Printer *p, u8 val) {
 
 void printer_out(Printer *p, u8 val) {
     if (!p->connected) return;
-
-    /* The CPC inverts the strobe line: bit 7 LOW means asserted. We
-     * detect the high→low edge and clock the low 7 bits in. Bit 7 of
-     * the data side isn't wired to the connector at all, so dropping
-     * it is faithful, not a workaround (Caprice32 cap32.cpp:768-773). */
-    bool strobe_high_now = (val & 0x80) != 0;
-    if (p->strobe_high && !strobe_high_now)
+    /* Bit 7 of the raw Z80 byte asserts the strobe (cable LOW because
+     * the connector inverts it). Emit whenever bit 7 is set; bit-7=0
+     * writes are "data lines set, strobe deasserted" idle pokes that
+     * the OS does at init / between chars — silent on real paper. */
+    if (val & 0x80)
         printer_emit(p, val & 0x7F);
-    p->strobe_high = strobe_high_now;
 }

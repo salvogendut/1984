@@ -39,10 +39,15 @@ u8 ppi_read(PPI *p, u8 port) {
     switch (port & 0x03) {
         case 0: return p->port_a;
         case 1: {
-            /* bit 7: cassette data input; bit 6: printer not busy;
+            /* bit 7: cassette data input; bit 6: printer BUSY (active
+             * high — firmware's MC BUSY PRINTER rotates this bit into
+             * carry and treats carry=1 as busy);
              * bits 4-1: jumpers (0x1E = 50Hz PAL, no expansion);
-             * bit 0: VSYNC */
-            u8 b = 0x1E | 0x40;
+             * bit 0: VSYNC.
+             * We hold BUSY=0 so the firmware printer routine always
+             * proceeds to the OUT (&EFxx),A write — the host-side
+             * capture happens in src/printer.c. */
+            u8 b = 0x1E;
             if (p->vsync_signal) b |= 0x01;
             b |= (p->tape_level & 0x80);
             return b;

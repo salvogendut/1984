@@ -39,10 +39,14 @@ typedef struct Printer {
     bool pdf_enabled;
     PrintSink sink;
 
-    /* Centronics latch. The CPC writes a full 8-bit byte where bit 7
-     * is the strobe; we commit the low 7 bits to print when strobe
-     * goes low (Caprice32 cap32.cpp:771-773). */
-    bool strobe_high;
+    /* The CPC inverts bit 7 between the data byte and the cable, so a
+     * raw Z80 OUT byte with bit 7 SET asserts the strobe (cable LOW).
+     * We emit on every write where bit 7 is set — Caprice32's model
+     * (cap32.cpp:771-773). No edge detection: real firmware pulses the
+     * strobe per byte (assert + deassert) so each char is one emit;
+     * homebrew that writes only the asserted byte per char (e.g.
+     * direct BASIC `OUT &EFFF, &80+ASC("X")`) also works because each
+     * write with bit 7 set prints its data byte. */
 
     bool pdf_ephemeral;
     char pdf_output_dir[PATH_MAX];
