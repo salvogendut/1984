@@ -22,35 +22,55 @@ static bool printer_capture_active(const Printer *p) {
     return p->pdf_enabled || p->sink == PRINT_SINK_REAL;
 }
 
-/* Hand the finalised PDF to CUPS via `lp`. Detaches the child so the
- * emulator doesn't stutter while CUPS queues; when the PDF is ephemeral
- * (no user-visible file), we wait for lp and unlink afterwards. */
-static void printer_spool_to_lp(const char *pdf_path, bool wait_then_unlink) {
+/* Hand the finalised PDF to CUPS via `lp`. The emulator often runs
+ * inside a sandbox (distrobox / flatpak) where lp + CUPS live on the
+ * host, not in the container. We try the host-escape helpers first
+ * and fall back to plain lp so a host-side install also Just Works.
+ * We always WAIT for the spool to finish — lp typically returns in
+ * <100 ms once CUPS has the file, and we need the exit status so the
+ * user finds out when there's no default printer / lp is missing /
+ * CUPS isn't running, instead of silent failure. */
+static void printer_spool_to_lp(const char *pdf_path, bool unlink_after) {
 #ifdef _WIN32
-    (void)pdf_path; (void)wait_then_unlink;
+    (void)pdf_path; (void)unlink_after;
     fprintf(stderr, "printer: real-printer sink not implemented on Windows yet\n");
 #else
     if (!pdf_path || !pdf_path[0]) return;
+
+    /* Helpers in preferred order: distrobox-host-exec when in distrobox,
+     * flatpak-spawn --host when in a flatpak sandbox, else plain lp. */
+    static const struct { const char *prog; const char *arg1; } cands[] = {
+        { "distrobox-host-exec", NULL    },
+        { "flatpak-spawn",       "--host"},
+        { "lp",                  NULL    },
+    };
+
     pid_t pid = fork();
     if (pid < 0) { perror("printer: fork"); return; }
     if (pid == 0) {
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            if (devnull > 2) close(devnull);
+        for (size_t i = 0; i < sizeof(cands)/sizeof(cands[0]); i++) {
+            if (cands[i].arg1)
+                execlp(cands[i].prog, cands[i].prog, cands[i].arg1,
+                       "lp", pdf_path, (char *)NULL);
+            else if (!strcmp(cands[i].prog, "lp"))
+                execlp("lp", "lp", pdf_path, (char *)NULL);
+            else
+                execlp(cands[i].prog, cands[i].prog,
+                       "lp", pdf_path, (char *)NULL);
+            /* execlp only returns on failure — try the next candidate. */
         }
-        execlp("lp", "lp", pdf_path, (char *)NULL);
+        fprintf(stderr, "printer: no `lp` available (tried distrobox-host-exec, "
+                        "flatpak-spawn --host, lp) — install cups-client or "
+                        "expose the host's lp\n");
         _exit(127);
     }
-    if (wait_then_unlink) {
-        int status;
-        waitpid(pid, &status, 0);
-        unlink(pdf_path);
-    } else {
-        static bool signal_set = false;
-        if (!signal_set) { signal(SIGCHLD, SIG_IGN); signal_set = true; }
-    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+        fprintf(stderr, "printer: lp exited with status %d (check the host "
+                        "default printer with `lpstat -d`)\n",
+                WEXITSTATUS(status));
+    if (unlink_after) unlink(pdf_path);
 #endif
 }
 
@@ -187,6 +207,15 @@ void printer_shutdown(Printer *p) {
 #endif
 
 void printer_set_sink(Printer *p, PrintSink sink) {
+    if (p->sink == sink) return;
+    /* Finalise any in-progress job under the OLD sink rules first so
+     * the user sees the change take effect on the next char they print,
+     * not on whatever was already buffered. Without this, an open
+     * surface created while sink=PDF would stay around after switching
+     * to REAL and only get spooled on the next idle-finalise (and an
+     * ephemeral /tmp file from sink=REAL would get unlinked if the
+     * user flipped back to PDF before the idle tick). */
+    printer_shutdown(p);
     p->sink = sink;
 }
 
