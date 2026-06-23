@@ -1,4 +1,4 @@
-.TH 1984 1 "June 2026" "1984 0.4.8" "User Commands"
+.TH 1984 1 "June 2026" "1984 0.4.9" "User Commands"
 .SH NAME
 1984 \- Amstrad CPC 464/664/6128 emulator
 .SH SYNOPSIS
@@ -64,6 +64,29 @@ Replace the OS (lower) ROM image.
 Load a ROM image into upper ROM slot
 .I N
 (0\(en31). May be repeated.
+.SS Printer
+.TP
+.BI --printer-pdf= DIR
+Capture parallel-printer output (port
+.BR &EFxx )
+to timestamped PDFs in
+.IR DIR .
+Equivalent to enabling
+.B pdf_printer
+in the
+.B [printer]
+section of the config.
+.TP
+.B --printer-real
+Spool each finalised page to the host's default CUPS printer via
+.BR lp .
+Inside a distrobox / flatpak sandbox the spooler tries
+.B distrobox-host-exec lp
+and
+.B flatpak-spawn --host lp
+first so the host's CUPS stack is reachable without installing
+.B cups-client
+in the container.
 .SS Networking
 .TP
 .BI --tap= DEVNAME
@@ -228,7 +251,9 @@ Floppy drives A and B, cassette tape, external tape toggle (CPC
 .TP
 .B Extensions
 M4 board, Albireo USB, SYMBiFACE II IDE / mouse, Cyboard RTC,
-Net4CPC, USIfAC II, SymbNet, expansion ROM slots 0\(en31.
+Net4CPC, USIfAC II, SymbNet, expansion ROM slots 0\(en31, and
+the Centronics PDF printer / Real-printer (CUPS) sink (gated on
+the MX4 expansion bus).
 .TP
 .B Advanced
 Smoothing (linear vs nearest scaling), snapshot load/save, Net4CPC
@@ -243,7 +268,7 @@ is set in the config.
 .I ~/.config/1984/1984.conf
 is a small INI-style file with sections
 .BR [machine] ", " [roms] ", " [expansion_roms] ", "
-.BR [storage] ", " [hardware] ", " [display] ", and " [advanced] .
+.BR [storage] ", " [hardware] ", " [printer] ", " [display] ", and " [advanced] .
 A self-documented default is written on first run; the overlay
 edits it in place. Per-board ROM groupings are stored under
 .BI [board: NAME ]

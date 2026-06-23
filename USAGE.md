@@ -27,6 +27,8 @@
 | `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable) |
 | `--trace-albireo` | Log every Albireo (CH376) command/response to stderr |
 | `--trace-net4cpc` | Log every Net4CPC (W5100S) register read/write and socket command to stderr |
+| `--printer-pdf=DIR` | Capture parallel-printer output (`&EFxx`) to timestamped PDFs in DIR |
+| `--printer-real` | Spool each captured page to the host's default CUPS printer via `lp` |
 | `-h`, `--help` | Print this option summary and exit |
 
 Passing an unrecognised option prints the usage summary to stderr and exits with code 1. The machine model can also be selected via the options overlay (F9).
@@ -252,6 +254,10 @@ Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_M
 **Cyboard** (Extensions → Cyboard): convenience toggle that enables or disables Net4CPC, RTC, SYMBiFACE IDE, and SYMBiFACE Mouse all at once. Shows `enabled` when all four are on, `disabled` when all four are off, and `partial` when mixed. Disabling also clears the IDE image path.
 
 **USIfAC RS232** (Extensions → USIfAC RS232): enables wire-level emulation of the USIfAC II serial board at I/O ports `&FBD0..&FBDF`. The host-side endpoint is a PTY (default — shown as `PTY:/dev/pts/N` in the overlay) or a TCP listener (`TCP:4001`). Choose the backend from **Advanced → USIfAC mode** (Tinker must be enabled). Bytes written to `&FBD0` by the CPC emerge on the host endpoint; bytes sent in arrive on the CPC's RX FIFO and `INP(&FBD1)` flips to `0xFF` until they're read. FUZIX completes its `usifexists` / `usifgetbaud` handshake at boot (verified end-to-end). A new split LED in the activity bar shows RX traffic in red (host → CPC) and TX in green (CPC → host). See [docs/USIFAC.md](docs/USIFAC.md) for the full port map, control-byte table, and connection recipes.
+
+**PDF printer** (Extensions → PDF printer): captures parallel-printer output from the CPC's Centronics port (`&EFxx`) into timestamped PDFs on the host. Enter on the row pops a folder picker; the chosen directory persists across runs (`pdf_printer_dir` in `1984.conf`). Each printed page comes out as `1984-print-YYYYMMDD-HHMMSS.pdf` written ~2 seconds after the last byte (idle-finalise so the file is openable mid-job). `PRINT #8` / `LIST #8` / CP/M `LST:` / AMSDOS `|PRINTER` all route here automatically. Cairo is required for capture (`./configure --without-cairo` falls back to a no-op so the port is still decoded). The printer is gated on MX4 — disable the expansion bus and the row reads `[needs MX4]`.
+
+**Printer mode** (Extensions → Printer mode): cycles the captured output between `PDF file` (kept in the directory above) and `Real printer (CUPS lp)`, which spools each finalised page to the host's default CUPS printer via `lp`. When 1984 runs inside a sandboxed environment, the spooler tries `distrobox-host-exec lp` and `flatpak-spawn --host lp` before falling back to plain `lp` so the host's CUPS stack is reachable without installing `cups-client` in the container. Sink changes take effect on the next character.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, SYMBiFACE Mouse, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 

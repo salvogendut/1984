@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.8
+Version:        0.4.9
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,6 +83,20 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Mon Jun 23 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.9-1
+- Add Centronics parallel printer (port &EFxx) with Cairo PDF host
+  sink and a "Real printer" mode that spools each page to the host's
+  default CUPS printer via lp. Escapes distrobox / flatpak sandboxes
+  via distrobox-host-exec and flatpak-spawn --host so the host's CUPS
+  stack is reachable. New Extensions overlay entries (PDF printer +
+  Printer mode), warm-amber LED, --printer-pdf=DIR / --printer-real
+  CLI flags. Cairo is an optional dependency; --without-cairo falls
+  back to a no-op host sink so the port is still decoded. Closes #162
+  (#163).
+- ppi: fix port B bit 6 (printer BUSY) polarity so the OS firmware
+  printer routine actually proceeds to the OUT (&EFxx) write instead
+  of waiting forever.
+
 * Sun Jun 21 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.8-1
 - Add 1984(1) man page (#159)
 - Add Monochrome display tint: off / green / amber / white (#158)
