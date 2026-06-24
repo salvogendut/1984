@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 12 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -429,6 +429,21 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 9:
+            snprintf(lbl, lsz, "USIfAC PTY link");
+            if (!ov->cfg->usifac) {
+                snprintf(val, vsz, "[USIfAC RS232 disabled]");
+                *readonly = true;
+            } else if (strcmp(ov->cfg->usifac_backend, "pty")) {
+                snprintf(val, vsz, "[PTY backend off]");
+                *readonly = true;
+            } else if (ov->cfg->usifac_pty_link[0]) {
+                snprintf(val, vsz, "%s", ov->cfg->usifac_pty_link);
+            } else {
+                snprintf(val, vsz, "[Enter to pick path]");
+                *readonly = true;
+            }
+            break;
+        case 10:
             snprintf(lbl, lsz, "Monochrome");
             switch (ov->cfg->monochrome) {
                 case MONO_GREEN: snprintf(val, vsz, "green"); break;
@@ -437,7 +452,7 @@ static void item_text(const Overlay *ov, int row,
                 default:         snprintf(val, vsz, "off");   break;
             }
             break;
-        case 10:
+        case 11:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -666,7 +681,8 @@ static void activate_item(Overlay *ov) {
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
                 usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
                 leds_set_enabled(LED_USIFAC,
                                  ov->cpc->mx4 && ov->cfg->usifac);
             }
@@ -1007,11 +1023,34 @@ static void activate_item(Overlay *ov) {
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
                 usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
             }
             ov->dirty = true;
             break;
-        case 9: {
+        case 9:
+            /* USIfAC PTY link: Enter when unset → save-file dialog picks the
+             * alias path; Enter when set → clear and re-init without it. */
+            if (!ov->cfg->usifac) break;
+            if (strcmp(ov->cfg->usifac_backend, "pty")) break;
+            if (ov->cfg->usifac_pty_link[0]) {
+                ov->cfg->usifac_pty_link[0] = '\0';
+                if (ov->cpc) {
+                    usifac_shutdown(&ov->cpc->usifac);
+                    usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                                ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                                ov->cfg->usifac_pty_link);
+                }
+                ov->dirty = true;
+            } else {
+                ov->dialog_kind  = DIALOG_USIFAC_PTY_LINK;
+                ov->dialog_ready = false;
+                SDL_ShowSaveFileDialog(overlay_file_callback, ov,
+                    ov->cpc ? ov->cpc->display.window : NULL,
+                    NULL, 0, NULL);
+            }
+            break;
+        case 10: {
             MonoMode next;
             switch (ov->cfg->monochrome) {
                 case MONO_OFF:   next = MONO_GREEN; break;
@@ -1178,6 +1217,19 @@ void overlay_tick(Overlay *ov) {
             if (!dot || (slash && dot < slash))
                 strncat(path, ".sna", sizeof(path) - strlen(path) - 1);
             snapshot_save(ov->cpc, path);
+        }
+    } else if (ov->dialog_kind == DIALOG_USIFAC_PTY_LINK) {
+        if (ov->dialog_path[0] && ov->cfg->usifac
+            && !strcmp(ov->cfg->usifac_backend, "pty")) {
+            snprintf(ov->cfg->usifac_pty_link, sizeof(ov->cfg->usifac_pty_link),
+                     "%s", ov->dialog_path);
+            if (ov->cpc) {
+                usifac_shutdown(&ov->cpc->usifac);
+                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
+            }
+            ov->dirty = true;
         }
     } else if (ov->dialog_kind == DIALOG_VIDEO_CAPTURE) {
         if (ov->dialog_path[0]) {
@@ -1707,7 +1759,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
         if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
-        } else if (ov->section == OV_TINKER && i == 9
+        } else if (ov->section == OV_TINKER && i == 10
                    && ov->cfg->monochrome != MONO_OFF) {
             /* Render the tint name in its own phosphor colour so the
              * choice is recognisable at a glance. Bright values picked

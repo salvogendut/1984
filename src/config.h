@@ -58,6 +58,12 @@ typedef struct {
     bool usifac;                       /* USIfAC II serial interface (port &FBD0/D1) */
     char usifac_backend[16];           /* "pty" or "tcp" */
     int  usifac_tcp_port;              /* TCP listen port when backend=tcp (default 4001) */
+    /* Optional stable host-side symlink to the live /dev/pts/N slave. When
+     * non-empty (PTY backend only), open_pty() unlink()s any stale link and
+     * symlink()s the slave path to it so external tools (minicom, pty_modem.py,
+     * custom scripts) don't have to chase the randomised pts number each
+     * launch. Empty disables the alias. POSIX only; ignored on Windows. */
+    char usifac_pty_link[CONFIG_PATH_MAX];
     bool net4cpc;
     bool net4cpc_tap;  /* Use TAP backend: 1984 auto-creates the tap device,
                         * runs a built-in DHCP server, adds the interface to
