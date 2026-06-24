@@ -717,6 +717,7 @@ void cpc_destroy(CPC *cpc) {
  * Mode 2: 8 pixels/byte, 1 bit per pixel  → 1:1 mapping (16 px)
  * Mode 1: 4 pixels/byte, 2 bits per pixel → each pixel doubled  (16 px)
  * Mode 0: 2 pixels/byte, 4 bits per pixel → each pixel ×4       (16 px)
+ * Mode 3: 2 pixels/byte, 2 bits per pixel → each pixel ×4       (16 px)
  *
  * Video address: A[15:14] = MA[13:12], A[13:11] = RA[2:0], A[10:1] = MA[9:0]
  */
@@ -727,24 +728,32 @@ void cpc_destroy(CPC *cpc) {
  *   mode0_pens[b] = {left_pen, right_pen}  — 2 pixels × 4 wide each
  *   mode1_pens[b] = 4 pens                 — each pixel doubled
  *   mode2_pens[b] = 8 pens                 — 1:1
+ *   mode3_pens[b] = {left_pen, right_pen}  — 2 pixels × 4 wide each
  *
  * Pen-bit layout per the CRTC docs:
  *   mode 0:  pen0 = b1 b5 b3 b7  ; pen1 = b0 b4 b2 b6
  *   mode 1:  pen[i] = b(3-i+4) << 1 | b(3-i+0)
  *   mode 2:  pen[i] = (byte >> (7 - i)) & 1
+ *   mode 3:  pen0 = b3 b7        ; pen1 = b2 b6
  */
 static u8 g_mode0_pens[256][2];
 static u8 g_mode1_pens[256][4];
 static u8 g_mode2_pens[256][8];
+static u8 g_mode3_pens[256][2];
 
 static void build_pen_tables(void) {
     for (int b = 0; b < 256; b++) {
-        g_mode0_pens[b][0] = (u8)(((b>>1)&1)<<3 | ((b>>5)&1)<<2 | ((b>>3)&1)<<1 | ((b>>7)&1));
-        g_mode0_pens[b][1] = (u8)(((b>>0)&1)<<3 | ((b>>4)&1)<<2 | ((b>>2)&1)<<1 | ((b>>6)&1));
-        for (int p = 0; p < 4; p++)
-            g_mode1_pens[b][p] = (u8)(((b >> (3 - p)) & 1) << 1 | ((b >> (7 - p)) & 1));
-        for (int p = 0; p < 8; p++)
-            g_mode2_pens[b][p] = (u8)((b >> (7 - p)) & 1);
+        u8 pens[8];
+        ga_decode_byte(0, (u8)b, pens);
+        g_mode0_pens[b][0] = pens[0];
+        g_mode0_pens[b][1] = pens[4];
+        ga_decode_byte(1, (u8)b, pens);
+        for (int p = 0; p < 4; p++) g_mode1_pens[b][p] = pens[p * 2];
+        ga_decode_byte(2, (u8)b, pens);
+        for (int p = 0; p < 8; p++) g_mode2_pens[b][p] = pens[p];
+        ga_decode_byte(3, (u8)b, pens);
+        g_mode3_pens[b][0] = pens[0];
+        g_mode3_pens[b][1] = pens[4];
     }
     g_pen_tables_built = true;
 }
@@ -789,6 +798,17 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
         u32 c1 = inks[g_mode0_pens[b0][1]];
         u32 c2 = inks[g_mode0_pens[b1][0]];
         u32 c3 = inks[g_mode0_pens[b1][1]];
+        out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
+        out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
+        out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;
+        out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
+        break;
+    }
+    case 3: { /* undocumented 2 bpp, 2 pixels/byte, ×4 */
+        u32 c0 = inks[g_mode3_pens[b0][0]];
+        u32 c1 = inks[g_mode3_pens[b0][1]];
+        u32 c2 = inks[g_mode3_pens[b1][0]];
+        u32 c3 = inks[g_mode3_pens[b1][1]];
         out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
         out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
         out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;

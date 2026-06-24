@@ -58,11 +58,52 @@ void ga_set_monochrome(GateArray *ga, MonoMode m) {
         ga->resolved_ink[i] = apply_mono(ga_hw_palette[ga->ink[i] & 0x1F], m);
 }
 
+void ga_decode_byte(u8 mode, u8 value, u8 out[8]) {
+    switch (mode & 0x03) {
+        case 0: {
+            u8 left = (u8)(((value >> 1) & 1) << 3 |
+                           ((value >> 5) & 1) << 2 |
+                           ((value >> 3) & 1) << 1 |
+                           ((value >> 7) & 1));
+            u8 right = (u8)(((value >> 0) & 1) << 3 |
+                            ((value >> 4) & 1) << 2 |
+                            ((value >> 2) & 1) << 1 |
+                            ((value >> 6) & 1));
+            for (int i = 0; i < 4; i++) out[i] = left;
+            for (int i = 4; i < 8; i++) out[i] = right;
+            break;
+        }
+        case 1:
+            for (int pixel = 0; pixel < 4; pixel++) {
+                u8 pen = (u8)(((value >> (3 - pixel)) & 1) << 1 |
+                              ((value >> (7 - pixel)) & 1));
+                out[pixel * 2] = pen;
+                out[pixel * 2 + 1] = pen;
+            }
+            break;
+        case 2:
+            for (int pixel = 0; pixel < 8; pixel++)
+                out[pixel] = (u8)((value >> (7 - pixel)) & 1);
+            break;
+        case 3: {
+            /* Undocumented mode 3 has mode-0 pixel width but only four inks.
+             * Bits 7/3 select the left pixel and bits 6/2 the right pixel. */
+            u8 left = (u8)(((value >> 3) & 1) << 1 |
+                           ((value >> 7) & 1));
+            u8 right = (u8)(((value >> 2) & 1) << 1 |
+                            ((value >> 6) & 1));
+            for (int i = 0; i < 4; i++) out[i] = left;
+            for (int i = 4; i < 8; i++) out[i] = right;
+            break;
+        }
+    }
+}
+
 void ga_write(GateArray *ga, u8 val) {
     u8 func = (val >> 6) & 0x03;
     switch (func) {
         case 0x00:   /* Select pen */
-            ga->selected_pen = val & 0x1F;
+            ga->selected_pen = (val & 0x10) ? 16 : (val & 0x0F);
             break;
         case 0x01:   /* Set ink colour */
             if (ga->selected_pen < GA_NUM_INKS) {

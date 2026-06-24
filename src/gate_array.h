@@ -51,6 +51,9 @@ void ga_write(GateArray *ga, u8 val);   /* port 0x7F (A15=0) */
  * tint takes effect on the next rendered frame without waiting for the
  * program to rewrite its palette. */
 void ga_set_monochrome(GateArray *ga, MonoMode m);
+/* Decode one video byte to eight mode-2-resolution pen indices. Lower
+ * resolution modes repeat each logical pixel to preserve its hardware width. */
+void ga_decode_byte(u8 mode, u8 value, u8 out[8]);
 u8   ga_mode(GateArray *ga);
 void ga_hsync(GateArray *ga);           /* called by CRTC on each HSYNC */
 void ga_vsync_start(GateArray *ga);     /* called on CRTC VSYNC rising edge */
