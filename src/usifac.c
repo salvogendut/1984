@@ -58,7 +58,7 @@ static bool tx_pop(USIfAC *u, u8 *out) {
 
 #ifndef _WIN32
 
-static int open_pty(USIfAC *u) {
+static int open_pty(USIfAC *u, const char *link_path) {
     int fd = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) { perror("usifac: posix_openpt"); return -1; }
     if (grantpt(fd) < 0 || unlockpt(fd) < 0) {
@@ -92,7 +92,27 @@ static int open_pty(USIfAC *u) {
     }
 
     u->pty_master = fd;
-    fprintf(stderr, "usifac: PTY ready at %s\n", u->pty_slave);
+
+    /* Optional stable host-side alias. Replaces any prior link (stale from a
+     * crashed previous run is harmless). NULL/empty disables the symlink. */
+    if (link_path && link_path[0]) {
+        unlink(link_path);
+        if (symlink(u->pty_slave, link_path) == 0) {
+            snprintf(u->pty_link, sizeof(u->pty_link), "%s", link_path);
+        } else {
+            fprintf(stderr, "usifac: symlink(%s -> %s) failed: %s\n",
+                    link_path, u->pty_slave, strerror(errno));
+            u->pty_link[0] = '\0';
+        }
+    } else {
+        u->pty_link[0] = '\0';
+    }
+
+    if (u->pty_link[0])
+        fprintf(stderr, "usifac: PTY ready at %s (alias %s)\n",
+                u->pty_slave, u->pty_link);
+    else
+        fprintf(stderr, "usifac: PTY ready at %s\n", u->pty_slave);
     return 0;
 }
 
@@ -130,7 +150,8 @@ static void close_fd(int *pfd) {
 
 #endif /* !_WIN32 */
 
-void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port) {
+void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port,
+                 const char *pty_link_path) {
     memset(u, 0, sizeof(*u));
     u->pty_master = -1;
     u->tcp_listen = -1;
@@ -139,7 +160,7 @@ void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port) {
     if (!u->present) return;
 
 #ifdef _WIN32
-    (void)backend; (void)tcp_port;
+    (void)backend; (void)tcp_port; (void)pty_link_path;
     fprintf(stderr, "usifac: backend not supported on Windows yet — disabling\n");
     u->present = false;
     return;
@@ -151,7 +172,7 @@ void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port) {
         }
     } else {
         u->backend = USIFAC_BACKEND_PTY;
-        if (open_pty(u) < 0) {
+        if (open_pty(u, pty_link_path) < 0) {
             u->present = false;
         }
     }
@@ -160,6 +181,18 @@ void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port) {
 
 void usifac_shutdown(USIfAC *u) {
 #ifndef _WIN32
+    /* Best-effort cleanup of the stable alias — only if it still points at
+     * the slave we created (don't clobber an unrelated file/link). */
+    if (u->pty_link[0]) {
+        char target[64];
+        ssize_t n = readlink(u->pty_link, target, sizeof(target) - 1);
+        if (n > 0) {
+            target[n] = '\0';
+            if (!strcmp(target, u->pty_slave))
+                unlink(u->pty_link);
+        }
+        u->pty_link[0] = '\0';
+    }
     close_fd(&u->pty_master);
     close_fd(&u->tcp_client);
     close_fd(&u->tcp_listen);

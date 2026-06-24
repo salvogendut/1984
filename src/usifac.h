@@ -36,6 +36,7 @@ typedef struct {
     /* PTY backend */
     int  pty_master;          /* -1 when closed */
     char pty_slave[64];       /* /dev/pts/N for the overlay */
+    char pty_link[512];       /* stable alias symlinked to pty_slave; "" when disabled */
 
     /* TCP backend */
     int  tcp_listen;          /* -1 when closed */
@@ -52,8 +53,12 @@ typedef struct {
     u8   baud_code;           /* last 10..23 command via OUT &FBD1,x */
 } USIfAC;
 
-/* `backend` must be "pty" or "tcp"; `tcp_port` is ignored for PTY. */
-void    usifac_init    (USIfAC *u, bool enable, const char *backend, int tcp_port);
+/* `backend` must be "pty" or "tcp"; `tcp_port` is ignored for PTY.
+ * `pty_link_path` (PTY backend only) is an optional host-side path to
+ * symlink at the live /dev/pts/N slave so external tools can find it
+ * at a stable location across launches. NULL or "" disables the alias. */
+void    usifac_init    (USIfAC *u, bool enable, const char *backend, int tcp_port,
+                        const char *pty_link_path);
 void    usifac_shutdown(USIfAC *u);
 
 /* CPC bus interface. `lo` is the low byte of the I/O port (D0/D1/D8/DD/...). */

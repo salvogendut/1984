@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 11 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 12 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -429,6 +429,21 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 9:
+            snprintf(lbl, lsz, "USIfAC PTY link");
+            if (!ov->cfg->usifac) {
+                snprintf(val, vsz, "[USIfAC RS232 disabled]");
+                *readonly = true;
+            } else if (strcmp(ov->cfg->usifac_backend, "pty")) {
+                snprintf(val, vsz, "[PTY backend off]");
+                *readonly = true;
+            } else if (ov->cfg->usifac_pty_link[0]) {
+                snprintf(val, vsz, "%s", ov->cfg->usifac_pty_link);
+            } else {
+                snprintf(val, vsz, "[Enter to pick path]");
+                *readonly = true;
+            }
+            break;
+        case 10:
             snprintf(lbl, lsz, "Monochrome");
             switch (ov->cfg->monochrome) {
                 case MONO_GREEN: snprintf(val, vsz, "green"); break;
@@ -437,7 +452,7 @@ static void item_text(const Overlay *ov, int row,
                 default:         snprintf(val, vsz, "off");   break;
             }
             break;
-        case 10:
+        case 11:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -666,7 +681,8 @@ static void activate_item(Overlay *ov) {
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
                 usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
                 leds_set_enabled(LED_USIFAC,
                                  ov->cpc->mx4 && ov->cfg->usifac);
             }
@@ -1007,11 +1023,25 @@ static void activate_item(Overlay *ov) {
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
                 usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port);
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
             }
             ov->dirty = true;
             break;
-        case 9: {
+        case 9:
+            /* USIfAC PTY link: Enter starts an inline text editor seeded
+             * with the current value (empty if none). Commit applies the
+             * new path and re-inits USIfAC; clearing the field and
+             * committing removes the alias. */
+            if (!ov->cfg->usifac) break;
+            if (strcmp(ov->cfg->usifac_backend, "pty")) break;
+            ov->pty_link_editing = true;
+            snprintf(ov->pty_link_edit_buf, sizeof(ov->pty_link_edit_buf),
+                     "%s", ov->cfg->usifac_pty_link);
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StartTextInput(ov->cpc->display.window);
+            break;
+        case 10: {
             MonoMode next;
             switch (ov->cfg->monochrome) {
                 case MONO_OFF:   next = MONO_GREEN; break;
@@ -1242,6 +1272,48 @@ void overlay_tick(Overlay *ov) {
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
+    /* Inline editor for the USIfAC PTY-link path. Captures TEXT_INPUT
+     * events for printable bytes and KEY_DOWN for control keys; eats
+     * everything until Enter or Esc, so navigation keys can't escape
+     * the field by accident. */
+    if (ov->visible && ov->pty_link_editing) {
+        if (ev->type == SDL_EVENT_TEXT_INPUT) {
+            size_t len = strlen(ov->pty_link_edit_buf);
+            const char *t = ev->text.text;
+            while (*t && len + 1 < sizeof(ov->pty_link_edit_buf))
+                ov->pty_link_edit_buf[len++] = *t++;
+            ov->pty_link_edit_buf[len] = '\0';
+            return true;
+        }
+        if (ev->type != SDL_EVENT_KEY_DOWN) return true;
+        SDL_Keycode k = ev->key.key;
+        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+            snprintf(ov->cfg->usifac_pty_link,
+                     sizeof(ov->cfg->usifac_pty_link), "%s",
+                     ov->pty_link_edit_buf);
+            if (ov->cpc) {
+                usifac_shutdown(&ov->cpc->usifac);
+                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
+            }
+            ov->dirty = true;
+            ov->pty_link_editing = false;
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StopTextInput(ov->cpc->display.window);
+        } else if (k == SDLK_ESCAPE) {
+            ov->pty_link_editing = false;
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StopTextInput(ov->cpc->display.window);
+        } else if (k == SDLK_BACKSPACE) {
+            size_t len = strlen(ov->pty_link_edit_buf);
+            if (len > 0) ov->pty_link_edit_buf[len - 1] = '\0';
+        } else if (k == SDLK_DELETE) {
+            ov->pty_link_edit_buf[0] = '\0';
+        }
+        return true;
+    }
+
     if (ev->type != SDL_EVENT_KEY_DOWN) return false;
 
     SDL_Scancode sc = ev->key.scancode;
@@ -1705,9 +1777,16 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-        if (readonly) {
+        if (ov->section == OV_TINKER && i == 9 && ov->pty_link_editing) {
+            /* Inline editor: show the live buffer with a blinking-style
+             * trailing underscore cursor. Bright green to signal that
+             * keystrokes are being captured. */
+            char shown[CONFIG_PATH_MAX + 2];
+            snprintf(shown, sizeof(shown), "%s_", ov->pty_link_edit_buf);
+            draw_text(r, VAL_X, ty, shown, 120, 255, 120);
+        } else if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
-        } else if (ov->section == OV_TINKER && i == 9
+        } else if (ov->section == OV_TINKER && i == 10
                    && ov->cfg->monochrome != MONO_OFF) {
             /* Render the tint name in its own phosphor colour so the
              * choice is recognisable at a glance. Bright values picked

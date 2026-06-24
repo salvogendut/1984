@@ -79,6 +79,7 @@ void config_defaults(Config *cfg) {
     snprintf(cfg->net4cpc_tap_lease_end,  sizeof(cfg->net4cpc_tap_lease_end),  "10.0.0.150");
     snprintf(cfg->usifac_backend, sizeof(cfg->usifac_backend), "pty");
     cfg->usifac_tcp_port = 4001;
+    cfg->usifac_pty_link[0] = '\0';
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -204,6 +205,9 @@ static void config_create_default(const char *path, const char *home) {
         "usifac=false\n"
         "usifac_backend=pty\n"
         "usifac_tcp_port=4001\n"
+        "# Optional stable symlink to the USIfAC PTY's /dev/pts/N slave\n"
+        "# (e.g. /tmp/usifac.pty). Empty = no alias.\n"
+        "usifac_pty_link=\n"
         "net4cpc=false\n"
         "net4cpc_tap=false\n"
         "net4cpc_tap_host_ip=10.0.0.1\n"
@@ -388,6 +392,8 @@ int config_load_from(Config *cfg, const char *path_override) {
                 int p = atoi(val);
                 if (p > 0 && p < 65536) cfg->usifac_tcp_port = p;
                 else { fprintf(stderr, "1984.conf:%d: usifac_tcp_port must be 1..65535\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "usifac_pty_link")) {
+                snprintf(cfg->usifac_pty_link, sizeof(cfg->usifac_pty_link), "%s", val);
             } else if (!strcmp(key, "ulifac")) {
                 /* Legacy key — renamed to 'usifac' in v0.4.8. Accept and warn. */
                 static bool warned = false;
@@ -585,6 +591,7 @@ int config_save(const Config *cfg) {
         "usifac=%s\n"
         "usifac_backend=%s\n"
         "usifac_tcp_port=%d\n"
+        "usifac_pty_link=%s\n"
         "net4cpc=%s\n"
         "net4cpc_tap=%s\n"
         "net4cpc_tap_host_ip=%s\n"
@@ -625,6 +632,7 @@ int config_save(const Config *cfg) {
         cfg->usifac           ? "true" : "false",
         cfg->usifac_backend,
         cfg->usifac_tcp_port,
+        cfg->usifac_pty_link,
         cfg->net4cpc          ? "true" : "false",
         cfg->net4cpc_tap      ? "true" : "false",
         cfg->net4cpc_tap_host_ip,
