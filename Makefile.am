@@ -30,6 +30,7 @@ dist_man1_MANS = 1984.1
 	src/fat.c \
 	src/ch376.c \
 	src/usifac.c \
+	src/perryfi.c \
 	src/symbols.c \
 	src/gifcap.c \
 	src/webmcap.c \
@@ -87,6 +88,7 @@ noinst_HEADERS = \
 	src/tape.h \
 	src/types.h \
 	src/usifac.h \
+	src/perryfi.h \
 	src/z80.h \
 	src/z80dis.h
 

@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 12 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 15, 12 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -346,6 +346,25 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "%s",
                          ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
                              ? "Real printer (CUPS lp)" : "PDF file");
+            }
+            break;
+        case 14:
+            snprintf(lbl, lsz, "Wi-Fi modem");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
+                *readonly = true;
+            } else if (!ov->cfg->usifac) {
+                snprintf(val, vsz, "[needs USIfAC RS232]");
+                *readonly = true;
+            } else if (ov->cfg->perryfi && ov->cpc
+                       && ov->cpc->perryfi.state == PERRYFI_STATE_ONLINE
+                       && ov->cpc->perryfi.remote_host[0]) {
+                snprintf(val, vsz, "online %s:%d",
+                         ov->cpc->perryfi.remote_host,
+                         ov->cpc->perryfi.remote_port);
+            } else {
+                snprintf(val, vsz, "%s (PerryFi)",
+                         ov->cfg->perryfi ? "enabled" : "disabled");
             }
             break;
         }
@@ -678,11 +697,19 @@ static void activate_item(Overlay *ov) {
             break;
         case 1:
             ov->cfg->usifac = !ov->cfg->usifac;
+            /* PerryFi rides on top of USIfAC's serial port — when the
+             * port goes away the modem has nothing to plug into, so
+             * force it off too. The re-init below picks up the new
+             * combined state. */
+            if (!ov->cfg->usifac) ov->cfg->perryfi = false;
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
                 usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
+                perryfi_shutdown(&ov->cpc->perryfi);
+                perryfi_init(&ov->cpc->perryfi,
+                             ov->cfg->mx4 && ov->cfg->usifac && ov->cfg->perryfi);
                 leds_set_enabled(LED_USIFAC,
                                  ov->cpc->mx4 && ov->cfg->usifac);
             }
@@ -941,6 +968,19 @@ static void activate_item(Overlay *ov) {
                 printer_set_sink(&ov->cpc->printer,
                                  ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
                                      ? PRINT_SINK_REAL : PRINT_SINK_PDF);
+            ov->dirty = true;
+            break;
+        case 14:
+            /* Wi-Fi modem (PerryFi): needs the USIfAC serial port to
+             * plug into. Toggle re-inits the modem with the new enable
+             * state; the USIfAC data path checks perryfi.present per
+             * byte so the switch takes effect immediately. */
+            if (!ov->cfg->mx4 || !ov->cfg->usifac) break;
+            ov->cfg->perryfi = !ov->cfg->perryfi;
+            if (ov->cpc) {
+                perryfi_shutdown(&ov->cpc->perryfi);
+                perryfi_init(&ov->cpc->perryfi, ov->cfg->perryfi);
+            }
             ov->dirty = true;
             break;
         }

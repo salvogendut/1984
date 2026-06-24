@@ -4,6 +4,7 @@
 #define _DEFAULT_SOURCE     /* cfmakeraw */
 
 #include "usifac.h"
+#include "perryfi.h"
 #include "leds.h"
 
 #include <stdio.h>
@@ -152,7 +153,11 @@ static void close_fd(int *pfd) {
 
 void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port,
                  const char *pty_link_path) {
+    /* Preserve the perryfi attachment across re-inits — backend flips
+     * and toggles shouldn't drop the modem pointer. */
+    struct Perryfi *saved_perryfi = u->perryfi;
     memset(u, 0, sizeof(*u));
+    u->perryfi    = saved_perryfi;
     u->pty_master = -1;
     u->tcp_listen = -1;
     u->tcp_client = -1;
@@ -177,6 +182,10 @@ void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port,
         }
     }
 #endif
+}
+
+void usifac_attach_perryfi(USIfAC *u, struct Perryfi *p) {
+    u->perryfi = p;
 }
 
 void usifac_shutdown(USIfAC *u) {
@@ -284,9 +293,18 @@ void usifac_poll(USIfAC *u) {
 
 u8 usifac_read(USIfAC *u, u8 lo) {
     if (!u->present) return 0xFF;
+    /* PerryFi hijacks the data path when plugged in. Status is
+     * derived from the modem's RX queue too so the firmware's
+     * read-when-non-empty loop sees consistent state. */
+    bool via_perryfi = (u->perryfi && u->perryfi->present);
     switch (lo & 0x0F) {
         case 0x0: {  /* &FBD0 — data */
             u8 b = 0;
+            if (via_perryfi) {
+                perryfi_rx_pop(u->perryfi, &b);
+                if (b) leds_ping_split(LED_USIFAC, false);
+                return b;
+            }
             if (u->burst_mode) {
                 /* Real chip holds /WAIT until 3100 bytes are buffered.
                  * We don't have /WAIT; busy-poll the backend a few
@@ -299,6 +317,8 @@ u8 usifac_read(USIfAC *u, u8 lo) {
             return b;
         }
         case 0x1:  /* &FBD1 — status */
+            if (via_perryfi)
+                return perryfi_rx_has(u->perryfi) ? 0xFF : 0x01;
             return rb_empty(u->rx_head, u->rx_tail) ? 0x01 : 0xFF;
         case 0x8:  /* &FBD8 — presence (anything ≠ 0xFF is "present") */
             return 0x00;
@@ -311,9 +331,15 @@ u8 usifac_read(USIfAC *u, u8 lo) {
 
 void usifac_write(USIfAC *u, u8 lo, u8 val) {
     if (!u->present) return;
+    bool via_perryfi = (u->perryfi && u->perryfi->present);
     switch (lo & 0x0F) {
         case 0x0:  /* &FBD0 — TX */
-            tx_push(u, val);
+            if (via_perryfi) {
+                perryfi_tx_push(u->perryfi, val);
+                leds_ping_split(LED_USIFAC, true);
+            } else {
+                tx_push(u, val);
+            }
             return;
         case 0x1:  /* &FBD1 — control */
             switch (val) {

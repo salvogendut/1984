@@ -22,6 +22,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+struct Perryfi;
+
 #define USIFAC_RING (4096)  /* power of two; >= 3100 (firmware RX buffer) */
 
 typedef enum {
@@ -51,6 +53,13 @@ typedef struct {
 
     bool burst_mode;
     u8   baud_code;           /* last 10..23 command via OUT &FBD1,x */
+
+    /* When non-NULL AND p->present, the data port (&FBD0) routes
+     * through the AT-modem instead of touching the PTY/TCP rings.
+     * The control bytes (&FBD1 baud codes / burst mode), status
+     * (&FBD1 read), and presence (&FBD8) reads still flow through
+     * USIfAC unchanged — only data is hijacked. */
+    struct Perryfi *perryfi;
 } USIfAC;
 
 /* `backend` must be "pty" or "tcp"; `tcp_port` is ignored for PTY.
@@ -60,6 +69,11 @@ typedef struct {
 void    usifac_init    (USIfAC *u, bool enable, const char *backend, int tcp_port,
                         const char *pty_link_path);
 void    usifac_shutdown(USIfAC *u);
+
+/* Plug the AT-modem in. Call after init; passing NULL detaches.
+ * Routing decision is taken per-byte based on perryfi->present, so
+ * toggling perryfi at runtime is safe with no further usifac calls. */
+void    usifac_attach_perryfi(USIfAC *u, struct Perryfi *p);
 
 /* CPC bus interface. `lo` is the low byte of the I/O port (D0/D1/D8/DD/...). */
 u8   usifac_read (USIfAC *u, u8 lo);

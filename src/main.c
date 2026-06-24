@@ -582,6 +582,8 @@ int main(int argc, char *argv[]) {
     }
     usifac_init(&cpc.usifac, cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port,
                 cfg.usifac_pty_link);
+    perryfi_init(&cpc.perryfi, cfg.mx4 && cfg.usifac && cfg.perryfi);
+    usifac_attach_perryfi(&cpc.usifac, &cpc.perryfi);
     printer_set_connected(&cpc.printer, cfg.mx4);
     printer_set_pdf_output_dir(&cpc.printer, cfg.pdf_printer_dir);
     printer_set_pdf_enabled(&cpc.printer, cfg.pdf_printer && cfg.pdf_printer_dir[0]);
@@ -1103,6 +1105,10 @@ int main(int argc, char *argv[]) {
             usifac_init(&cpc.usifac, cfg.usifac,
                         cfg.usifac_backend, cfg.usifac_tcp_port,
                         cfg.usifac_pty_link);
+            perryfi_shutdown(&cpc.perryfi);
+            perryfi_init(&cpc.perryfi,
+                         cfg.mx4 && cfg.usifac && cfg.perryfi);
+            usifac_attach_perryfi(&cpc.usifac, &cpc.perryfi);
             if (cpc.albireo && cpc.m4) {
                 cpc.m4 = false;
                 cfg.m4 = false;
@@ -1129,6 +1135,7 @@ int main(int argc, char *argv[]) {
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
         usifac_poll(&cpc.usifac);
+        perryfi_poll(&cpc.perryfi);
         printer_tick(&cpc.printer);
         cpc_frame(&cpc);
         /* Auto-open monitor on breakpoint hit */
@@ -1355,6 +1362,7 @@ int main(int argc, char *argv[]) {
     if (sfx_buf)    SDL_free(sfx_buf);
     videocap_stop();   /* finalise GIF if recording */
     printer_shutdown(&cpc.printer);
+    perryfi_shutdown(&cpc.perryfi);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

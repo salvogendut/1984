@@ -251,7 +251,13 @@ Floppy drives A and B, cassette tape, external tape toggle (CPC
 .TP
 .B Extensions
 M4 board, Albireo USB, SYMBiFACE II IDE / mouse, Cyboard RTC,
-Net4CPC, USIfAC II, SymbNet, expansion ROM slots 0\(en31, and
+Net4CPC, USIfAC II, the
+.B PerryFi
+software Wi-Fi modem (gated on USIfAC RS232; intercepts the
+USIfAC data port and answers Hayes AT commands, dialling
+.B ATDT host:port
+out to host TCP),
+SymbNet, expansion ROM slots 0\(en31, and
 the Centronics PDF printer / Real-printer (CUPS) sink (gated on
 the MX4 expansion bus).
 .TP

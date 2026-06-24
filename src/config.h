@@ -64,6 +64,12 @@ typedef struct {
      * custom scripts) don't have to chase the randomised pts number each
      * launch. Empty disables the alias. POSIX only; ignored on Windows. */
     char usifac_pty_link[CONFIG_PATH_MAX];
+    bool perryfi;                      /* PerryFi software AT-modem extension
+                                          that turns the USIfAC port into a
+                                          Hayes-style Wi-Fi modem bridging to
+                                          host TCP via ATDT host:port. Gated on
+                                          `usifac` — no point without a serial
+                                          port to plug into. */
     bool net4cpc;
     bool net4cpc_tap;  /* Use TAP backend: 1984 auto-creates the tap device,
                         * runs a built-in DHCP server, adds the interface to
