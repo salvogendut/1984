@@ -19,6 +19,7 @@
 #include "symbnet.h"
 #include "ch376.h"
 #include "usifac.h"
+#include "perryfi.h"
 #include "tape.h"
 #include "printer.h"
 
@@ -57,6 +58,8 @@ typedef struct {
     CH376      ch376_b;        /* Right chip @ 0xFE40/41 — storage in
                                   dual-chip mouse mode                     */
     USIfAC     usifac;         /* USIfAC II RS232 serial @ 0xFBD0/D1       */
+    Perryfi    perryfi;        /* PerryFi software AT-modem (hijacks USIfAC's
+                                  data port when its present flag is set)   */
     Printer    printer;        /* Centronics @ 0xEFxx (Cairo → PDF host sink) */
     Tape       tape;           /* cassette / .cdt image */
     /* Per-sample snapshot of the cassette data line, captured inside the
