@@ -1029,26 +1029,17 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         case 9:
-            /* USIfAC PTY link: Enter when unset → save-file dialog picks the
-             * alias path; Enter when set → clear and re-init without it. */
+            /* USIfAC PTY link: Enter starts an inline text editor seeded
+             * with the current value (empty if none). Commit applies the
+             * new path and re-inits USIfAC; clearing the field and
+             * committing removes the alias. */
             if (!ov->cfg->usifac) break;
             if (strcmp(ov->cfg->usifac_backend, "pty")) break;
-            if (ov->cfg->usifac_pty_link[0]) {
-                ov->cfg->usifac_pty_link[0] = '\0';
-                if (ov->cpc) {
-                    usifac_shutdown(&ov->cpc->usifac);
-                    usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                                ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
-                                ov->cfg->usifac_pty_link);
-                }
-                ov->dirty = true;
-            } else {
-                ov->dialog_kind  = DIALOG_USIFAC_PTY_LINK;
-                ov->dialog_ready = false;
-                SDL_ShowSaveFileDialog(overlay_file_callback, ov,
-                    ov->cpc ? ov->cpc->display.window : NULL,
-                    NULL, 0, NULL);
-            }
+            ov->pty_link_editing = true;
+            snprintf(ov->pty_link_edit_buf, sizeof(ov->pty_link_edit_buf),
+                     "%s", ov->cfg->usifac_pty_link);
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StartTextInput(ov->cpc->display.window);
             break;
         case 10: {
             MonoMode next;
@@ -1218,19 +1209,6 @@ void overlay_tick(Overlay *ov) {
                 strncat(path, ".sna", sizeof(path) - strlen(path) - 1);
             snapshot_save(ov->cpc, path);
         }
-    } else if (ov->dialog_kind == DIALOG_USIFAC_PTY_LINK) {
-        if (ov->dialog_path[0] && ov->cfg->usifac
-            && !strcmp(ov->cfg->usifac_backend, "pty")) {
-            snprintf(ov->cfg->usifac_pty_link, sizeof(ov->cfg->usifac_pty_link),
-                     "%s", ov->dialog_path);
-            if (ov->cpc) {
-                usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
-                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
-                            ov->cfg->usifac_pty_link);
-            }
-            ov->dirty = true;
-        }
     } else if (ov->dialog_kind == DIALOG_VIDEO_CAPTURE) {
         if (ov->dialog_path[0]) {
             char path[512];
@@ -1294,6 +1272,48 @@ void overlay_tick(Overlay *ov) {
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
+    /* Inline editor for the USIfAC PTY-link path. Captures TEXT_INPUT
+     * events for printable bytes and KEY_DOWN for control keys; eats
+     * everything until Enter or Esc, so navigation keys can't escape
+     * the field by accident. */
+    if (ov->visible && ov->pty_link_editing) {
+        if (ev->type == SDL_EVENT_TEXT_INPUT) {
+            size_t len = strlen(ov->pty_link_edit_buf);
+            const char *t = ev->text.text;
+            while (*t && len + 1 < sizeof(ov->pty_link_edit_buf))
+                ov->pty_link_edit_buf[len++] = *t++;
+            ov->pty_link_edit_buf[len] = '\0';
+            return true;
+        }
+        if (ev->type != SDL_EVENT_KEY_DOWN) return true;
+        SDL_Keycode k = ev->key.key;
+        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+            snprintf(ov->cfg->usifac_pty_link,
+                     sizeof(ov->cfg->usifac_pty_link), "%s",
+                     ov->pty_link_edit_buf);
+            if (ov->cpc) {
+                usifac_shutdown(&ov->cpc->usifac);
+                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                            ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
+                            ov->cfg->usifac_pty_link);
+            }
+            ov->dirty = true;
+            ov->pty_link_editing = false;
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StopTextInput(ov->cpc->display.window);
+        } else if (k == SDLK_ESCAPE) {
+            ov->pty_link_editing = false;
+            if (ov->cpc && ov->cpc->display.window)
+                SDL_StopTextInput(ov->cpc->display.window);
+        } else if (k == SDLK_BACKSPACE) {
+            size_t len = strlen(ov->pty_link_edit_buf);
+            if (len > 0) ov->pty_link_edit_buf[len - 1] = '\0';
+        } else if (k == SDLK_DELETE) {
+            ov->pty_link_edit_buf[0] = '\0';
+        }
+        return true;
+    }
+
     if (ev->type != SDL_EVENT_KEY_DOWN) return false;
 
     SDL_Scancode sc = ev->key.scancode;
@@ -1757,7 +1777,14 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-        if (readonly) {
+        if (ov->section == OV_TINKER && i == 9 && ov->pty_link_editing) {
+            /* Inline editor: show the live buffer with a blinking-style
+             * trailing underscore cursor. Bright green to signal that
+             * keystrokes are being captured. */
+            char shown[CONFIG_PATH_MAX + 2];
+            snprintf(shown, sizeof(shown), "%s_", ov->pty_link_edit_buf);
+            draw_text(r, VAL_X, ty, shown, 120, 255, 120);
+        } else if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
         } else if (ov->section == OV_TINKER && i == 10
                    && ov->cfg->monochrome != MONO_OFF) {

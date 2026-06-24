@@ -30,8 +30,7 @@ typedef enum {
     DIALOG_SNAPSHOT_LOAD = 9,
     DIALOG_SNAPSHOT_SAVE = 10,
     DIALOG_VIDEO_CAPTURE = 11,
-    DIALOG_PRINTER_DIR   = 12,
-    DIALOG_USIFAC_PTY_LINK = 13
+    DIALOG_PRINTER_DIR   = 12
 } DialogKind;
 
 typedef struct {
@@ -56,6 +55,12 @@ typedef struct {
     bool         romslot_editing;
     char         romslot_edit_buf[64];
     int          romslot_edit_len;
+    /* Inline editor for the USIfAC PTY link path (Advanced row). When
+     * active, TEXT_INPUT events feed pty_link_edit_buf; Enter commits,
+     * Esc cancels, Backspace deletes the last byte, Delete clears the
+     * buffer. SDL_StartTextInput is owned by handle_event. */
+    bool         pty_link_editing;
+    char         pty_link_edit_buf[CONFIG_PATH_MAX];
     /* set by overlay after a save that requires a cold boot */
     bool         needs_cold_boot;
     /* Last-seen state of the three ROM-owning hardware toggles.
