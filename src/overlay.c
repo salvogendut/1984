@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 15, 12 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 13 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -323,7 +323,7 @@ static void item_text(const Overlay *ov, int row,
             break;
         }
         case 12:
-            snprintf(lbl, lsz, "PDF printer");
+            snprintf(lbl, lsz, "Printer");
             if (!ov->cfg->mx4) {
                 snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
@@ -338,18 +338,7 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 13:
-            snprintf(lbl, lsz, "Printer mode");
-            if (!ov->cfg->mx4) {
-                snprintf(val, vsz, "[needs MX4]");
-                *readonly = true;
-            } else {
-                snprintf(val, vsz, "%s",
-                         ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
-                             ? "Real printer (CUPS lp)" : "PDF file");
-            }
-            break;
-        case 14:
-            snprintf(lbl, lsz, "Wi-Fi modem");
+            snprintf(lbl, lsz, "Wi-Fi Modem");
             if (!ov->cfg->mx4) {
                 snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
@@ -363,7 +352,7 @@ static void item_text(const Overlay *ov, int row,
                          ov->cpc->perryfi.remote_host,
                          ov->cpc->perryfi.remote_port);
             } else {
-                snprintf(val, vsz, "%s (PerryFi)",
+                snprintf(val, vsz, "%s",
                          ov->cfg->perryfi ? "enabled" : "disabled");
             }
             break;
@@ -472,6 +461,17 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 11:
+            snprintf(lbl, lsz, "Printer mode");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                             ? "Real printer (CUPS lp)" : "PDF file");
+            }
+            break;
+        case 12:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -961,16 +961,6 @@ static void activate_item(Overlay *ov) {
             }
             break;
         case 13:
-            if (!ov->cfg->mx4) break;
-            ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
-                                  ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
-            if (ov->cpc)
-                printer_set_sink(&ov->cpc->printer,
-                                 ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
-                                     ? PRINT_SINK_REAL : PRINT_SINK_PDF);
-            ov->dirty = true;
-            break;
-        case 14:
             /* Wi-Fi modem (PerryFi): needs the USIfAC serial port to
              * plug into. Toggle re-inits the modem with the new enable
              * state; the USIfAC data path checks perryfi.present per
@@ -1094,6 +1084,16 @@ static void activate_item(Overlay *ov) {
             ov->dirty = true;
             break;
         }
+        case 11:
+            if (!ov->cfg->mx4) break;
+            ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
+                                  ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
+            if (ov->cpc)
+                printer_set_sink(&ov->cpc->printer,
+                                 ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
+                                     ? PRINT_SINK_REAL : PRINT_SINK_PDF);
+            ov->dirty = true;
+            break;
         }
         break;
 
