@@ -7,6 +7,12 @@ static void tick_until_hcc(CRTC *crtc, u16 hcc) {
         crtc_tick(crtc);
 }
 
+static void tick_to_next_line(CRTC *crtc) {
+    do {
+        crtc_tick(crtc);
+    } while (crtc->hcc != 0);
+}
+
 static void test_long_hsync_latches_at_cutoff(void) {
     CRTC crtc;
     crtc_init(&crtc);
@@ -108,11 +114,74 @@ static void test_r6_write_can_disable_current_row(void) {
     assert(!crtc.display_enable);
 }
 
+static void test_address_pipeline_advances_at_r1(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.reg[9] = 0;
+    u16 start = crtc.ma_row_start;
+
+    tick_to_next_line(&crtc);
+    assert(crtc.ma_row_start == (u16)(start + 4));
+}
+
+static void test_address_pipeline_repeats_when_r1_is_missed(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 6;
+    crtc.reg[9] = 0;
+    u16 start = crtc.ma_row_start;
+
+    tick_until_hcc(&crtc, 5);
+    crtc_select(&crtc, 1);
+    crtc_write(&crtc, 4);
+    tick_to_next_line(&crtc);
+    assert(crtc.ma_row_start == start);
+}
+
+static void test_address_pipeline_uses_new_r1_if_ahead(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.reg[9] = 0;
+    u16 start = crtc.ma_row_start;
+
+    tick_until_hcc(&crtc, 2);
+    crtc_select(&crtc, 1);
+    crtc_write(&crtc, 6);
+    tick_to_next_line(&crtc);
+    assert(crtc.ma_row_start == (u16)(start + 6));
+}
+
+static void test_address_pipeline_waits_for_final_raster(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.reg[9] = 1;
+    u16 start = crtc.ma_row_start;
+
+    tick_to_next_line(&crtc);
+    assert(crtc.vlc == 1);
+    assert(crtc.ma_row_start == start);
+
+    tick_to_next_line(&crtc);
+    assert(crtc.vlc == 0);
+    assert(crtc.ma_row_start == (u16)(start + 4));
+}
+
 int main(void) {
     test_long_hsync_latches_at_cutoff();
     test_short_hsync_latches_at_completion();
     test_horizontal_display_enable_is_latched();
     test_vertical_display_enable_is_latched();
     test_r6_write_can_disable_current_row();
+    test_address_pipeline_advances_at_r1();
+    test_address_pipeline_repeats_when_r1_is_missed();
+    test_address_pipeline_uses_new_r1_if_ahead();
+    test_address_pipeline_waits_for_final_raster();
     return 0;
 }

@@ -25,6 +25,7 @@ typedef struct {
 
     u16 ma;                /* memory address */
     u16 ma_row_start;
+    u16 ma_next_row;       /* row address captured by the R1 comparator */
 
     bool hsync;
     bool vsync;

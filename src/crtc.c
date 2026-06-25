@@ -16,6 +16,7 @@ void crtc_init(CRTC *c) {
     c->reg[13] = 0x00;  /* Display Start Low */
 
     c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+    c->ma_next_row = c->ma_row_start;
     c->ma = c->ma_row_start;
     c->h_display = true;
     c->v_display = true;
@@ -82,8 +83,17 @@ void crtc_tick(CRTC *c) {
         }
     }
 
+    bool end_of_line = c->hcc > c->reg[0];
+
+    /* On the final raster of a character row, R1 captures the address for
+     * the next row. If software moves R1 behind the beam, the comparator is
+     * missed and the current row address is repeated, as on the real CRTC. */
+    if (c->vlc == c->reg[9] &&
+        (c->hcc == c->reg[1] || (end_of_line && c->reg[1] == 0)))
+        c->ma_next_row = (u16)((c->ma_row_start + c->reg[1]) & 0x3FFF);
+
     /* --- End of line --- */
-    if (c->hcc > c->reg[0]) {
+    if (end_of_line) {
         c->hcc = 0;
         c->h_display = c->reg[1] != 0;
 
@@ -105,6 +115,7 @@ void crtc_tick(CRTC *c) {
                 c->vcc = 0;
                 c->vlc = 0;
                 c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                c->ma_next_row = c->ma_row_start;
                 c->v_display = c->reg[6] != 0;
             }
         } else {
@@ -114,7 +125,6 @@ void crtc_tick(CRTC *c) {
                 /* New character row: advance row start address */
                 c->vlc = 0;
                 c->vcc++;
-                c->ma_row_start += c->reg[1];
                 if (c->vcc == c->reg[6])
                     c->v_display = false;
 
@@ -128,13 +138,16 @@ void crtc_tick(CRTC *c) {
                         c->vcc = 0;
                         c->vlc = 0;
                         c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                        c->ma_next_row = c->ma_row_start;
                         c->v_display = c->reg[6] != 0;
                     }
                 }
             }
         }
 
-        /* Reload MA to the row start for the next scan line */
+        /* The address pipeline advances every scan line. On non-final
+         * rasters ma_next_row still holds the current row start. */
+        c->ma_row_start = c->ma_next_row;
         c->ma = c->ma_row_start;
     } else if (c->hcc == c->reg[1]) {
         c->h_display = false;
