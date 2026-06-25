@@ -17,14 +17,23 @@ void crtc_init(CRTC *c) {
 
     c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
     c->ma = c->ma_row_start;
+    c->h_display = true;
+    c->v_display = true;
     c->display_enable = true;
 }
 
 void crtc_select(CRTC *c, u8 reg) { c->selected = reg & 0x1F; }
 
 void crtc_write(CRTC *c, u8 val) {
-    if (c->selected < CRTC_NUM_REGS)
+    if (c->selected < CRTC_NUM_REGS) {
         c->reg[c->selected] = val;
+        /* Display timing comparators are edge-triggered. A write that
+         * matches the current vertical row can turn display off immediately,
+         * but moving R6 beyond the beam does not re-enable it this frame. */
+        if (c->selected == 6 && c->vcc == c->reg[6])
+            c->v_display = false;
+        c->display_enable = c->h_display && c->v_display;
+    }
 }
 
 u8 crtc_read(CRTC *c) {
@@ -76,6 +85,7 @@ void crtc_tick(CRTC *c) {
     /* --- End of line --- */
     if (c->hcc > c->reg[0]) {
         c->hcc = 0;
+        c->h_display = c->reg[1] != 0;
 
         /* VSYNC line counter (counts in scan lines = HSYNCs) */
         if (c->vsync) {
@@ -95,6 +105,7 @@ void crtc_tick(CRTC *c) {
                 c->vcc = 0;
                 c->vlc = 0;
                 c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                c->v_display = c->reg[6] != 0;
             }
         } else {
             /* Raster line within character row */
@@ -104,6 +115,8 @@ void crtc_tick(CRTC *c) {
                 c->vlc = 0;
                 c->vcc++;
                 c->ma_row_start += c->reg[1];
+                if (c->vcc == c->reg[6])
+                    c->v_display = false;
 
                 /* V total reached: either enter R5 vertical-adjust or
                  * restart the frame immediately if R5 is 0. */
@@ -115,6 +128,7 @@ void crtc_tick(CRTC *c) {
                         c->vcc = 0;
                         c->vlc = 0;
                         c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                        c->v_display = c->reg[6] != 0;
                     }
                 }
             }
@@ -122,6 +136,8 @@ void crtc_tick(CRTC *c) {
 
         /* Reload MA to the row start for the next scan line */
         c->ma = c->ma_row_start;
+    } else if (c->hcc == c->reg[1]) {
+        c->h_display = false;
     }
 
     /* Continuous R7 comparator: real CRTC starts VSYNC the moment C4
@@ -133,5 +149,5 @@ void crtc_tick(CRTC *c) {
         c->vsc = 0;
     }
 
-    c->display_enable = (c->hcc < c->reg[1]) && (c->vcc < c->reg[6]);
+    c->display_enable = c->h_display && c->v_display;
 }

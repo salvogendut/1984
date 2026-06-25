@@ -28,6 +28,8 @@ typedef struct {
 
     bool hsync;
     bool vsync;
+    bool h_display;
+    bool v_display;
     bool display_enable;
     bool mode_latch;       /* one-tick GA mode-latch event */
     bool mode_latched_this_hsync;
