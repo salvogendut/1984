@@ -39,21 +39,38 @@ u8 crtc_read_status(CRTC *c) {
 }
 
 void crtc_tick(CRTC *c) {
+    c->mode_latch = false;
+
     /* Horizontal counter advances; MA tracks along the row */
     c->hcc++;
     c->ma++;
 
     /* --- HSYNC --- */
-    if (c->hcc == c->reg[2]) {
+    u16 hsw = c->reg[3] & 0x0F;
+    if (!hsw) hsw = 16;
+    if (!c->hsync && c->hcc == c->reg[2]) {
         c->hsync = true;
         c->hsc = 0;
+        c->mode_latched_this_hsync = false;
     }
     if (c->hsync) {
-        c->hsc++;
-        u8 hsw = c->reg[3] & 0x0F;
-        if (!hsw) hsw = 16;
-        if (c->hsc >= hsw)
+        if (c->hsc == hsw) {
             c->hsync = false;
+            if (!c->mode_latched_this_hsync) {
+                c->mode_latch = true;
+                c->mode_latched_this_hsync = true;
+            }
+        } else {
+            c->hsc++;
+            if (hsw < 16)
+                c->hsc &= 0x0F;
+            /* The Gate Array stops observing a long CRTC HSYNC after seven
+             * character clocks and latches the requested mode at that point. */
+            if (c->hsc == 7 && !c->mode_latched_this_hsync) {
+                c->mode_latch = true;
+                c->mode_latched_this_hsync = true;
+            }
+        }
     }
 
     /* --- End of line --- */

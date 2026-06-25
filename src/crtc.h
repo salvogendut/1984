@@ -29,6 +29,8 @@ typedef struct {
     bool hsync;
     bool vsync;
     bool display_enable;
+    bool mode_latch;       /* one-tick GA mode-latch event */
+    bool mode_latched_this_hsync;
 } CRTC;
 
 void crtc_init(CRTC *c);
@@ -43,3 +45,4 @@ static inline u16 crtc_screen_addr(CRTC *c) { return c->ma; }
 static inline bool crtc_hsync(CRTC *c)      { return c->hsync; }
 static inline bool crtc_vsync(CRTC *c)      { return c->vsync; }
 static inline bool crtc_de(CRTC *c)         { return c->display_enable; }
+static inline bool crtc_mode_latch(CRTC *c) { return c->mode_latch; }

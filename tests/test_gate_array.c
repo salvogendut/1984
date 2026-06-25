@@ -52,8 +52,24 @@ static void test_pen_selection(void) {
     assert(ga.selected_pen == 0);
 }
 
+static void test_mode_latch_is_separate_from_hsync(void) {
+    GateArray ga = {0};
+    ga_init(&ga);
+
+    ga_write(&ga, 0x80 | 3);
+    assert(ga.requested_mode == 3);
+    assert(ga.screen_mode == 1);
+
+    ga_hsync(&ga);
+    assert(ga.screen_mode == 1);
+
+    ga_latch_mode(&ga);
+    assert(ga.screen_mode == 3);
+}
+
 int main(void) {
     test_mode_decoding();
     test_pen_selection();
+    test_mode_latch_is_separate_from_hsync();
     return 0;
 }

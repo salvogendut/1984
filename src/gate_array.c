@@ -134,9 +134,11 @@ u8 ga_mode(GateArray *ga) {
     return ga->screen_mode;
 }
 
-void ga_hsync(GateArray *ga) {
-    /* Latch the requested mode at start of new scan line */
+void ga_latch_mode(GateArray *ga) {
     ga->screen_mode = ga->requested_mode;
+}
+
+void ga_hsync(GateArray *ga) {
     ga->interrupt_counter++;
     if (ga->interrupt_counter >= 52) {
         ga->interrupt_counter = 0;

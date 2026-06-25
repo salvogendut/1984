@@ -55,6 +55,7 @@ void ga_set_monochrome(GateArray *ga, MonoMode m);
  * resolution modes repeat each logical pixel to preserve its hardware width. */
 void ga_decode_byte(u8 mode, u8 value, u8 out[8]);
 u8   ga_mode(GateArray *ga);
-void ga_hsync(GateArray *ga);           /* called by CRTC on each HSYNC */
+void ga_latch_mode(GateArray *ga);      /* called at the GA's HSYNC cutoff */
+void ga_hsync(GateArray *ga);           /* called when CRTC HSYNC completes */
 void ga_vsync_start(GateArray *ga);     /* called on CRTC VSYNC rising edge */
 void ga_irq_ack(GateArray *ga);         /* called by Z80 on IRQ acknowledge */

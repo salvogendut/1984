@@ -867,6 +867,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         bool new_hsync = crtc_hsync(&cpc->crtc);
         bool new_vsync = crtc_vsync(&cpc->crtc);
+        bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
         if (!new_hsync && cpc->prev_hsync)
@@ -915,6 +916,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 out[12]=c; out[13]=c; out[14]=c; out[15]=c;
             }
         }
+
+        /* CRTC timing changes happen after the current character is output,
+         * so the newly latched mode is visible from the next character. */
+        if (latch_mode)
+            ga_latch_mode(&cpc->ga);
 
         cpc->raster_x++;
 

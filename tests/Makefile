@@ -2,18 +2,23 @@ CC ?= cc
 CFLAGS ?= -O2
 CPPFLAGS ?=
 
-TEST_GATE_ARRAY = test-gate-array
+TESTS = test-gate-array test-crtc
 
 .PHONY: all check clean
 
-all: $(TEST_GATE_ARRAY)
+all: $(TESTS)
 
-$(TEST_GATE_ARRAY): test_gate_array.c ../src/gate_array.c ../src/gate_array.h
+test-gate-array: test_gate_array.c ../src/gate_array.c ../src/gate_array.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_gate_array.c ../src/gate_array.c -o $@
 
-check: $(TEST_GATE_ARRAY)
-	./$(TEST_GATE_ARRAY)
+test-crtc: test_crtc.c ../src/crtc.c ../src/crtc.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_crtc.c ../src/crtc.c -o $@
+
+check: $(TESTS)
+	./test-gate-array
+	./test-crtc
 
 clean:
-	rm -f $(TEST_GATE_ARRAY)
+	rm -f $(TESTS)
