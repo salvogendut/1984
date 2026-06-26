@@ -700,7 +700,7 @@ static void activate_item(Overlay *ov) {
             if (!ov->cfg->usifac) ov->cfg->perryfi = false;
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
                 perryfi_shutdown(&ov->cpc->perryfi);
@@ -1049,7 +1049,7 @@ static void activate_item(Overlay *ov) {
                          sizeof(ov->cfg->usifac_backend), "tcp");
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
             }
@@ -1367,7 +1367,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                      ov->pty_link_edit_buf);
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
             }
