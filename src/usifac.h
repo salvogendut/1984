@@ -7,9 +7,21 @@
  *
  * Ports (CPC I/O, all gated on the MX4 expansion bus):
  *   &FBD0  r/w  DATA      — pop/push one byte from the RX/TX queue
- *   &FBD1  r    STATUS    — 0xFF when RX non-empty, 0x01 when empty
+ *   &FBD1  r    STATUS    — 0xFF when RX non-empty; when empty returns
+ *                            the "empty sentinel" (default 0x01; flipped
+ *                            to 0x00 by control cmd 40, back by cmd 41)
  *   &FBD1  w    CONTROL   — see usifac_write() comments for the command map
- *   &FBD8  r    EXISTS    — 0x00 when board enabled (0xFF means absent)
+ *   &FBD8  r    EXISTS    — real firmware returns the board's rom_number
+ *                            (0..6) so the companion host-ROM can call
+ *                            back into itself after a bank switch; 0xFF
+ *                            means absent. We don't ship the host-ROM
+ *                            and only emulate the serial pipe, so we
+ *                            return 0x00 — passes the "not 0xFF"
+ *                            presence check used by every pure-serial
+ *                            consumer (FUZIX, Hayes/PerryFi, raw I/O),
+ *                            and steers any hypothetical ROM-aware code
+ *                            away from a bogus bank switch (slot 0 is
+ *                            the lower OS ROM, never an expansion).
  *   &FBDD  r    BAUDCODE  — last x written to &FBD1 in range 10..23
  *
  * Backend: a host-side PTY or a TCP listener, selected via cfg.
@@ -24,7 +36,7 @@
 
 struct Perryfi;
 
-#define USIFAC_RING (4096)  /* power of two; >= 3100 (firmware RX buffer) */
+#define USIFAC_RING (4096)  /* power of two; >= 2900 (firmware RX buffer) */
 
 typedef enum {
     USIFAC_BACKEND_PTY = 0,
@@ -53,6 +65,8 @@ typedef struct {
 
     bool burst_mode;
     u8   baud_code;           /* last 10..23 command via OUT &FBD1,x */
+    u8   empty_sentinel;      /* value returned from &FBD1 read when RX
+                               * empty; default 0x01, cmds 40/41 flip it */
 
     /* When non-NULL AND p->present, the data port (&FBD0) routes
      * through the AT-modem instead of touching the PTY/TCP rings.
