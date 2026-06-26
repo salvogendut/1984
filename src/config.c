@@ -488,6 +488,8 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "last_dir")) {
+                if (val[0]) expand_path(val, cfg->last_dir, sizeof(cfg->last_dir));
             }
         }
     }
@@ -625,7 +627,8 @@ int config_save(const Config *cfg) {
         "monochrome=%s\n\n"
         "[advanced]\n"
         "tinker=%s\n"
-        "debug=%s\n",
+        "debug=%s\n"
+        "last_dir=%s\n",
         cfg->disk_a,
         cfg->disk_b,
         cfg->tape,
@@ -664,7 +667,8 @@ int config_save(const Config *cfg) {
         cfg->fullscreen_smoothing ? "true" : "false",
         mono_to_str(cfg->monochrome),
         cfg->tinker     ? "true" : "false",
-        cfg->debug      ? "true" : "false"
+        cfg->debug      ? "true" : "false",
+        cfg->last_dir
     );
 
     fclose(f);

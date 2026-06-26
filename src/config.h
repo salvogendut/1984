@@ -120,6 +120,12 @@ typedef struct {
     char            pdf_printer_dir[CONFIG_PATH_MAX];
     ConfigPrintSink print_sink;
 
+    /* Last directory used by the F9 file pickers. Updated whenever the
+     * user picks a file or folder; passed back as the default location
+     * on the next dialog so each launch starts where the previous one
+     * left off (issue #107). */
+    char last_dir[CONFIG_PATH_MAX];
+
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
     bool debug;              /* enable debug machinery (env-var traces, panic

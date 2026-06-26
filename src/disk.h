@@ -36,6 +36,11 @@ void disk_eject(Disk *d);
 /* Returns 0 on success, -1 on error. */
 int  disk_load(Disk *d, const char *path);
 
+/* Write a standard CPC DATA-format blank .dsk to `path` (40 tracks,
+ * single-sided, 9 × 512-byte sectors, sector IDs 0xC1..0xC9, 0xE5 fill
+ * — empty AMSDOS directory). Returns 0 on success, -1 on I/O error. */
+int  disk_create_blank(const char *path);
+
 /* Find a sector by CHRN on the current track. Returns NULL if not found. */
 DiskSector *disk_find_sector(Disk *d, int side, uint8_t C, uint8_t H,
                              uint8_t R, uint8_t N);
