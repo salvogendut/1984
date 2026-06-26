@@ -621,6 +621,39 @@ static CrtcType default_crtc_type(CpcModel model) {
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
 
+#define MONITOR_SYNC_DEC_MAX     80
+#define MONITOR_SYNC_INC_MAX     80
+#define MONITOR_HSYNC_DURATION   0x0A00
+#define MONITOR_BASE_HSYNC       (0x4000 - MONITOR_HSYNC_DURATION)
+#define MONITOR_SYNC_TOLERANCE   257
+#define MONITOR_X_ADJUST_PIXELS  -16
+
+static int clamp_int(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static void cpc_monitor_reset(CPC *cpc) {
+    cpc->raster_x = 0;
+    cpc->raster_y = 0;
+    cpc->monitor_hpos = 0x0500;
+    cpc->monitor_hsync_duration = MONITOR_HSYNC_DURATION;
+    cpc->monitor_min_hsync = MONITOR_BASE_HSYNC - MONITOR_SYNC_TOLERANCE;
+    cpc->monitor_max_hsync = MONITOR_BASE_HSYNC + MONITOR_SYNC_TOLERANCE;
+    cpc->monitor_hsync = MONITOR_BASE_HSYNC;
+    cpc->monitor_free_hsync = MONITOR_BASE_HSYNC;
+    cpc->monitor_hs_peak_pos = 0;
+    cpc->monitor_hs_start_pos = 0;
+    cpc->monitor_hs_end_pos = 0;
+    cpc->monitor_hs_peak_to_start = 0;
+    cpc->monitor_hs_start_to_peak = 0;
+    cpc->monitor_hs_end_to_peak = 0;
+    cpc->monitor_hs_peak_to_end = 0;
+    cpc->monitor_had_peak = false;
+    cpc->monitor_in_hsync = false;
+}
+
 int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
@@ -639,6 +672,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ga_init(&cpc->ga);
     crtc_init(&cpc->crtc);
     crtc_set_type(&cpc->crtc, default_crtc_type(model));
+    cpc_monitor_reset(cpc);
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
@@ -706,8 +740,7 @@ void cpc_reset(CPC *cpc) {
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
-    cpc->raster_x  = 0;
-    cpc->raster_y  = 0;
+    cpc_monitor_reset(cpc);
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
     cpc->cycle_debt = 0;
@@ -833,22 +866,116 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
 
 /* ---- Frame execution ----
  *
- * Raster grid: raster_x in char clocks (0 = first char after hsync end).
- * Default CRTC timing (H total=63, H sync pos=46, H sync width=14):
- *   chars 60-63 = 4 left border chars   → raster_x 0-3   → px 0-63
- *   chars  0-39 = 40 displayed chars    → raster_x 4-43  → px 64-703
- *   chars 40-47 = right border/overflow → raster_x 44-51 → px 704-767+
- *
- * For Y: vsync fires at char row 30 (scan 240). After vsync (16 lines)
- * and top border (48 lines = 6 rows), display starts at scan 304 mod frame.
- * We set raster_y = -64 at vsync so raster_y=0 when display starts.
- */
-
-/* Left border offset in char clocks = H_total+1 - H_sync_pos - H_sync_width */
-#define RASTER_X_AFTER_HSYNC  -1
-/* Scan lines from vsync rising edge to first displayed line:
- * 16 (vsync pulse) + 56 (7 top border char rows × 8) = 72 */
+ * Rendering follows the monitor beam, not the raw CRTC HSYNC edge. The CRTC
+ * still drives display enable, interrupts and mode latch, but the monitor has
+ * inertia: short/narrow HSYNC pulses can be ignored and legal rupture effects
+ * shift the rendered line instead of forcibly starting a new one. */
 #define VSYNC_TO_DISPLAY_LINES 40
+
+static void cpc_monitor_start_hsync(CPC *cpc) {
+    if (cpc->monitor_in_hsync)
+        return;
+    cpc->monitor_in_hsync = true;
+    cpc->monitor_hs_start_pos = 0;
+    cpc->monitor_hs_peak_to_start = cpc->monitor_hs_peak_pos;
+}
+
+static void cpc_monitor_end_hsync(CPC *cpc) {
+    int temp;
+
+    if (!cpc->monitor_in_hsync)
+        return;
+
+    cpc->monitor_in_hsync = false;
+    cpc->monitor_hs_peak_to_end = cpc->monitor_hs_peak_pos;
+
+    if (!cpc->monitor_had_peak) {
+        cpc->monitor_hs_end_pos = 0;
+        return;
+    }
+
+    cpc->monitor_had_peak = false;
+    if (cpc->monitor_hs_peak_pos >= cpc->monitor_hs_start_pos) {
+        temp = cpc->monitor_hs_end_pos - cpc->monitor_hsync_duration;
+        if (temp < cpc->monitor_free_hsync) {
+            if (cpc->monitor_free_hsync != cpc->monitor_min_hsync)
+                cpc->monitor_free_hsync--;
+        } else if (temp > cpc->monitor_free_hsync) {
+            if (cpc->monitor_free_hsync != cpc->monitor_max_hsync)
+                cpc->monitor_free_hsync++;
+        }
+
+        temp = cpc->monitor_hs_peak_to_end - cpc->monitor_hs_end_to_peak;
+        if (temp < 0) {
+            temp = -temp;
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_INC_MAX)
+                temp = MONITOR_SYNC_INC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync + temp;
+        } else {
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_DEC_MAX)
+                temp = MONITOR_SYNC_DEC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync - temp;
+        }
+    } else {
+        temp = cpc->monitor_hs_start_to_peak - cpc->monitor_hs_peak_to_end;
+        if (!temp) {
+            cpc->monitor_hsync = cpc->monitor_free_hsync;
+        } else if (temp < 0) {
+            temp = -temp;
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_INC_MAX)
+                temp = MONITOR_SYNC_INC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync + temp;
+        } else {
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_DEC_MAX)
+                temp = MONITOR_SYNC_DEC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync - temp;
+        }
+    }
+
+    cpc->monitor_hsync = clamp_int(cpc->monitor_hsync,
+                                   cpc->monitor_min_hsync,
+                                   cpc->monitor_max_hsync);
+    cpc->monitor_hs_end_pos = 0;
+}
+
+static void cpc_monitor_advance(CPC *cpc) {
+    cpc->monitor_hs_start_pos += 0x100;
+    cpc->monitor_hs_end_pos += 0x100;
+    cpc->monitor_hs_peak_pos += 0x100;
+    cpc->monitor_hpos += 0x100;
+
+    if (cpc->monitor_hpos >= cpc->monitor_hsync) {
+        cpc->monitor_had_peak = true;
+        cpc->monitor_hs_peak_pos = cpc->monitor_hpos - cpc->monitor_hsync;
+        cpc->monitor_hs_start_to_peak =
+            cpc->monitor_hs_start_pos - cpc->monitor_hs_peak_pos;
+        cpc->monitor_hs_end_to_peak =
+            cpc->monitor_hs_end_pos - cpc->monitor_hs_peak_pos;
+        cpc->monitor_hpos =
+            cpc->monitor_hs_peak_pos - cpc->monitor_hsync_duration;
+        cpc->raster_y++;
+    }
+}
+
+static inline int cpc_monitor_px(const CPC *cpc) {
+    return (cpc->monitor_hpos / 16) + MONITOR_X_ADJUST_PIXELS;
+}
 
 /* Advance ALL per-cycle peripheral state by `cycles` CPU T-states.
  * Covers: tape, audio sampling, CRTC/GA/render. Mirrors konCePCja's
@@ -888,14 +1015,6 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         ppi_set_vsync(&cpc->ppi, new_vsync);
 
-        /* --- Edge detection BEFORE render so raster resets apply this tick --- */
-
-        /* HSYNC falling edge → start of new scan line */
-        if (!new_hsync && cpc->prev_hsync) {
-            cpc->raster_x = RASTER_X_AFTER_HSYNC;
-            cpc->raster_y++;
-        }
-
         /* VSYNC rising edge → start of new frame */
         if (new_vsync && !cpc->prev_vsync) {
             cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
@@ -903,14 +1022,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             display_upload(&cpc->display);
         }
 
-        cpc->prev_hsync = new_hsync;
-        cpc->prev_vsync = new_vsync;
-
         /* --- Render 16 pixels for this char clock --- */
-        int px = cpc->raster_x * 16;
+        int px = cpc_monitor_px(cpc);
         int py = cpc->raster_y;
 
-        if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px < CPC_SCREEN_W) {
+        if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px <= CPC_SCREEN_W - 16) {
             u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
             if (cpc->crtc_pre_de) {
                 /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
@@ -935,7 +1051,20 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (latch_mode)
             ga_latch_mode(&cpc->ga);
 
-        cpc->raster_x++;
+        cpc_monitor_advance(cpc);
+        cpc->raster_x = cpc->monitor_hpos / 256;
+
+        /* On a CPC the Gate Array only observes the first seven CRTC HSYNC
+         * character clocks. The monitor-visible pulse starts a little later
+         * and is also cut off there; narrow HSW values therefore do not yank
+         * the display beam around. */
+        if (new_hsync && cpc->crtc.hsc == 3)
+            cpc_monitor_start_hsync(cpc);
+        if (latch_mode)
+            cpc_monitor_end_hsync(cpc);
+
+        cpc->prev_hsync = new_hsync;
+        cpc->prev_vsync = new_vsync;
 
         /* Capture next char's pre-tick state */
         cpc->crtc_pre_ma = cpc->crtc.ma;

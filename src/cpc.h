@@ -75,9 +75,27 @@ typedef struct {
     int  cycle_debt;      /* leftover cycles from previous frame */
     int  crtc_cycle_acc;  /* accumulated cycles for CRTC tick (4-cycle alignment) */
 
-    /* Raster position (in character-clock units; 16 output pixels each) */
-    int  raster_x;        /* 0 = first char after hsync end */
-    int  raster_y;        /* 0 = first scanline after vsync */
+    /* Render beam position. The CRTC generates sync pulses, but the monitor
+     * free-runs between them; demos with R2/R3 rupture tricks depend on that
+     * distinction. raster_y is the monitor scanline, while monitor_hpos is an
+     * 8.8 fixed-point horizontal monitor position in CRTC character clocks. */
+    int  raster_x;
+    int  raster_y;
+    int  monitor_hpos;
+    int  monitor_hsync;
+    int  monitor_free_hsync;
+    int  monitor_hsync_duration;
+    int  monitor_min_hsync;
+    int  monitor_max_hsync;
+    int  monitor_hs_peak_pos;
+    int  monitor_hs_start_pos;
+    int  monitor_hs_end_pos;
+    int  monitor_hs_peak_to_start;
+    int  monitor_hs_start_to_peak;
+    int  monitor_hs_end_to_peak;
+    int  monitor_hs_peak_to_end;
+    bool monitor_had_peak;
+    bool monitor_in_hsync;
     bool prev_hsync;
     bool prev_vsync;
 

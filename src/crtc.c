@@ -161,6 +161,8 @@ void crtc_tick(CRTC *c) {
         (c->hcc == c->reg[1] || (end_of_line && c->reg[1] == 0)))
         c->ma_next_row = (u16)((c->ma_row_start + c->reg[1]) & 0x3FFF);
 
+    bool end_char_row = c->vlc == c->reg[9];
+
     /* --- End of line --- */
     if (end_of_line) {
         c->hcc = 0;
@@ -187,31 +189,32 @@ void crtc_tick(CRTC *c) {
                 c->ma_next_row = c->ma_row_start;
                 c->v_display = c->reg[6] != 0;
             }
-        } else {
+        } else if (end_char_row) {
             /* Raster line within character row */
-            c->vlc++;
-            if (c->vlc > c->reg[9]) {
-                /* New character row: advance row start address */
-                c->vlc = 0;
-                c->vcc++;
+            c->vlc = 0;
+
+            /* Counter registers are comparators, not "greater than" limits.
+             * If software lowers R4/R9 after the internal counter has already
+             * passed the new value, the CRTC keeps counting until the counter
+             * wraps and the comparator can match again. Line-by-line rupture
+             * effects depend on that overflow behaviour. */
+            if (c->vcc == c->reg[4]) {
+                if (c->reg[5]) {
+                    c->in_vadjust = true;
+                    c->vac = 0;
+                } else {
+                    c->vcc = 0;
+                    c->ma_row_start = crtc_start_addr(c);
+                    c->ma_next_row = c->ma_row_start;
+                    c->v_display = c->reg[6] != 0;
+                }
+            } else {
+                c->vcc = (c->vcc + 1) & 0x7F;
                 if (c->vcc == c->reg[6])
                     c->v_display = false;
-
-                /* V total reached: either enter R5 vertical-adjust or
-                 * restart the frame immediately if R5 is 0. */
-                if (c->vcc > c->reg[4]) {
-                    if (c->reg[5]) {
-                        c->in_vadjust = true;
-                        c->vac = 0;
-                    } else {
-                        c->vcc = 0;
-                        c->vlc = 0;
-                        c->ma_row_start = crtc_start_addr(c);
-                        c->ma_next_row = c->ma_row_start;
-                        c->v_display = c->reg[6] != 0;
-                    }
-                }
             }
+        } else {
+            c->vlc = (c->vlc + 1) & 0x1F;
         }
 
         /* The address pipeline advances every scan line. On non-final
