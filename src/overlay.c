@@ -35,7 +35,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 13 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 15 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -468,6 +468,19 @@ static void item_text(const Overlay *ov, int row,
             }
             break;
         case 12:
+            snprintf(lbl, lsz, "Volume");
+            snprintf(val, vsz, "%d%%", ov->cfg->audio_volume);
+            break;
+        case 13:
+            snprintf(lbl, lsz, "Stereo");
+            if (ov->cfg->audio_stereo_sep == 0)
+                snprintf(val, vsz, "mono");
+            else if (ov->cfg->audio_stereo_sep == 255)
+                snprintf(val, vsz, "ABC (full)");
+            else
+                snprintf(val, vsz, "ABC %d/255", ov->cfg->audio_stereo_sep);
+            break;
+        case 14:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -1089,6 +1102,22 @@ static void activate_item(Overlay *ov) {
                 printer_set_sink(&ov->cpc->printer,
                                  ov->cfg->print_sink == PRINTER_SINK_REAL_PRINTER
                                      ? PRINT_SINK_REAL : PRINT_SINK_PDF);
+            ov->dirty = true;
+            break;
+        case 12:
+            /* Volume: step 5% per Enter, wrap 0→100. Use Left/Right for
+             * finer control (handled in handle_event). */
+            ov->cfg->audio_volume += 5;
+            if (ov->cfg->audio_volume > 100) ov->cfg->audio_volume = 0;
+            if (ov->cpc) psg_set_volume(&ov->cpc->psg, ov->cfg->audio_volume);
+            ov->dirty = true;
+            break;
+        case 13:
+            /* Stereo separation: cycle mono → half → full. */
+            ov->cfg->audio_stereo_sep =
+                ov->cfg->audio_stereo_sep == 0     ? 128 :
+                ov->cfg->audio_stereo_sep == 128   ? 255 : 0;
+            if (ov->cpc) psg_set_stereo(&ov->cpc->psg, ov->cfg->audio_stereo_sep);
             ov->dirty = true;
             break;
         }

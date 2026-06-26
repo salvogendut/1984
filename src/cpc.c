@@ -835,7 +835,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     if (display_init(&cpc->display, title, scale) < 0)
         return -1;
 
-    SDL_AudioSpec spec = { SDL_AUDIO_S16, 1, AUDIO_SAMPLE_RATE };
+    SDL_AudioSpec spec = { SDL_AUDIO_S16, 2, AUDIO_SAMPLE_RATE };
     cpc->audio_stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
     if (!cpc->audio_stream) {
@@ -843,7 +843,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     } else if (!SDL_ResumeAudioStreamDevice(cpc->audio_stream)) {
         fprintf(stderr, "SDL_ResumeAudioStreamDevice: %s\n", SDL_GetError());
     } else if (dbg_getenv("ONE_K_TRACE_AUDIO")) {
-        fprintf(stderr, "[audio] opened S16 mono %d Hz playback stream\n",
+        fprintf(stderr, "[audio] opened S16 stereo %d Hz playback stream\n",
                 AUDIO_SAMPLE_RATE);
     }
 
@@ -856,7 +856,7 @@ void cpc_reset(CPC *cpc) {
     crtc_init(&cpc->crtc);
     crtc_set_type(&cpc->crtc, default_crtc_type(cpc->model));
     ppi_init(&cpc->ppi);
-    psg_init(&cpc->psg);
+    psg_reset(&cpc->psg);
     kbd_init(&cpc->kbd);
     fdc_reset(&cpc->fdc);
     rtc_init(&cpc->rtc_chip);
@@ -1717,17 +1717,20 @@ void cpc_frame(CPC *cpc) {
 
     /* Push one frame of PSG audio to SDL (skip on breakpoint/step to avoid burst) */
     if (!stop_early && cpc->audio_stream) {
-        s16 audio_buf[AUDIO_SAMPLES_FRAME];
-        psg_render(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
-                   PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
-        /* Mix in the cassette signal — captured per-sample inside the Z80
-         * step loop above. Saturating add so we don't wrap on s16 overflow. */
+        s16 audio_buf[AUDIO_SAMPLES_FRAME * 2];     /* interleaved L,R */
+        psg_render_stereo(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
+                          PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
+        /* Mix in the cassette signal (mono → both buses) — captured per-sample
+         * inside the Z80 step loop above. Saturating add so we don't wrap. */
         if (cpc->tape.present && cpc->tape.motor) {
             for (int i = 0; i < cpc->tape_audio_pos; i++) {
-                int v = (int)audio_buf[i] + (int)cpc->tape_audio[i];
-                if (v >  32767) v =  32767;
-                if (v < -32768) v = -32768;
-                audio_buf[i] = (s16)v;
+                int t  = (int)cpc->tape_audio[i];
+                int vl = (int)audio_buf[i*2  ] + t;
+                int vr = (int)audio_buf[i*2+1] + t;
+                if (vl >  32767) vl =  32767; else if (vl < -32768) vl = -32768;
+                if (vr >  32767) vr =  32767; else if (vr < -32768) vr = -32768;
+                audio_buf[i*2  ] = (s16)vl;
+                audio_buf[i*2+1] = (s16)vr;
             }
         }
         cpc->tape_audio_pos = 0;
@@ -1738,7 +1741,7 @@ void cpc_frame(CPC *cpc) {
         } else if (dbg_getenv("ONE_K_TRACE_AUDIO") &&
                    (cpc_frame_count % 50) == 0) {
             s16 min = audio_buf[0], max = audio_buf[0];
-            for (int i = 1; i < AUDIO_SAMPLES_FRAME; i++) {
+            for (int i = 1; i < AUDIO_SAMPLES_FRAME * 2; i++) {
                 if (audio_buf[i] < min) min = audio_buf[i];
                 if (audio_buf[i] > max) max = audio_buf[i];
             }

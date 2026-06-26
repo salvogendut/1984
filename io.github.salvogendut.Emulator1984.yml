@@ -1,0 +1,49 @@
+app-id: io.github.salvogendut.Emulator1984
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk//24.08
+command: 1984
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+  - --device=all
+  - --filesystem=home
+
+modules:
+  - name: sdl3
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDL_SHARED=ON
+      - -DSDL_STATIC=OFF
+      - -DSDL_TEST_LIBRARY=OFF
+      - -DSDL_TESTS=OFF
+      - -DSDL_EXAMPLES=OFF
+    sources:
+      - type: archive
+        url: https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.10.tar.gz
+        sha256: 0dc11d980ba17250200718fa4e28011da293f27ed92f92203afffe396811f307
+    cleanup:
+      - /bin
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+      - /share/aclocal
+      - '*.la'
+
+  - name: emulator-1984
+    buildsystem: simple
+    build-commands:
+      - autoreconf -fi
+      - ./configure --prefix=/app
+      - make -j$(nproc)
+      - make install
+    sources:
+      - type: git
+        url: https://github.com/salvogendut/1984.git
+        branch: main
