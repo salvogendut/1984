@@ -580,7 +580,7 @@ int main(int argc, char *argv[]) {
         cpc.m4 = false;
         cfg.m4 = false;
     }
-    usifac_init(&cpc.usifac, cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port,
+    usifac_init(&cpc.usifac, cfg.mx4 && cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port,
                 cfg.usifac_pty_link);
     perryfi_init(&cpc.perryfi, cfg.mx4 && cfg.usifac && cfg.perryfi);
     usifac_attach_perryfi(&cpc.usifac, &cpc.perryfi);
@@ -1102,7 +1102,7 @@ int main(int argc, char *argv[]) {
             }
             ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
             usifac_shutdown(&cpc.usifac);
-            usifac_init(&cpc.usifac, cfg.usifac,
+            usifac_init(&cpc.usifac, cfg.mx4 && cfg.usifac,
                         cfg.usifac_backend, cfg.usifac_tcp_port,
                         cfg.usifac_pty_link);
             perryfi_shutdown(&cpc.perryfi);
