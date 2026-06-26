@@ -92,13 +92,7 @@ noinst_HEADERS = \
 	src/z80.h \
 	src/z80dis.h
 
-if WITH_CAIRO
-CAIRO_DEFINE = -DHAVE_CAIRO=1
-else
-CAIRO_DEFINE =
-endif
-
-1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) $(CAIRO_CFLAGS) $(CAIRO_DEFINE) -Wall -Wextra \
+1984_CFLAGS  = $(AM_CFLAGS) $(SDL3_CFLAGS) $(CAIRO_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\" \
                -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
 # On Windows the resource object compiled below carries the .ico into

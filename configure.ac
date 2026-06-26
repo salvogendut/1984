@@ -46,7 +46,9 @@ if test "x$with_cairo" != "xno"; then
     [AC_MSG_WARN([cairo not found — building without PDF printer])
      with_cairo=no])
 fi
-AM_CONDITIONAL([WITH_CAIRO], [test "x$with_cairo" = "xyes"])
+if test "x$with_cairo" = "xyes"; then
+  AC_DEFINE([HAVE_CAIRO], [1], [cairo available for PDF printer])
+fi
 AC_MSG_NOTICE([PDF printer backend: $with_cairo])
 
 # Platform-specific socket linkage and Windows extras.

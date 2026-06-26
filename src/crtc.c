@@ -1,8 +1,49 @@
 #include "crtc.h"
 #include <string.h>
 
+static u8 crtc_masked_reg_value(const CRTC *c, u8 reg, u8 val) {
+    switch (reg) {
+    case 4:
+    case 6:
+    case 7:
+    case 10:
+        return val & 0x7F;
+    case 5:
+    case 9:
+    case 11:
+        return val & 0x1F;
+    case 8:
+        return (c->type == CRTC_TYPE_1 || c->type == CRTC_TYPE_2) ? (val & 0x03) : val;
+    case 12:
+    case 14:
+        return val & 0x3F;
+    default:
+        return val;
+    }
+}
+
+static u16 crtc_hsync_width(const CRTC *c) {
+    u16 hsw = c->reg[3] & 0x0F;
+    if (!hsw && (c->type == CRTC_TYPE_2 || c->type == CRTC_TYPE_3))
+        hsw = 16;
+    return hsw;
+}
+
+static u16 crtc_vsync_width(const CRTC *c) {
+    if (c->type == CRTC_TYPE_0 || c->type == CRTC_TYPE_3) {
+        u16 vsw = c->reg[3] >> 4;
+        return vsw ? vsw : 16;
+    }
+    return 16;
+}
+
+static u16 crtc_start_addr(const CRTC *c) {
+    return ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+}
+
 void crtc_init(CRTC *c) {
     memset(c, 0, sizeof(*c));
+    c->type = CRTC_TYPE_1;
     c->reg[0]  = 63;    /* H Total */
     c->reg[1]  = 40;    /* H Displayed */
     c->reg[2]  = 46;    /* H Sync Position */
@@ -15,7 +56,7 @@ void crtc_init(CRTC *c) {
     c->reg[12] = 0x30;  /* Display Start High */
     c->reg[13] = 0x00;  /* Display Start Low */
 
-    c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+    c->ma_row_start = crtc_start_addr(c);
     c->ma_next_row = c->ma_row_start;
     c->ma = c->ma_row_start;
     c->h_display = true;
@@ -23,29 +64,58 @@ void crtc_init(CRTC *c) {
     c->display_enable = true;
 }
 
+void crtc_set_type(CRTC *c, CrtcType type) {
+    if (type < CRTC_TYPE_0 || type > CRTC_TYPE_3)
+        type = CRTC_TYPE_0;
+    c->type = type;
+    c->reg[8] = crtc_masked_reg_value(c, 8, c->reg[8]);
+}
+
 void crtc_select(CRTC *c, u8 reg) { c->selected = reg & 0x1F; }
 
 void crtc_write(CRTC *c, u8 val) {
-    if (c->selected < CRTC_NUM_REGS) {
-        c->reg[c->selected] = val;
+    if (c->selected < 16) {
+        c->reg[c->selected] = crtc_masked_reg_value(c, c->selected, val);
         /* Display timing comparators are edge-triggered. A write that
          * matches the current vertical row can turn display off immediately,
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
+        /* UM6845R/type 1 re-reads R12/R13 while VCC is 0. This is part of
+         * common CRTC-detection and split-screen behaviour. Other types keep
+         * the frame start address latched until the next frame restart. */
+        if ((c->selected == 12 || c->selected == 13) &&
+            c->type == CRTC_TYPE_1 && c->vcc == 0) {
+            c->ma_row_start = crtc_start_addr(c);
+            c->ma_next_row = c->ma_row_start;
+            c->ma = c->ma_row_start;
+        }
         c->display_enable = c->h_display && c->v_display;
     }
 }
 
 u8 crtc_read(CRTC *c) {
-    return (c->selected >= 12 && c->selected <= 17) ? c->reg[c->selected] : 0;
+    u8 reg = c->selected;
+    switch (c->type) {
+    case CRTC_TYPE_0:
+    case CRTC_TYPE_3:
+        return (reg >= 12 && reg <= 17) ? c->reg[reg] : 0;
+    case CRTC_TYPE_1:
+        if (reg >= 14 && reg <= 17) return c->reg[reg];
+        if (reg == 31) return 0xFF;
+        return 0;
+    case CRTC_TYPE_2:
+    default:
+        return (reg >= 14 && reg <= 17) ? c->reg[reg] : 0;
+    }
 }
 
 u8 crtc_read_status(CRTC *c) {
-    /* Type 1/3/4 status register: bit 6 = LPEN strobe (unimplemented),
-     * bit 5 = VSYNC active. Demos poll this to time effects without the
-     * 2-line GA→PPI VSYNC delay. */
-    return (c->vsync ? 0x20 : 0x00);
+    if (c->type == CRTC_TYPE_1)
+        return (c->vcc >= c->reg[6]) ? 0x20 : 0x00; /* bit 5 = vertical blanking */
+    if (c->type == CRTC_TYPE_3)
+        return crtc_read(c);
+    return 0xFF;
 }
 
 void crtc_tick(CRTC *c) {
@@ -56,9 +126,8 @@ void crtc_tick(CRTC *c) {
     c->ma++;
 
     /* --- HSYNC --- */
-    u16 hsw = c->reg[3] & 0x0F;
-    if (!hsw) hsw = 16;
-    if (!c->hsync && c->hcc == c->reg[2]) {
+    u16 hsw = crtc_hsync_width(c);
+    if (hsw && !c->hsync && c->hcc == c->reg[2]) {
         c->hsync = true;
         c->hsc = 0;
         c->mode_latched_this_hsync = false;
@@ -100,7 +169,7 @@ void crtc_tick(CRTC *c) {
         /* VSYNC line counter (counts in scan lines = HSYNCs) */
         if (c->vsync) {
             c->vsc++;
-            if (c->vsc >= 16)   /* hardware-fixed 16 scan lines on CPC */
+            if (c->vsc >= crtc_vsync_width(c))
                 c->vsync = false;
         }
 
@@ -114,7 +183,7 @@ void crtc_tick(CRTC *c) {
                 c->vac = 0;
                 c->vcc = 0;
                 c->vlc = 0;
-                c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                c->ma_row_start = crtc_start_addr(c);
                 c->ma_next_row = c->ma_row_start;
                 c->v_display = c->reg[6] != 0;
             }
@@ -137,7 +206,7 @@ void crtc_tick(CRTC *c) {
                     } else {
                         c->vcc = 0;
                         c->vlc = 0;
-                        c->ma_row_start = ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
+                        c->ma_row_start = crtc_start_addr(c);
                         c->ma_next_row = c->ma_row_start;
                         c->v_display = c->reg[6] != 0;
                     }

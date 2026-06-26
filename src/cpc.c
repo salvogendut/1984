@@ -606,6 +606,17 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 static void build_pen_tables(void);
 static bool g_pen_tables_built;
 
+static CrtcType default_crtc_type(CpcModel model) {
+    switch (model) {
+    case MODEL_6128:
+        return CRTC_TYPE_1;
+    case MODEL_464:
+    case MODEL_664:
+    default:
+        return CRTC_TYPE_0;
+    }
+}
+
 /* Forward decl — definition lives near cpc_frame() with the rest of
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
@@ -627,6 +638,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
 
     ga_init(&cpc->ga);
     crtc_init(&cpc->crtc);
+    crtc_set_type(&cpc->crtc, default_crtc_type(model));
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
@@ -680,6 +692,7 @@ void cpc_reset(CPC *cpc) {
     z80_reset(&cpc->cpu);
     ga_init(&cpc->ga);
     crtc_init(&cpc->crtc);
+    crtc_set_type(&cpc->crtc, default_crtc_type(cpc->model));
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);

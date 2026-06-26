@@ -126,11 +126,12 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-joy.$(OBJEXT) src/1984-kbd.$(OBJEXT) \
 	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
 	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
-	src/1984-kbd_pty.$(OBJEXT) src/1984-screen_text.$(OBJEXT) \
-	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
-	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
-	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
-	src/1984-usifac.$(OBJEXT) src/1984-symbols.$(OBJEXT) \
+	src/1984-kbd_pty.$(OBJEXT) src/1984-printer.$(OBJEXT) \
+	src/1984-screen_text.$(OBJEXT) src/1984-ppi.$(OBJEXT) \
+	src/1984-psg.$(OBJEXT) src/1984-rtc.$(OBJEXT) \
+	src/1984-ide.$(OBJEXT) src/1984-fat.$(OBJEXT) \
+	src/1984-ch376.$(OBJEXT) src/1984-usifac.$(OBJEXT) \
+	src/1984-perryfi.$(OBJEXT) src/1984-symbols.$(OBJEXT) \
 	src/1984-gifcap.$(OBJEXT) src/1984-webmcap.$(OBJEXT) \
 	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
 	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
@@ -170,7 +171,8 @@ am__depfiles_remade = src/$(DEPDIR)/1984-ch376.Po \
 	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-mouse.Po \
 	src/$(DEPDIR)/1984-n4c_stack.Po src/$(DEPDIR)/1984-net4cpc.Po \
 	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-psg.Po \
+	src/$(DEPDIR)/1984-perryfi.Po src/$(DEPDIR)/1984-ppi.Po \
+	src/$(DEPDIR)/1984-printer.Po src/$(DEPDIR)/1984-psg.Po \
 	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-screen_text.Po \
 	src/$(DEPDIR)/1984-snapshot.Po src/$(DEPDIR)/1984-symbnet.Po \
 	src/$(DEPDIR)/1984-symbols.Po \
@@ -292,6 +294,8 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+CAIRO_CFLAGS = @CAIRO_CFLAGS@
+CAIRO_LIBS = @CAIRO_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
@@ -414,6 +418,7 @@ dist_man1_MANS = 1984.1
 	src/overlay.c \
 	src/paste.c \
 	src/kbd_pty.c \
+	src/printer.c \
 	src/screen_text.c \
 	src/ppi.c \
 	src/psg.c \
@@ -422,6 +427,7 @@ dist_man1_MANS = 1984.1
 	src/fat.c \
 	src/ch376.c \
 	src/usifac.c \
+	src/perryfi.c \
 	src/symbols.c \
 	src/gifcap.c \
 	src/webmcap.c \
@@ -466,6 +472,7 @@ noinst_HEADERS = \
 	src/tap.h \
 	src/paste.h \
 	src/ppi.h \
+	src/printer.h \
 	src/psg.h \
 	src/rtc.h \
 	src/screen_text.h \
@@ -478,10 +485,11 @@ noinst_HEADERS = \
 	src/tape.h \
 	src/types.h \
 	src/usifac.h \
+	src/perryfi.h \
 	src/z80.h \
 	src/z80dis.h
 
-1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) -Wall -Wextra \
+1984_CFLAGS = $(AM_CFLAGS) $(SDL3_CFLAGS) $(CAIRO_CFLAGS) -Wall -Wextra \
                -DROM_INSTALL_DIR=\"$(pkgdatadir)/roms\" \
                -DPROG_GIT_COMMIT=\"$(PROG_GIT_COMMIT)\"
 
@@ -489,7 +497,7 @@ noinst_HEADERS = \
 # the .exe; SDL3's -mwindows (linked via $(SDL3_LIBS)) suppresses the
 # console window. _DEPENDENCIES is needed so make builds the .o before
 # the link step — items only in _LDADD are linked but not built.
-1984_LDADD = $(SDL3_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
+1984_LDADD = $(SDL3_LIBS) $(CAIRO_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
 1984_DEPENDENCIES = $(WIN_RC_OBJ)
 CLEANFILES = icons/1984-rc.o
 
@@ -651,6 +659,8 @@ src/1984-paste.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-kbd_pty.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-printer.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-screen_text.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-ppi.$(OBJEXT): src/$(am__dirstamp) \
@@ -666,6 +676,8 @@ src/1984-fat.$(OBJEXT): src/$(am__dirstamp) \
 src/1984-ch376.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-usifac.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-perryfi.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-symbols.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
@@ -732,7 +744,9 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-net4cpc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-overlay.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-paste.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-perryfi.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-ppi.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-printer.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-psg.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-rtc.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-screen_text.Po@am__quote@ # am--include-marker
@@ -1007,6 +1021,20 @@ src/1984-kbd_pty.obj: src/kbd_pty.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-kbd_pty.obj `if test -f 'src/kbd_pty.c'; then $(CYGPATH_W) 'src/kbd_pty.c'; else $(CYGPATH_W) '$(srcdir)/src/kbd_pty.c'; fi`
 
+src/1984-printer.o: src/printer.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-printer.o -MD -MP -MF src/$(DEPDIR)/1984-printer.Tpo -c -o src/1984-printer.o `test -f 'src/printer.c' || echo '$(srcdir)/'`src/printer.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-printer.Tpo src/$(DEPDIR)/1984-printer.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/printer.c' object='src/1984-printer.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-printer.o `test -f 'src/printer.c' || echo '$(srcdir)/'`src/printer.c
+
+src/1984-printer.obj: src/printer.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-printer.obj -MD -MP -MF src/$(DEPDIR)/1984-printer.Tpo -c -o src/1984-printer.obj `if test -f 'src/printer.c'; then $(CYGPATH_W) 'src/printer.c'; else $(CYGPATH_W) '$(srcdir)/src/printer.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-printer.Tpo src/$(DEPDIR)/1984-printer.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/printer.c' object='src/1984-printer.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-printer.obj `if test -f 'src/printer.c'; then $(CYGPATH_W) 'src/printer.c'; else $(CYGPATH_W) '$(srcdir)/src/printer.c'; fi`
+
 src/1984-screen_text.o: src/screen_text.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-screen_text.o -MD -MP -MF src/$(DEPDIR)/1984-screen_text.Tpo -c -o src/1984-screen_text.o `test -f 'src/screen_text.c' || echo '$(srcdir)/'`src/screen_text.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-screen_text.Tpo src/$(DEPDIR)/1984-screen_text.Po
@@ -1118,6 +1146,20 @@ src/1984-usifac.obj: src/usifac.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/usifac.c' object='src/1984-usifac.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-usifac.obj `if test -f 'src/usifac.c'; then $(CYGPATH_W) 'src/usifac.c'; else $(CYGPATH_W) '$(srcdir)/src/usifac.c'; fi`
+
+src/1984-perryfi.o: src/perryfi.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-perryfi.o -MD -MP -MF src/$(DEPDIR)/1984-perryfi.Tpo -c -o src/1984-perryfi.o `test -f 'src/perryfi.c' || echo '$(srcdir)/'`src/perryfi.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-perryfi.Tpo src/$(DEPDIR)/1984-perryfi.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/perryfi.c' object='src/1984-perryfi.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-perryfi.o `test -f 'src/perryfi.c' || echo '$(srcdir)/'`src/perryfi.c
+
+src/1984-perryfi.obj: src/perryfi.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-perryfi.obj -MD -MP -MF src/$(DEPDIR)/1984-perryfi.Tpo -c -o src/1984-perryfi.obj `if test -f 'src/perryfi.c'; then $(CYGPATH_W) 'src/perryfi.c'; else $(CYGPATH_W) '$(srcdir)/src/perryfi.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-perryfi.Tpo src/$(DEPDIR)/1984-perryfi.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/perryfi.c' object='src/1984-perryfi.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-perryfi.obj `if test -f 'src/perryfi.c'; then $(CYGPATH_W) 'src/perryfi.c'; else $(CYGPATH_W) '$(srcdir)/src/perryfi.c'; fi`
 
 src/1984-symbols.o: src/symbols.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-symbols.o -MD -MP -MF src/$(DEPDIR)/1984-symbols.Tpo -c -o src/1984-symbols.o `test -f 'src/symbols.c' || echo '$(srcdir)/'`src/symbols.c
@@ -1874,7 +1916,9 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
+	-rm -f src/$(DEPDIR)/1984-perryfi.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
+	-rm -f src/$(DEPDIR)/1984-printer.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po
@@ -1964,7 +2008,9 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
+	-rm -f src/$(DEPDIR)/1984-perryfi.Po
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
+	-rm -f src/$(DEPDIR)/1984-printer.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po

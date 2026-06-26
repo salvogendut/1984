@@ -10,9 +10,17 @@
 
 #define CRTC_NUM_REGS 18
 
+typedef enum {
+    CRTC_TYPE_0 = 0,   /* HD6845S */
+    CRTC_TYPE_1 = 1,   /* UM6845R */
+    CRTC_TYPE_2 = 2,   /* MC6845 */
+    CRTC_TYPE_3 = 3,   /* AMS40489 / Plus ASIC */
+} CrtcType;
+
 typedef struct {
     u8  reg[CRTC_NUM_REGS];
     u8  selected;          /* address register */
+    CrtcType type;
 
     /* Internal counters */
     u16 hcc;               /* C0: horizontal character counter */
@@ -37,10 +45,11 @@ typedef struct {
 } CRTC;
 
 void crtc_init(CRTC *c);
+void crtc_set_type(CRTC *c, CrtcType type);
 void crtc_select(CRTC *c, u8 reg);
 void crtc_write(CRTC *c, u8 val);
 u8   crtc_read(CRTC *c);
-u8   crtc_read_status(CRTC *c);     /* &BE00 — type 1/3/4 status register */
+u8   crtc_read_status(CRTC *c);     /* &BE00 — type-dependent status/read port */
 void crtc_tick(CRTC *c);       /* one character clock (1 MHz) */
 
 /* Derived helpers */
