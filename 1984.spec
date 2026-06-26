@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.9
+Version:        0.4.10
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,6 +83,17 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Fri Jun 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.10-1
+- Overlay: PDF printer renamed to "Printer", Wi-Fi modem renamed to
+  "Wi-Fi Modem" (PerryFi suffix dropped), Printer mode relocated from
+  Extensions to Advanced (#168). USIfAC control-byte handling aligned
+  with the real PIC firmware (#172). Media overlay shows full disk
+  paths, remembers last picker directory, and binds N to create a new
+  blank .dsk via a save-as picker (#173). Windows config now persists
+  under %%APPDATA%%\\1984 so settings survive between launches (#174).
+  USIfAC PTY/listener no longer opens when the MX4 expansion bus is
+  off (#175).
+
 * Mon Jun 23 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.9-1
 - Add Centronics parallel printer (port &EFxx) with Cairo PDF host
   sink and a "Real printer" mode that spools each page to the host's

@@ -11,6 +11,64 @@
 
 void config_set_model(Config *cfg, CpcModel model);  /* defined below */
 
+/* Per-user config base directory. Wine never sets $HOME inside the guest
+ * process — only %APPDATA% / %USERPROFILE% / HOMEDRIVE+HOMEPATH are
+ * exposed — so on Windows we look those up explicitly. Returns NULL only
+ * if no usable env var is set (effectively never on a sane account).
+ *
+ * Layout written by config_save() / read by config_load():
+ *   Linux/BSD/macOS/Haiku: $HOME/.config/1984/1984.conf
+ *   Windows:               %APPDATA%/1984/1984.conf     (no .config)
+ *
+ * Issue #106: this used to be a single getenv("HOME") which silently
+ * returned NULL on Windows, making every config save a no-op. */
+static const char *config_home_env(void) {
+    const char *h = getenv("HOME");
+    if (h && *h) return h;
+#ifdef _WIN32
+    h = getenv("USERPROFILE");
+    if (h && *h) return h;
+    /* HOMEDRIVE+HOMEPATH fallback would need composition; APPDATA-based
+     * paths are built directly in config_dir() so this NULL is fine. */
+#endif
+    return NULL;
+}
+
+/* Write the per-user 1984 config directory (no trailing slash, no
+ * filename) into out[sz]. Returns 0 on success, -1 if no usable env
+ * var is set. When `make_dirs` is true, creates intermediate
+ * directories so a subsequent fopen("…/1984.conf", "w") will succeed
+ * on a fresh account. */
+static int config_dir(char *out, size_t sz, bool make_dirs) {
+#ifdef _WIN32
+    const char *appdata = getenv("APPDATA");
+    if (appdata && *appdata) {
+        snprintf(out, sz, "%s/1984", appdata);
+        if (make_dirs) mkdir(out, 0755);
+        return 0;
+    }
+    const char *up = config_home_env();
+    if (!up) return -1;
+    if (make_dirs) {
+        char tmp[CONFIG_PATH_MAX];
+        snprintf(tmp, sizeof(tmp), "%s/.config", up); mkdir(tmp, 0755);
+    }
+    snprintf(out, sz, "%s/.config/1984", up);
+    if (make_dirs) mkdir(out, 0755);
+    return 0;
+#else
+    const char *home = config_home_env();
+    if (!home) return -1;
+    if (make_dirs) {
+        char tmp[CONFIG_PATH_MAX];
+        snprintf(tmp, sizeof(tmp), "%s/.config", home); mkdir(tmp, 0755);
+    }
+    snprintf(out, sz, "%s/.config/1984", home);
+    if (make_dirs) mkdir(out, 0755);
+    return 0;
+#endif
+}
+
 #define ROM_FILE_OS_464      "OS_464.ROM"
 #define ROM_FILE_BASIC_464   "BASIC_1.0.ROM"
 #define ROM_FILE_OS_664      "OS_664.ROM"
@@ -32,11 +90,11 @@ void config_set_model(Config *cfg, CpcModel model);  /* defined below */
  * to populate). */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
     char user[512], system_[512];
-    const char *home = getenv("HOME");
+    char cdir[CONFIG_PATH_MAX];
 
     user[0] = '\0';
-    if (home)
-        snprintf(user, sizeof(user), "%s/.config/1984/roms/%s", home, file);
+    if (config_dir(cdir, sizeof(cdir), false) == 0)
+        snprintf(user, sizeof(user), "%s/roms/%s", cdir, file);
 
     if (user[0] && access(user, R_OK) == 0) {
         snprintf(out, size, "%s", user);
@@ -87,7 +145,7 @@ void config_defaults(Config *cfg) {
 /* Expand a leading ~ to the home directory. Result written into out[size]. */
 static void expand_path(const char *in, char *out, size_t size) {
     if (in[0] == '~') {
-        const char *home = getenv("HOME");
+        const char *home = config_home_env();
         if (home)
             snprintf(out, size, "%s%s", home, in + 1);
         else
@@ -132,12 +190,9 @@ static bool parse_bool(const char *val, bool *out) {
     return false;
 }
 
-static void config_create_default(const char *path, const char *home) {
+static void config_create_default(const char *path) {
     char dir[CONFIG_PATH_MAX];
-    snprintf(dir, sizeof(dir), "%s/.config", home);
-    mkdir(dir, 0755);   /* parent may not exist on fresh accounts (e.g. Haiku) */
-    snprintf(dir, sizeof(dir), "%s/.config/1984", home);
-    mkdir(dir, 0755);   /* no-op if already exists */
+    if (config_dir(dir, sizeof(dir), true) != 0) return;
 
     /* Resolve the actual best path for each default ROM so the generated
      * config matches what the binary would load. Without this, the file
@@ -264,9 +319,9 @@ int config_load_from(Config *cfg, const char *path_override) {
     if (using_override) {
         snprintf(path, sizeof(path), "%s", path_override);
     } else {
-        const char *home = getenv("HOME");
-        if (!home) return 0;
-        snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+        char cdir[CONFIG_PATH_MAX];
+        if (config_dir(cdir, sizeof(cdir), false) != 0) return 0;
+        snprintf(path, sizeof(path), "%s/1984.conf", cdir);
     }
 
     FILE *f = fopen(path, "r");
@@ -275,8 +330,7 @@ int config_load_from(Config *cfg, const char *path_override) {
             fprintf(stderr, "1984: --config: cannot open '%s'\n", path);
             return -1;
         }
-        const char *home = getenv("HOME");
-        config_create_default(path, home);
+        config_create_default(path);
         return 0;
     }
 
@@ -488,6 +542,8 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "last_dir")) {
+                if (val[0]) expand_path(val, cfg->last_dir, sizeof(cfg->last_dir));
             }
         }
     }
@@ -515,15 +571,15 @@ int config_load_from(Config *cfg, const char *path_override) {
 }
 
 int config_save(const Config *cfg) {
-    const char *home = getenv("HOME");
-    if (!home) return -1;
+    char cdir[CONFIG_PATH_MAX];
+    if (config_dir(cdir, sizeof(cdir), true) != 0) {
+        fprintf(stderr, "1984: cannot resolve config directory "
+                        "(neither $HOME nor %%APPDATA%%/%%USERPROFILE%% set)\n");
+        return -1;
+    }
 
     char path[CONFIG_PATH_MAX];
-    snprintf(path, sizeof(path), "%s/.config", home);
-    mkdir(path, 0755);
-    snprintf(path, sizeof(path), "%s/.config/1984", home);
-    mkdir(path, 0755);
-    snprintf(path, sizeof(path), "%s/.config/1984/1984.conf", home);
+    snprintf(path, sizeof(path), "%s/1984.conf", cdir);
 
     FILE *f = fopen(path, "w");
     if (!f) {
@@ -625,7 +681,8 @@ int config_save(const Config *cfg) {
         "monochrome=%s\n\n"
         "[advanced]\n"
         "tinker=%s\n"
-        "debug=%s\n",
+        "debug=%s\n"
+        "last_dir=%s\n",
         cfg->disk_a,
         cfg->disk_b,
         cfg->tape,
@@ -664,7 +721,8 @@ int config_save(const Config *cfg) {
         cfg->fullscreen_smoothing ? "true" : "false",
         mono_to_str(cfg->monochrome),
         cfg->tinker     ? "true" : "false",
-        cfg->debug      ? "true" : "false"
+        cfg->debug      ? "true" : "false",
+        cfg->last_dir
     );
 
     fclose(f);

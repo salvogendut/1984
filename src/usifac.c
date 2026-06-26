@@ -161,6 +161,7 @@ void usifac_init(USIfAC *u, bool enable, const char *backend, int tcp_port,
     u->pty_master = -1;
     u->tcp_listen = -1;
     u->tcp_client = -1;
+    u->empty_sentinel = 0x01;
     u->present = enable;
     if (!u->present) return;
 
@@ -318,8 +319,8 @@ u8 usifac_read(USIfAC *u, u8 lo) {
         }
         case 0x1:  /* &FBD1 — status */
             if (via_perryfi)
-                return perryfi_rx_has(u->perryfi) ? 0xFF : 0x01;
-            return rb_empty(u->rx_head, u->rx_tail) ? 0x01 : 0xFF;
+                return perryfi_rx_has(u->perryfi) ? 0xFF : u->empty_sentinel;
+            return rb_empty(u->rx_head, u->rx_tail) ? u->empty_sentinel : 0xFF;
         case 0x8:  /* &FBD8 — presence (anything ≠ 0xFF is "present") */
             return 0x00;
         case 0xD:  /* &FBDD — current baud code */
@@ -343,31 +344,51 @@ void usifac_write(USIfAC *u, u8 lo, u8 val) {
             return;
         case 0x1:  /* &FBD1 — control */
             switch (val) {
-                case 0:  /* reset interface (no CPC reset) */
+                case 0:  /* full PIC reset (real hardware reboots) */
                     u->rx_head = u->rx_tail = 0;
                     u->tx_head = u->tx_tail = 0;
-                    u->burst_mode = false;
-                    u->baud_code  = 0;
+                    u->burst_mode    = false;
+                    u->baud_code     = 0;
+                    u->empty_sentinel = 0x01;
                     return;
-                case 1:  /* clear RX */
+                case 1:  /* clear RX pointers (firmware: next_in=next_out=1) */
                     u->rx_head = u->rx_tail = 0;
                     return;
-                case 2:  /* burst mode on */
+                case 2:   /* chunked file-transfer / burst mode on */
+                case 29:  /* blocking file-transfer mode (no chunking) */
                     u->burst_mode = true;
                     return;
-                case 3:  /* burst mode off */
+                case 3:  /* burst / file-transfer mode off */
                     u->burst_mode = false;
                     return;
                 case 4:        /* disable Direct/FDC mode — host-ROM concern */
                 case 65: case 66:  /* post-reset USB dir behaviour */
                     return;
-                case 30:       /* |STAT request — stub a zeroed reply */
+                case 30:       /* |STAT report — stub a zeroed reply */
                     for (int i = 0; i < 8; i++) rx_push(u, 0);
+                    return;
+                case 31:       /* image-slot report — firmware emits a
+                                * status string; nothing we run consumes
+                                * it, so swallow silently. */
+                    return;
+                case 40:       /* set RX-empty sentinel = 0 */
+                    u->empty_sentinel = 0x00;
+                    return;
+                case 41:       /* set RX-empty sentinel = 1 */
+                    u->empty_sentinel = 0x01;
+                    return;
+                case 100: case 101:  /* disable_board (CLC2 gate) — we
+                                      * have no chip-level decode to
+                                      * toggle; swallow. */
                     return;
                 default:
                     if (val >= 10 && val <= 23) {
                         u->baud_code = val;     /* readable at &FBDD */
                     }
+                    /* Anything else (24..28, 32..39, 42..64, 67..99,
+                     * 102..255 except the cases above) is a firmware
+                     * cmd we don't model; swallow it instead of
+                     * stashing it as a bogus baud code. */
                     return;
             }
         case 0x2:  /* &FBD2 — ROM-slot select (host-ROM concern; ignore) */

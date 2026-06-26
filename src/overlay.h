@@ -30,7 +30,8 @@ typedef enum {
     DIALOG_SNAPSHOT_LOAD = 9,
     DIALOG_SNAPSHOT_SAVE = 10,
     DIALOG_VIDEO_CAPTURE = 11,
-    DIALOG_PRINTER_DIR   = 12
+    DIALOG_PRINTER_DIR   = 12,
+    DIALOG_DISK_NEW      = 13   /* save-as: create a blank .dsk */
 } DialogKind;
 
 typedef struct {

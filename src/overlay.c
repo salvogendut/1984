@@ -156,12 +156,10 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (da && da->inserted && ov->cfg->disk_a[0]) {
-                char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->disk_a);
-                trunc_path(basename(tmp), val, vsz);
+                trunc_path(ov->cfg->disk_a, val, vsz);
             }
             else
-                snprintf(val, vsz, "[empty]  Enter=load");
+                snprintf(val, vsz, "[empty]  Enter=load, N=new, Del=clear");
             break;
         case 1:
             snprintf(lbl, lsz, "Drive B");
@@ -169,12 +167,10 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (db && db->inserted && ov->cfg->disk_b[0]) {
-                char tmp[CONFIG_PATH_MAX];
-                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->disk_b);
-                trunc_path(basename(tmp), val, vsz);
+                trunc_path(ov->cfg->disk_b, val, vsz);
             }
             else
-                snprintf(val, vsz, "[empty]  Enter=load");
+                snprintf(val, vsz, "[empty]  Enter=load, N=new, Del=clear");
             break;
         case 2:
             snprintf(lbl, lsz, "Tape");
@@ -548,7 +544,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                rom_filters, 2, NULL, false);
+                rom_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
             break;
         }
         case 6: {
@@ -560,7 +556,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                rom_filters, 2, NULL, false);
+                rom_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
             break;
         }
         case 7:
@@ -587,7 +583,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                filters, 2, NULL, false);
+                filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
         } else if (ov->row == 2) {
             /* Tape — stub: file picker captures the .cdt path into
              * cfg.tape, but nothing reads it yet. */
@@ -599,7 +595,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                tape_filters, 2, NULL, false);
+                tape_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
         }
         break;
 
@@ -676,7 +672,7 @@ static void activate_item(Overlay *ov) {
                     };
                     SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                         ov->cpc ? ov->cpc->display.window : NULL,
-                        m4_filters, 2, NULL, false);
+                        m4_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
                 }
             } else {
                 /* Disable: clear flag and unload M4ROM from its slot.
@@ -704,7 +700,7 @@ static void activate_item(Overlay *ov) {
             if (!ov->cfg->usifac) ov->cfg->perryfi = false;
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
                 perryfi_shutdown(&ov->cpc->perryfi);
@@ -785,7 +781,7 @@ static void activate_item(Overlay *ov) {
                     };
                     SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                         ov->cpc ? ov->cpc->display.window : NULL,
-                        ide_filters, 2, NULL, false);
+                        ide_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
                 }
             } else {
                 /* Disabling: clear the LIVE image but keep the cached
@@ -868,7 +864,7 @@ static void activate_item(Overlay *ov) {
                     };
                     SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                         ov->cpc ? ov->cpc->display.window : NULL,
-                        alb_filters, 2, NULL, false);
+                        alb_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
                 }
             } else {
                 /* Disabling the card also drops the Albireo Mouse — it
@@ -931,7 +927,7 @@ static void activate_item(Overlay *ov) {
                     };
                     SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                         ov->cpc ? ov->cpc->display.window : NULL,
-                        ide_filters, 2, NULL, false);
+                        ide_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
                     /* dirty set by file callback once image is chosen */
                 }
             } else {
@@ -956,7 +952,8 @@ static void activate_item(Overlay *ov) {
                 ov->dialog_ready = false;
                 SDL_ShowOpenFolderDialog(overlay_file_callback, ov,
                     ov->cpc ? ov->cpc->display.window : NULL,
-                    ov->cfg->pdf_printer_dir[0] ? ov->cfg->pdf_printer_dir : NULL,
+                    ov->cfg->pdf_printer_dir[0] ? ov->cfg->pdf_printer_dir
+                        : (ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL),
                     false);
             }
             break;
@@ -995,7 +992,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                sna_filters, 2, NULL, false);
+                sna_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
             break;
         }
         case 3: {
@@ -1008,7 +1005,7 @@ static void activate_item(Overlay *ov) {
             };
             SDL_ShowSaveFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                sna_filters, 2, NULL);
+                sna_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
             break;
         }
         case 4:
@@ -1038,7 +1035,7 @@ static void activate_item(Overlay *ov) {
                 };
                 SDL_ShowSaveFileDialog(overlay_file_callback, ov,
                     ov->cpc ? ov->cpc->display.window : NULL,
-                    webm_filters, 2, NULL);
+                    webm_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
             }
             break;
         case 8:
@@ -1052,7 +1049,7 @@ static void activate_item(Overlay *ov) {
                          sizeof(ov->cfg->usifac_backend), "tcp");
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
             }
@@ -1164,10 +1161,30 @@ static void overlay_check_board_changes(Overlay *ov) {
     ov->last_symbiface_ide = ov->cfg->symbiface_ide;
 }
 
+/* Stash the parent directory of the freshly picked path in cfg->last_dir
+ * so the next file/folder dialog starts where this one left off (#107).
+ * Folder pickers land on the *parent* of the chosen folder which is the
+ * SDL default for "where the dialog opens" — slightly suboptimal but
+ * uniform with file pickers and avoids special-casing per dialog kind. */
+static void remember_last_dir(Config *cfg, const char *picked) {
+    if (!picked || !picked[0]) return;
+    const char *sep = strrchr(picked, '/');
+#ifdef _WIN32
+    const char *bs = strrchr(picked, '\\');
+    if (bs && (!sep || bs > sep)) sep = bs;
+#endif
+    if (!sep || sep == picked) return;
+    size_t n = (size_t)(sep - picked);
+    if (n >= sizeof(cfg->last_dir)) n = sizeof(cfg->last_dir) - 1;
+    memcpy(cfg->last_dir, picked, n);
+    cfg->last_dir[n] = '\0';
+}
+
 void overlay_tick(Overlay *ov) {
     if (!ov->dialog_ready) return;
     SDL_MemoryBarrierAcquire();
     ov->dialog_ready = false;
+    remember_last_dir(ov->cfg, ov->dialog_path);
 
     if (ov->dialog_kind == DIALOG_DISK && ov->dialog_drive >= 0 && ov->dialog_drive < 2) {
         int drv = ov->dialog_drive;
@@ -1183,6 +1200,23 @@ void overlay_tick(Overlay *ov) {
             }
         }
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_DISK_NEW &&
+               ov->dialog_drive >= 0 && ov->dialog_drive < 2) {
+        int drv = ov->dialog_drive;
+        ov->dialog_drive = -1;
+        char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+        if (disk_create_blank(ov->dialog_path) == 0) {
+            snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+            if (ov->cpc) {
+                Disk *d = &ov->cpc->drive[drv];
+                disk_eject(d);
+                if (disk_load(d, dest) < 0) {
+                    fprintf(stderr, "1984: created %s but failed to mount\n", dest);
+                    dest[0] = '\0';
+                }
+            }
+            ov->dirty = true;
+        }
     } else if (ov->dialog_kind == DIALOG_TAPE) {
         /* Stub — just record the path. PSG cassette input not wired yet. */
         snprintf(ov->cfg->tape, CONFIG_PATH_MAX, "%s", ov->dialog_path);
@@ -1333,7 +1367,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                      ov->pty_link_edit_buf);
             if (ov->cpc) {
                 usifac_shutdown(&ov->cpc->usifac);
-                usifac_init(&ov->cpc->usifac, ov->cfg->usifac,
+                usifac_init(&ov->cpc->usifac, ov->cfg->mx4 && ov->cfg->usifac,
                             ov->cfg->usifac_backend, ov->cfg->usifac_tcp_port,
                             ov->cfg->usifac_pty_link);
             }
@@ -1540,7 +1574,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             ov->dialog_ready = false;
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                filters, 2, NULL, false);
+                filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
             break;
         }
         case SDL_SCANCODE_DELETE:
@@ -1622,8 +1656,43 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         activate_item(ov);
         overlay_check_board_changes(ov);
         break;
+    case SDL_SCANCODE_N:
+        /* N on Drive A / Drive B pops a save-as dialog and creates a
+         * fresh blank CPC DATA-format .dsk at the chosen path, then
+         * inserts it into the drive. */
+        if (ov->section == OV_STORAGE &&
+            (ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
+            ov->dialog_kind  = DIALOG_DISK_NEW;
+            ov->dialog_drive = ov->row;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter dsk_filters[] = {
+                { "DSK images", "dsk;DSK" },
+                { "All files",  "*"       },
+            };
+            SDL_ShowSaveFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                dsk_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
+        }
+        break;
     case SDL_SCANCODE_DELETE:
     case SDL_SCANCODE_BACKSPACE:
+        /* Del on Drive A / Drive B / Tape ejects the image and clears
+         * the cached path (#107 follow-up). */
+        if (ov->section == OV_STORAGE) {
+            if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
+                int drv = ov->row;
+                char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+                if (dest[0]) {
+                    dest[0] = '\0';
+                    if (ov->cpc) disk_eject(&ov->cpc->drive[drv]);
+                    ov->dirty = true;
+                }
+            } else if (ov->row == 2 && ov->cfg->tape[0]) {
+                ov->cfg->tape[0] = '\0';
+                ov->dirty = true;
+            }
+            break;
+        }
         /* Del on the Extensions tab row for M4 / Symbiface IDE /
          * Albireo also clears the cached board image — so the next
          * enable re-prompts for a fresh path. Toggles the extension
