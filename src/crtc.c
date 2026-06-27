@@ -41,6 +41,11 @@ static u16 crtc_start_addr(const CRTC *c) {
     return ((u16)(c->reg[12] << 8) | c->reg[13]) & 0x3FFF;
 }
 
+static void crtc_latch_line_state(CRTC *c) {
+    c->line_last_raster = c->vlc == c->reg[9];
+    c->line_last_frame = c->line_last_raster && c->vcc == c->reg[4];
+}
+
 void crtc_init(CRTC *c) {
     memset(c, 0, sizeof(*c));
     c->type = CRTC_TYPE_1;
@@ -62,6 +67,7 @@ void crtc_init(CRTC *c) {
     c->h_display = true;
     c->v_display = true;
     c->display_enable = true;
+    crtc_latch_line_state(c);
 }
 
 void crtc_set_type(CRTC *c, CrtcType type) {
@@ -69,6 +75,15 @@ void crtc_set_type(CRTC *c, CrtcType type) {
         type = CRTC_TYPE_0;
     c->type = type;
     c->reg[8] = crtc_masked_reg_value(c, 8, c->reg[8]);
+}
+
+void crtc_recompute_state(CRTC *c) {
+    crtc_latch_line_state(c);
+    c->h_display = c->reg[1] != 0 && c->hcc < c->reg[1];
+    c->v_display = c->reg[6] != 0 && c->vcc < c->reg[6];
+    c->display_enable = c->h_display && c->v_display;
+    c->new_scanline = false;
+    c->mode_latch = false;
 }
 
 void crtc_select(CRTC *c, u8 reg) { c->selected = reg & 0x1F; }
@@ -81,6 +96,11 @@ void crtc_write(CRTC *c, u8 val) {
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
+        /* C9/R9 and C4/R4 are sampled for the current scanline while C0 is
+         * still in its first two character positions. Later writes affect
+         * following lines, not this line's row/frame reset decision. */
+        if ((c->selected == 4 || c->selected == 9) && c->hcc <= 1)
+            crtc_latch_line_state(c);
         c->display_enable = c->h_display && c->v_display;
     }
 }
@@ -110,6 +130,7 @@ u8 crtc_read_status(CRTC *c) {
 }
 
 void crtc_tick(CRTC *c) {
+    c->new_scanline = false;
     c->mode_latch = false;
 
     u8 old_hcc = (u8)c->hcc;
@@ -150,14 +171,19 @@ void crtc_tick(CRTC *c) {
     /* On the final raster of a character row, R1 captures the address for
      * the next row. If software moves R1 behind the beam, the comparator is
      * missed and the current row address is repeated, as on the real CRTC. */
-    if (c->vlc == c->reg[9] &&
-        (c->hcc == c->reg[1] || (end_of_line && c->reg[1] == 0)))
-        c->ma_next_row = (u16)((c->ma_row_start + c->reg[1]) & 0x3FFF);
+    if (c->line_last_raster &&
+        (c->hcc == c->reg[1] || (end_of_line && c->reg[1] == 0))) {
+        c->ma_next_row = (end_of_line && c->reg[1] == 0)
+            ? c->ma_row_start
+            : (u16)(c->ma & 0x3FFF);
+    }
 
-    bool end_char_row = c->vlc == c->reg[9];
+    bool end_char_row = c->line_last_raster;
+    bool end_frame_line = c->line_last_frame;
 
     /* --- End of line --- */
     if (end_of_line) {
+        c->new_scanline = true;
         c->hcc = 0;
         c->h_display = c->reg[1] != 0;
 
@@ -191,7 +217,7 @@ void crtc_tick(CRTC *c) {
              * passed the new value, the CRTC keeps counting until the counter
              * wraps and the comparator can match again. Line-by-line rupture
              * effects depend on that overflow behaviour. */
-            if (c->vcc == c->reg[4]) {
+            if (end_frame_line) {
                 if (c->reg[5]) {
                     c->in_vadjust = true;
                     c->vac = 0;
@@ -222,6 +248,7 @@ void crtc_tick(CRTC *c) {
          * rasters ma_next_row still holds the current row start. */
         c->ma_row_start = c->ma_next_row;
         c->ma = c->ma_row_start;
+        crtc_latch_line_state(c);
     } else if (c->hcc == c->reg[1]) {
         c->h_display = false;
     }

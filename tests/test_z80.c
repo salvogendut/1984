@@ -57,7 +57,7 @@ static Z80Bus make_bus(TestBus *test) {
     return bus;
 }
 
-static void test_out_c_r_is_split_8_plus_4(void) {
+static void test_out_c_r_is_split_12_plus_4(void) {
     TestBus test = {0};
     Z80Bus bus = make_bus(&test);
     Z80 cpu;
@@ -66,15 +66,15 @@ static void test_out_c_r_is_split_8_plus_4(void) {
     test.mem[0] = 0xED;
     test.mem[1] = 0x41; /* OUT (C),B */
 
-    assert(z80_step(&cpu, &bus) == 12);
+    assert(z80_step(&cpu, &bus) == 16);
     assert(test.writes == 1);
     assert(test.port == 0x7F12);
     assert(test.value == 0x7F);
-    assert(test.ticks_at_write == 8);
-    assert(test.ticked_in_step == 8);
+    assert(test.ticks_at_write == 12);
+    assert(test.ticked_in_step == 12);
 }
 
-static void test_outi_is_split_12_plus_4(void) {
+static void test_outi_is_split_16_plus_4(void) {
     TestBus test = {0};
     Z80Bus bus = make_bus(&test);
     Z80 cpu;
@@ -85,12 +85,12 @@ static void test_outi_is_split_12_plus_4(void) {
     test.mem[1] = 0xA3; /* OUTI */
     test.mem[0x1000] = 0x55;
 
-    assert(z80_step(&cpu, &bus) == 16);
+    assert(z80_step(&cpu, &bus) == 20);
     assert(test.writes == 1);
     assert(test.port == 0x017F);
     assert(test.value == 0x55);
-    assert(test.ticks_at_write == 12);
-    assert(test.ticked_in_step == 12);
+    assert(test.ticks_at_write == 16);
+    assert(test.ticked_in_step == 16);
 }
 
 static void test_repeating_otir_keeps_repeat_cycles(void) {
@@ -104,18 +104,18 @@ static void test_repeating_otir_keeps_repeat_cycles(void) {
     test.mem[1] = 0xB3; /* OTIR */
     test.mem[0x1000] = 0xAA;
 
-    assert(z80_step(&cpu, &bus) == 21);
+    assert(z80_step(&cpu, &bus) == 25);
     assert(cpu.pc == 0);
     assert(test.writes == 1);
     assert(test.port == 0x017F);
     assert(test.value == 0xAA);
-    assert(test.ticks_at_write == 12);
-    assert(test.ticked_in_step == 12);
+    assert(test.ticks_at_write == 16);
+    assert(test.ticked_in_step == 16);
 }
 
 int main(void) {
-    test_out_c_r_is_split_8_plus_4();
-    test_outi_is_split_12_plus_4();
+    test_out_c_r_is_split_12_plus_4();
+    test_outi_is_split_16_plus_4();
     test_repeating_otir_keeps_repeat_cycles();
     return 0;
 }

@@ -7,7 +7,7 @@ void (*z80_rst10_hook)(Z80 *cpu, Z80Bus *bus) = NULL;
 
 /* ---- Cycle tables (Caprice32 / konCePCja convention) ----------------
  * Cycle counts are T-states. Lookups: cc_op[op] for unprefixed,
- * cc_cb[op] for CB-prefixed, cc_ed[op] for ED-prefixed,
+ * cc_cb[op] for CB-prefixed, cc_ed[op] for the ED sub-op,
  * cc_xy[op] for DD/FD-prefixed (followed by a normal opcode),
  * cc_xycb[op] for DD/FD CB-prefixed.
  *
@@ -323,18 +323,20 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         /* IN r,(C) */
         case 0x40: case 0x48: case 0x50: case 0x58:
         case 0x60: case 0x68: case 0x70: case 0x78: {
-            int ri = (op >> 3) & 7; u8 v = IN(cpu->bc);
+            int ri = (op >> 3) & 7;
+            if (bus->tick) bus->tick(bus->ctx, 16);
+            u8 v = IN(cpu->bc);
             if (ri != 6) set_r(cpu, bus, ri, cpu->hl, v);
             cpu->f = (cpu->f & Z80_FLAG_C) | sz(v) | par(v);
-            return 12;
+            return 16;
         }
         case 0x41: case 0x49: case 0x51: case 0x59:
         case 0x61: case 0x69: case 0x71: case 0x79: {
             int ri = (op >> 3) & 7;
             u8 v = ri == 6 ? 0 : get_r(cpu, bus, ri, cpu->hl);
-            if (bus->tick) bus->tick(bus->ctx, 8);
+            if (bus->tick) bus->tick(bus->ctx, 12);
             OUT(cpu->bc, v);
-            return 12;
+            return 16;
         }
         /* SBC HL,rr */
         case 0x42: case 0x52: case 0x62: case 0x72: {
@@ -397,52 +399,52 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xA9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); return 16; }
         case 0xB1: { u8 v=READ8(cpu->hl++); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
         case 0xB9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
-        /* Block I/O — IN ops: 16 cycles total, no pre-IO tick needed
-         * (konCePCja Iy=16 + Iy_=0). OUT ops reach the port after 12
-         * cycles and leave four base cycles after the write. */
-        case 0xA2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xAA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xB2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xBA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        /* Block I/O. Caprice32 accumulates the ED prefix plus the ED sub-op
+         * cycles before the port access, then leaves only the documented
+         * repeat/post-I/O remainder for the final wait-state chunk. */
+        case 0xA2: { if (bus->tick) bus->tick(bus->ctx, 20); u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 20; }
+        case 0xAA: { if (bus->tick) bus->tick(bus->ctx, 20); u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 20; }
+        case 0xB2: { if (bus->tick) bus->tick(bus->ctx, 20); u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 24;} return 20; }
+        case 0xBA: { if (bus->tick) bus->tick(bus->ctx, 20); u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 24;} return 20; }
         case 0xA3: {
             u8 v = READ8(cpu->hl++);
             cpu->b--;
-            if (bus->tick) bus->tick(bus->ctx, 12);
+            if (bus->tick) bus->tick(bus->ctx, 16);
             OUT(cpu->bc, v);
             cpu->f = sz(cpu->b) | Z80_FLAG_N;
-            return 16;
+            return 20;
         }
         case 0xAB: {
             u8 v = READ8(cpu->hl--);
             cpu->b--;
-            if (bus->tick) bus->tick(bus->ctx, 12);
+            if (bus->tick) bus->tick(bus->ctx, 16);
             OUT(cpu->bc, v);
             cpu->f = sz(cpu->b) | Z80_FLAG_N;
-            return 16;
+            return 20;
         }
         case 0xB3: {
             u8 v = READ8(cpu->hl++);
             cpu->b--;
-            if (bus->tick) bus->tick(bus->ctx, 12);
+            if (bus->tick) bus->tick(bus->ctx, 16);
             OUT(cpu->bc, v);
             cpu->f = Z80_FLAG_Z | Z80_FLAG_N;
             if (cpu->b) {
                 cpu->pc -= 2;
-                return 21;
+                return 25;
             }
-            return 16;
+            return 20;
         }
         case 0xBB: {
             u8 v = READ8(cpu->hl--);
             cpu->b--;
-            if (bus->tick) bus->tick(bus->ctx, 12);
+            if (bus->tick) bus->tick(bus->ctx, 16);
             OUT(cpu->bc, v);
             cpu->f = Z80_FLAG_Z | Z80_FLAG_N;
             if (cpu->b) {
                 cpu->pc -= 2;
-                return 21;
+                return 25;
             }
-            return 16;
+            return 20;
         }
         default:
             /* All undefined ED-prefix opcodes are documented to behave as
@@ -642,7 +644,7 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     int cycles;
     switch (cpu->last_prefix) {
     case 0xCB: cycles = cc_cb[op];   break;
-    case 0xED: cycles = cc_ed[op];   break;
+    case 0xED: cycles = cc_op[0xED] + cc_ed[op]; break;
     case 0xDD: case 0xFD: cycles = cc_xy[op]; break;
     default:   cycles = cc_op[op];   break;
     }

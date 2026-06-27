@@ -234,6 +234,17 @@ static void test_horizontal_total_uses_equality_not_threshold(void) {
 
     crtc_tick(&crtc);
     assert(crtc.hcc == 251);
+    assert(!crtc.new_scanline);
+
+    crtc.hcc = 255;
+    crtc_tick(&crtc);
+    assert(crtc.hcc == 0);
+    assert(!crtc.new_scanline);
+
+    crtc.hcc = 10;
+    crtc_tick(&crtc);
+    assert(crtc.hcc == 0);
+    assert(crtc.new_scanline);
 
     crtc_select(&crtc, 0);
     crtc_write(&crtc, 0);
@@ -244,9 +255,12 @@ static void test_vertical_display_enable_is_latched(void) {
     CRTC crtc;
     crtc_init(&crtc);
     crtc.reg[0] = 1;
-    crtc.reg[4] = 1;
-    crtc.reg[6] = 1;
-    crtc.reg[9] = 0;
+    crtc_select(&crtc, 4);
+    crtc_write(&crtc, 1);
+    crtc_select(&crtc, 6);
+    crtc_write(&crtc, 1);
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
 
     while (crtc.vcc != 1)
         crtc_tick(&crtc);
@@ -278,11 +292,33 @@ static void test_address_pipeline_advances_at_r1(void) {
     crtc_init(&crtc);
     crtc.reg[0] = 7;
     crtc.reg[1] = 4;
-    crtc.reg[9] = 0;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
     u16 start = crtc.ma_row_start;
 
     tick_to_next_line(&crtc);
     assert(crtc.ma_row_start == (u16)(start + 4));
+}
+
+static void test_address_pipeline_captures_current_ma_after_hcc_overflow(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 10;
+    crtc.reg[1] = 1;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
+    crtc.ma_row_start = 0x1000;
+    crtc.ma_next_row = 0x1000;
+    crtc.ma = 0x10FF;
+    crtc.hcc = 255;
+
+    crtc_tick(&crtc);
+    assert(crtc.hcc == 0);
+    assert(!crtc.new_scanline);
+
+    crtc_tick(&crtc);
+    assert(crtc.hcc == 1);
+    assert(crtc.ma_next_row == 0x1101);
 }
 
 static void test_address_pipeline_repeats_when_r1_is_missed(void) {
@@ -290,7 +326,8 @@ static void test_address_pipeline_repeats_when_r1_is_missed(void) {
     crtc_init(&crtc);
     crtc.reg[0] = 7;
     crtc.reg[1] = 6;
-    crtc.reg[9] = 0;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
     u16 start = crtc.ma_row_start;
 
     tick_until_hcc(&crtc, 5);
@@ -305,7 +342,8 @@ static void test_address_pipeline_uses_new_r1_if_ahead(void) {
     crtc_init(&crtc);
     crtc.reg[0] = 7;
     crtc.reg[1] = 4;
-    crtc.reg[9] = 0;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
     u16 start = crtc.ma_row_start;
 
     tick_until_hcc(&crtc, 2);
@@ -320,7 +358,8 @@ static void test_address_pipeline_waits_for_final_raster(void) {
     crtc_init(&crtc);
     crtc.reg[0] = 7;
     crtc.reg[1] = 4;
-    crtc.reg[9] = 1;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 1);
     u16 start = crtc.ma_row_start;
 
     tick_to_next_line(&crtc);
@@ -330,6 +369,59 @@ static void test_address_pipeline_waits_for_final_raster(void) {
     tick_to_next_line(&crtc);
     assert(crtc.vlc == 0);
     assert(crtc.ma_row_start == (u16)(start + 4));
+}
+
+static void test_r9_write_after_c0_one_does_not_reset_current_line(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 1);
+    crtc.hcc = 3;
+
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vlc == 1);
+}
+
+static void test_r9_write_before_c0_two_can_reset_current_line(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.vcc = 3;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 1);
+    crtc.hcc = 1;
+
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vlc == 0);
+    assert(crtc.vcc == 4);
+}
+
+static void test_r4_write_after_c0_one_does_not_reset_current_frame(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.vcc = 3;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
+    crtc_select(&crtc, 4);
+    crtc_write(&crtc, 5);
+    crtc.hcc = 3;
+
+    crtc_select(&crtc, 4);
+    crtc_write(&crtc, 3);
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vcc == 4);
 }
 
 int main(void) {
@@ -347,8 +439,12 @@ int main(void) {
     test_vertical_display_enable_is_latched();
     test_r6_write_can_disable_current_row();
     test_address_pipeline_advances_at_r1();
+    test_address_pipeline_captures_current_ma_after_hcc_overflow();
     test_address_pipeline_repeats_when_r1_is_missed();
     test_address_pipeline_uses_new_r1_if_ahead();
     test_address_pipeline_waits_for_final_raster();
+    test_r9_write_after_c0_one_does_not_reset_current_line();
+    test_r9_write_before_c0_two_can_reset_current_line();
+    test_r4_write_after_c0_one_does_not_reset_current_frame();
     return 0;
 }

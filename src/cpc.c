@@ -956,9 +956,7 @@ static void cpc_monitor_end_hsync(CPC *cpc) {
     cpc->monitor_hs_end_pos = 0;
 }
 
-static bool cpc_monitor_advance(CPC *cpc) {
-    bool new_line = false;
-
+static void cpc_monitor_advance(CPC *cpc) {
     cpc->monitor_hs_start_pos += 0x100;
     cpc->monitor_hs_end_pos += 0x100;
     cpc->monitor_hs_peak_pos += 0x100;
@@ -975,10 +973,7 @@ static bool cpc_monitor_advance(CPC *cpc) {
             cpc->monitor_hs_peak_pos - cpc->monitor_hsync_duration;
         cpc->raster_y++;
         cpc->monitor_vline++;
-        new_line = true;
     }
-
-    return new_line;
 }
 
 static bool cpc_monitor_finish_frame(CPC *cpc, bool crtc_vsync) {
@@ -1028,6 +1023,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         bool new_hsync = crtc_hsync(&cpc->crtc);
         bool new_vsync = crtc_vsync(&cpc->crtc);
+        bool new_crtc_line = crtc_new_scanline(&cpc->crtc);
         bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
@@ -1072,10 +1068,13 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (latch_mode)
             ga_latch_mode(&cpc->ga);
 
-        bool new_monitor_line = cpc_monitor_advance(cpc);
+        cpc_monitor_advance(cpc);
         cpc->raster_x = cpc->monitor_hpos / 256;
 
-        if (new_monitor_line && cpc_monitor_finish_frame(cpc, new_vsync))
+        /* The physical monitor free-runs through long/short CRTC lines, but
+         * vertical hold is sampled when the CRTC starts a real scanline.
+         * An 8-bit HCC wrap after a missed R0 comparator is not a newscan. */
+        if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync))
             display_upload(&cpc->display);
 
         /* On a CPC the Gate Array only observes the first seven CRTC HSYNC
