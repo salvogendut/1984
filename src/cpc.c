@@ -606,9 +606,57 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 static void build_pen_tables(void);
 static bool g_pen_tables_built;
 
+static CrtcType default_crtc_type(CpcModel model) {
+    switch (model) {
+    case MODEL_6128:
+        return CRTC_TYPE_1;
+    case MODEL_464:
+    case MODEL_664:
+    default:
+        return CRTC_TYPE_0;
+    }
+}
+
 /* Forward decl — definition lives near cpc_frame() with the rest of
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
+
+#define MONITOR_SYNC_DEC_MAX     80
+#define MONITOR_SYNC_INC_MAX     80
+#define MONITOR_HSYNC_DURATION   0x0A00
+#define MONITOR_BASE_HSYNC       (0x4000 - MONITOR_HSYNC_DURATION)
+#define MONITOR_SYNC_TOLERANCE   257
+#define MONITOR_X_ADJUST_PIXELS  -16
+#define MONITOR_MIN_VHOLD        250
+#define MONITOR_MIN_VSYNC        295
+#define MONITOR_MAX_VSYNC        351
+
+static int clamp_int(int v, int lo, int hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+static void cpc_monitor_reset(CPC *cpc) {
+    cpc->raster_x = 0;
+    cpc->raster_y = 0;
+    cpc->monitor_vline = 0;
+    cpc->monitor_hpos = 0x0500;
+    cpc->monitor_hsync_duration = MONITOR_HSYNC_DURATION;
+    cpc->monitor_min_hsync = MONITOR_BASE_HSYNC - MONITOR_SYNC_TOLERANCE;
+    cpc->monitor_max_hsync = MONITOR_BASE_HSYNC + MONITOR_SYNC_TOLERANCE;
+    cpc->monitor_hsync = MONITOR_BASE_HSYNC;
+    cpc->monitor_free_hsync = MONITOR_BASE_HSYNC;
+    cpc->monitor_hs_peak_pos = 0;
+    cpc->monitor_hs_start_pos = 0;
+    cpc->monitor_hs_end_pos = 0;
+    cpc->monitor_hs_peak_to_start = 0;
+    cpc->monitor_hs_start_to_peak = 0;
+    cpc->monitor_hs_end_to_peak = 0;
+    cpc->monitor_hs_peak_to_end = 0;
+    cpc->monitor_had_peak = false;
+    cpc->monitor_in_hsync = false;
+}
 
 int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
     if (!g_pen_tables_built) build_pen_tables();
@@ -627,6 +675,8 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
 
     ga_init(&cpc->ga);
     crtc_init(&cpc->crtc);
+    crtc_set_type(&cpc->crtc, default_crtc_type(model));
+    cpc_monitor_reset(cpc);
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
@@ -680,6 +730,7 @@ void cpc_reset(CPC *cpc) {
     z80_reset(&cpc->cpu);
     ga_init(&cpc->ga);
     crtc_init(&cpc->crtc);
+    crtc_set_type(&cpc->crtc, default_crtc_type(cpc->model));
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
     kbd_init(&cpc->kbd);
@@ -693,8 +744,7 @@ void cpc_reset(CPC *cpc) {
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
-    cpc->raster_x  = 0;
-    cpc->raster_y  = 0;
+    cpc_monitor_reset(cpc);
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
     cpc->cycle_debt = 0;
@@ -717,6 +767,7 @@ void cpc_destroy(CPC *cpc) {
  * Mode 2: 8 pixels/byte, 1 bit per pixel  → 1:1 mapping (16 px)
  * Mode 1: 4 pixels/byte, 2 bits per pixel → each pixel doubled  (16 px)
  * Mode 0: 2 pixels/byte, 4 bits per pixel → each pixel ×4       (16 px)
+ * Mode 3: 2 pixels/byte, 2 bits per pixel → each pixel ×4       (16 px)
  *
  * Video address: A[15:14] = MA[13:12], A[13:11] = RA[2:0], A[10:1] = MA[9:0]
  */
@@ -727,24 +778,32 @@ void cpc_destroy(CPC *cpc) {
  *   mode0_pens[b] = {left_pen, right_pen}  — 2 pixels × 4 wide each
  *   mode1_pens[b] = 4 pens                 — each pixel doubled
  *   mode2_pens[b] = 8 pens                 — 1:1
+ *   mode3_pens[b] = {left_pen, right_pen}  — 2 pixels × 4 wide each
  *
  * Pen-bit layout per the CRTC docs:
  *   mode 0:  pen0 = b1 b5 b3 b7  ; pen1 = b0 b4 b2 b6
  *   mode 1:  pen[i] = b(3-i+4) << 1 | b(3-i+0)
  *   mode 2:  pen[i] = (byte >> (7 - i)) & 1
+ *   mode 3:  pen0 = b3 b7        ; pen1 = b2 b6
  */
 static u8 g_mode0_pens[256][2];
 static u8 g_mode1_pens[256][4];
 static u8 g_mode2_pens[256][8];
+static u8 g_mode3_pens[256][2];
 
 static void build_pen_tables(void) {
     for (int b = 0; b < 256; b++) {
-        g_mode0_pens[b][0] = (u8)(((b>>1)&1)<<3 | ((b>>5)&1)<<2 | ((b>>3)&1)<<1 | ((b>>7)&1));
-        g_mode0_pens[b][1] = (u8)(((b>>0)&1)<<3 | ((b>>4)&1)<<2 | ((b>>2)&1)<<1 | ((b>>6)&1));
-        for (int p = 0; p < 4; p++)
-            g_mode1_pens[b][p] = (u8)(((b >> (3 - p)) & 1) << 1 | ((b >> (7 - p)) & 1));
-        for (int p = 0; p < 8; p++)
-            g_mode2_pens[b][p] = (u8)((b >> (7 - p)) & 1);
+        u8 pens[8];
+        ga_decode_byte(0, (u8)b, pens);
+        g_mode0_pens[b][0] = pens[0];
+        g_mode0_pens[b][1] = pens[4];
+        ga_decode_byte(1, (u8)b, pens);
+        for (int p = 0; p < 4; p++) g_mode1_pens[b][p] = pens[p * 2];
+        ga_decode_byte(2, (u8)b, pens);
+        for (int p = 0; p < 8; p++) g_mode2_pens[b][p] = pens[p];
+        ga_decode_byte(3, (u8)b, pens);
+        g_mode3_pens[b][0] = pens[0];
+        g_mode3_pens[b][1] = pens[4];
     }
     g_pen_tables_built = true;
 }
@@ -795,27 +854,149 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
         out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
         break;
     }
+    case 3: { /* undocumented 2 bpp, 2 pixels/byte, ×4 */
+        u32 c0 = inks[g_mode3_pens[b0][0]];
+        u32 c1 = inks[g_mode3_pens[b0][1]];
+        u32 c2 = inks[g_mode3_pens[b1][0]];
+        u32 c3 = inks[g_mode3_pens[b1][1]];
+        out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
+        out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
+        out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;
+        out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
+        break;
+    }
     }
 }
 
 /* ---- Frame execution ----
  *
- * Raster grid: raster_x in char clocks (0 = first char after hsync end).
- * Default CRTC timing (H total=63, H sync pos=46, H sync width=14):
- *   chars 60-63 = 4 left border chars   → raster_x 0-3   → px 0-63
- *   chars  0-39 = 40 displayed chars    → raster_x 4-43  → px 64-703
- *   chars 40-47 = right border/overflow → raster_x 44-51 → px 704-767+
- *
- * For Y: vsync fires at char row 30 (scan 240). After vsync (16 lines)
- * and top border (48 lines = 6 rows), display starts at scan 304 mod frame.
- * We set raster_y = -64 at vsync so raster_y=0 when display starts.
- */
+ * Rendering follows the monitor beam, not the raw CRTC HSYNC edge. The CRTC
+ * still drives display enable, interrupts and mode latch, but the monitor has
+ * inertia: short/narrow HSYNC pulses can be ignored and legal rupture effects
+ * shift the rendered line instead of forcibly starting a new one. */
+static void cpc_monitor_start_hsync(CPC *cpc) {
+    if (cpc->monitor_in_hsync)
+        return;
+    cpc->monitor_in_hsync = true;
+    cpc->monitor_hs_start_pos = 0;
+    cpc->monitor_hs_peak_to_start = cpc->monitor_hs_peak_pos;
+}
 
-/* Left border offset in char clocks = H_total+1 - H_sync_pos - H_sync_width */
-#define RASTER_X_AFTER_HSYNC  -1
-/* Scan lines from vsync rising edge to first displayed line:
- * 16 (vsync pulse) + 56 (7 top border char rows × 8) = 72 */
-#define VSYNC_TO_DISPLAY_LINES 40
+static void cpc_monitor_end_hsync(CPC *cpc) {
+    int temp;
+
+    if (!cpc->monitor_in_hsync)
+        return;
+
+    cpc->monitor_in_hsync = false;
+    cpc->monitor_hs_peak_to_end = cpc->monitor_hs_peak_pos;
+
+    if (!cpc->monitor_had_peak) {
+        cpc->monitor_hs_end_pos = 0;
+        return;
+    }
+
+    cpc->monitor_had_peak = false;
+    if (cpc->monitor_hs_peak_pos >= cpc->monitor_hs_start_pos) {
+        temp = cpc->monitor_hs_end_pos - cpc->monitor_hsync_duration;
+        if (temp < cpc->monitor_free_hsync) {
+            if (cpc->monitor_free_hsync != cpc->monitor_min_hsync)
+                cpc->monitor_free_hsync--;
+        } else if (temp > cpc->monitor_free_hsync) {
+            if (cpc->monitor_free_hsync != cpc->monitor_max_hsync)
+                cpc->monitor_free_hsync++;
+        }
+
+        temp = cpc->monitor_hs_peak_to_end - cpc->monitor_hs_end_to_peak;
+        if (temp < 0) {
+            temp = -temp;
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_INC_MAX)
+                temp = MONITOR_SYNC_INC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync + temp;
+        } else {
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_DEC_MAX)
+                temp = MONITOR_SYNC_DEC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync - temp;
+        }
+    } else {
+        temp = cpc->monitor_hs_start_to_peak - cpc->monitor_hs_peak_to_end;
+        if (!temp) {
+            cpc->monitor_hsync = cpc->monitor_free_hsync;
+        } else if (temp < 0) {
+            temp = -temp;
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_INC_MAX)
+                temp = MONITOR_SYNC_INC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync + temp;
+        } else {
+            if (temp > cpc->monitor_hs_start_pos)
+                temp = cpc->monitor_hs_start_pos;
+            temp >>= 3;
+            if (!temp) temp++;
+            if (temp > MONITOR_SYNC_DEC_MAX)
+                temp = MONITOR_SYNC_DEC_MAX;
+            cpc->monitor_hsync = cpc->monitor_free_hsync - temp;
+        }
+    }
+
+    cpc->monitor_hsync = clamp_int(cpc->monitor_hsync,
+                                   cpc->monitor_min_hsync,
+                                   cpc->monitor_max_hsync);
+    cpc->monitor_hs_end_pos = 0;
+}
+
+static bool cpc_monitor_advance(CPC *cpc) {
+    bool new_line = false;
+
+    cpc->monitor_hs_start_pos += 0x100;
+    cpc->monitor_hs_end_pos += 0x100;
+    cpc->monitor_hs_peak_pos += 0x100;
+    cpc->monitor_hpos += 0x100;
+
+    if (cpc->monitor_hpos >= cpc->monitor_hsync) {
+        cpc->monitor_had_peak = true;
+        cpc->monitor_hs_peak_pos = cpc->monitor_hpos - cpc->monitor_hsync;
+        cpc->monitor_hs_start_to_peak =
+            cpc->monitor_hs_start_pos - cpc->monitor_hs_peak_pos;
+        cpc->monitor_hs_end_to_peak =
+            cpc->monitor_hs_end_pos - cpc->monitor_hs_peak_pos;
+        cpc->monitor_hpos =
+            cpc->monitor_hs_peak_pos - cpc->monitor_hsync_duration;
+        cpc->raster_y++;
+        cpc->monitor_vline++;
+        new_line = true;
+    }
+
+    return new_line;
+}
+
+static bool cpc_monitor_finish_frame(CPC *cpc, bool crtc_vsync) {
+    if ((!crtc_vsync || cpc->monitor_vline <= MONITOR_MIN_VSYNC) &&
+        cpc->monitor_vline < MONITOR_MAX_VSYNC)
+        return false;
+
+    /* Match the vertical hold used by Caprice32. A standard 312-line frame
+     * restarts drawing at -31, which centres the CPC image while allowing
+     * early/short CRTC VSYNC tricks to pass without rolling the monitor. */
+    cpc->raster_y = -(((cpc->monitor_vline - MONITOR_MIN_VHOLD) + 1) >> 1);
+    cpc->monitor_vline = 0;
+    return true;
+}
+
+static inline int cpc_monitor_px(const CPC *cpc) {
+    return (cpc->monitor_hpos / 16) + MONITOR_X_ADJUST_PIXELS;
+}
 
 /* Advance ALL per-cycle peripheral state by `cycles` CPU T-states.
  * Covers: tape, audio sampling, CRTC/GA/render. Mirrors konCePCja's
@@ -847,6 +1028,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         bool new_hsync = crtc_hsync(&cpc->crtc);
         bool new_vsync = crtc_vsync(&cpc->crtc);
+        bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
         if (!new_hsync && cpc->prev_hsync)
@@ -854,29 +1036,18 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         ppi_set_vsync(&cpc->ppi, new_vsync);
 
-        /* --- Edge detection BEFORE render so raster resets apply this tick --- */
-
-        /* HSYNC falling edge → start of new scan line */
-        if (!new_hsync && cpc->prev_hsync) {
-            cpc->raster_x = RASTER_X_AFTER_HSYNC;
-            cpc->raster_y++;
-        }
-
-        /* VSYNC rising edge → start of new frame */
+        /* The Gate Array and PPI observe raw CRTC VSYNC. The monitor has its
+         * own vertical hold and decides separately whether that pulse ends
+         * the displayed frame. */
         if (new_vsync && !cpc->prev_vsync) {
-            cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
             ga_vsync_start(&cpc->ga);
-            display_upload(&cpc->display);
         }
-
-        cpc->prev_hsync = new_hsync;
-        cpc->prev_vsync = new_vsync;
 
         /* --- Render 16 pixels for this char clock --- */
-        int px = cpc->raster_x * 16;
+        int px = cpc_monitor_px(cpc);
         int py = cpc->raster_y;
 
-        if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px < CPC_SCREEN_W) {
+        if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px <= CPC_SCREEN_W - 16) {
             u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
             if (cpc->crtc_pre_de) {
                 /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
@@ -896,7 +1067,28 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             }
         }
 
-        cpc->raster_x++;
+        /* CRTC timing changes happen after the current character is output,
+         * so the newly latched mode is visible from the next character. */
+        if (latch_mode)
+            ga_latch_mode(&cpc->ga);
+
+        bool new_monitor_line = cpc_monitor_advance(cpc);
+        cpc->raster_x = cpc->monitor_hpos / 256;
+
+        if (new_monitor_line && cpc_monitor_finish_frame(cpc, new_vsync))
+            display_upload(&cpc->display);
+
+        /* On a CPC the Gate Array only observes the first seven CRTC HSYNC
+         * character clocks. The monitor-visible pulse starts a little later
+         * and is also cut off there; narrow HSW values therefore do not yank
+         * the display beam around. */
+        if (new_hsync && cpc->crtc.hsc == 3)
+            cpc_monitor_start_hsync(cpc);
+        if (latch_mode)
+            cpc_monitor_end_hsync(cpc);
+
+        cpc->prev_hsync = new_hsync;
+        cpc->prev_vsync = new_vsync;
 
         /* Capture next char's pre-tick state */
         cpc->crtc_pre_ma = cpc->crtc.ma;
