@@ -422,14 +422,36 @@ static void test_r9_write_before_c0_two_can_reset_current_line(void) {
     assert(crtc.vcc == 4);
 }
 
-static void test_r4_write_matching_current_row_arms_current_frame(void) {
+static void test_r9_write_matching_current_row_arms_current_frame(void) {
     CRTC crtc;
     crtc_init(&crtc);
     crtc.reg[0] = 7;
     crtc.reg[1] = 4;
     crtc.vcc = 3;
+    crtc.reg[4] = 3;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 1);
+    crtc.hcc = 3;
+
     crtc_select(&crtc, 9);
     crtc_write(&crtc, 0);
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vcc == 0);
+}
+
+static void test_r4_write_matching_current_row_does_not_rearm_current_frame(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.vcc = 3;
+    crtc.reg[4] = 5;
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 0);
+    assert(crtc.line_last_raster);
+    assert(!crtc.line_last_frame);
+
     crtc_select(&crtc, 4);
     crtc_write(&crtc, 5);
     crtc.hcc = 3;
@@ -438,7 +460,7 @@ static void test_r4_write_matching_current_row_arms_current_frame(void) {
     crtc_write(&crtc, 3);
     tick_to_next_line(&crtc);
 
-    assert(crtc.vcc == 0);
+    assert(crtc.vcc == 4);
 }
 
 static void test_r7_line_start_uses_previous_line_length(void) {
@@ -561,7 +583,8 @@ int main(void) {
     test_r9_write_matching_current_raster_resets_current_line();
     test_r9_write_below_current_raster_does_not_reset_current_line();
     test_r9_write_before_c0_two_can_reset_current_line();
-    test_r4_write_matching_current_row_arms_current_frame();
+    test_r9_write_matching_current_row_arms_current_frame();
+    test_r4_write_matching_current_row_does_not_rearm_current_frame();
     test_r7_line_start_uses_previous_line_length();
     test_r7_write_before_c0_two_does_not_start_vsync_later_this_row();
     test_r7_write_after_c0_one_can_start_vsync();

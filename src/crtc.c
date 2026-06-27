@@ -111,13 +111,18 @@ void crtc_write(CRTC *c, u8 val) {
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
-        /* R9/R4 are comparators. A write that matches the current raster or
-         * row counter can still arm the current line's reset/frame decision;
-         * a write behind the beam simply misses until the counter wraps. */
+        /* R9 is a raster comparator. A write that matches the current raster
+         * can still arm the current line's reset/frame decision; a write
+         * behind the beam simply misses until the counter wraps. */
         if (c->selected == 9)
             crtc_latch_line_state(c);
-        else if (c->selected == 4)
-            c->line_last_frame = c->line_last_raster && c->vcc == c->reg[4];
+        else if (c->selected == 4) {
+            /* Vertical total changes do not freely re-arm the current scanline.
+             * The 6845 has a delayed maximum-raster path; a full model handles
+             * the narrow CharMR2 window explicitly.  Leaving the current-line
+             * decision latched avoids treating late R4 writes as a new frame
+             * reset request. */
+        }
         else if (c->selected == 7)
             crtc_update_r7_match(c, c->hcc >= 2);
         c->display_enable = c->h_display && c->v_display;
