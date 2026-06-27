@@ -84,6 +84,7 @@ int snapshot_load(CPC *cpc, const char *path) {
     cpc->ga.interrupt_counter = 0;
     cpc->ga.interrupt_pending = false;
     cpc->ga.vsync_delay       = 0;
+    ga_refresh_palette(&cpc->ga);
 
     /* GA RAM-cfg byte at 0x41 (lower 6 bits = group<<3 | mode in our ram_bank).
      * Our ram_bank also packs bank_high in bits[7:6]; for standard 128 K SNA

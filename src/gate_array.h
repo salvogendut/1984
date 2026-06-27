@@ -46,6 +46,7 @@ extern const u32 ga_hw_palette[32];
 
 void ga_init(GateArray *ga);
 void ga_write(GateArray *ga, u8 val);   /* port 0x7F (A15=0) */
+void ga_refresh_palette(GateArray *ga);
 
 /* Switch the monochrome tint mode. Re-resolves all 17 inks so the new
  * tint takes effect on the next rendered frame without waiting for the

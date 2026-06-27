@@ -627,6 +627,9 @@ static void cpc_bus_tick(void *ctx, int cycles);
 #define MONITOR_BASE_HSYNC       (0x4000 - MONITOR_HSYNC_DURATION)
 #define MONITOR_SYNC_TOLERANCE   257
 #define MONITOR_X_ADJUST_PIXELS  -16
+#define MONITOR_MIN_VHOLD        250
+#define MONITOR_MIN_VSYNC        295
+#define MONITOR_MAX_VSYNC        351
 
 static int clamp_int(int v, int lo, int hi) {
     if (v < lo) return lo;
@@ -637,6 +640,7 @@ static int clamp_int(int v, int lo, int hi) {
 static void cpc_monitor_reset(CPC *cpc) {
     cpc->raster_x = 0;
     cpc->raster_y = 0;
+    cpc->monitor_vline = 0;
     cpc->monitor_hpos = 0x0500;
     cpc->monitor_hsync_duration = MONITOR_HSYNC_DURATION;
     cpc->monitor_min_hsync = MONITOR_BASE_HSYNC - MONITOR_SYNC_TOLERANCE;
@@ -870,8 +874,6 @@ static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 
  * still drives display enable, interrupts and mode latch, but the monitor has
  * inertia: short/narrow HSYNC pulses can be ignored and legal rupture effects
  * shift the rendered line instead of forcibly starting a new one. */
-#define VSYNC_TO_DISPLAY_LINES 40
-
 static void cpc_monitor_start_hsync(CPC *cpc) {
     if (cpc->monitor_in_hsync)
         return;
@@ -954,7 +956,9 @@ static void cpc_monitor_end_hsync(CPC *cpc) {
     cpc->monitor_hs_end_pos = 0;
 }
 
-static void cpc_monitor_advance(CPC *cpc) {
+static bool cpc_monitor_advance(CPC *cpc) {
+    bool new_line = false;
+
     cpc->monitor_hs_start_pos += 0x100;
     cpc->monitor_hs_end_pos += 0x100;
     cpc->monitor_hs_peak_pos += 0x100;
@@ -970,7 +974,24 @@ static void cpc_monitor_advance(CPC *cpc) {
         cpc->monitor_hpos =
             cpc->monitor_hs_peak_pos - cpc->monitor_hsync_duration;
         cpc->raster_y++;
+        cpc->monitor_vline++;
+        new_line = true;
     }
+
+    return new_line;
+}
+
+static bool cpc_monitor_finish_frame(CPC *cpc, bool crtc_vsync) {
+    if ((!crtc_vsync || cpc->monitor_vline <= MONITOR_MIN_VSYNC) &&
+        cpc->monitor_vline < MONITOR_MAX_VSYNC)
+        return false;
+
+    /* Match the vertical hold used by Caprice32. A standard 312-line frame
+     * restarts drawing at -31, which centres the CPC image while allowing
+     * early/short CRTC VSYNC tricks to pass without rolling the monitor. */
+    cpc->raster_y = -(((cpc->monitor_vline - MONITOR_MIN_VHOLD) + 1) >> 1);
+    cpc->monitor_vline = 0;
+    return true;
 }
 
 static inline int cpc_monitor_px(const CPC *cpc) {
@@ -1015,11 +1036,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         ppi_set_vsync(&cpc->ppi, new_vsync);
 
-        /* VSYNC rising edge → start of new frame */
+        /* The Gate Array and PPI observe raw CRTC VSYNC. The monitor has its
+         * own vertical hold and decides separately whether that pulse ends
+         * the displayed frame. */
         if (new_vsync && !cpc->prev_vsync) {
-            cpc->raster_y = -VSYNC_TO_DISPLAY_LINES;
             ga_vsync_start(&cpc->ga);
-            display_upload(&cpc->display);
         }
 
         /* --- Render 16 pixels for this char clock --- */
@@ -1051,8 +1072,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (latch_mode)
             ga_latch_mode(&cpc->ga);
 
-        cpc_monitor_advance(cpc);
+        bool new_monitor_line = cpc_monitor_advance(cpc);
         cpc->raster_x = cpc->monitor_hpos / 256;
+
+        if (new_monitor_line && cpc_monitor_finish_frame(cpc, new_vsync))
+            display_upload(&cpc->display);
 
         /* On a CPC the Gate Array only observes the first seven CRTC HSYNC
          * character clocks. The monitor-visible pulse starts a little later

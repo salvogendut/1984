@@ -107,16 +107,24 @@ static void test_r8_mask_depends_on_type(void) {
     assert(crtc.reg[8] == 0x33);
 }
 
-static void test_type1_r12_r13_reloads_while_vcc_zero(void) {
+static void test_type1_r12_r13_reloads_at_scanline_start_while_vcc_zero(void) {
     CRTC crtc;
     crtc_init(&crtc);
     crtc_set_type(&crtc, CRTC_TYPE_1);
+    crtc.reg[0] = 7;
     crtc.vcc = 0;
+    crtc.ma = 0x3002;
+    crtc.ma_row_start = 0x3000;
+    crtc.ma_next_row = 0x3000;
 
     crtc_select(&crtc, 12);
     crtc_write(&crtc, 0x10);
     crtc_select(&crtc, 13);
     crtc_write(&crtc, 0x20);
+    assert(crtc.ma == 0x3002);
+    assert(crtc.ma_row_start == 0x3000);
+
+    tick_to_next_line(&crtc);
     assert(crtc.ma == 0x1020);
     assert(crtc.ma_row_start == 0x1020);
 
@@ -218,6 +226,20 @@ static void test_horizontal_display_enable_is_latched(void) {
     assert(crtc.display_enable);
 }
 
+static void test_horizontal_total_uses_equality_not_threshold(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 10;
+    crtc.hcc = 250;
+
+    crtc_tick(&crtc);
+    assert(crtc.hcc == 251);
+
+    crtc_select(&crtc, 0);
+    crtc_write(&crtc, 0);
+    assert(crtc.reg[0] == 0);
+}
+
 static void test_vertical_display_enable_is_latched(void) {
     CRTC crtc;
     crtc_init(&crtc);
@@ -316,11 +338,12 @@ int main(void) {
     test_type_specific_status_port();
     test_register_write_masks();
     test_r8_mask_depends_on_type();
-    test_type1_r12_r13_reloads_while_vcc_zero();
+    test_type1_r12_r13_reloads_at_scanline_start_while_vcc_zero();
     test_hsync_width_zero_depends_on_type();
     test_long_hsync_latches_at_cutoff();
     test_short_hsync_latches_at_completion();
     test_horizontal_display_enable_is_latched();
+    test_horizontal_total_uses_equality_not_threshold();
     test_vertical_display_enable_is_latched();
     test_r6_write_can_disable_current_row();
     test_address_pipeline_advances_at_r1();

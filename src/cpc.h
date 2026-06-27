@@ -81,6 +81,7 @@ typedef struct {
      * 8.8 fixed-point horizontal monitor position in CRTC character clocks. */
     int  raster_x;
     int  raster_y;
+    int  monitor_vline;
     int  monitor_hpos;
     int  monitor_hsync;
     int  monitor_free_hsync;

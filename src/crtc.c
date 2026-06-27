@@ -81,15 +81,6 @@ void crtc_write(CRTC *c, u8 val) {
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
-        /* UM6845R/type 1 re-reads R12/R13 while VCC is 0. This is part of
-         * common CRTC-detection and split-screen behaviour. Other types keep
-         * the frame start address latched until the next frame restart. */
-        if ((c->selected == 12 || c->selected == 13) &&
-            c->type == CRTC_TYPE_1 && c->vcc == 0) {
-            c->ma_row_start = crtc_start_addr(c);
-            c->ma_next_row = c->ma_row_start;
-            c->ma = c->ma_row_start;
-        }
         c->display_enable = c->h_display && c->v_display;
     }
 }
@@ -121,8 +112,10 @@ u8 crtc_read_status(CRTC *c) {
 void crtc_tick(CRTC *c) {
     c->mode_latch = false;
 
+    u8 old_hcc = (u8)c->hcc;
+
     /* Horizontal counter advances; MA tracks along the row */
-    c->hcc++;
+    c->hcc = (u8)((c->hcc + 1) & 0xFF);
     c->ma++;
 
     /* --- HSYNC --- */
@@ -152,7 +145,7 @@ void crtc_tick(CRTC *c) {
         }
     }
 
-    bool end_of_line = c->hcc > c->reg[0];
+    bool end_of_line = old_hcc == c->reg[0];
 
     /* On the final raster of a character row, R1 captures the address for
      * the next row. If software moves R1 behind the beam, the comparator is
@@ -215,6 +208,14 @@ void crtc_tick(CRTC *c) {
             }
         } else {
             c->vlc = (c->vlc + 1) & 0x1F;
+        }
+
+        /* The UM6845R re-reads R12/R13 at the start of every scanline while
+         * VCC is zero. A write changes the register immediately, but must not
+         * splice a new address into the scanline currently being output. */
+        if (c->type == CRTC_TYPE_1 && c->vcc == 0) {
+            c->ma_row_start = crtc_start_addr(c);
+            c->ma_next_row = c->ma_row_start;
         }
 
         /* The address pipeline advances every scan line. On non-final

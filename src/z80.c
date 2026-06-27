@@ -22,23 +22,13 @@ void (*z80_rst10_hook)(Z80 *cpu, Z80Bus *bus) = NULL;
  *
  * Ported verbatim from /tmp/koncepcja/src/z80.cpp.  Tables are 1:1.
  * ------------------------------------------------------------------ */
-/* IO cycle constants — set to konCePCja's split-totals (X = pre-IO
- * portion + X_ = post-IO portion via z80_wait_states). Now SAFE to
- * bump because the matching bus->tick(pre-IO) calls in the IO
- * instruction handlers (OUT (n),A, OUT (C),r, OUTI/OUTD/OTIR/OTDR)
- * advance the bus arbiter mid-instruction so the GA interrupt
- * counter sees the same state at the IO write as konCePCja's
- * split sees. Without the matching pre-tick split, bumping these
- * to split-totals regresses HDCPM IDE block-op timing. */
+/* I/O totals include both sides of konCePCja's split. The matching
+ * bus->tick() calls advance the pre-I/O portion before the port write;
+ * cpc_frame() advances the remaining cycles after z80_step() returns. */
 #define Oa  12   /* OUT (n),A           — pre 8 + post 4 */
 #define Ia  12   /* IN A,(n)            — pre 12 + post 0 */
-#define Ox   8   /* OUT (C),r — even with cpc_advance_bus covering all
-                  * peripherals and matching bus->tick(8) pre-IO split,
-                  * bumping Ox to 12 regresses sweep to 0/13. The remaining
-                  * gap vs konCePCja must be in the actual IO write
-                  * timing relative to bus arbitration — needs reading
-                  * the OUT instruction execution more carefully. */
-#define Oy  12   /* OUTI/OUTD/OTIR/OTDR — split-total Oy=16 regresses */
+#define Ox  12   /* OUT (C),r: 8 cycles before I/O + 4 after */
+#define Oy  16   /* OUTI/OUTD/OTIR/OTDR: 12 cycles before I/O + 4 after */
 #define Ix  12
 #define Iy  16
 
@@ -150,7 +140,7 @@ static const u8 cc_ex[256] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-    4,  8,  4,  4,  0,  0,  0,  0,  4,  8,  4,  4,  0,  0,  0,  0,
+    4,  8,  4,  5,  0,  0,  0,  0,  4,  8,  4,  5,  0,  0,  0,  0,
     8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
     8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
     8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,  8,  0,  0,  0,
@@ -341,7 +331,9 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0x41: case 0x49: case 0x51: case 0x59:
         case 0x61: case 0x69: case 0x71: case 0x79: {
             int ri = (op >> 3) & 7;
-            OUT(cpu->bc, ri == 6 ? 0 : get_r(cpu, bus, ri, cpu->hl));
+            u8 v = ri == 6 ? 0 : get_r(cpu, bus, ri, cpu->hl);
+            if (bus->tick) bus->tick(bus->ctx, 8);
+            OUT(cpu->bc, v);
             return 12;
         }
         /* SBC HL,rr */
@@ -406,16 +398,52 @@ static int exec_ed(Z80 *cpu, Z80Bus *bus) {
         case 0xB1: { u8 v=READ8(cpu->hl++); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
         case 0xB9: { u8 v=READ8(cpu->hl--); u8 r=cpu->a-v; cpu->bc--; cpu->f=(cpu->f&Z80_FLAG_C)|Z80_FLAG_N|sz(r)|((cpu->a^v^r)&0x10?Z80_FLAG_H:0)|(cpu->bc?Z80_FLAG_PV:0); if(cpu->bc&&r){cpu->pc-=2;return 21;} return 16; }
         /* Block I/O — IN ops: 16 cycles total, no pre-IO tick needed
-         * (konCePCja Iy=16 + Iy_=0). OUT ops: pre-tick 4 cycles before
-         * the IO write to mirror konCePCja's Oy=12 + Oy_=4 split. */
+         * (konCePCja Iy=16 + Iy_=0). OUT ops reach the port after 12
+         * cycles and leave four base cycles after the write. */
         case 0xA2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xAA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
         case 0xB2: { u8 v=IN(cpu->bc); WRITE8(cpu->hl++,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
         case 0xBA: { u8 v=IN(cpu->bc); WRITE8(cpu->hl--,v); cpu->b--; cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xA3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xAB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=sz(cpu->b)|Z80_FLAG_N; return 16; }
-        case 0xB3: { u8 v=READ8(cpu->hl++); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
-        case 0xBB: { u8 v=READ8(cpu->hl--); cpu->b--; OUT(cpu->bc,v); cpu->f=Z80_FLAG_Z|Z80_FLAG_N; if(cpu->b){cpu->pc-=2;return 21;} return 16; }
+        case 0xA3: {
+            u8 v = READ8(cpu->hl++);
+            cpu->b--;
+            if (bus->tick) bus->tick(bus->ctx, 12);
+            OUT(cpu->bc, v);
+            cpu->f = sz(cpu->b) | Z80_FLAG_N;
+            return 16;
+        }
+        case 0xAB: {
+            u8 v = READ8(cpu->hl--);
+            cpu->b--;
+            if (bus->tick) bus->tick(bus->ctx, 12);
+            OUT(cpu->bc, v);
+            cpu->f = sz(cpu->b) | Z80_FLAG_N;
+            return 16;
+        }
+        case 0xB3: {
+            u8 v = READ8(cpu->hl++);
+            cpu->b--;
+            if (bus->tick) bus->tick(bus->ctx, 12);
+            OUT(cpu->bc, v);
+            cpu->f = Z80_FLAG_Z | Z80_FLAG_N;
+            if (cpu->b) {
+                cpu->pc -= 2;
+                return 21;
+            }
+            return 16;
+        }
+        case 0xBB: {
+            u8 v = READ8(cpu->hl--);
+            cpu->b--;
+            if (bus->tick) bus->tick(bus->ctx, 12);
+            OUT(cpu->bc, v);
+            cpu->f = Z80_FLAG_Z | Z80_FLAG_N;
+            if (cpu->b) {
+                cpu->pc -= 2;
+                return 21;
+            }
+            return 16;
+        }
         default:
             /* All undefined ED-prefix opcodes are documented to behave as
              * 2-byte 8-T-state NOPs on real Z80 hardware. CP/M+ kernels
