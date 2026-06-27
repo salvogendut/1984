@@ -40,6 +40,9 @@ typedef struct {
     bool h_display;
     bool v_display;
     bool display_enable;
+    bool line_last_raster; /* C9 == R9 latched near C0=0 */
+    bool line_last_frame;  /* C4 == R4 && C9 == R9 latched near C0=0 */
+    bool new_scanline;     /* one-tick R0 comparator event */
     bool mode_latch;       /* one-tick GA mode-latch event */
     bool mode_latched_this_hsync;
 } CRTC;
@@ -51,10 +54,12 @@ void crtc_write(CRTC *c, u8 val);
 u8   crtc_read(CRTC *c);
 u8   crtc_read_status(CRTC *c);     /* &BE00 — type-dependent status/read port */
 void crtc_tick(CRTC *c);       /* one character clock (1 MHz) */
+void crtc_recompute_state(CRTC *c); /* after direct state restore */
 
 /* Derived helpers */
 static inline u16 crtc_screen_addr(CRTC *c) { return c->ma; }
 static inline bool crtc_hsync(CRTC *c)      { return c->hsync; }
 static inline bool crtc_vsync(CRTC *c)      { return c->vsync; }
 static inline bool crtc_de(CRTC *c)         { return c->display_enable; }
+static inline bool crtc_new_scanline(CRTC *c) { return c->new_scanline; }
 static inline bool crtc_mode_latch(CRTC *c) { return c->mode_latch; }

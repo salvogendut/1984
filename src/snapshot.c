@@ -10,6 +10,28 @@ static u16 le16(const u8 *p) {
     return (u16)p[0] | ((u16)p[1] << 8);
 }
 
+#define SNA_CPC_MODEL           0x6D
+#define SNA_V3_CRTC_TYPE        0xA4
+#define SNA_V3_CRTC_ADDR        0xA5
+#define SNA_V3_CRTC_SCANLINE    0xA7
+#define SNA_V3_CRTC_CHAR_COUNT  0xA9
+#define SNA_V3_CRTC_LINE_COUNT  0xAB
+#define SNA_V3_CRTC_RASTER      0xAC
+#define SNA_V3_CRTC_VADJUST     0xAD
+#define SNA_V3_CRTC_HSW_COUNT   0xAE
+#define SNA_V3_CRTC_VSW_COUNT   0xAF
+#define SNA_V3_CRTC_FLAGS       0xB0
+#define SNA_V3_GA_INT_DELAY     0xB2
+#define SNA_V3_GA_SL_COUNT      0xB3
+#define SNA_V3_Z80_INT_PENDING  0xB4
+
+static u16 crtc_restore_next_row(const CRTC *crtc, u16 row_start) {
+    if (crtc->vlc == crtc->reg[9] && crtc->reg[1] != 0 &&
+        crtc->hcc >= crtc->reg[1])
+        return (u16)((row_start + crtc->reg[1]) & 0x3FFF);
+    return row_start;
+}
+
 int snapshot_load(CPC *cpc, const char *path) {
     if (!cpc || cpc->mem.ram_size <= 0) {
         fprintf(stderr, "snapshot: RAM not initialised — refusing to load '%s'\n",
@@ -118,6 +140,47 @@ int snapshot_load(CPC *cpc, const char *path) {
     u16 ram_kb = (version >= 2) ? le16(&hdr[0x6B]) : 64;
     if (ram_kb == 0) ram_kb = 64;   /* v1 default */
 
+    if (version >= 3) {
+        u8 type = hdr[SNA_V3_CRTC_TYPE];
+        if (type <= CRTC_TYPE_3)
+            crtc_set_type(&cpc->crtc, (CrtcType)type);
+
+        u16 row_start = le16(&hdr[SNA_V3_CRTC_ADDR]) & 0x3FFF;
+        cpc->crtc.hcc = hdr[SNA_V3_CRTC_CHAR_COUNT];
+        cpc->crtc.vcc = hdr[SNA_V3_CRTC_LINE_COUNT] & 0x7F;
+        cpc->crtc.vlc = hdr[SNA_V3_CRTC_RASTER] & 0x1F;
+        cpc->crtc.vac = hdr[SNA_V3_CRTC_VADJUST] & 0x1F;
+        cpc->crtc.hsc = hdr[SNA_V3_CRTC_HSW_COUNT] & 0x0F;
+        cpc->crtc.vsc = hdr[SNA_V3_CRTC_VSW_COUNT] & 0x0F;
+
+        u16 flags = le16(&hdr[SNA_V3_CRTC_FLAGS]);
+        cpc->crtc.vsync = (flags & 0x0001) != 0;
+        cpc->crtc.hsync = (flags & 0x0002) != 0;
+        cpc->crtc.in_vadjust = (flags & 0x0080) != 0;
+
+        cpc->crtc.ma_row_start = row_start;
+        cpc->crtc.ma_next_row = crtc_restore_next_row(&cpc->crtc, row_start);
+        cpc->crtc.ma = (u16)((row_start + cpc->crtc.hcc) & 0x3FFF);
+
+        cpc->monitor_vline = le16(&hdr[SNA_V3_CRTC_SCANLINE]);
+        cpc->raster_y = cpc->monitor_vline;
+        cpc->ga.vsync_delay = hdr[SNA_V3_GA_INT_DELAY] & 0x03;
+        cpc->ga.interrupt_counter = hdr[SNA_V3_GA_SL_COUNT];
+        cpc->ga.interrupt_pending = false;
+        cpc->cpu.pending_irq = hdr[SNA_V3_Z80_INT_PENDING] != 0;
+        cpc->prev_hsync = cpc->crtc.hsync;
+        cpc->prev_vsync = cpc->crtc.vsync;
+        cpc->crtc_cycle_acc = 0;
+    } else {
+        cpc->crtc.ma_row_start = ((u16)cpc->crtc.reg[12] << 8 | cpc->crtc.reg[13]) & 0x3FFF;
+        cpc->crtc.ma_next_row = cpc->crtc.ma_row_start;
+        cpc->crtc.ma = cpc->crtc.ma_row_start;
+    }
+    crtc_recompute_state(&cpc->crtc);
+    cpc->crtc_pre_ma = cpc->crtc.ma;
+    cpc->crtc_pre_ra = cpc->crtc.vlc;
+    cpc->crtc_pre_de = cpc->crtc.display_enable;
+
     size_t want = (size_t)ram_kb * 1024;
     if (want > (size_t)cpc->mem.ram_size) {
         fprintf(stderr, "snapshot: '%s' wants %u KB RAM, emulator configured for %d KB — "
@@ -195,6 +258,26 @@ int snapshot_save(CPC *cpc, const char *path) {
 
     u16 ram_kb = (u16)(cpc->mem.ram_size / 1024);
     put16(&hdr[0x6B], ram_kb);
+    hdr[SNA_CPC_MODEL] = (u8)cpc->model;
+
+    hdr[SNA_V3_CRTC_TYPE] = (u8)cpc->crtc.type;
+    put16(&hdr[SNA_V3_CRTC_ADDR], cpc->crtc.ma_row_start & 0x3FFF);
+    put16(&hdr[SNA_V3_CRTC_SCANLINE], (u16)cpc->monitor_vline);
+    hdr[SNA_V3_CRTC_CHAR_COUNT] = cpc->crtc.hcc & 0xFF;
+    hdr[SNA_V3_CRTC_CHAR_COUNT + 1] = 0;
+    hdr[SNA_V3_CRTC_LINE_COUNT] = cpc->crtc.vcc & 0x7F;
+    hdr[SNA_V3_CRTC_RASTER] = cpc->crtc.vlc & 0x1F;
+    hdr[SNA_V3_CRTC_VADJUST] = cpc->crtc.vac & 0x1F;
+    hdr[SNA_V3_CRTC_HSW_COUNT] = cpc->crtc.hsc & 0x0F;
+    hdr[SNA_V3_CRTC_VSW_COUNT] = cpc->crtc.vsc & 0x0F;
+    u16 flags = 0;
+    if (cpc->crtc.vsync) flags |= 0x0001;
+    if (cpc->crtc.hsync) flags |= 0x0002;
+    if (cpc->crtc.in_vadjust) flags |= 0x0080;
+    put16(&hdr[SNA_V3_CRTC_FLAGS], flags);
+    hdr[SNA_V3_GA_INT_DELAY] = cpc->ga.vsync_delay & 0x03;
+    hdr[SNA_V3_GA_SL_COUNT] = cpc->ga.interrupt_counter;
+    hdr[SNA_V3_Z80_INT_PENDING] = cpc->cpu.pending_irq ? 1 : 0;
 
     FILE *f = fopen(path, "wb");
     if (!f) {
