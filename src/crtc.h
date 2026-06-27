@@ -29,6 +29,7 @@ typedef struct {
     u16 vsc;               /* C3h: vertical sync counter */
     u16 hsc;               /* C3l: horizontal sync counter */
     u16 vac;               /* C5: vertical-adjust raster counter (R5) */
+    u16 last_hend;         /* previous C0/R0 match, used by R7 VSYNC logic */
     bool in_vadjust;       /* true while we're in the R5 vertical-adjust period */
 
     u16 ma;                /* memory address */
@@ -42,6 +43,7 @@ typedef struct {
     bool display_enable;
     bool line_last_raster; /* C9 == R9 latched near C0=0 */
     bool line_last_frame;  /* C4 == R4 && C9 == R9 latched near C0=0 */
+    bool r7_match;         /* C4 == R7 already matched for this character row */
     bool new_scanline;     /* one-tick R0 comparator event */
     bool mode_latch;       /* one-tick GA mode-latch event */
     bool mode_latched_this_hsync;

@@ -46,6 +46,20 @@ static void crtc_latch_line_state(CRTC *c) {
     c->line_last_frame = c->line_last_raster && c->vcc == c->reg[4];
 }
 
+static void crtc_update_r7_match(CRTC *c, bool allow_start) {
+    if (c->vcc == c->reg[7]) {
+        if (!c->r7_match) {
+            c->r7_match = true;
+            if (allow_start && !c->vsync) {
+                c->vsync = true;
+                c->vsc = 0;
+            }
+        }
+    } else {
+        c->r7_match = false;
+    }
+}
+
 void crtc_init(CRTC *c) {
     memset(c, 0, sizeof(*c));
     c->type = CRTC_TYPE_1;
@@ -79,6 +93,7 @@ void crtc_set_type(CRTC *c, CrtcType type) {
 
 void crtc_recompute_state(CRTC *c) {
     crtc_latch_line_state(c);
+    c->r7_match = c->vcc == c->reg[7];
     c->h_display = c->reg[1] != 0 && c->hcc < c->reg[1];
     c->v_display = c->reg[6] != 0 && c->vcc < c->reg[6];
     c->display_enable = c->h_display && c->v_display;
@@ -96,11 +111,15 @@ void crtc_write(CRTC *c, u8 val) {
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
-        /* C9/R9 and C4/R4 are sampled for the current scanline while C0 is
-         * still in its first two character positions. Later writes affect
-         * following lines, not this line's row/frame reset decision. */
-        if ((c->selected == 4 || c->selected == 9) && c->hcc <= 1)
+        /* R9/R4 are comparators. A write that matches the current raster or
+         * row counter can still arm the current line's reset/frame decision;
+         * a write behind the beam simply misses until the counter wraps. */
+        if (c->selected == 9)
             crtc_latch_line_state(c);
+        else if (c->selected == 4)
+            c->line_last_frame = c->line_last_raster && c->vcc == c->reg[4];
+        else if (c->selected == 7)
+            crtc_update_r7_match(c, c->hcc >= 2);
         c->display_enable = c->h_display && c->v_display;
     }
 }
@@ -184,6 +203,7 @@ void crtc_tick(CRTC *c) {
     /* --- End of line --- */
     if (end_of_line) {
         c->new_scanline = true;
+        c->last_hend = old_hcc;
         c->hcc = 0;
         c->h_display = c->reg[1] != 0;
 
@@ -249,17 +269,9 @@ void crtc_tick(CRTC *c) {
         c->ma_row_start = c->ma_next_row;
         c->ma = c->ma_row_start;
         crtc_latch_line_state(c);
+        crtc_update_r7_match(c, c->last_hend >= 2);
     } else if (c->hcc == c->reg[1]) {
         c->h_display = false;
-    }
-
-    /* Continuous R7 comparator: real CRTC starts VSYNC the moment C4
-     * matches R7, not only at the next row-boundary. Demos that re-time
-     * VSYNC by writing R7 mid-frame (HBL effects, second-VSYNC tricks)
-     * depend on this. */
-    if (c->vcc == c->reg[7] && !c->vsync) {
-        c->vsync = true;
-        c->vsc = 0;
     }
 
     c->display_enable = c->h_display && c->v_display;

@@ -371,7 +371,7 @@ static void test_address_pipeline_waits_for_final_raster(void) {
     assert(crtc.ma_row_start == (u16)(start + 4));
 }
 
-static void test_r9_write_after_c0_one_does_not_reset_current_line(void) {
+static void test_r9_write_matching_current_raster_resets_current_line(void) {
     CRTC crtc;
     crtc_init(&crtc);
     crtc.reg[0] = 7;
@@ -384,7 +384,24 @@ static void test_r9_write_after_c0_one_does_not_reset_current_line(void) {
     crtc_write(&crtc, 0);
     tick_to_next_line(&crtc);
 
-    assert(crtc.vlc == 1);
+    assert(crtc.vlc == 0);
+}
+
+static void test_r9_write_below_current_raster_does_not_reset_current_line(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.vlc = 2;
+    crtc.line_last_raster = false;
+    crtc.line_last_frame = false;
+    crtc.hcc = 3;
+
+    crtc_select(&crtc, 9);
+    crtc_write(&crtc, 1);
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vlc == 3);
 }
 
 static void test_r9_write_before_c0_two_can_reset_current_line(void) {
@@ -405,7 +422,7 @@ static void test_r9_write_before_c0_two_can_reset_current_line(void) {
     assert(crtc.vcc == 4);
 }
 
-static void test_r4_write_after_c0_one_does_not_reset_current_frame(void) {
+static void test_r4_write_matching_current_row_arms_current_frame(void) {
     CRTC crtc;
     crtc_init(&crtc);
     crtc.reg[0] = 7;
@@ -421,7 +438,105 @@ static void test_r4_write_after_c0_one_does_not_reset_current_frame(void) {
     crtc_write(&crtc, 3);
     tick_to_next_line(&crtc);
 
-    assert(crtc.vcc == 4);
+    assert(crtc.vcc == 0);
+}
+
+static void test_r7_line_start_uses_previous_line_length(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 1;
+    crtc.reg[7] = 1;
+    crtc.vcc = 0;
+    crtc.line_last_raster = true;
+    crtc.line_last_frame = false;
+    crtc.hcc = 1;
+
+    crtc_tick(&crtc);
+
+    assert(crtc.hcc == 0);
+    assert(crtc.vcc == 1);
+    assert(crtc.last_hend == 1);
+    assert(crtc.r7_match);
+    assert(!crtc.vsync);
+
+    crtc_init(&crtc);
+    crtc.reg[0] = 2;
+    crtc.reg[7] = 1;
+    crtc.vcc = 0;
+    crtc.line_last_raster = true;
+    crtc.line_last_frame = false;
+    crtc.hcc = 2;
+
+    crtc_tick(&crtc);
+
+    assert(crtc.hcc == 0);
+    assert(crtc.vcc == 1);
+    assert(crtc.last_hend == 2);
+    assert(crtc.r7_match);
+    assert(crtc.vsync);
+}
+
+static void test_r7_write_before_c0_two_does_not_start_vsync_later_this_row(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[7] = 3;
+    crtc.vcc = 3;
+    crtc.hcc = 1;
+    crtc.r7_match = false;
+    crtc.vsync = false;
+
+    crtc_select(&crtc, 7);
+    crtc_write(&crtc, 3);
+
+    assert(crtc.r7_match);
+    assert(!crtc.vsync);
+
+    crtc_tick(&crtc);
+
+    assert(crtc.hcc == 2);
+    assert(!crtc.vsync);
+}
+
+static void test_r7_write_after_c0_one_can_start_vsync(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[7] = 3;
+    crtc.vcc = 3;
+    crtc.hcc = 2;
+    crtc.r7_match = false;
+    crtc.vsync = false;
+
+    crtc_select(&crtc, 7);
+    crtc_write(&crtc, 3);
+
+    assert(crtc.r7_match);
+    assert(crtc.vsync);
+    assert(crtc.vsc == 0);
+}
+
+static void test_r7_match_does_not_retrigger_until_vcc_changes(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[7] = 3;
+    crtc.reg[9] = 3;
+    crtc.vcc = 3;
+    crtc.vlc = 1;
+    crtc.vsync = true;
+    crtc.vsc = 15;
+    crtc.r7_match = true;
+    crtc.line_last_raster = false;
+    crtc.line_last_frame = false;
+    crtc.hcc = 7;
+
+    crtc_tick(&crtc);
+
+    assert(crtc.hcc == 0);
+    assert(crtc.vcc == 3);
+    assert(crtc.vlc == 2);
+    assert(crtc.r7_match);
+    assert(!crtc.vsync);
 }
 
 int main(void) {
@@ -443,8 +558,13 @@ int main(void) {
     test_address_pipeline_repeats_when_r1_is_missed();
     test_address_pipeline_uses_new_r1_if_ahead();
     test_address_pipeline_waits_for_final_raster();
-    test_r9_write_after_c0_one_does_not_reset_current_line();
+    test_r9_write_matching_current_raster_resets_current_line();
+    test_r9_write_below_current_raster_does_not_reset_current_line();
     test_r9_write_before_c0_two_can_reset_current_line();
-    test_r4_write_after_c0_one_does_not_reset_current_frame();
+    test_r4_write_matching_current_row_arms_current_frame();
+    test_r7_line_start_uses_previous_line_length();
+    test_r7_write_before_c0_two_does_not_start_vsync_later_this_row();
+    test_r7_write_after_c0_one_can_start_vsync();
+    test_r7_match_does_not_retrigger_until_vcc_changes();
     return 0;
 }

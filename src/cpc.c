@@ -59,6 +59,7 @@ static const char *const g_trace_vars[] = {
     "ONE_K_TRACE_HDCPM", "ONE_K_TRACE_LDIR_BANK", "ONE_K_RESET_SNA",
     "ONE_K_TRACE_IM1", "ONE_K_TRACE_PALETTE",
     "ONE_K_CAP_TEXT", "ONE_K_TRACE_LDIR", "ONE_K_TRACE_RTC",
+    "ONE_K_TRACE_PSG", "ONE_K_TRACE_AUDIO", "ONE_K_TRACE_FDC",
     NULL
 };
 static void trace_check_master(void) {
@@ -73,6 +74,106 @@ static void trace_check_master(void) {
 #define AUDIO_SAMPLE_RATE   44100
 #define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
 #define PSG_CLOCK_HZ        1000000                    /* CPC PSG: 4 MHz / 4 */
+
+static const char *fdc_phase_name(FdcPhase phase) {
+    switch (phase) {
+    case FDC_PHASE_CMD:    return "CMD";
+    case FDC_PHASE_EXEC:   return "EXEC";
+    case FDC_PHASE_RESULT: return "RESULT";
+    }
+    return "?";
+}
+
+static void trace_fdc_status(CPC *cpc, u16 port, u8 result) {
+    if (!dbg_getenv("ONE_K_TRACE_FDC"))
+        return;
+
+    static bool have_last = false;
+    static u8 last_result = 0;
+    static FdcPhase last_phase = FDC_PHASE_CMD;
+    static int last_cmd_pos = 0;
+    static int last_exec_pos = 0;
+    static int last_result_pos = 0;
+    static int repeat = 0;
+
+    bool changed = !have_last
+                || result != last_result
+                || cpc->fdc.phase != last_phase
+                || cpc->fdc.cmd_pos != last_cmd_pos
+                || cpc->fdc.exec_pos != last_exec_pos
+                || cpc->fdc.result_pos != last_result_pos;
+    if (!changed) {
+        if (++repeat == 10000) {
+            fprintf(stderr,
+                    "[FDC R f%d] status %04X -> %02X repeated 10000 times PC=%04X phase=%s\n",
+                    cpc_frame_count, port, result, cpc->cpu.pc,
+                    fdc_phase_name(cpc->fdc.phase));
+            repeat = 0;
+        }
+        return;
+    }
+
+    if (have_last && repeat > 0) {
+        fprintf(stderr,
+                "[FDC R f%d] previous status %02X repeated %d times phase=%s\n",
+                cpc_frame_count, last_result, repeat, fdc_phase_name(last_phase));
+    }
+    fprintf(stderr,
+            "[FDC R f%d] status %04X -> %02X PC=%04X phase=%s cmd=%d/%d exec=%d/%d result=%d/%d\n",
+            cpc_frame_count, port, result, cpc->cpu.pc,
+            fdc_phase_name(cpc->fdc.phase), cpc->fdc.cmd_pos, cpc->fdc.cmd_len,
+            cpc->fdc.exec_pos, cpc->fdc.exec_len,
+            cpc->fdc.result_pos, cpc->fdc.result_len);
+
+    have_last = true;
+    last_result = result;
+    last_phase = cpc->fdc.phase;
+    last_cmd_pos = cpc->fdc.cmd_pos;
+    last_exec_pos = cpc->fdc.exec_pos;
+    last_result_pos = cpc->fdc.result_pos;
+    repeat = 0;
+}
+
+static void trace_fdc_data_read(CPC *cpc, u16 port, u8 result,
+                                FdcPhase phase_before, int exec_pos_before,
+                                int result_pos_before) {
+    if (!dbg_getenv("ONE_K_TRACE_FDC"))
+        return;
+
+    bool log = phase_before != FDC_PHASE_EXEC
+            || cpc->fdc.phase != phase_before
+            || exec_pos_before < 8
+            || (cpc->fdc.exec_len > 0 && exec_pos_before >= cpc->fdc.exec_len - 8);
+    if (!log)
+        return;
+
+    fprintf(stderr,
+            "[FDC R f%d] data %04X -> %02X PC=%04X phase=%s->%s exec=%d->%d/%d result=%d->%d/%d\n",
+            cpc_frame_count, port, result, cpc->cpu.pc,
+            fdc_phase_name(phase_before), fdc_phase_name(cpc->fdc.phase),
+            exec_pos_before, cpc->fdc.exec_pos, cpc->fdc.exec_len,
+            result_pos_before, cpc->fdc.result_pos, cpc->fdc.result_len);
+}
+
+static void trace_fdc_data_write(CPC *cpc, u16 port, u8 val,
+                                 FdcPhase phase_before, int cmd_pos_before,
+                                 int exec_pos_before) {
+    if (!dbg_getenv("ONE_K_TRACE_FDC"))
+        return;
+
+    fprintf(stderr,
+            "[FDC W f%d] data %04X <- %02X PC=%04X phase=%s->%s cmd=%d->%d/%d exec=%d->%d/%d",
+            cpc_frame_count, port, val, cpc->cpu.pc,
+            fdc_phase_name(phase_before), fdc_phase_name(cpc->fdc.phase),
+            cmd_pos_before, cpc->fdc.cmd_pos, cpc->fdc.cmd_len,
+            exec_pos_before, cpc->fdc.exec_pos, cpc->fdc.exec_len);
+    if (cpc->fdc.cmd_len > 0) {
+        fprintf(stderr, " bytes:");
+        for (int i = 0; i < cpc->fdc.cmd_len && i < 9; i++)
+            fprintf(stderr, " %02X", cpc->fdc.cmd[i]);
+    }
+    fprintf(stderr, "\n");
+}
 
 /* ---- Z80 bus callbacks ---- */
 
@@ -269,8 +370,17 @@ static u8 bus_io_read(void *ctx, u16 port) {
      * 0xFF and mistake the FDC for a different device. */
     else if (hi == 0xFB && !(port & 0x80)) {
         u8 lo = port & 0xFF;
-        result = (lo & 0x01) ? fdc_read_data(&cpc->fdc)
-                             : fdc_read_status(&cpc->fdc);
+        if (lo & 0x01) {
+            FdcPhase phase_before = cpc->fdc.phase;
+            int exec_pos_before = cpc->fdc.exec_pos;
+            int result_pos_before = cpc->fdc.result_pos;
+            result = fdc_read_data(&cpc->fdc);
+            trace_fdc_data_read(cpc, port, result, phase_before,
+                                exec_pos_before, result_pos_before);
+        } else {
+            result = fdc_read_status(&cpc->fdc);
+            trace_fdc_status(cpc, port, result);
+        }
     }
     else if (hi == 0xFA) {
         result = 0xFF;
@@ -498,7 +608,13 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         return;
     }
     /* FDC motor: hi=0xFA, write */
-    if (hi == 0xFA) { fdc_motor_write(&cpc->fdc, val); return; }
+    if (hi == 0xFA) {
+        fdc_motor_write(&cpc->fdc, val);
+        if (dbg_getenv("ONE_K_TRACE_FDC"))
+            fprintf(stderr, "[FDC W f%d] motor %04X <- %02X PC=%04X on=%d\n",
+                    cpc_frame_count, port, val, cpc->cpu.pc, cpc->fdc.motor);
+        return;
+    }
     /* USIfAC II serial @ 0xFBD0..FBDF (write). */
     if (cpc->mx4 && cpc->usifac.present && hi == 0xFB &&
         (port & 0xF0) == 0xD0) {
@@ -508,7 +624,14 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
     /* FDC data: hi=0xFB, lo bit 7 = 0, write */
     if (hi == 0xFB) {
         u8 lo = port & 0xFF;
-        if (!(lo & 0x80)) fdc_write_data(&cpc->fdc, val);
+        if (!(lo & 0x80)) {
+            FdcPhase phase_before = cpc->fdc.phase;
+            int cmd_pos_before = cpc->fdc.cmd_pos;
+            int exec_pos_before = cpc->fdc.exec_pos;
+            fdc_write_data(&cpc->fdc, val);
+            trace_fdc_data_write(cpc, port, val, phase_before,
+                                 cmd_pos_before, exec_pos_before);
+        }
         return;
     }
     /* hi=0xFD: IDE (0xFD06, 0xFD08-0xFD0F), RTC (0xFD14/0xFD15), Net4CPC (0xFD20-0xFD23) */
@@ -656,6 +779,7 @@ static void cpc_monitor_reset(CPC *cpc) {
     cpc->monitor_hs_peak_to_end = 0;
     cpc->monitor_had_peak = false;
     cpc->monitor_in_hsync = false;
+    cpc->monitor_frame_completed = false;
 }
 
 int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
@@ -986,6 +1110,7 @@ static bool cpc_monitor_finish_frame(CPC *cpc, bool crtc_vsync) {
      * early/short CRTC VSYNC tricks to pass without rolling the monitor. */
     cpc->raster_y = -(((cpc->monitor_vline - MONITOR_MIN_VHOLD) + 1) >> 1);
     cpc->monitor_vline = 0;
+    cpc->monitor_frame_completed = true;
     return true;
 }
 
@@ -1112,14 +1237,23 @@ void cpc_frame(CPC *cpc) {
     cpc->step_once = false;
 
     int target = cpc->cycles_per_frame + cpc->cycle_debt;
+    if (target <= 0)
+        target = cpc->cycles_per_frame;
+    int max_target = target + cpc->cycles_per_frame;
     int done   = 0;
     bool stop_early = false;
+    bool frame_done = false;
+    cpc->monitor_frame_completed = false;
 
     /* Master gate: when no trace env is set, the entire per-instruction
      * debug block is short-circuited. Branch is predicted-taken to
      * "off" in production runs (no env vars set). */
     trace_check_master();
-    while (done < target) {
+    /* The frontend presents once after cpc_frame(). If a CRTC frame runs
+     * slightly past the nominal budget, returning before display_upload()
+     * leaves the host presenting stale renderer contents, visible as rapid
+     * flashing. Run a bounded overrun until one monitor frame completed. */
+    while ((done < target || !frame_done) && done < max_target) {
         /* #102 wedge instrumentation: at every firmware-IRQ-handler
          * 'CALL $BDF4' site ($00D9 in OS ROM), capture what's actually
          * at $BDF4 and the value of the secondary-tick counter $B8BF.
@@ -1466,6 +1600,7 @@ void cpc_frame(CPC *cpc) {
         int remaining = t - cpc->bus_ticked_in_step;
         if (remaining < 0) remaining = 0;
         cpc_advance_bus(cpc, remaining);
+        frame_done = cpc->monitor_frame_completed;
 
         /* Deliver pending Gate Array interrupt. */
         if (cpc->ga.interrupt_pending) {
@@ -1495,10 +1630,10 @@ void cpc_frame(CPC *cpc) {
                 break;
             }
         }
-        if (stop_early || was_stepping) break;
+        if (frame_done || stop_early || was_stepping) break;
     }
 
-    cpc->cycle_debt = stop_early ? 0 : (done - target);
+    cpc->cycle_debt = (frame_done || stop_early) ? 0 : (done - target);
     cpc_frame_count++;
 
     /* Drive M4 sockets so non-blocking TCP work makes progress while CPC

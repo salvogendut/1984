@@ -13,6 +13,25 @@ void psg_init(PSG *psg) {
     psg->noise_lfsr = 1;
 }
 
+static u8 psg_register_mask(u8 reg, u8 val) {
+    switch (reg) {
+    case 1:
+    case 3:
+    case 5:
+    case 13:
+        return val & 0x0F;
+    case 6:
+    case 8:
+    case 9:
+    case 10:
+        return val & 0x1F;
+    case 7:
+        return val & 0x3F;
+    default:
+        return val;
+    }
+}
+
 void psg_select(PSG *psg, u8 reg) {
     psg->selected = reg;
 }
@@ -20,6 +39,7 @@ void psg_select(PSG *psg, u8 reg) {
 void psg_write(PSG *psg, u8 val) {
     if (psg->selected >= PSG_NUM_REGS)
         return;
+    val = psg_register_mask(psg->selected, val);
     psg->reg[psg->selected] = val;
     if (psg->selected == 13) {
         psg->env_step    = 0;
@@ -39,6 +59,60 @@ u8 psg_read(PSG *psg) {
 
 void psg_set_kbd_row(PSG *psg, u8 row_data) {
     psg->kbd_data = row_data;
+}
+
+void psg_load_registers(PSG *psg, const u8 regs[PSG_NUM_REGS], u8 selected,
+                        bool has_env_state, u8 env_step, u8 env_direction) {
+    u8 kbd_data = psg->kbd_data;
+
+    memset(psg->reg, 0, sizeof(psg->reg));
+    for (u8 i = 0; i < PSG_NUM_REGS; i++)
+        psg->reg[i] = psg_register_mask(i, regs[i]);
+
+    psg->selected = selected;
+    memset(psg->tone_counter, 0, sizeof(psg->tone_counter));
+    memset(psg->tone_output, 0, sizeof(psg->tone_output));
+    psg->noise_counter = 0;
+    psg->noise_lfsr = 1;
+    psg->env_counter = 0;
+    psg->clock_rem = 0.0f;
+    psg->lp_state = 0;
+    psg->kbd_data = kbd_data;
+
+    if (has_env_state) {
+        u8 level = (u8)(env_step & 0x0F);
+        if (env_direction == 0x01) {
+            psg->env_dir = true;
+            psg->env_step = (u8)(level * 2);
+            psg->env_hold = false;
+        } else if (env_direction == 0xFF) {
+            psg->env_dir = false;
+            psg->env_step = (u8)(31 - (level * 2));
+            psg->env_hold = false;
+        } else {
+            psg->env_dir = true;
+            psg->env_step = (u8)(level * 2);
+            psg->env_hold = true;
+        }
+    } else {
+        psg->env_step = 0;
+        psg->env_hold = false;
+        psg->env_dir = (psg->reg[13] >> 2) & 1;
+    }
+}
+
+void psg_store_registers(const PSG *psg, u8 regs[PSG_NUM_REGS], u8 *selected,
+                         u8 *env_step, u8 *env_direction) {
+    memcpy(regs, psg->reg, PSG_NUM_REGS);
+    if (selected)
+        *selected = psg->selected;
+    if (env_step) {
+        *env_step = (u8)(psg->env_dir
+                         ? (psg->env_step / 2)
+                         : ((31 - psg->env_step) / 2));
+    }
+    if (env_direction)
+        *env_direction = psg->env_hold ? 0x00 : (psg->env_dir ? 0x01 : 0xFF);
 }
 
 /* Run one AY clock tick and return the mixed level for all three channels. */
