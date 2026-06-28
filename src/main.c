@@ -9,6 +9,7 @@
 #include <strings.h>     /* strcasecmp */
 #include "config.h"
 #include "overlay.h"
+#include "notify.h"
 #include "host_mount.h"
 #include "cpc.h"
 #include "mem.h"
@@ -619,6 +620,8 @@ int main(int argc, char *argv[]) {
     ga_set_monochrome(&cpc.ga, cfg.monochrome);
     psg_set_volume(&cpc.psg, cfg.audio_volume);
     psg_set_stereo(&cpc.psg, cfg.audio_stereo_sep);
+    notify_init();
+    notify_set_mode(cfg.notifications);
     cpc.mem.ram_size    = cfg.memory_kb * 1024;
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;
@@ -1297,6 +1300,7 @@ int main(int argc, char *argv[]) {
         }
         prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
+        notify_tick(20);   /* 50 Hz frame => 20 ms per displayed frame */
         if (cpc.paused)
             display_draw_paused_label(&cpc.display);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
@@ -1376,6 +1380,7 @@ int main(int argc, char *argv[]) {
             SDL_GetWindowSize(cpc.display.window, &ww, &wh);
             leds_render_hover(cpc.display.renderer, ww, wh);
         }
+        notify_render(cpc.display.renderer);
         display_flip(&cpc.display);
         monitor_render(monitor);
 

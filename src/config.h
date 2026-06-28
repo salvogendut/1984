@@ -1,6 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #include "cpc.h"
+#include "notify.h"   /* NotifyMode */
 
 /* Re-declared here because including printer.h pulls in <limits.h>
  * and we want config.h to stay narrow. PrintSink: see src/printer.h. */
@@ -138,6 +139,7 @@ typedef struct {
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
+    NotifyMode notifications; /* screen / console / off; default screen */
     bool debug;              /* enable debug machinery (env-var traces, panic
                               * dumps, text capture). Off by default; when off,
                               * setting ONE_K_TRACE_* / ONE_K_CAP_TEXT / etc.
