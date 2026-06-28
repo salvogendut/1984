@@ -37,6 +37,8 @@ typedef struct {
     int cycles;        /* T-states consumed this step */
     u8   last_op;      /* opcode just fetched by z80_step (for CPC cc_op[] lookup) */
     u8   last_prefix;  /* 0, 0xCB, 0xED, 0xDD, 0xFD — for prefix-table dispatch */
+    bool last_xycb;    /* last DD/FD-prefixed opcode was the DD/FD CB d op form */
+    bool last_prefix_ignored; /* DD/FD prefix was ignored and op will be re-run */
 
     /* Pipeline-state hint left by the previous instruction. Set to 1 by
      * z80_step when the last opcode was a 16-bit INC/DEC rr, EX (SP),rr,

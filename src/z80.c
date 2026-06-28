@@ -501,6 +501,8 @@ static int exec_xy(Z80 *cpu, Z80Bus *bus, u16 *xy) {
         /* DDCB / FDCB */
         case 0xCB: {
             s8 d = (s8)FETCH8(); u8 cb = FETCH8();
+            cpu->last_op = cb;
+            cpu->last_xycb = true;
             u16 a = (u16)(*xy + d); u8 v = READ8(a);
             int b = (cb >> 3) & 7;
             if (cb < 0x40) {
@@ -570,6 +572,7 @@ static int exec_xy(Z80 *cpu, Z80Bus *bus, u16 *xy) {
         case 0xBD: do_cp(cpu,(u8)(*xy&0xFF)); return 8;
         /* Unrecognised DD/FD — treat prefix as NOP and re-execute op */
         default:
+            cpu->last_prefix_ignored = true;
             cpu->pc--;   /* put the opcode back */
             return 4;
     }
@@ -592,6 +595,8 @@ void z80_reset(Z80 *cpu) {
     cpu->halted = false;
     cpu->pending_irq = false;
     cpu->int_accepted = false;
+    cpu->last_xycb = false;
+    cpu->last_prefix_ignored = false;
     cpu->iWSAdjust = 0;
 }
 
@@ -643,9 +648,17 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
     u8 op = cpu->last_op;
     int cycles;
     switch (cpu->last_prefix) {
-    case 0xCB: cycles = cc_cb[op];   break;
+    case 0xCB: cycles = cc_op[0xCB] + cc_cb[op];   break;
     case 0xED: cycles = cc_op[0xED] + cc_ed[op]; break;
-    case 0xDD: case 0xFD: cycles = cc_xy[op]; break;
+    case 0xDD:
+    case 0xFD:
+        if (cpu->last_prefix_ignored)
+            cycles = cc_op[cpu->last_prefix];
+        else if (cpu->last_xycb)
+            cycles = cc_op[cpu->last_prefix] + cc_xy[0xCB] + cc_xycb[op];
+        else
+            cycles = cc_op[cpu->last_prefix] + cc_xy[op];
+        break;
     default:   cycles = cc_op[op];   break;
     }
 
@@ -744,6 +757,9 @@ int z80_step(Z80 *cpu, Z80Bus *bus) {
 }
 
 static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
+    cpu->last_xycb = false;
+    cpu->last_prefix_ignored = false;
+
     /* Service maskable interrupt (blocked for one instruction after EI) */
     if (cpu->pending_irq && cpu->iff1 && !cpu->ei_delay) {
         cpu->pending_irq = false;

@@ -113,9 +113,71 @@ static void test_repeating_otir_keeps_repeat_cycles(void) {
     assert(test.ticked_in_step == 16);
 }
 
+static void test_cb_prefix_includes_prefix_cycles(void) {
+    TestBus test = {0};
+    Z80Bus bus = make_bus(&test);
+    Z80 cpu;
+    z80_init(&cpu);
+    cpu.b = 0x81;
+    test.mem[0] = 0xCB;
+    test.mem[1] = 0x00; /* RLC B */
+
+    assert(z80_step(&cpu, &bus) == 8);
+    assert(cpu.b == 0x03);
+    assert(cpu.pc == 2);
+}
+
+static void test_fd_register_ops_include_prefix_cycles(void) {
+    TestBus test = {0};
+    Z80Bus bus = make_bus(&test);
+    Z80 cpu;
+    z80_init(&cpu);
+    cpu.iy = 0x120F;
+    test.mem[0] = 0xFD;
+    test.mem[1] = 0x2C; /* INC IYL */
+
+    assert(z80_step(&cpu, &bus) == 8);
+    assert(cpu.iy == 0x1210);
+    assert(cpu.pc == 2);
+}
+
+static void test_fd_ld_sp_iy_includes_prefix_cycles(void) {
+    TestBus test = {0};
+    Z80Bus bus = make_bus(&test);
+    Z80 cpu;
+    z80_init(&cpu);
+    cpu.iy = 0x4567;
+    test.mem[0] = 0xFD;
+    test.mem[1] = 0xF9; /* LD SP,IY */
+
+    assert(z80_step(&cpu, &bus) == 12);
+    assert(cpu.sp == 0x4567);
+    assert(cpu.pc == 2);
+}
+
+static void test_ddcb_prefix_uses_indexed_bit_timing(void) {
+    TestBus test = {0};
+    Z80Bus bus = make_bus(&test);
+    Z80 cpu;
+    z80_init(&cpu);
+    cpu.ix = 0x2000;
+    test.mem[0] = 0xDD;
+    test.mem[1] = 0xCB;
+    test.mem[2] = 0x05;
+    test.mem[3] = 0x46; /* BIT 0,(IX+5) */
+    test.mem[0x2005] = 0x01;
+
+    assert(z80_step(&cpu, &bus) == 24);
+    assert(cpu.pc == 4);
+}
+
 int main(void) {
     test_out_c_r_is_split_12_plus_4();
     test_outi_is_split_16_plus_4();
     test_repeating_otir_keeps_repeat_cycles();
+    test_cb_prefix_includes_prefix_cycles();
+    test_fd_register_ops_include_prefix_cycles();
+    test_fd_ld_sp_iy_includes_prefix_cycles();
+    test_ddcb_prefix_uses_indexed_bit_timing();
     return 0;
 }

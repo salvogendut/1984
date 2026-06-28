@@ -30,11 +30,8 @@ static u16 crtc_hsync_width(const CRTC *c) {
 }
 
 static u16 crtc_vsync_width(const CRTC *c) {
-    if (c->type == CRTC_TYPE_0 || c->type == CRTC_TYPE_3) {
-        u16 vsw = c->reg[3] >> 4;
-        return vsw ? vsw : 16;
-    }
-    return 16;
+    u16 vsw = c->reg[3] >> 4;
+    return vsw ? vsw : 16;
 }
 
 static u16 crtc_start_addr(const CRTC *c) {

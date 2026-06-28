@@ -1105,10 +1105,14 @@ static bool cpc_monitor_finish_frame(CPC *cpc, bool crtc_vsync) {
         cpc->monitor_vline < MONITOR_MAX_VSYNC)
         return false;
 
-    /* Match the vertical hold used by Caprice32. A standard 312-line frame
-     * restarts drawing at -31, which centres the CPC image while allowing
-     * early/short CRTC VSYNC tricks to pass without rolling the monitor. */
-    cpc->raster_y = -(((cpc->monitor_vline - MONITOR_MIN_VHOLD) + 1) >> 1);
+    /* Match Caprice32's vertical hold. Standard 312-line frames restart at
+     * -31; collapsed vertical-total frames (Batman Forever's top-line CRTC
+     * tricks) need the extra bias Caprice gets from finishing one scanline
+     * later. */
+    int vhold_bias = 1;
+    if (cpc->crtc.reg[4] <= 1 && cpc->crtc.reg[7] <= 1)
+        vhold_bias = 2;
+    cpc->raster_y = -(((cpc->monitor_vline - MONITOR_MIN_VHOLD) + vhold_bias) >> 1);
     cpc->monitor_vline = 0;
     cpc->monitor_frame_completed = true;
     return true;
