@@ -30,6 +30,12 @@ typedef struct {
 static NotifyEntry g_slots[NOTIFY_MAX];
 static NotifyMode  g_mode = NOTIFY_MODE_SCREEN;
 
+/* Debug master switch (defined in cpc.c). Forward-declared here, like z80.c,
+ * to avoid pulling cpc.h into this otherwise self-contained module. When
+ * debug is live we also echo screen toasts to stderr so the log trail
+ * survives past the transient on-screen panel. */
+extern int g_debug_enabled;
+
 void notify_init(void) {
     for (int i = 0; i < NOTIFY_MAX; i++) g_slots[i].age_ms = -1;
     g_mode = NOTIFY_MODE_SCREEN;
@@ -57,6 +63,12 @@ void notify_post(const char *fmt, ...) {
         fprintf(stderr, "%s\n", buf);
         return;
     }
+
+    /* SCREEN mode: queue the toast, and additionally mirror to stderr when
+     * the debug master switch is on so the message isn't lost once the
+     * panel fades. */
+    if (g_debug_enabled)
+        fprintf(stderr, "%s\n", buf);
 
     int slot = -1;
     for (int i = 0; i < NOTIFY_MAX; i++) {
