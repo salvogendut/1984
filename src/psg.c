@@ -259,19 +259,20 @@ static void psg_tick(PSG *psg, int out_amp[3]) {
         bool tone_off  = (psg->reg[7] >> c)       & 1;
         bool noise_off = (psg->reg[7] >> (c + 3)) & 1;
 
+        u8 vr  = psg->reg[8 + c];
+        u8 vol = (vr & 0x10) ? env_level : (vr & 0x0F);
+
         if (tone_off && noise_off) {
-            /* Channel is gated off: AY holds the level high, but with
-             * the DC blocker downstream that becomes silence — emit 0. */
-            out_amp[c] = 0;
+            /* With both sources disabled the AY mixer output is held high.
+             * A constant volume still DC-blocks to silence, but rapid volume
+             * changes are the standard 4-bit DAC path used by sample players. */
+            out_amp[c] = (int)vol;
             continue;
         }
 
         /* Disabled source contributes high (1) to the AND mixer */
         int tone_hi  = tone_off  ? 1 : (int)psg->tone_output[c];
         int noise_hi = noise_off ? 1 : noise_out;
-
-        u8 vr  = psg->reg[8 + c];
-        u8 vol = (vr & 0x10) ? env_level : (vr & 0x0F);
 
         out_amp[c] = (tone_hi && noise_hi) ? (int)vol : 0;
     }
