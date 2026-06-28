@@ -140,7 +140,7 @@ void config_defaults(Config *cfg) {
     cfg->usifac_pty_link[0] = '\0';
     cfg->perryfi = false;
     cfg->audio_volume    = 80;
-    cfg->audio_stereo_sep = 255;
+    cfg->audio_stereo_sep = 0;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -300,7 +300,7 @@ static void config_create_default(const char *path) {
         "audio_volume=80\n"
         "# Stereo separation 0..255 — 0=mono, 255=full Caprice32 ABC panning\n"
         "# (channel A left, B centre, C right)\n"
-        "audio_stereo_sep=255\n"
+        "audio_stereo_sep=0\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"

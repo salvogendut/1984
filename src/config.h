@@ -130,7 +130,7 @@ typedef struct {
     int  audio_volume;        /* 0..100, perceptual curve; default 80 */
     int  audio_stereo_sep;    /* 0..255: 0 = mono, 255 = full Caprice32
                                * ABC panning (A left, B centre, C right);
-                               * default 255 */
+                               * default 0 (mono) */
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
