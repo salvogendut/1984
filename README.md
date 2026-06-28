@@ -95,6 +95,7 @@ Per-expansion guides:
 - **[docs/FUZIX_BUILD.md](docs/FUZIX_BUILD.md)** — building ajcasado/FUZIX from source against this emulator; cpctools/hex2bin/iDSK/flip shim, `CONFIG_USIFAC_SERIAL` mode toggle
 - **[docs/SYMBOLS.md](docs/SYMBOLS.md)** — loading SDCC `.map` files for symbol-annotated disassembly in the F8 monitor; per-MMR matching, `S` / `BS` commands
 - **[docs/LEDS.md](docs/LEDS.md)** — what each LED in the activity bar means; M4's 3-segment split (power / disk / net), USIfAC's RX/TX split, colour map per slot
+- **[docs/PILOT.md](docs/PILOT.md)** — `--pilot` host-PTY auto-pilot; polar-coordinate command protocol for steering the mouse pointer or CPC joystick from a script or an AI during debugging
 
 ## Related projects
 
