@@ -46,6 +46,14 @@ void leds_ping_split(LedId id, bool tx);
 void leds_ping_m4_disk(void);
 void leds_ping_m4_net(void);
 
+/* Track mouse hover over the in-window LED bar. Coordinates are window
+ * pixels. Pass inside=false on window leave/capture to clear the tooltip. */
+void leds_set_mouse_position(int x, int y, bool inside);
+
 /* Render the LED bar across (x,y,w,h). The caller has already cleared the
  * renderer and drawn the CPC screen above this rect. */
 void leds_render(SDL_Renderer *r, int x, int y, int w, int h);
+
+/* Render the active hover label, if any. Call after other bottom UI strips so
+ * the tooltip is not covered. */
+void leds_render_hover(SDL_Renderer *r, int window_w, int window_h);

@@ -804,6 +804,7 @@ int main(int argc, char *argv[]) {
 
     bool fullscreen     = cfg.fullscreen;
     bool mouse_captured = false;
+    SDL_WindowID display_window_id = SDL_GetWindowID(cpc.display.window);
     display_set_smoothing(&cpc.display, cfg.fullscreen_smoothing);
     display_set_crt(&cpc.display, cfg.real_crt, cfg.crt_scanlines,
                     cfg.crt_brightness, cfg.crt_contrast);
@@ -908,8 +909,29 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
+            if (!mouse_captured) {
+                if (ev.type == SDL_EVENT_MOUSE_MOTION &&
+                    ev.motion.windowID == display_window_id) {
+                    leds_set_mouse_position((int)ev.motion.x,
+                                            (int)ev.motion.y, true);
+                } else if ((ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                            ev.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                           ev.button.windowID == display_window_id) {
+                    leds_set_mouse_position((int)ev.button.x,
+                                            (int)ev.button.y, true);
+                } else if (ev.type == SDL_EVENT_WINDOW_MOUSE_LEAVE &&
+                           ev.window.windowID == display_window_id) {
+                    leds_set_mouse_position(0, 0, false);
+                }
+            }
+
             /* Mouse events when captured — route to CPC mouse state, skip other handlers */
             if (mouse_captured) {
+                if (ev.type == SDL_EVENT_MOUSE_MOTION ||
+                    ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                    ev.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                    ev.type == SDL_EVENT_WINDOW_MOUSE_LEAVE)
+                    leds_set_mouse_position(0, 0, false);
                 if (ev.type == SDL_EVENT_MOUSE_MOTION) {
                     if (cpc.symbiface_mouse)
                         mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
@@ -955,6 +977,7 @@ int main(int argc, char *argv[]) {
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
                 set_mouse_capture(cpc.display.window, true,
                                   &mouse_captured, cpc.model);
+                leds_set_mouse_position(0, 0, false);
                 int btn = (ev.button.button == SDL_BUTTON_LEFT)   ? 0 :
                           (ev.button.button == SDL_BUTTON_RIGHT)  ? 1 :
                           (ev.button.button == SDL_BUTTON_MIDDLE) ? 2 : -1;
@@ -1347,6 +1370,11 @@ int main(int argc, char *argv[]) {
             /* F-key hints: light grey, drawn right after the model string. */
             SDL_SetRenderDrawColor(cpc.display.renderer, 0xE0, 0xE0, 0xE0, 255);
             SDL_RenderDebugText(cpc.display.renderer, keys_x, text_y, keys);
+        }
+        {
+            int ww, wh;
+            SDL_GetWindowSize(cpc.display.window, &ww, &wh);
+            leds_render_hover(cpc.display.renderer, ww, wh);
         }
         display_flip(&cpc.display);
         monitor_render(monitor);
