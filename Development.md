@@ -34,6 +34,7 @@ Each source file maps to one hardware component:
 | `src/monitor.c` / `monitor.h` | Memory monitor / debugger — 80×25 terminal window, commands, PTY interface |
 | `src/z80dis.c` / `z80dis.h` | Z80 disassembler — standalone, no external dependencies |
 | `src/joy.c` / `joy.h` | Joystick/gamepad input — SDL gamepad + raw joystick fallback, hot-plug |
+| `src/pilot.c` / `pilot.h` | `--pilot` auto-pilot — host PTY driving the mouse pointer or CPC joystick from polar-coordinate commands (debug/automation harness) |
 | `src/main.c` | Entry point — SDL init, event loop, F4–F12 / Ctrl+V / Ctrl± window-scale handling, in-window footer draw |
 | `src/host_mount.c` / `host_mount.h` | F10 toggle: pauses the guest and mounts every active FAT card image (M4 SD / IDE / Albireo) on the host so the user can drag files in / out. Backend cascade per card: `gnome-disk-image-mounter` → bare `udisksctl loop-setup`+`mount` → libguestfs `guestmount`. udisks mounts land in `/run/media/$USER/<label>/` as first-class GNOME removable volumes; the guestmount fallback uses `~/.cache/1984/mounts/`. Press F10 again, or eject the card from the file manager (polled via `findmnt` once per frame), to unmount. The main loop then sets `overlay.needs_cold_boot` so the guest's stale FAT cache is dropped on resume. Linux-only; non-Linux stubs return false from `host_mount_open`. Issue #142. |
 
@@ -257,6 +258,7 @@ The overlay triggers a **cold boot** (ROM reload + `cpc_reset`) automatically wh
 | `--monitor-pty` | Open a PTY for the F8 memory monitor (connect with `minicom -b 9600 -D <path>` printed to stderr) |
 | `--kbd-pty` | Open a PTY that injects writes as keystrokes and streams the firmware text-out (`&BB5A`) — for external test harnesses driving BASIC / CP/M sessions |
 | `--ocr-monitor` | Adds an in-memory screen-text reader: scans video RAM each frame, decodes against the firmware font, streams the 80×25 (or 40×25) char grid on change out the kbd PTY. Lets probes follow CP/M+ output that bypasses `&BB5A`. Implies `--kbd-pty` |
+| `--pilot[=ARG]` | Open a PTY that auto-pilots the mouse pointer (or CPC joystick) from host-sent polar commands (`R THETA`, `press N`, `target mouse\|joy`). `ARG` = a symlink path for a stable alias, or `mouse`/`joystick` to pick the initial target. See [docs/PILOT.md](docs/PILOT.md) |
 
 ### Tracing (stderr)
 
@@ -556,6 +558,13 @@ The CPC reads the keyboard matrix (including the joystick row) through PSG I/O p
 3. Set PPI port C bits 7–6 = `01` (PSG read mode) → the emulator calls `psg_set_kbd_row()` then returns the row data via PPI port A.
 
 In step 3, `psg_ctrl == 0x01` always means the CPU is reading the keyboard through I/O port A (register 14). The code reads `psg->kbd_data` directly rather than going through `psg_read()`, which would only return `kbd_data` if `psg->selected == 14`. This avoids a bug where software that relies on register 14 being implicitly selected (e.g. SymbOS) would receive `psg->reg[0] = 0x00` — all keys falsely "pressed" — instead of the real matrix data.
+
+### Scripted and live injection
+
+Two host-driven paths inject into the same row-9 / mouse plumbing as real input, for headless tests and AI-driven debugging:
+
+- **`--joy-script=SPEC`** (`src/joy.c`) — replays a fixed `DIRS:FRAMES` timeline into row 9. `joyscript_tick()` runs once per frame next to `paste_tick()`. The deterministic, record-once analogue of `--paste`.
+- **`--pilot[=ARG]`** (`src/pilot.c`) — opens a host PTY and reacts *live* to polar-coordinate commands, holding the last velocity until changed. Routes to the **mouse** (`mouse_*` + `ch376_mouse_*`, gated on `cpc.symbiface_mouse` / `cpc.albireo_mouse`) or the **CPC joystick** (row 9, 8-way + Fire1/2), switchable at runtime with `target mouse|joy`. PTY setup mirrors `usifac.c`; `pilot_tick()` runs once per frame. Full protocol in [docs/PILOT.md](docs/PILOT.md).
 
 ---
 

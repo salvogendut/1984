@@ -42,6 +42,7 @@ dist_man1_MANS = 1984.1
 	src/mouse.c \
 	src/n4c_stack.c \
 	src/notify.c \
+	src/pilot.c \
 	src/snapshot.c \
 	src/tap.c \
 	src/tape.c \
@@ -74,6 +75,7 @@ noinst_HEADERS = \
 	src/n4c_stack.h \
 	src/notify.h \
 	src/overlay.h \
+	src/pilot.h \
 	src/tap.h \
 	src/paste.h \
 	src/ppi.h \

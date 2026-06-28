@@ -15,6 +15,7 @@
 #include "mem.h"
 #include "paste.h"
 #include "kbd_pty.h"
+#include "pilot.h"
 #include "symbols.h"
 #include "screen_text.h"
 #include "joy.h"
@@ -360,6 +361,11 @@ static void usage(const char *prog, int code) {
         "                      80x25 (or 40x25) char grid out the kbd PTY on change. Lets\n"
         "                      probes follow CP/M+ output that bypasses &BB5A. Implies\n"
         "                      --kbd-pty.\n"
+        "  --pilot[=ARG]       Open a PTY that auto-pilots the mouse pointer (or CPC\n"
+        "                      joystick) from host-sent polar commands. ARG = a symlink\n"
+        "                      path for a stable alias, or 'mouse'/'joystick' to pick the\n"
+        "                      initial target. Send 'R THETA' lines (R=speed, THETA=deg,\n"
+        "                      0=right/90=up); 'press N'/'click N'; 'target mouse|joy'.\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -408,6 +414,9 @@ int main(int argc, char *argv[]) {
     bool        monitor_pty      = false;
     bool        kbd_pty_enabled  = false;
     bool        ocr_monitor_enabled = false;
+    bool        pilot_enabled    = false;       /* --pilot */
+    const char *pilot_link       = NULL;        /* --pilot=LINK (symlink alias) */
+    PilotTarget pilot_target0    = PILOT_MOUSE;  /* --pilot=mouse|joystick */
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
     int         memory_override  = 0;             /* 0 = no override */
@@ -492,6 +501,14 @@ int main(int argc, char *argv[]) {
             monitor_pty = true;
         } else if (strcmp(argv[i], "--kbd-pty") == 0) {
             kbd_pty_enabled = true;
+        } else if (strcmp(argv[i], "--pilot") == 0) {
+            pilot_enabled = true;
+        } else if (strncmp(argv[i], "--pilot=", 8) == 0) {
+            pilot_enabled = true;
+            const char *a = argv[i] + 8;
+            if (!strcmp(a, "mouse"))                         pilot_target0 = PILOT_MOUSE;
+            else if (!strcmp(a, "joystick") || !strcmp(a, "joy")) pilot_target0 = PILOT_JOY;
+            else if (a[0])                                    pilot_link = a;  /* symlink path */
         } else if (strcmp(argv[i], "--ocr-monitor") == 0) {
             kbd_pty_enabled = true;   /* OCR output piggybacks on the kbd PTY */
             ocr_monitor_enabled = true;
@@ -793,6 +810,12 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
+
+    /* --pilot: live host-PTY auto-pilot for the mouse pointer / joystick. */
+    Pilot pilot;
+    pilot.fd = -1;
+    if (pilot_enabled)
+        pilot_open(&pilot, pilot_link, pilot_target0);
 
     /* Load a snapshot AFTER all machine init (ROMs, IDE, Albireo, joysticks
      * etc.) is done — the snapshot overrides only the CPU + GA + CRTC + PPI
@@ -1235,6 +1258,7 @@ int main(int argc, char *argv[]) {
         screen_text_tick(&cpc);
         paste_tick(&paste, &cpc.kbd);
         if (have_joyscript) joyscript_tick(&joyscript, &cpc.kbd);
+        pilot_tick(&pilot, &cpc);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
