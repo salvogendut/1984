@@ -9,16 +9,21 @@ static int clamp_int(int v, int lo, int hi) {
     return v;
 }
 
-static unsigned adjust_component(unsigned c, int brightness, int contrast) {
+static unsigned adjust_component(unsigned c, int brightness, int contrast,
+                                 int gain) {
     int v = 128 + (((int)c - 128) * contrast + 50) / 100;
     v = (v * brightness + 50) / 100;
+    v = (v * gain + 50) / 100;
     return (unsigned)clamp_int(v, 0, 255);
 }
 
 static const u32 *display_crt_pixels(Display *d) {
     if (!d->crt_enabled ||
         (d->crt_brightness == DISPLAY_CRT_BRIGHTNESS_DEFAULT &&
-         d->crt_contrast == DISPLAY_CRT_CONTRAST_DEFAULT))
+         d->crt_contrast == DISPLAY_CRT_CONTRAST_DEFAULT &&
+         d->crt_red == DISPLAY_CRT_RGB_DEFAULT &&
+         d->crt_green == DISPLAY_CRT_RGB_DEFAULT &&
+         d->crt_blue == DISPLAY_CRT_RGB_DEFAULT))
         return d->pixels;
 
     int n = CPC_SCREEN_W * CPC_SCREEN_H;
@@ -26,13 +31,16 @@ static const u32 *display_crt_pixels(Display *d) {
         u32 px = d->pixels[i];
         unsigned r = adjust_component((px >> 16) & 0xFF,
                                       d->crt_brightness,
-                                      d->crt_contrast);
+                                      d->crt_contrast,
+                                      d->crt_red);
         unsigned g = adjust_component((px >> 8) & 0xFF,
                                       d->crt_brightness,
-                                      d->crt_contrast);
+                                      d->crt_contrast,
+                                      d->crt_green);
         unsigned b = adjust_component(px & 0xFF,
                                       d->crt_brightness,
-                                      d->crt_contrast);
+                                      d->crt_contrast,
+                                      d->crt_blue);
         d->crt_pixels[i] = (px & 0xFF000000u) | (r << 16) | (g << 8) | b;
     }
 
@@ -74,6 +82,9 @@ int display_init(Display *d, const char *title, int scale) {
     d->crt_scanlines = DISPLAY_CRT_SCANLINES_DEFAULT;
     d->crt_brightness = DISPLAY_CRT_BRIGHTNESS_DEFAULT;
     d->crt_contrast = DISPLAY_CRT_CONTRAST_DEFAULT;
+    d->crt_red = DISPLAY_CRT_RGB_DEFAULT;
+    d->crt_green = DISPLAY_CRT_RGB_DEFAULT;
+    d->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
     return 0;
 }
 
@@ -84,11 +95,14 @@ void display_set_smoothing(Display *d, bool smooth) {
 }
 
 void display_set_crt(Display *d, bool enabled, int scanlines, int brightness,
-                     int contrast) {
+                     int contrast, int red, int green, int blue) {
     d->crt_enabled = enabled;
     d->crt_scanlines = clamp_int(scanlines, 0, 95);
     d->crt_brightness = clamp_int(brightness, 50, 100);
     d->crt_contrast = clamp_int(contrast, 50, 150);
+    d->crt_red = clamp_int(red, 50, 150);
+    d->crt_green = clamp_int(green, 50, 150);
+    d->crt_blue = clamp_int(blue, 50, 150);
 }
 
 void display_destroy(Display *d) {

@@ -810,7 +810,8 @@ int main(int argc, char *argv[]) {
     SDL_WindowID display_window_id = SDL_GetWindowID(cpc.display.window);
     display_set_smoothing(&cpc.display, cfg.fullscreen_smoothing);
     display_set_crt(&cpc.display, cfg.real_crt, cfg.crt_scanlines,
-                    cfg.crt_brightness, cfg.crt_contrast);
+                    cfg.crt_brightness, cfg.crt_contrast,
+                    cfg.crt_red, cfg.crt_green, cfg.crt_blue);
     if (fullscreen)
         SDL_SetWindowFullscreen(cpc.display.window, true);
 
