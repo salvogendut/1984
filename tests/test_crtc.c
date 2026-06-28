@@ -137,6 +137,28 @@ static void test_type1_r12_r13_reloads_at_scanline_start_while_vcc_zero(void) {
     assert(crtc.ma_row_start == 0);
 }
 
+static void test_type1_collapsed_total_keeps_row_pipeline(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc_set_type(&crtc, CRTC_TYPE_1);
+    crtc.reg[0] = 7;
+    crtc.reg[4] = 0;
+    crtc.reg[9] = 0;
+    crtc.reg[12] = 0x10;
+    crtc.reg[13] = 0x20;
+    crtc.vcc = 0;
+    crtc.vlc = 0;
+    crtc.hcc = 7;
+    crtc.ma_next_row = 0x3040;
+    crtc.line_last_raster = false;
+    crtc.line_last_frame = false;
+
+    crtc_tick(&crtc);
+
+    assert(crtc.ma_row_start == 0x3040);
+    assert(crtc.ma == 0x3040);
+}
+
 static void test_hsync_width_zero_depends_on_type(void) {
     CRTC crtc;
     crtc_init(&crtc);
@@ -275,6 +297,36 @@ static void test_vertical_display_enable_is_latched(void) {
         crtc_tick(&crtc);
     assert(crtc.v_display);
     assert(crtc.display_enable);
+}
+
+static void test_vertical_counter_wrap_reenables_display_and_reloads_start(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 1;
+    crtc.reg[1] = 1;
+    crtc.reg[4] = 5;
+    crtc.reg[6] = 14;
+    crtc.reg[9] = 0;
+    crtc.reg[12] = 0x20;
+    crtc.reg[13] = 0x40;
+    crtc.hcc = 1;
+    crtc.vcc = 127;
+    crtc.vlc = 0;
+    crtc.ma_row_start = 0x1234;
+    crtc.ma_next_row = 0x1234;
+    crtc.ma = 0x1235;
+    crtc.v_display = false;
+    crtc.display_enable = false;
+    crtc.line_last_raster = true;
+    crtc.line_last_frame = false;
+
+    crtc_tick(&crtc);
+
+    assert(crtc.vcc == 0);
+    assert(crtc.v_display);
+    assert(crtc.display_enable);
+    assert(crtc.ma_row_start == 0x2040);
+    assert(crtc.ma == 0x2040);
 }
 
 static void test_r6_write_can_disable_current_row(void) {
@@ -463,6 +515,28 @@ static void test_r4_write_matching_current_row_does_not_rearm_current_frame(void
     assert(crtc.vcc == 4);
 }
 
+static void test_r4_zero_write_arms_collapsed_frame_window(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 7;
+    crtc.reg[1] = 4;
+    crtc.reg[4] = 15;
+    crtc.reg[9] = 0;
+    crtc.vcc = 0;
+    crtc.vlc = 0;
+    crtc.line_last_raster = true;
+    crtc.line_last_frame = false;
+    crtc.hcc = 3;
+
+    crtc_select(&crtc, 4);
+    crtc_write(&crtc, 0);
+    assert(crtc.line_last_frame);
+
+    tick_to_next_line(&crtc);
+
+    assert(crtc.vcc == 0);
+}
+
 static void test_r7_line_start_uses_previous_line_length(void) {
     CRTC crtc;
     crtc_init(&crtc);
@@ -568,12 +642,14 @@ int main(void) {
     test_register_write_masks();
     test_r8_mask_depends_on_type();
     test_type1_r12_r13_reloads_at_scanline_start_while_vcc_zero();
+    test_type1_collapsed_total_keeps_row_pipeline();
     test_hsync_width_zero_depends_on_type();
     test_long_hsync_latches_at_cutoff();
     test_short_hsync_latches_at_completion();
     test_horizontal_display_enable_is_latched();
     test_horizontal_total_uses_equality_not_threshold();
     test_vertical_display_enable_is_latched();
+    test_vertical_counter_wrap_reenables_display_and_reloads_start();
     test_r6_write_can_disable_current_row();
     test_address_pipeline_advances_at_r1();
     test_address_pipeline_captures_current_ma_after_hcc_overflow();
@@ -585,6 +661,7 @@ int main(void) {
     test_r9_write_before_c0_two_can_reset_current_line();
     test_r9_write_matching_current_row_arms_current_frame();
     test_r4_write_matching_current_row_does_not_rearm_current_frame();
+    test_r4_zero_write_arms_collapsed_frame_window();
     test_r7_line_start_uses_previous_line_length();
     test_r7_write_before_c0_two_does_not_start_vsync_later_this_row();
     test_r7_write_after_c0_one_can_start_vsync();

@@ -187,16 +187,32 @@ int snapshot_load(CPC *cpc, const char *path) {
         cpc->crtc.ma = cpc->crtc.ma_row_start;
     }
     crtc_recompute_state(&cpc->crtc);
+    if (version >= 3) {
+        /* SNA v3 does not store the CRTC's delayed display-timing latch.
+         * Caprice32 loads the CRTC registers while the counters are still at
+         * reset, then restores the counters, so display timing remains enabled
+         * until the next hardware comparator event. Recomputing it directly
+         * from the restored counters blanks Batman Forever's mid-frame
+         * snapshots too early. */
+        cpc->crtc.h_display = cpc->crtc.reg[1] != 0;
+        cpc->crtc.v_display = cpc->crtc.reg[6] != 0;
+        cpc->crtc.display_enable = cpc->crtc.h_display && cpc->crtc.v_display;
+    }
     cpc->crtc_pre_ma = cpc->crtc.ma;
     cpc->crtc_pre_ra = cpc->crtc.vlc;
     cpc->crtc_pre_de = cpc->crtc.display_enable;
 
     size_t want = (size_t)ram_kb * 1024;
+    if (want > RAM_SIZE) {
+        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, emulator supports %d KB max\n",
+                path, ram_kb, RAM_SIZE / 1024);
+        fclose(f);
+        return -1;
+    }
     if (want > (size_t)cpc->mem.ram_size) {
-        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, emulator configured for %d KB — "
-                        "loading first %d KB only\n",
-                path, ram_kb, cpc->mem.ram_size / 1024, cpc->mem.ram_size / 1024);
-        want = (size_t)cpc->mem.ram_size;
+        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, expanding from %d KB\n",
+                path, ram_kb, cpc->mem.ram_size / 1024);
+        cpc->mem.ram_size = (int)want;
     }
 
     /* SNA stores RAM as a flat dump: bytes 0..64KB are the standard main bank,

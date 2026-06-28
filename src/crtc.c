@@ -116,9 +116,13 @@ void crtc_write(CRTC *c, u8 val) {
         else if (c->selected == 4) {
             /* Vertical total changes do not freely re-arm the current scanline.
              * The 6845 has a delayed maximum-raster path; a full model handles
-             * the narrow CharMR2 window explicitly.  Leaving the current-line
-             * decision latched avoids treating late R4 writes as a new frame
-             * reset request. */
+             * the narrow CharMR2 window explicitly. Batman Forever writes
+             * R9=0 then R4=0 while the beam is already on row/raster zero; that
+             * is inside the delayed path and must arm the collapsed frame. */
+            if (c->reg[4] == 0 && c->vcc == 0 && c->vlc == c->reg[9]) {
+                c->line_last_raster = true;
+                c->line_last_frame = true;
+            }
         }
         else if (c->selected == 7)
             crtc_update_r7_match(c, c->hcc >= 2);
@@ -251,17 +255,24 @@ void crtc_tick(CRTC *c) {
                 }
             } else {
                 c->vcc = (c->vcc + 1) & 0x7F;
-                if (c->vcc == c->reg[6])
+                if (c->vcc == 0) {
+                    c->ma_row_start = crtc_start_addr(c);
+                    c->ma_next_row = c->ma_row_start;
+                    c->v_display = c->reg[6] != 0;
+                } else if (c->vcc == c->reg[6]) {
                     c->v_display = false;
+                }
             }
         } else {
             c->vlc = (c->vlc + 1) & 0x1F;
         }
 
-        /* The UM6845R re-reads R12/R13 at the start of every scanline while
-         * VCC is zero. A write changes the register immediately, but must not
-         * splice a new address into the scanline currently being output. */
-        if (c->type == CRTC_TYPE_1 && c->vcc == 0) {
+        /* The UM6845R re-reads R12/R13 at the start of scanlines while VCC is
+         * zero. Do not do that during the R4=0/R9=0 collapsed-total window:
+         * demos use that state to keep the row-address pipeline moving while
+         * suppressing normal vertical line-count progress. */
+        if (c->type == CRTC_TYPE_1 && c->vcc == 0 &&
+            !(c->reg[4] == 0 && c->reg[9] == 0)) {
             c->ma_row_start = crtc_start_addr(c);
             c->ma_next_row = c->ma_row_start;
         }

@@ -749,7 +749,7 @@ static void cpc_bus_tick(void *ctx, int cycles);
 #define MONITOR_HSYNC_DURATION   0x0A00
 #define MONITOR_BASE_HSYNC       (0x4000 - MONITOR_HSYNC_DURATION)
 #define MONITOR_SYNC_TOLERANCE   257
-#define MONITOR_X_ADJUST_PIXELS  -16
+#define MONITOR_X_ADJUST_PIXELS  0
 #define MONITOR_MIN_VHOLD        250
 #define MONITOR_MIN_VSYNC        295
 #define MONITOR_MAX_VSYNC        351
