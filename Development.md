@@ -71,6 +71,14 @@ Two bytes are fetched per character clock and decoded according to the Gate Arra
 - **Mode 1** — 2 bpp, 4 pixels/byte, each pixel 2× wide (320×200)
 - **Mode 2** — 1 bpp, 8 pixels/byte, 1:1 (640×200)
 
+Mode changes are honoured mid-line, and the CRTC supports overscan and hybrid screens (split-screen via mid-frame R12/R13 reprogramming, R9 character-height changes, and rupture-style raster tricks), so demos that reprogram the CRTC per scanline render correctly.
+
+**Display post-process.** Beyond the raw upload, `display.c` offers optional cosmetic passes, all driven from the Advanced overlay and persisted in `[display]`:
+
+- **Real CRT** (`real_crt`) — a lightweight post-process with adjustable scanline opacity (`crt_scanlines` 0..95), texture brightness (`crt_brightness` 50..100), contrast (`crt_contrast` 50..150), and per-channel red/green/blue gain (`crt_red` / `crt_green` / `crt_blue`, each 50..150) for white-point / tint correction.
+- **Monochrome** (`monochrome` = off / green / amber / white) — maps the resolved CPC palette through a Rec. 601 luma transform at ink-resolve time to emulate a period GT65 green-phosphor monitor and its amber / paper-white siblings; the border tints with the inks.
+- **Scaling** — integer scale 1×–4× (`scale`, Ctrl ± at runtime) with `fullscreen_smoothing` selecting linear (smooth) vs nearest (sharp) texture filtering.
+
 ---
 
 ## Memory map
@@ -159,7 +167,7 @@ RAM-resident programs running with lower ROM disabled cannot arm the counter at 
 
 ## PSG / audio
 
-The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called once per frame and generates 882 mono samples (44 100 Hz ÷ 50 Hz) which are pushed to an SDL3 audio stream.
+The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called once per frame and generates 882 stereo frames (44 100 Hz ÷ 50 Hz) of interleaved S16, pushed to an SDL3 audio stream opened with 2 channels.
 
 **Oversampling.** `psg_tick()` advances all three generators by one AY clock. `psg_render()` calls it ~22–23 times per output sample (the exact count varies with the fractional accumulator `clock_rem`) and averages the results. This acts as a box-filter anti-alias on the square waves.
 
@@ -170,6 +178,14 @@ The AY-3-8912 is clocked at 1 MHz (CPU clock ÷ 4). `psg_render()` is called onc
 **Envelope.** 32 steps per cycle; each step advances every `ep × 8` AY clocks (where `ep = (R12 << 8) | R11`). Shape bits CONT/ALT/HOLD (R13 bits 3/1/0) select between single-shot, sawtooth, and triangle modes. Writing R13 resets the envelope. `env_counter` is `u32` because `ep × 8` can reach 524 280.
 
 **Low-pass filter.** A one-pole IIR (`lp = (x + lp) >> 1`) is applied after oversampling. This gives a ~7 kHz cutoff at 44 100 Hz, removing the high-frequency aliasing that makes CPC square waves sound metallic.
+
+**Stereo ABC panning.** The three channels are panned to the stereo field following Caprice32's `Index_AL/AR/BL/BR/CL/CR` layout — channel A mostly-left, B centre, C mostly-right. Per-channel L/R amplitude tables are built once (not per-sample); the `audio_stereo_sep` knob (0..255) blends linearly between pure mono (0, the default) and full Caprice32 separation (255). The SDL device always opens 2-channel; the knob only changes the level tables.
+
+**Volume.** `audio_volume` (0..100, default 80) is folded into the same amplitude tables at build time via a perceptual `(vol/100)²` curve — zero per-sample cost.
+
+**DC blocker.** A one-pole high-pass (`R ≈ 0.995`, ~35 Hz corner) runs on the mixed output, replacing the old `(mix*2) − active_scale` centring trick that clicked whenever register 7 toggled a channel mid-frame.
+
+`psg_init()` / `psg_reset()` are split so a warm reset preserves the user's volume and stereo settings; `psg_set_volume()` / `psg_set_stereo()` rebuild the tables live from the overlay.
 
 **Frame pacing.** VSync is disabled (`SDL_SetRenderVSync(renderer, 0)`). The main loop uses `SDL_GetTicksNS()` / `SDL_DelayNS()` to sleep for whatever is left of each 20 ms budget. This prevents the display refresh rate (typically 60 Hz) from overdriving the audio queue and causing growing latency.
 
@@ -275,13 +291,16 @@ These are read via `dbg_getenv()` so they only fire when the master `cfg.debug` 
 
 ## Options overlay
 
-The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `SDL_RenderDebugText` at 1.5× scale. It has three tabs:
+The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `SDL_RenderDebugText` at 1.5× scale. It has four tabs:
 
 | Tab | Rows |
 |-----|------|
-| General | Model, Memory, MX4, Roms Board, OS ROM, BASIC ROM |
+| General | Model, Memory, MX4, Roms Board, OS ROM, BASIC ROM, External Tape (6128) |
 | Media | Drive A, Drive B, Tape |
 | Extensions | M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
+| Advanced | Smoothing, Real CRT (+ Scanlines / Brightness / Contrast / R / G / B sub-rows when on), Load/Save Snapshot, Net4CPC TAP, DHCP server, Debugging, Capture video, USIfAC mode, USIfAC PTY link, Monochrome, Printer mode, Volume, Stereo, Notifications, Version |
+
+The **Advanced** tab (`OV_TINKER`) is hidden unless `cfg.tinker` is enabled (General → Tinker). Most of its rows cycle a value on Enter (Volume steps 5%; Stereo cycles mono → half → full; Notifications cycles screen → console → off; Monochrome cycles off → green → amber → white) and apply live without a cold boot; a few open file pickers (snapshots, video capture) or an inline text editor (USIfAC PTY link). The CRT rows (Scanlines / Brightness / Contrast / R / G / B) only appear while Real CRT is on, via a `tinker_logical_row()` remap.
 
 The overlay snapshots the Config struct on open. If the user changes any value and then closes (ESC or F9), a "Save changes?" dialog appears. Enter saves to disk; ESC reverts to the snapshot. Switching the model automatically updates RAM size and ROM paths via `config_set_model()`.
 
@@ -306,6 +325,18 @@ The **OS ROM** and **BASIC ROM** rows (General tab, rows 4 and 5) open `SDL_Show
 Each character goes through a two-phase cycle: key-down for `HOLD_FRAMES` (2) frames, then key-up with a `GAP_FRAMES` (1) frame gap before the next character. At 50 Hz this gives ~60 ms per character. An initial 3-frame delay on paste start ensures the host Ctrl key has been released from the matrix before the first character is injected (Ctrl+V would otherwise produce Ctrl+key control codes).
 
 The ASCII→CPC matrix mapping (`keymap[]`) covers a–z, A–Z (with shift), 0–9, common punctuation, and newline (→ Return). `\r` and unmapped characters are silently skipped. A trailing newline is always appended so a pasted BASIC line is automatically entered.
+
+---
+
+## Notifications (`src/notify.c`)
+
+A global singleton sink for short informational messages (USIfAC link-up, client connect/disconnect, etc.). Any translation unit posts with `notify_post(fmt, …)` — no context handle needed. Three modes (`notifications` in `[advanced]`, cycled live from the overlay):
+
+- **screen** (default) — a fading "smoked" toast panel anchored bottom-left, just above the LED/hint bar. A 5-slot ring with a 3.5 s TTL and a 0.6 s alpha fade-out; newest sits lowest. Rendered each frame by `notify_render()` in the overlay's 1.5× logical space, called just before the buffer flip.
+- **console** — `fprintf(stderr)` only (the legacy behaviour).
+- **off** — silent.
+
+In **screen** mode the message is *also* echoed to stderr when the debug master switch (`g_debug_enabled`) is on, so the log trail survives past the transient panel without forcing the user into console mode. `notify_init()` / `notify_set_mode()` are called after config load in `main.c`; `notify_tick(20)` advances ages once per displayed frame.
 
 ---
 

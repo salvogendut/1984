@@ -16,6 +16,7 @@ each access and fade back to a dark idle colour.
 | USB        | dark / bright blue       | Albireo CH376 USB host activity                                          |
 | Net (KCNet)| dark / bright yellow     | Net4CPC W5100S register access                                           |
 | USIfAC     | red ←→ green split       | RS232 RX (left half, red) and TX (right half, green) traffic             |
+| Printer    | dark / warm amber        | Centronics parallel-port byte sent (`&EFxx`)                            |
 | **M4**     | **3 segments, 1.5× wide**| **Power (blue, steady) + disk activity (red) + network activity (white)**|
 
 ## M4 LED — three segments
@@ -47,6 +48,7 @@ LED visibility tracks the board toggles in `~/.config/1984/1984.conf`
 | USB    | `rom_board=true` + `albireo=true`     |
 | Net    | `rom_board=true` + `net4cpc=true`     |
 | USIfAC | `rom_board=true` + `usifac=true`      |
+| Printer| `mx4=true` (Centronics port is always decoded on the bus)|
 | M4     | `rom_board=true` + `m4=true`          |
 
 Turning a board off hides its LED and re-centres the bar.
