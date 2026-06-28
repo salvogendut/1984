@@ -175,7 +175,11 @@ u8 mem_read(Mem *m, u16 addr) {
             return m->rom_basic[addr - 0xC000];
         if (slot == 7 && m->amsdos_present)
             return m->rom_amsdos[addr - 0xC000];
-        return 0xFF;
+        /* On a stock CPC, selecting an unpopulated expansion ROM leaves the
+         * internal BASIC ROM visible. Caprice32 mirrors this by falling back
+         * to pbROMhi when memmap_ROM[slot] is null. The CP/M Plus loader
+         * probes ROM 0xFF and expects to see BASIC's header there. */
+        return m->rom_basic[addr - 0xC000];
     }
 
     /* RAM read — apply banking for all regions when active */
