@@ -45,6 +45,10 @@ void psg_select(PSG *psg, u8 reg);
 void psg_write(PSG *psg, u8 val);
 u8   psg_read(PSG *psg);
 void psg_set_kbd_row(PSG *psg, u8 row_data);
+void psg_load_registers(PSG *psg, const u8 regs[PSG_NUM_REGS], u8 selected,
+                        bool has_env_state, u8 env_step, u8 env_direction);
+void psg_store_registers(const PSG *psg, u8 regs[PSG_NUM_REGS], u8 *selected,
+                         u8 *env_step, u8 *env_direction);
 
 /* Generate `n` samples into `buf` (mono, 16-bit signed) at the given clock rate */
 void psg_render(PSG *psg, s16 *buf, int n, int clock_hz, int sample_rate);

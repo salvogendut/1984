@@ -11,6 +11,13 @@ static u16 le16(const u8 *p) {
 }
 
 #define SNA_CPC_MODEL           0x6D
+#define SNA_PSG_SELECT          0x5A
+#define SNA_PSG_REGS            0x5B
+#define SNA_V3_FDC_MOTOR        0x9C
+#define SNA_V3_DRVA_TRACK       0x9D
+#define SNA_V3_DRVB_TRACK       0x9E
+#define SNA_V3_PSG_ENV_STEP     0xA2
+#define SNA_V3_PSG_ENV_DIR      0xA3
 #define SNA_V3_CRTC_TYPE        0xA4
 #define SNA_V3_CRTC_ADDR        0xA5
 #define SNA_V3_CRTC_SCANLINE    0xA7
@@ -129,18 +136,21 @@ int snapshot_load(CPC *cpc, const char *path) {
     cpc->ppi.kbd_row = cpc->ppi.port_c & 0x0F;
 
     /* ---- PSG ---- */
-    cpc->psg.selected = hdr[0x5A];
-    /* PSG registers — best-effort: write straight into the reg[] array if
-     * the PSG struct exposes one; otherwise the snapshot's PSG state is
-     * lost (sound only). We don't poke private PSG state to avoid breaking
-     * the synthesiser; the running program will reprogram the PSG anyway. */
-    /* (Skipped intentionally — PSG private fields aren't part of public ABI.) */
+    psg_load_registers(&cpc->psg, &hdr[SNA_PSG_REGS], hdr[SNA_PSG_SELECT],
+                       version >= 3, hdr[SNA_V3_PSG_ENV_STEP],
+                       hdr[SNA_V3_PSG_ENV_DIR]);
 
     /* ---- RAM size (KB) ---- */
     u16 ram_kb = (version >= 2) ? le16(&hdr[0x6B]) : 64;
     if (ram_kb == 0) ram_kb = 64;   /* v1 default */
 
     if (version >= 3) {
+        cpc->fdc.motor = hdr[SNA_V3_FDC_MOTOR] != 0;
+        cpc->drive[0].cur_track = hdr[SNA_V3_DRVA_TRACK] < DISK_MAX_TRACKS
+                                ? hdr[SNA_V3_DRVA_TRACK] : DISK_MAX_TRACKS - 1;
+        cpc->drive[1].cur_track = hdr[SNA_V3_DRVB_TRACK] < DISK_MAX_TRACKS
+                                ? hdr[SNA_V3_DRVB_TRACK] : DISK_MAX_TRACKS - 1;
+
         u8 type = hdr[SNA_V3_CRTC_TYPE];
         if (type <= CRTC_TYPE_3)
             crtc_set_type(&cpc->crtc, (CrtcType)type);
@@ -163,7 +173,7 @@ int snapshot_load(CPC *cpc, const char *path) {
         cpc->crtc.ma = (u16)((row_start + cpc->crtc.hcc) & 0x3FFF);
 
         cpc->monitor_vline = le16(&hdr[SNA_V3_CRTC_SCANLINE]);
-        cpc->raster_y = cpc->monitor_vline;
+        cpc->raster_y = 0;
         cpc->ga.vsync_delay = hdr[SNA_V3_GA_INT_DELAY] & 0x03;
         cpc->ga.interrupt_counter = hdr[SNA_V3_GA_SL_COUNT];
         cpc->ga.interrupt_pending = false;
@@ -177,16 +187,32 @@ int snapshot_load(CPC *cpc, const char *path) {
         cpc->crtc.ma = cpc->crtc.ma_row_start;
     }
     crtc_recompute_state(&cpc->crtc);
+    if (version >= 3) {
+        /* SNA v3 does not store the CRTC's delayed display-timing latch.
+         * Caprice32 loads the CRTC registers while the counters are still at
+         * reset, then restores the counters, so display timing remains enabled
+         * until the next hardware comparator event. Recomputing it directly
+         * from the restored counters blanks Batman Forever's mid-frame
+         * snapshots too early. */
+        cpc->crtc.h_display = cpc->crtc.reg[1] != 0;
+        cpc->crtc.v_display = cpc->crtc.reg[6] != 0;
+        cpc->crtc.display_enable = cpc->crtc.h_display && cpc->crtc.v_display;
+    }
     cpc->crtc_pre_ma = cpc->crtc.ma;
     cpc->crtc_pre_ra = cpc->crtc.vlc;
     cpc->crtc_pre_de = cpc->crtc.display_enable;
 
     size_t want = (size_t)ram_kb * 1024;
+    if (want > RAM_SIZE) {
+        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, emulator supports %d KB max\n",
+                path, ram_kb, RAM_SIZE / 1024);
+        fclose(f);
+        return -1;
+    }
     if (want > (size_t)cpc->mem.ram_size) {
-        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, emulator configured for %d KB — "
-                        "loading first %d KB only\n",
-                path, ram_kb, cpc->mem.ram_size / 1024, cpc->mem.ram_size / 1024);
-        want = (size_t)cpc->mem.ram_size;
+        fprintf(stderr, "snapshot: '%s' wants %u KB RAM, expanding from %d KB\n",
+                path, ram_kb, cpc->mem.ram_size / 1024);
+        cpc->mem.ram_size = (int)want;
     }
 
     /* SNA stores RAM as a flat dump: bytes 0..64KB are the standard main bank,
@@ -252,9 +278,8 @@ int snapshot_save(CPC *cpc, const char *path) {
     hdr[0x58] = cpc->ppi.port_c;
     hdr[0x59] = cpc->ppi.control;
 
-    hdr[0x5A] = cpc->psg.selected;
-    /* PSG register file isn't part of the public PSG struct ABI; leave
-     * 0x5B..0x6A zero. Running programs reprogram the PSG on load. */
+    psg_store_registers(&cpc->psg, &hdr[SNA_PSG_REGS], &hdr[SNA_PSG_SELECT],
+                        &hdr[SNA_V3_PSG_ENV_STEP], &hdr[SNA_V3_PSG_ENV_DIR]);
 
     u16 ram_kb = (u16)(cpc->mem.ram_size / 1024);
     put16(&hdr[0x6B], ram_kb);
@@ -278,6 +303,9 @@ int snapshot_save(CPC *cpc, const char *path) {
     hdr[SNA_V3_GA_INT_DELAY] = cpc->ga.vsync_delay & 0x03;
     hdr[SNA_V3_GA_SL_COUNT] = cpc->ga.interrupt_counter;
     hdr[SNA_V3_Z80_INT_PENDING] = cpc->cpu.pending_irq ? 1 : 0;
+    hdr[SNA_V3_FDC_MOTOR] = cpc->fdc.motor ? 1 : 0;
+    hdr[SNA_V3_DRVA_TRACK] = (u8)cpc->drive[0].cur_track;
+    hdr[SNA_V3_DRVB_TRACK] = (u8)cpc->drive[1].cur_track;
 
     FILE *f = fopen(path, "wb");
     if (!f) {

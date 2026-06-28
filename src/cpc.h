@@ -97,6 +97,7 @@ typedef struct {
     int  monitor_hs_peak_to_end;
     bool monitor_had_peak;
     bool monitor_in_hsync;
+    bool monitor_frame_completed;
     bool prev_hsync;
     bool prev_vsync;
 

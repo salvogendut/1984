@@ -30,11 +30,8 @@ static u16 crtc_hsync_width(const CRTC *c) {
 }
 
 static u16 crtc_vsync_width(const CRTC *c) {
-    if (c->type == CRTC_TYPE_0 || c->type == CRTC_TYPE_3) {
-        u16 vsw = c->reg[3] >> 4;
-        return vsw ? vsw : 16;
-    }
-    return 16;
+    u16 vsw = c->reg[3] >> 4;
+    return vsw ? vsw : 16;
 }
 
 static u16 crtc_start_addr(const CRTC *c) {
@@ -44,6 +41,20 @@ static u16 crtc_start_addr(const CRTC *c) {
 static void crtc_latch_line_state(CRTC *c) {
     c->line_last_raster = c->vlc == c->reg[9];
     c->line_last_frame = c->line_last_raster && c->vcc == c->reg[4];
+}
+
+static void crtc_update_r7_match(CRTC *c, bool allow_start) {
+    if (c->vcc == c->reg[7]) {
+        if (!c->r7_match) {
+            c->r7_match = true;
+            if (allow_start && !c->vsync) {
+                c->vsync = true;
+                c->vsc = 0;
+            }
+        }
+    } else {
+        c->r7_match = false;
+    }
 }
 
 void crtc_init(CRTC *c) {
@@ -79,6 +90,7 @@ void crtc_set_type(CRTC *c, CrtcType type) {
 
 void crtc_recompute_state(CRTC *c) {
     crtc_latch_line_state(c);
+    c->r7_match = c->vcc == c->reg[7];
     c->h_display = c->reg[1] != 0 && c->hcc < c->reg[1];
     c->v_display = c->reg[6] != 0 && c->vcc < c->reg[6];
     c->display_enable = c->h_display && c->v_display;
@@ -96,11 +108,24 @@ void crtc_write(CRTC *c, u8 val) {
          * but moving R6 beyond the beam does not re-enable it this frame. */
         if (c->selected == 6 && c->vcc == c->reg[6])
             c->v_display = false;
-        /* C9/R9 and C4/R4 are sampled for the current scanline while C0 is
-         * still in its first two character positions. Later writes affect
-         * following lines, not this line's row/frame reset decision. */
-        if ((c->selected == 4 || c->selected == 9) && c->hcc <= 1)
+        /* R9 is a raster comparator. A write that matches the current raster
+         * can still arm the current line's reset/frame decision; a write
+         * behind the beam simply misses until the counter wraps. */
+        if (c->selected == 9)
             crtc_latch_line_state(c);
+        else if (c->selected == 4) {
+            /* Vertical total changes do not freely re-arm the current scanline.
+             * The 6845 has a delayed maximum-raster path; a full model handles
+             * the narrow CharMR2 window explicitly. Batman Forever writes
+             * R9=0 then R4=0 while the beam is already on row/raster zero; that
+             * is inside the delayed path and must arm the collapsed frame. */
+            if (c->reg[4] == 0 && c->vcc == 0 && c->vlc == c->reg[9]) {
+                c->line_last_raster = true;
+                c->line_last_frame = true;
+            }
+        }
+        else if (c->selected == 7)
+            crtc_update_r7_match(c, c->hcc >= 2);
         c->display_enable = c->h_display && c->v_display;
     }
 }
@@ -184,6 +209,7 @@ void crtc_tick(CRTC *c) {
     /* --- End of line --- */
     if (end_of_line) {
         c->new_scanline = true;
+        c->last_hend = old_hcc;
         c->hcc = 0;
         c->h_display = c->reg[1] != 0;
 
@@ -229,17 +255,24 @@ void crtc_tick(CRTC *c) {
                 }
             } else {
                 c->vcc = (c->vcc + 1) & 0x7F;
-                if (c->vcc == c->reg[6])
+                if (c->vcc == 0) {
+                    c->ma_row_start = crtc_start_addr(c);
+                    c->ma_next_row = c->ma_row_start;
+                    c->v_display = c->reg[6] != 0;
+                } else if (c->vcc == c->reg[6]) {
                     c->v_display = false;
+                }
             }
         } else {
             c->vlc = (c->vlc + 1) & 0x1F;
         }
 
-        /* The UM6845R re-reads R12/R13 at the start of every scanline while
-         * VCC is zero. A write changes the register immediately, but must not
-         * splice a new address into the scanline currently being output. */
-        if (c->type == CRTC_TYPE_1 && c->vcc == 0) {
+        /* The UM6845R re-reads R12/R13 at the start of scanlines while VCC is
+         * zero. Do not do that during the R4=0/R9=0 collapsed-total window:
+         * demos use that state to keep the row-address pipeline moving while
+         * suppressing normal vertical line-count progress. */
+        if (c->type == CRTC_TYPE_1 && c->vcc == 0 &&
+            !(c->reg[4] == 0 && c->reg[9] == 0)) {
             c->ma_row_start = crtc_start_addr(c);
             c->ma_next_row = c->ma_row_start;
         }
@@ -249,17 +282,9 @@ void crtc_tick(CRTC *c) {
         c->ma_row_start = c->ma_next_row;
         c->ma = c->ma_row_start;
         crtc_latch_line_state(c);
+        crtc_update_r7_match(c, c->last_hend >= 2);
     } else if (c->hcc == c->reg[1]) {
         c->h_display = false;
-    }
-
-    /* Continuous R7 comparator: real CRTC starts VSYNC the moment C4
-     * matches R7, not only at the next row-boundary. Demos that re-time
-     * VSYNC by writing R7 mid-frame (HBL effects, second-VSYNC tricks)
-     * depend on this. */
-    if (c->vcc == c->reg[7] && !c->vsync) {
-        c->vsync = true;
-        c->vsc = 0;
     }
 
     c->display_enable = c->h_display && c->v_display;
