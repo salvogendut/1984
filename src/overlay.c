@@ -7,6 +7,7 @@
 #include "snapshot.h"
 #include "webmcap.h"   /* WEBMCAP_SUPPORTED */
 #include "leds.h"
+#include "notify.h"
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
@@ -35,7 +36,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 15 };
+static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 16 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
@@ -550,6 +551,12 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "ABC %d/255", ov->cfg->audio_stereo_sep);
             break;
         case 14:
+            snprintf(lbl, lsz, "Notifications");
+            snprintf(val, vsz, "%s",
+                     ov->cfg->notifications == NOTIFY_MODE_SCREEN  ? "screen"  :
+                     ov->cfg->notifications == NOTIFY_MODE_CONSOLE ? "console" : "off");
+            break;
+        case 15:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -1229,6 +1236,13 @@ static void activate_item(Overlay *ov) {
                 ov->cfg->audio_stereo_sep == 0     ? 128 :
                 ov->cfg->audio_stereo_sep == 128   ? 255 : 0;
             if (ov->cpc) psg_set_stereo(&ov->cpc->psg, ov->cfg->audio_stereo_sep);
+            ov->dirty = true;
+            break;
+        case 14:
+            /* Notifications: cycle screen -> console -> off. */
+            ov->cfg->notifications =
+                (NotifyMode)((ov->cfg->notifications + 1) % 3);
+            notify_set_mode(ov->cfg->notifications);
             ov->dirty = true;
             break;
         }

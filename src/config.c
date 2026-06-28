@@ -145,6 +145,7 @@ void config_defaults(Config *cfg) {
     cfg->perryfi = false;
     cfg->audio_volume    = 80;
     cfg->audio_stereo_sep = 0;
+    cfg->notifications   = NOTIFY_MODE_SCREEN;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -319,6 +320,9 @@ static void config_create_default(const char *path) {
         "# text capture, etc.). Off by default; when off, none of the\n"
         "# debug machinery runs and ONE_K_* trace env vars are no-ops.\n"
         "debug=false\n"
+        "# On-screen notifications: screen=fading bottom-left toast,\n"
+        "# console=stderr only, off=silent.\n"
+        "notifications=screen\n"
     );
 
     fclose(f);
@@ -587,6 +591,11 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "notifications")) {
+                if      (!strcasecmp(val, "screen"))  cfg->notifications = NOTIFY_MODE_SCREEN;
+                else if (!strcasecmp(val, "console")) cfg->notifications = NOTIFY_MODE_CONSOLE;
+                else if (!strcasecmp(val, "off"))     cfg->notifications = NOTIFY_MODE_OFF;
+                else { fprintf(stderr, "1984.conf:%d: notifications must be screen/console/off\n", lineno); rc = -1; }
             } else if (!strcmp(key, "last_dir")) {
                 if (val[0]) expand_path(val, cfg->last_dir, sizeof(cfg->last_dir));
             }
@@ -734,6 +743,7 @@ int config_save(const Config *cfg) {
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
+        "notifications=%s\n"
         "last_dir=%s\n",
         cfg->disk_a,
         cfg->disk_b,
@@ -780,6 +790,8 @@ int config_save(const Config *cfg) {
         cfg->audio_stereo_sep,
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
+        cfg->notifications == NOTIFY_MODE_SCREEN  ? "screen"  :
+        cfg->notifications == NOTIFY_MODE_CONSOLE ? "console" : "off",
         cfg->last_dir
     );
 

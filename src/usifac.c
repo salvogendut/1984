@@ -6,6 +6,7 @@
 #include "usifac.h"
 #include "perryfi.h"
 #include "leds.h"
+#include "notify.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -110,10 +111,10 @@ static int open_pty(USIfAC *u, const char *link_path) {
     }
 
     if (u->pty_link[0])
-        fprintf(stderr, "usifac: PTY ready at %s (alias %s)\n",
-                u->pty_slave, u->pty_link);
+        notify_post("USIfAC: PTY ready at %s (alias %s)",
+                    u->pty_slave, u->pty_link);
     else
-        fprintf(stderr, "usifac: PTY ready at %s\n", u->pty_slave);
+        notify_post("USIfAC: PTY ready at %s", u->pty_slave);
     return 0;
 }
 
@@ -141,7 +142,7 @@ static int open_tcp(USIfAC *u, int port) {
 
     u->tcp_listen = fd;
     u->tcp_port   = port;
-    fprintf(stderr, "usifac: TCP listening on localhost:%d\n", port);
+    notify_post("USIfAC: TCP listening on localhost:%d", port);
     return 0;
 }
 
@@ -246,7 +247,7 @@ static void poll_tcp(USIfAC *u) {
             int one = 1;
             setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
             u->tcp_client = fd;
-            fprintf(stderr, "usifac: TCP client connected\n");
+            notify_post("USIfAC: TCP client connected");
         }
     }
 
@@ -274,7 +275,7 @@ static void poll_tcp(USIfAC *u) {
              * the accept loop. */
             close(u->tcp_client);
             u->tcp_client = -1;
-            fprintf(stderr, "usifac: TCP client disconnected\n");
+            notify_post("USIfAC: TCP client disconnected");
             return;
         }
         leds_ping_split(LED_USIFAC, true);   /* TX (green) — CPC → host */

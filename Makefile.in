@@ -136,9 +136,9 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
 	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
 	src/1984-symbos_trace.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
-	src/1984-n4c_stack.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
-	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
-	src/1984-z80.$(OBJEXT)
+	src/1984-n4c_stack.$(OBJEXT) src/1984-notify.$(OBJEXT) \
+	src/1984-snapshot.$(OBJEXT) src/1984-tap.$(OBJEXT) \
+	src/1984-tape.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -170,10 +170,11 @@ am__depfiles_remade = src/$(DEPDIR)/1984-ch376.Po \
 	src/$(DEPDIR)/1984-main.Po src/$(DEPDIR)/1984-mem.Po \
 	src/$(DEPDIR)/1984-monitor.Po src/$(DEPDIR)/1984-mouse.Po \
 	src/$(DEPDIR)/1984-n4c_stack.Po src/$(DEPDIR)/1984-net4cpc.Po \
-	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
-	src/$(DEPDIR)/1984-perryfi.Po src/$(DEPDIR)/1984-ppi.Po \
-	src/$(DEPDIR)/1984-printer.Po src/$(DEPDIR)/1984-psg.Po \
-	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-screen_text.Po \
+	src/$(DEPDIR)/1984-notify.Po src/$(DEPDIR)/1984-overlay.Po \
+	src/$(DEPDIR)/1984-paste.Po src/$(DEPDIR)/1984-perryfi.Po \
+	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-printer.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-rtc.Po \
+	src/$(DEPDIR)/1984-screen_text.Po \
 	src/$(DEPDIR)/1984-snapshot.Po src/$(DEPDIR)/1984-symbnet.Po \
 	src/$(DEPDIR)/1984-symbols.Po \
 	src/$(DEPDIR)/1984-symbos_trace.Po src/$(DEPDIR)/1984-tap.Po \
@@ -438,6 +439,7 @@ dist_man1_MANS = 1984.1
 	src/symbos_trace.c \
 	src/mouse.c \
 	src/n4c_stack.c \
+	src/notify.c \
 	src/snapshot.c \
 	src/tap.c \
 	src/tape.c \
@@ -468,6 +470,7 @@ noinst_HEADERS = \
 	src/mouse.h \
 	src/net4cpc.h \
 	src/n4c_stack.h \
+	src/notify.h \
 	src/overlay.h \
 	src/tap.h \
 	src/paste.h \
@@ -699,6 +702,8 @@ src/1984-mouse.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-n4c_stack.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-notify.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-snapshot.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-tap.$(OBJEXT): src/$(am__dirstamp) \
@@ -742,6 +747,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-mouse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-n4c_stack.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-net4cpc.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-notify.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-overlay.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-paste.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-perryfi.Po@am__quote@ # am--include-marker
@@ -1300,6 +1306,20 @@ src/1984-n4c_stack.obj: src/n4c_stack.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/n4c_stack.c' object='src/1984-n4c_stack.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-n4c_stack.obj `if test -f 'src/n4c_stack.c'; then $(CYGPATH_W) 'src/n4c_stack.c'; else $(CYGPATH_W) '$(srcdir)/src/n4c_stack.c'; fi`
+
+src/1984-notify.o: src/notify.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-notify.o -MD -MP -MF src/$(DEPDIR)/1984-notify.Tpo -c -o src/1984-notify.o `test -f 'src/notify.c' || echo '$(srcdir)/'`src/notify.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-notify.Tpo src/$(DEPDIR)/1984-notify.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/notify.c' object='src/1984-notify.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-notify.o `test -f 'src/notify.c' || echo '$(srcdir)/'`src/notify.c
+
+src/1984-notify.obj: src/notify.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-notify.obj -MD -MP -MF src/$(DEPDIR)/1984-notify.Tpo -c -o src/1984-notify.obj `if test -f 'src/notify.c'; then $(CYGPATH_W) 'src/notify.c'; else $(CYGPATH_W) '$(srcdir)/src/notify.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-notify.Tpo src/$(DEPDIR)/1984-notify.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/notify.c' object='src/1984-notify.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-notify.obj `if test -f 'src/notify.c'; then $(CYGPATH_W) 'src/notify.c'; else $(CYGPATH_W) '$(srcdir)/src/notify.c'; fi`
 
 src/1984-snapshot.o: src/snapshot.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-snapshot.o -MD -MP -MF src/$(DEPDIR)/1984-snapshot.Tpo -c -o src/1984-snapshot.o `test -f 'src/snapshot.c' || echo '$(srcdir)/'`src/snapshot.c
@@ -1914,6 +1934,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-n4c_stack.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
+	-rm -f src/$(DEPDIR)/1984-notify.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-perryfi.Po
@@ -2006,6 +2027,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-mouse.Po
 	-rm -f src/$(DEPDIR)/1984-n4c_stack.Po
 	-rm -f src/$(DEPDIR)/1984-net4cpc.Po
+	-rm -f src/$(DEPDIR)/1984-notify.Po
 	-rm -f src/$(DEPDIR)/1984-overlay.Po
 	-rm -f src/$(DEPDIR)/1984-paste.Po
 	-rm -f src/$(DEPDIR)/1984-perryfi.Po
