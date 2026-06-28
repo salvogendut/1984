@@ -19,6 +19,7 @@
 #define DISPLAY_CRT_SCANLINES_DEFAULT 35
 #define DISPLAY_CRT_BRIGHTNESS_DEFAULT 100
 #define DISPLAY_CRT_CONTRAST_DEFAULT 100
+#define DISPLAY_CRT_RGB_DEFAULT 100
 
 typedef struct {
     SDL_Window   *window;
@@ -32,6 +33,9 @@ typedef struct {
     int           crt_scanlines;
     int           crt_brightness;
     int           crt_contrast;
+    int           crt_red;
+    int           crt_green;
+    int           crt_blue;
 } Display;
 
 int  display_init(Display *d, const char *title, int scale);
@@ -46,7 +50,7 @@ void display_save_ppm(Display *d, const char *path);
 /* Switch texture scaling between linear (smooth) and nearest (sharp). */
 void display_set_smoothing(Display *d, bool smooth);
 void display_set_crt(Display *d, bool enabled, int scanlines, int brightness,
-                     int contrast);
+                     int contrast, int red, int green, int blue);
 
 /* In-place desaturate the current framebuffer (Rec. 601 luma). Used when
  * the emulator pauses so the frozen frame visibly differs from a running

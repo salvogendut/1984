@@ -113,6 +113,9 @@ typedef struct {
     int  crt_scanlines;        /* scanline opacity, 0..95 */
     int  crt_brightness;       /* texture brightness, 50..100 */
     int  crt_contrast;         /* texture contrast, 50..150 */
+    int  crt_red;              /* red channel gain, 50..150 */
+    int  crt_green;            /* green channel gain, 50..150 */
+    int  crt_blue;             /* blue channel gain, 50..150 */
     MonoMode monochrome;       /* off / green / amber / white phosphor tint */
 
     /* [printer] — host-side Centronics capture (port 0xEFxx).

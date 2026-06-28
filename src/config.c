@@ -133,6 +133,9 @@ void config_defaults(Config *cfg) {
     cfg->crt_scanlines = DISPLAY_CRT_SCANLINES_DEFAULT;
     cfg->crt_brightness = DISPLAY_CRT_BRIGHTNESS_DEFAULT;
     cfg->crt_contrast = DISPLAY_CRT_CONTRAST_DEFAULT;
+    cfg->crt_red = DISPLAY_CRT_RGB_DEFAULT;
+    cfg->crt_green = DISPLAY_CRT_RGB_DEFAULT;
+    cfg->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
     cfg->tinker    = false;
     cfg->debug     = false;
     snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
@@ -298,10 +301,14 @@ static void config_create_default(const char *path) {
         "fullscreen_smoothing=true\n"
         "# Lightweight CRT post-process. real_crt enables the overlay controls.\n"
         "real_crt=false\n"
-        "# Scanline opacity, 0..95. Brightness is 50..100. Contrast is 50..150.\n"
+        "# Scanline opacity, 0..95. Brightness is 50..100.\n"
+        "# Contrast and RGB channel gains are 50..150.\n"
         "crt_scanlines=35\n"
         "crt_brightness=100\n"
         "crt_contrast=100\n"
+        "crt_red=100\n"
+        "crt_green=100\n"
+        "crt_blue=100\n"
         "# Monochrome monitor tint: off | green | amber | white\n"
         "# Maps the CPC palette to shades of one phosphor colour.\n"
         "monochrome=off\n"
@@ -567,6 +574,18 @@ int config_load_from(Config *cfg, const char *path_override) {
                 int v = atoi(val);
                 if (v >= 50 && v <= 150) cfg->crt_contrast = v;
                 else { fprintf(stderr, "1984.conf:%d: crt_contrast must be 50..150\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_red")) {
+                int v = atoi(val);
+                if (v >= 50 && v <= 150) cfg->crt_red = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_red must be 50..150\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_green")) {
+                int v = atoi(val);
+                if (v >= 50 && v <= 150) cfg->crt_green = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_green must be 50..150\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_blue")) {
+                int v = atoi(val);
+                if (v >= 50 && v <= 150) cfg->crt_blue = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_blue must be 50..150\n", lineno); rc = -1; }
             } else if (!strcmp(key, "monochrome")) {
                 MonoMode m;
                 if (parse_mono(val, &m)) cfg->monochrome = m;
@@ -736,6 +755,9 @@ int config_save(const Config *cfg) {
         "crt_scanlines=%d\n"
         "crt_brightness=%d\n"
         "crt_contrast=%d\n"
+        "crt_red=%d\n"
+        "crt_green=%d\n"
+        "crt_blue=%d\n"
         "monochrome=%s\n\n"
         "[audio]\n"
         "audio_volume=%d\n"
@@ -785,6 +807,9 @@ int config_save(const Config *cfg) {
         cfg->crt_scanlines,
         cfg->crt_brightness,
         cfg->crt_contrast,
+        cfg->crt_red,
+        cfg->crt_green,
+        cfg->crt_blue,
         mono_to_str(cfg->monochrome),
         cfg->audio_volume,
         cfg->audio_stereo_sep,
