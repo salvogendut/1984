@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.10
+Version:        0.4.11
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,6 +83,21 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Sun Jun 28 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.11-1
+- Display: new Real CRT post-process under Advanced with adjustable
+  scanlines, brightness, contrast, and per-channel RGB gain (#81, #195).
+- Audio: AY output is now stereo with Caprice32-style ABC panning, a
+  perceptual master volume control, and a DC blocker that removes
+  register-toggle clicks (#178); envelope prescaler and sampled-audio
+  playback fixed (#179, #186).
+- On-screen toast notifications for hardware events in a fading
+  bottom-left panel (screen/console/off), with debug-gated stderr echo
+  (#190); activity LEDs gain hover labels (#191).
+- CRTC: overscan and hybrid screen-mode support plus a modelled
+  displayed-address pipeline, fixing raster timing in Bomb Jack, Batman
+  Forever, and Xevious (#170, #181, #183, #105).
+- Fix CP/M Plus ROM probe fallback (#108).
+
 * Fri Jun 26 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.10-1
 - Overlay: PDF printer renamed to "Printer", Wi-Fi modem renamed to
   "Wi-Fi Modem" (PerryFi suffix dropped), Printer mode relocated from

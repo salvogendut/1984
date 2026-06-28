@@ -40,11 +40,25 @@ PTY or TCP listener.
 usifac=true                # enable the device
 usifac_backend=pty         # "pty" (default) or "tcp"
 usifac_tcp_port=4001       # only used when backend=tcp
+usifac_pty_link=           # optional stable symlink alias for the PTY slave
 ```
 
-You can also toggle it from the in-emulator overlay (Esc → Hardware →
-USIfAC). The overlay shows the live PTY device path or TCP listen port
-when enabled.
+The board lives on the MX4 expansion bus, so it is only opened when
+`mx4=true`. With MX4 off, the device is fully disconnected (no PTY /
+listener is created) and the overlay rows read `[USIfAC RS232 disabled]`.
+
+You can also toggle it from the in-emulator overlay (F9 → Advanced →
+**USIfAC mode**, which flips pty ↔ tcp live; **USIfAC PTY link** edits the
+symlink alias inline). The overlay shows the live PTY device path or TCP
+listen port when enabled, and a toast notification reports readiness and
+client connect/disconnect (the RS232 RX/TX LED is described in
+[LEDS.md](LEDS.md)).
+
+**PTY symlink alias.** Because the kernel-assigned `/dev/pts/N` slave
+number changes between launches, `usifac_pty_link` lets you pin a stable
+path (e.g. `/tmp/cpc-serial`) that 1984 re-points at the live slave on
+every start. External tools can then open the fixed alias instead of
+chasing the current `pts` number.
 
 Legacy `ulifac=true` in older configs is accepted with a deprecation
 warning — please update the key.
@@ -104,6 +118,25 @@ telnet localhost 4001
 30 OUT &FBD1, 16                     ' set "115200" baud code
 40 PRINT "baud code:";INP(&FBDD)     ' should print 16
 ```
+
+## Retro Wi-Fi Modem (PerryFi-inspired)
+
+A bundled **Retro Wi-Fi Modem** (PerryFi-inspired, `src/perryfi.c`) rides on top of the
+USIfAC serial pipe: a Hayes-style AT modem that turns the serial port
+into a host TCP dialler, so period CP/M comms tools and terminal
+programs reach the modern Internet without any host-side wiring.
+
+- `ATDT host:port` — dial out, opening a TCP connection to the host;
+  the modem replies `CONNECT` and then bridges bytes both ways.
+- `+++` — escape from data mode back to command mode (the connection
+  stays open).
+- `ATH` — hang up (close the connection); `ATO` — return online to a
+  still-open connection.
+
+The Retro Wi-Fi Modem is layered above USIfAC, so it needs `usifac=true` (and MX4 on).
+Point a CPC terminal program at the serial port as usual, set it to
+command the modem, and `ATDT telehack.com:23` will connect you to a live
+host. The split RX/TX LED reflects the bridged traffic.
 
 ## Reference
 
