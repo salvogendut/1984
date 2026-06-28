@@ -546,6 +546,8 @@ int main(int argc, char *argv[]) {
     }
     SD_LOG("cpc_init OK");
     ga_set_monochrome(&cpc.ga, cfg.monochrome);
+    psg_set_volume(&cpc.psg, cfg.audio_volume);
+    psg_set_stereo(&cpc.psg, cfg.audio_stereo_sep);
     cpc.mem.ram_size    = cfg.memory_kb * 1024;
     cpc.mx4             = cfg.mx4;
     cpc.net4cpc         = cfg.net4cpc;

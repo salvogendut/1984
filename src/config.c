@@ -139,6 +139,8 @@ void config_defaults(Config *cfg) {
     cfg->usifac_tcp_port = 4001;
     cfg->usifac_pty_link[0] = '\0';
     cfg->perryfi = false;
+    cfg->audio_volume    = 80;
+    cfg->audio_stereo_sep = 0;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
@@ -292,6 +294,13 @@ static void config_create_default(const char *path) {
         "# Monochrome monitor tint: off | green | amber | white\n"
         "# Maps the CPC palette to shades of one phosphor colour.\n"
         "monochrome=off\n"
+        "\n"
+        "[audio]\n"
+        "# Output volume 0..100 (perceptual curve)\n"
+        "audio_volume=80\n"
+        "# Stereo separation 0..255 — 0=mono, 255=full Caprice32 ABC panning\n"
+        "# (channel A left, B centre, C right)\n"
+        "audio_stereo_sep=0\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
@@ -533,6 +542,16 @@ int config_load_from(Config *cfg, const char *path_override) {
                 if (parse_mono(val, &m)) cfg->monochrome = m;
                 else { fprintf(stderr, "1984.conf:%d: monochrome must be off/green/amber/white\n", lineno); rc = -1; }
             }
+        } else if (!strcmp(section, "audio")) {
+            if (!strcmp(key, "audio_volume")) {
+                int v = atoi(val);
+                if (v >= 0 && v <= 100) cfg->audio_volume = v;
+                else { fprintf(stderr, "1984.conf:%d: audio_volume must be 0..100\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "audio_stereo_sep")) {
+                int v = atoi(val);
+                if (v >= 0 && v <= 255) cfg->audio_stereo_sep = v;
+                else { fprintf(stderr, "1984.conf:%d: audio_stereo_sep must be 0..255\n", lineno); rc = -1; }
+            }
         } else if (!strcmp(section, "advanced")) {
             if (!strcmp(key, "tinker")) {
                 bool b;
@@ -679,6 +698,9 @@ int config_save(const Config *cfg) {
         "fullscreen=%s\n"
         "fullscreen_smoothing=%s\n"
         "monochrome=%s\n\n"
+        "[audio]\n"
+        "audio_volume=%d\n"
+        "audio_stereo_sep=%d\n\n"
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
@@ -720,6 +742,8 @@ int config_save(const Config *cfg) {
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",
         mono_to_str(cfg->monochrome),
+        cfg->audio_volume,
+        cfg->audio_stereo_sep,
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
         cfg->last_dir
