@@ -83,6 +83,25 @@ static void test_snapshot_held_envelope_level(void) {
     assert(env_direction == 0x00);
 }
 
+static void test_envelope_period_uses_ay_prescaler(void) {
+    PSG psg;
+    s16 buf[16] = {0};
+
+    psg_init(&psg);
+    psg_select(&psg, 11);
+    psg_write(&psg, 4);
+    psg_select(&psg, 12);
+    psg_write(&psg, 0);
+    psg_select(&psg, 13);
+    psg_write(&psg, 0x0C);
+
+    psg_render_stereo(&psg, buf, 7, 1000000, 1000000);
+    assert(psg.env_step == 0);
+
+    psg_render_stereo(&psg, buf, 1, 1000000, 1000000);
+    assert(psg.env_step == 1);
+}
+
 static void test_disabled_sources_can_act_as_volume_dac(void) {
     PSG psg;
     s16 buf[32] = {0};
@@ -111,6 +130,7 @@ int main(void) {
     test_register_write_masks();
     test_snapshot_register_load_and_store();
     test_snapshot_held_envelope_level();
+    test_envelope_period_uses_ay_prescaler();
     test_disabled_sources_can_act_as_volume_dac();
     return 0;
 }

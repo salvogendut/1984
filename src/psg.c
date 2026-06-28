@@ -221,11 +221,11 @@ static void psg_tick(PSG *psg, int out_amp[3]) {
     }
     int noise_out = (int)(psg->noise_lfsr & 1);
 
-    /* --- Envelope: 32 steps, one step every env_period clocks --- */
+    /* --- Envelope: 32 steps, one step every env_period*2 PSG clocks --- */
     if (!psg->env_hold) {
         u16 ep = (u16)((psg->reg[12] << 8) | psg->reg[11]);
         if (!ep) ep = 1;
-        if (++psg->env_counter >= (u32)ep * 8) {
+        if (++psg->env_counter >= (u32)ep * 2) {
             psg->env_counter = 0;
             psg->env_step++;
             if (psg->env_step >= 32) {
