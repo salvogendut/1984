@@ -225,7 +225,7 @@ void crtc_tick(CRTC *c) {
              * Per ACCC §6.1.1: when C5 reaches R5, the frame restarts with
              * C4=C5=C9=0 and MA reloaded from R12/R13. */
             c->vac++;
-            if (c->vac > c->reg[5]) {
+            if (c->vac >= c->reg[5]) {
                 c->in_vadjust = false;
                 c->vac = 0;
                 c->vcc = 0;
@@ -233,6 +233,8 @@ void crtc_tick(CRTC *c) {
                 c->ma_row_start = crtc_start_addr(c);
                 c->ma_next_row = c->ma_row_start;
                 c->v_display = c->reg[6] != 0;
+            } else {
+                c->vlc = c->vac & 0x1F;
             }
         } else if (end_char_row) {
             /* Raster line within character row */
