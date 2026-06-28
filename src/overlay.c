@@ -39,7 +39,65 @@ static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 15 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
+    if (s == OV_TINKER && ov->cfg->real_crt) return sec_row_count[s] + 3;
     return sec_row_count[s];
+}
+
+static int tinker_logical_row(const Overlay *ov, int row) {
+    if (!ov->cfg->real_crt)
+        return row;
+    if (row == 2) return -1;  /* Scanlines */
+    if (row == 3) return -2;  /* Brightness */
+    if (row == 4) return -3;  /* Contrast */
+    if (row >= 5) return row - 3;
+    return row;
+}
+
+static void overlay_apply_crt(Overlay *ov) {
+    if (!ov->cpc)
+        return;
+    display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                    ov->cfg->crt_scanlines, ov->cfg->crt_brightness,
+                    ov->cfg->crt_contrast);
+}
+
+static bool reset_tinker_crt_item(Overlay *ov) {
+    if (ov->section != OV_TINKER)
+        return false;
+
+    bool old_real_crt = ov->cfg->real_crt;
+    int old_scanlines = ov->cfg->crt_scanlines;
+    int old_brightness = ov->cfg->crt_brightness;
+    int old_contrast = ov->cfg->crt_contrast;
+
+    switch (tinker_logical_row(ov, ov->row)) {
+    case -3:
+        ov->cfg->crt_contrast = DISPLAY_CRT_CONTRAST_DEFAULT;
+        break;
+    case -2:
+        ov->cfg->crt_brightness = DISPLAY_CRT_BRIGHTNESS_DEFAULT;
+        break;
+    case -1:
+        ov->cfg->crt_scanlines = DISPLAY_CRT_SCANLINES_DEFAULT;
+        break;
+    case 1:
+        ov->cfg->real_crt = false;
+        ov->cfg->crt_scanlines = DISPLAY_CRT_SCANLINES_DEFAULT;
+        ov->cfg->crt_brightness = DISPLAY_CRT_BRIGHTNESS_DEFAULT;
+        ov->cfg->crt_contrast = DISPLAY_CRT_CONTRAST_DEFAULT;
+        break;
+    default:
+        return false;
+    }
+
+    if (old_real_crt != ov->cfg->real_crt ||
+        old_scanlines != ov->cfg->crt_scanlines ||
+        old_brightness != ov->cfg->crt_brightness ||
+        old_contrast != ov->cfg->crt_contrast) {
+        overlay_apply_crt(ov);
+        ov->dirty = true;
+    }
+    return true;
 }
 
 /* ---- Drawing helpers ---- */
@@ -356,7 +414,19 @@ static void item_text(const Overlay *ov, int row,
         break;
 
     case OV_TINKER:
-        switch (row) {
+        switch (tinker_logical_row(ov, row)) {
+        case -3:
+            snprintf(lbl, lsz, "Contrast");
+            snprintf(val, vsz, "%d%%", ov->cfg->crt_contrast);
+            break;
+        case -2:
+            snprintf(lbl, lsz, "Brightness");
+            snprintf(val, vsz, "%d%%", ov->cfg->crt_brightness);
+            break;
+        case -1:
+            snprintf(lbl, lsz, "Scanlines");
+            snprintf(val, vsz, "%d%%", ov->cfg->crt_scanlines);
+            break;
         case 0:
             snprintf(lbl, lsz, "Smoothing");
             snprintf(val, vsz, "%s",
@@ -364,8 +434,7 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 1:
             snprintf(lbl, lsz, "Real CRT");
-            snprintf(val, vsz, "[unimplemented]");
-            *readonly = true;
+            snprintf(val, vsz, "%s", ov->cfg->real_crt ? "enabled" : "disabled");
             break;
         case 2:
             snprintf(lbl, lsz, "Load Snapshot");
@@ -987,12 +1056,54 @@ static void activate_item(Overlay *ov) {
         break;
 
     case OV_TINKER:
-        switch (ov->row) {
+        switch (tinker_logical_row(ov, ov->row)) {
+        case -3:
+            ov->cfg->crt_contrast += 5;
+            if (ov->cfg->crt_contrast > 150)
+                ov->cfg->crt_contrast = 50;
+            if (ov->cpc)
+                display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                                ov->cfg->crt_scanlines,
+                                ov->cfg->crt_brightness,
+                                ov->cfg->crt_contrast);
+            ov->dirty = true;
+            break;
+        case -2:
+            ov->cfg->crt_brightness -= 5;
+            if (ov->cfg->crt_brightness < 50)
+                ov->cfg->crt_brightness = 100;
+            if (ov->cpc)
+                display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                                ov->cfg->crt_scanlines,
+                                ov->cfg->crt_brightness,
+                                ov->cfg->crt_contrast);
+            ov->dirty = true;
+            break;
+        case -1:
+            ov->cfg->crt_scanlines += 5;
+            if (ov->cfg->crt_scanlines > 95)
+                ov->cfg->crt_scanlines = 0;
+            if (ov->cpc)
+                display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                                ov->cfg->crt_scanlines,
+                                ov->cfg->crt_brightness,
+                                ov->cfg->crt_contrast);
+            ov->dirty = true;
+            break;
         case 0:
             ov->cfg->fullscreen_smoothing = !ov->cfg->fullscreen_smoothing;
             if (ov->cpc)
                 display_set_smoothing(&ov->cpc->display,
                                       ov->cfg->fullscreen_smoothing);
+            ov->dirty = true;
+            break;
+        case 1:
+            ov->cfg->real_crt = !ov->cfg->real_crt;
+            if (ov->cpc)
+                display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                                ov->cfg->crt_scanlines,
+                                ov->cfg->crt_brightness,
+                                ov->cfg->crt_contrast);
             ov->dirty = true;
             break;
         case 2: {
@@ -1481,6 +1592,11 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         }
         case SDL_SCANCODE_ESCAPE:
             *ov->cfg    = ov->saved;  /* revert */
+            if (ov->cpc)
+                display_set_crt(&ov->cpc->display, ov->cfg->real_crt,
+                                ov->cfg->crt_scanlines,
+                                ov->cfg->crt_brightness,
+                                ov->cfg->crt_contrast);
             ov->dirty   = false;
             ov->visible = false;
             break;
@@ -1705,6 +1821,9 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         break;
     case SDL_SCANCODE_DELETE:
     case SDL_SCANCODE_BACKSPACE:
+        if (reset_tinker_crt_item(ov))
+            break;
+
         /* Del on Drive A / Drive B / Tape ejects the image and clears
          * the cached path (#107 follow-up). */
         if (ov->section == OV_STORAGE) {
@@ -1912,10 +2031,12 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         char lbl[48] = "", val[48] = "";
         bool readonly;
         item_text(ov, i, lbl, sizeof(lbl), val, sizeof(val), &readonly);
+        int logical = (ov->section == OV_TINKER)
+                    ? tinker_logical_row(ov, i) : i;
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-        if (ov->section == OV_TINKER && i == 9 && ov->pty_link_editing) {
+        if (ov->section == OV_TINKER && logical == 9 && ov->pty_link_editing) {
             /* Inline editor: show the live buffer with a blinking-style
              * trailing underscore cursor. Bright green to signal that
              * keystrokes are being captured. */
@@ -1924,7 +2045,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
             draw_text(r, VAL_X, ty, shown, 120, 255, 120);
         } else if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
-        } else if (ov->section == OV_TINKER && i == 10
+        } else if (ov->section == OV_TINKER && logical == 10
                    && ov->cfg->monochrome != MONO_OFF) {
             /* Render the tint name in its own phosphor colour so the
              * choice is recognisable at a glance. Bright values picked

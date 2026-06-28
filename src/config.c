@@ -129,6 +129,10 @@ void config_defaults(Config *cfg) {
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
+    cfg->real_crt = false;
+    cfg->crt_scanlines = DISPLAY_CRT_SCANLINES_DEFAULT;
+    cfg->crt_brightness = DISPLAY_CRT_BRIGHTNESS_DEFAULT;
+    cfg->crt_contrast = DISPLAY_CRT_CONTRAST_DEFAULT;
     cfg->tinker    = false;
     cfg->debug     = false;
     snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
@@ -291,6 +295,12 @@ static void config_create_default(const char *path) {
         "fullscreen=false\n"
         "# Smooth (linear) vs sharp (nearest) texture scaling\n"
         "fullscreen_smoothing=true\n"
+        "# Lightweight CRT post-process. real_crt enables the overlay controls.\n"
+        "real_crt=false\n"
+        "# Scanline opacity, 0..95. Brightness is 50..100. Contrast is 50..150.\n"
+        "crt_scanlines=35\n"
+        "crt_brightness=100\n"
+        "crt_contrast=100\n"
         "# Monochrome monitor tint: off | green | amber | white\n"
         "# Maps the CPC palette to shades of one phosphor colour.\n"
         "monochrome=off\n"
@@ -537,6 +547,22 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->fullscreen_smoothing = b;
                 else { fprintf(stderr, "1984.conf:%d: fullscreen_smoothing must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_crt")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->real_crt = b;
+                else { fprintf(stderr, "1984.conf:%d: real_crt must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_scanlines")) {
+                int v = atoi(val);
+                if (v >= 0 && v <= 95) cfg->crt_scanlines = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_scanlines must be 0..95\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_brightness")) {
+                int v = atoi(val);
+                if (v >= 50 && v <= 100) cfg->crt_brightness = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_brightness must be 50..100\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "crt_contrast")) {
+                int v = atoi(val);
+                if (v >= 50 && v <= 150) cfg->crt_contrast = v;
+                else { fprintf(stderr, "1984.conf:%d: crt_contrast must be 50..150\n", lineno); rc = -1; }
             } else if (!strcmp(key, "monochrome")) {
                 MonoMode m;
                 if (parse_mono(val, &m)) cfg->monochrome = m;
@@ -697,6 +723,10 @@ int config_save(const Config *cfg) {
         "scale=%d\n"
         "fullscreen=%s\n"
         "fullscreen_smoothing=%s\n"
+        "real_crt=%s\n"
+        "crt_scanlines=%d\n"
+        "crt_brightness=%d\n"
+        "crt_contrast=%d\n"
         "monochrome=%s\n\n"
         "[audio]\n"
         "audio_volume=%d\n"
@@ -741,6 +771,10 @@ int config_save(const Config *cfg) {
         cfg->scale,
         cfg->fullscreen ? "true" : "false",
         cfg->fullscreen_smoothing ? "true" : "false",
+        cfg->real_crt ? "true" : "false",
+        cfg->crt_scanlines,
+        cfg->crt_brightness,
+        cfg->crt_contrast,
         mono_to_str(cfg->monochrome),
         cfg->audio_volume,
         cfg->audio_stereo_sep,

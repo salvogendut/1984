@@ -16,14 +16,22 @@
 #define WINDOW_H        576   /* 4:3 display height (768 × 3/4) */
 #define LED_BAR_HEIGHT  22    /* drive-activity LED strip below the CPC area */
 #define WINDOW_H_TOTAL  (WINDOW_H + LED_BAR_HEIGHT)
+#define DISPLAY_CRT_SCANLINES_DEFAULT 35
+#define DISPLAY_CRT_BRIGHTNESS_DEFAULT 100
+#define DISPLAY_CRT_CONTRAST_DEFAULT 100
 
 typedef struct {
     SDL_Window   *window;
     SDL_Renderer *renderer;
     SDL_Texture  *texture;
     u32           pixels[CPC_SCREEN_W * CPC_SCREEN_H];
+    u32           crt_pixels[CPC_SCREEN_W * CPC_SCREEN_H];
     int           scan_x;
     int           scan_y;
+    bool          crt_enabled;
+    int           crt_scanlines;
+    int           crt_brightness;
+    int           crt_contrast;
 } Display;
 
 int  display_init(Display *d, const char *title, int scale);
@@ -37,6 +45,8 @@ void display_save_ppm(Display *d, const char *path);
 
 /* Switch texture scaling between linear (smooth) and nearest (sharp). */
 void display_set_smoothing(Display *d, bool smooth);
+void display_set_crt(Display *d, bool enabled, int scanlines, int brightness,
+                     int contrast);
 
 /* In-place desaturate the current framebuffer (Rec. 601 luma). Used when
  * the emulator pauses so the frozen frame visibly differs from a running
