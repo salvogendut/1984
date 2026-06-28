@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
 #include <libgen.h>
 #include <strings.h>     /* strcasecmp */
@@ -36,6 +37,8 @@
 static GifCap  *g_videocap_gif  = NULL;
 static WebmCap *g_videocap_webm = NULL;
 static int      g_videocap_skip = 0;   /* GIF-only: halve to 25 fps */
+static FILE    *g_audiocap_wav  = NULL;
+static uint32_t g_audiocap_bytes = 0;
 
 bool videocap_active(void) {
     return g_videocap_gif != NULL || g_videocap_webm != NULL;
@@ -92,6 +95,70 @@ void videocap_stop(void) {
         webmcap_close(g_videocap_webm);
         g_videocap_webm = NULL;
     }
+}
+
+static void wav_u16(FILE *f, uint16_t v) {
+    fputc((int)(v & 0xFF), f);
+    fputc((int)((v >> 8) & 0xFF), f);
+}
+
+static void wav_u32(FILE *f, uint32_t v) {
+    fputc((int)(v & 0xFF), f);
+    fputc((int)((v >> 8) & 0xFF), f);
+    fputc((int)((v >> 16) & 0xFF), f);
+    fputc((int)((v >> 24) & 0xFF), f);
+}
+
+static void wav_header(FILE *f, int sample_rate, uint32_t data_bytes) {
+    uint32_t byte_rate = (uint32_t)sample_rate * 2u * 16u / 8u;
+    fwrite("RIFF", 1, 4, f);
+    wav_u32(f, 36u + data_bytes);
+    fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f);
+    wav_u32(f, 16);
+    wav_u16(f, 1);                     /* PCM */
+    wav_u16(f, 2);                     /* stereo */
+    wav_u32(f, (uint32_t)sample_rate);
+    wav_u32(f, byte_rate);
+    wav_u16(f, 2u * 16u / 8u);         /* block align */
+    wav_u16(f, 16);                    /* bits per sample */
+    fwrite("data", 1, 4, f);
+    wav_u32(f, data_bytes);
+}
+
+bool audiocap_start(const char *path) {
+    if (!path || !path[0]) return false;
+    if (g_audiocap_wav) return true;
+    g_audiocap_wav = fopen(path, "wb");
+    if (!g_audiocap_wav) {
+        fprintf(stderr, "[audiocap] WAV open failed for '%s'\n", path);
+        return false;
+    }
+    g_audiocap_bytes = 0;
+    wav_header(g_audiocap_wav, CPC_AUDIO_SAMPLE_RATE, 0);
+    fprintf(stderr, "[audiocap] recording 44100 Hz stereo s16 -> %s\n", path);
+    return true;
+}
+
+bool audiocap_active(void) {
+    return g_audiocap_wav != NULL;
+}
+
+void audiocap_write(const s16 *samples, int frames, int sample_rate) {
+    if (!g_audiocap_wav || !samples || frames <= 0) return;
+    if (sample_rate != CPC_AUDIO_SAMPLE_RATE) return;
+    for (int i = 0; i < frames * 2; i++)
+        wav_u16(g_audiocap_wav, (uint16_t)samples[i]);
+    g_audiocap_bytes += (uint32_t)frames * 2u * 2u;
+}
+
+void audiocap_stop(void) {
+    if (!g_audiocap_wav) return;
+    fseek(g_audiocap_wav, 0, SEEK_SET);
+    wav_header(g_audiocap_wav, CPC_AUDIO_SAMPLE_RATE, g_audiocap_bytes);
+    fclose(g_audiocap_wav);
+    g_audiocap_wav = NULL;
+    fprintf(stderr, "[audiocap] WAV stopped (%u bytes PCM)\n", g_audiocap_bytes);
 }
 
 /* Synchronise the Net4CPC TAP backend with the current config. Used at
@@ -276,6 +343,7 @@ static void usage(const char *prog, int code) {
         "                      steps; DIRS = u d l r 1 2 (Fire1/2) or - (neutral).\n"
         "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
         "  --gif-out=PATH      Record a GIF from boot (finalised on exit; pairs with --exit-after)\n"
+        "  --audio-out=PATH    Record emulator audio to a WAV file from boot\n"
         "  --exit-after=N      Quit after frame N (deterministic headless capture)\n"
         "  --printer-pdf=DIR   Capture parallel-printer output to timestamped PDFs in DIR\n"
         "  --printer-real      Spool captured pages to the host's default CUPS printer (lp)\n"
@@ -331,6 +399,7 @@ int main(int argc, char *argv[]) {
     const char *save_sna_ide_path = NULL;
     const char *joyscript_arg    = NULL;  /* --joy-script=SPEC: scripted joystick */
     const char *gifout_arg       = NULL;  /* --gif-out=PATH: record a GIF from boot */
+    const char *audioout_arg     = NULL;  /* --audio-out=PATH: record WAV audio from boot */
     int         exit_after       = -1;    /* --exit-after=N: quit at frame N */
     const char *printer_pdf_dir_arg = NULL; /* --printer-pdf=DIR */
     bool        printer_real_arg = false;   /* --printer-real */
@@ -454,6 +523,8 @@ int main(int argc, char *argv[]) {
             joyscript_arg = argv[i] + 13;
         } else if (strncmp(argv[i], "--gif-out=", 10) == 0 && argv[i][10] != '\0') {
             gifout_arg = argv[i] + 10;
+        } else if (strncmp(argv[i], "--audio-out=", 12) == 0 && argv[i][12] != '\0') {
+            audioout_arg = argv[i] + 12;
         } else if (strncmp(argv[i], "--printer-pdf=", 14) == 0 && argv[i][14] != '\0') {
             printer_pdf_dir_arg = argv[i] + 14;
         } else if (strcmp(argv[i], "--printer-real") == 0) {
@@ -758,6 +829,8 @@ int main(int argc, char *argv[]) {
     bool running = true;
     if (gifout_arg)            /* --gif-out: record from boot (finalised on exit) */
         videocap_start(gifout_arg);
+    if (audioout_arg)
+        audiocap_start(audioout_arg);
     SD_LOG("entering main loop — startup complete");
     while (running) {
         SDL_Event ev;
@@ -1363,6 +1436,7 @@ int main(int argc, char *argv[]) {
     if (sfx_stream) SDL_DestroyAudioStream(sfx_stream);
     if (sfx_buf)    SDL_free(sfx_buf);
     videocap_stop();   /* finalise GIF if recording */
+    audiocap_stop();   /* finalise WAV if recording */
     printer_shutdown(&cpc.printer);
     perryfi_shutdown(&cpc.perryfi);
     cpc_destroy(&cpc);

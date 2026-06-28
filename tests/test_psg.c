@@ -83,9 +83,34 @@ static void test_snapshot_held_envelope_level(void) {
     assert(env_direction == 0x00);
 }
 
+static void test_disabled_sources_can_act_as_volume_dac(void) {
+    PSG psg;
+    s16 buf[32] = {0};
+    int heard = 0;
+
+    psg_init(&psg);
+    psg_set_volume(&psg, 100);
+    psg_select(&psg, 7);
+    psg_write(&psg, 0x3F);   /* disable tone and noise on all channels */
+    psg_select(&psg, 8);
+    psg_write(&psg, 0x00);
+    psg_render_stereo(&psg, buf, 8, 1000000, 44100);
+
+    psg_select(&psg, 8);
+    psg_write(&psg, 0x0F);   /* volume-register DAC step */
+    memset(buf, 0, sizeof(buf));
+    psg_render_stereo(&psg, buf, 8, 1000000, 44100);
+    for (int i = 0; i < 16; i++) {
+        if (buf[i] != 0)
+            heard = 1;
+    }
+    assert(heard);
+}
+
 int main(void) {
     test_register_write_masks();
     test_snapshot_register_load_and_store();
     test_snapshot_held_envelope_level();
+    test_disabled_sources_can_act_as_volume_dac();
     return 0;
 }

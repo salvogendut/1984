@@ -71,8 +71,7 @@ static void trace_check_master(void) {
     }
 }
 
-#define AUDIO_SAMPLE_RATE   44100
-#define AUDIO_SAMPLES_FRAME (AUDIO_SAMPLE_RATE / 50)   /* 882 samples @ 50 Hz */
+#define AUDIO_SAMPLE_RATE   CPC_AUDIO_SAMPLE_RATE
 #define PSG_CLOCK_HZ        1000000                    /* CPC PSG: 4 MHz / 4 */
 
 static const char *fdc_phase_name(FdcPhase phase) {
@@ -872,6 +871,8 @@ void cpc_reset(CPC *cpc) {
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
     cpc->cycle_debt = 0;
+    cpc->audio_frame_pos = 0;
+    cpc->audio_sample_cycles = 0;
 }
 
 void cpc_destroy(CPC *cpc) {
@@ -1125,8 +1126,7 @@ static inline int cpc_monitor_px(const CPC *cpc) {
 /* Advance ALL per-cycle peripheral state by `cycles` CPU T-states.
  * Covers: tape, audio sampling, CRTC/GA/render. Mirrors konCePCja's
  * z80_wait_states macro which advances CRTC + PSG + FDC + tape in
- * one bundle. 1984 doesn't model per-cycle PSG/FDC (PSG renders
- * once per frame in cpc_frame; FDC is event-driven, not per-cycle).
+ * one bundle. FDC is event-driven, not per-cycle.
  *
  * Callable both from the per-instruction tail of cpc_frame() AND from
  * the Z80Bus::tick hook mid-instruction (for konCePCja-style IO split
@@ -1137,13 +1137,26 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
     /* Tape (no-op when no tape loaded / motor off) */
     tape_step(&cpc->tape, cycles);
     ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
-    /* Audio sampling at 44.1 kHz from the cassette signal */
-    cpc->tape_audio_cycles += cycles * AUDIO_SAMPLE_RATE;
-    while (cpc->tape_audio_cycles >= cpc->cpu_clk_hz &&
-           cpc->tape_audio_pos < AUDIO_SAMPLES_FRAME) {
-        cpc->tape_audio[cpc->tape_audio_pos++] =
-            (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
-        cpc->tape_audio_cycles -= cpc->cpu_clk_hz;
+    /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
+     * frame end so AY register writes take effect at their CPU-cycle time;
+     * this is required for volume-register sample playback. */
+    cpc->audio_sample_cycles += cycles * AUDIO_SAMPLE_RATE;
+    while (cpc->audio_sample_cycles >= cpc->cpu_clk_hz) {
+        if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
+            s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
+            psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
+            if (cpc->tape.present && cpc->tape.motor) {
+                int t  = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+                int vl = (int)dst[0] + t;
+                int vr = (int)dst[1] + t;
+                if (vl >  32767) vl =  32767; else if (vl < -32768) vl = -32768;
+                if (vr >  32767) vr =  32767; else if (vr < -32768) vr = -32768;
+                dst[0] = (s16)vl;
+                dst[1] = (s16)vr;
+            }
+            cpc->audio_frame_pos++;
+        }
+        cpc->audio_sample_cycles -= cpc->cpu_clk_hz;
     }
     cpc->crtc_cycle_acc += cycles;
     while (cpc->crtc_cycle_acc >= 4) {
@@ -1715,41 +1728,31 @@ void cpc_frame(CPC *cpc) {
         }
     }
 
-    /* Push one frame of PSG audio to SDL (skip on breakpoint/step to avoid burst) */
-    if (!stop_early && cpc->audio_stream) {
-        s16 audio_buf[AUDIO_SAMPLES_FRAME * 2];     /* interleaved L,R */
-        psg_render_stereo(&cpc->psg, audio_buf, AUDIO_SAMPLES_FRAME,
-                          PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
-        /* Mix in the cassette signal (mono → both buses) — captured per-sample
-         * inside the Z80 step loop above. Saturating add so we don't wrap. */
-        if (cpc->tape.present && cpc->tape.motor) {
-            for (int i = 0; i < cpc->tape_audio_pos; i++) {
-                int t  = (int)cpc->tape_audio[i];
-                int vl = (int)audio_buf[i*2  ] + t;
-                int vr = (int)audio_buf[i*2+1] + t;
-                if (vl >  32767) vl =  32767; else if (vl < -32768) vl = -32768;
-                if (vr >  32767) vr =  32767; else if (vr < -32768) vr = -32768;
-                audio_buf[i*2  ] = (s16)vl;
-                audio_buf[i*2+1] = (s16)vr;
-            }
-        }
-        cpc->tape_audio_pos = 0;
-        cpc->tape_audio_cycles = 0;
-        if (!SDL_PutAudioStreamData(cpc->audio_stream,
-                                    audio_buf, (int)sizeof(audio_buf))) {
+    /* Push cycle-generated audio to SDL / WAV (skip on breakpoint/step to avoid burst). */
+    if (!stop_early && cpc->audio_frame_pos > 0) {
+        int bytes = cpc->audio_frame_pos * 2 * (int)sizeof(cpc->audio_frame[0]);
+        if (audiocap_active())
+            audiocap_write(cpc->audio_frame, cpc->audio_frame_pos, AUDIO_SAMPLE_RATE);
+        if (cpc->audio_stream &&
+            !SDL_PutAudioStreamData(cpc->audio_stream,
+                                    cpc->audio_frame, bytes)) {
             fprintf(stderr, "SDL_PutAudioStreamData: %s\n", SDL_GetError());
         } else if (dbg_getenv("ONE_K_TRACE_AUDIO") &&
                    (cpc_frame_count % 50) == 0) {
-            s16 min = audio_buf[0], max = audio_buf[0];
-            for (int i = 1; i < AUDIO_SAMPLES_FRAME * 2; i++) {
-                if (audio_buf[i] < min) min = audio_buf[i];
-                if (audio_buf[i] > max) max = audio_buf[i];
+            s16 min = cpc->audio_frame[0], max = cpc->audio_frame[0];
+            for (int i = 1; i < cpc->audio_frame_pos * 2; i++) {
+                s16 sample = cpc->audio_frame[i];
+                if (sample < min) min = sample;
+                if (sample > max) max = sample;
             }
-            fprintf(stderr, "[audio f%d] samples=%d..%d queued=%d bytes\n",
-                    cpc_frame_count, min, max,
-                    SDL_GetAudioStreamQueued(cpc->audio_stream));
+            fprintf(stderr, "[audio f%d] frames=%d samples=%d..%d queued=%d bytes\n",
+                    cpc_frame_count, cpc->audio_frame_pos, min, max,
+                    cpc->audio_stream ? SDL_GetAudioStreamQueued(cpc->audio_stream) : 0);
         }
     }
+    cpc->audio_frame_pos = 0;
+    if (stop_early)
+        cpc->audio_sample_cycles = 0;
 }
 
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed) {

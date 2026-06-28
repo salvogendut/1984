@@ -25,6 +25,10 @@
 
 typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
 
+#define CPC_AUDIO_SAMPLE_RATE     44100
+#define CPC_AUDIO_SAMPLES_FRAME   (CPC_AUDIO_SAMPLE_RATE / 50)
+#define CPC_AUDIO_FRAME_CAPACITY  (CPC_AUDIO_SAMPLES_FRAME * 4)
+
 typedef struct {
     CpcModel   model;
     Z80        cpu;
@@ -62,12 +66,12 @@ typedef struct {
                                   data port when its present flag is set)   */
     Printer    printer;        /* Centronics @ 0xEFxx (Cairo → PDF host sink) */
     Tape       tape;           /* cassette / .cdt image */
-    /* Per-sample snapshot of the cassette data line, captured inside the
-     * Z80 step loop at audio rate. Mixed into the PSG output frame so the
-     * user hears the loading screeches. */
-    s16        tape_audio[882];
-    int        tape_audio_pos;
-    int        tape_audio_cycles;
+    /* PSG + cassette audio generated inside the Z80 step loop at audio rate.
+     * This preserves AY volume-register sample players: writes affect only
+     * the samples after the corresponding CPU cycles have elapsed. */
+    s16        audio_frame[CPC_AUDIO_FRAME_CAPACITY * 2];
+    int        audio_frame_pos;
+    int        audio_sample_cycles;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */
@@ -145,6 +149,11 @@ bool videocap_start(const char *path);   /* false on open failure */
 void videocap_stop(void);
 bool videocap_active(void);
 int  videocap_frame_count(void);
+
+bool audiocap_start(const char *path);
+void audiocap_stop(void);
+bool audiocap_active(void);
+void audiocap_write(const s16 *samples, int frames, int sample_rate);
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale);
 void cpc_reset(CPC *cpc);
