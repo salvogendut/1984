@@ -46,6 +46,11 @@ void display_vsync(Display *d);
 void display_upload(Display *d);   /* update texture + blit to renderer (no flip) */
 void display_flip(Display *d);     /* SDL_RenderPresent */
 void display_save_ppm(Display *d, const char *path);
+u32  display_hash(Display *d);
+void display_copy_visible(Display *d, u32 *dst);
+bool display_changed_rect(Display *d, u32 *prev, int *x, int *y, int *w, int *h);
+bool display_save_crop_ppm(Display *d, const char *path,
+                           int x, int y, int w, int h, int scale);
 
 /* Switch texture scaling between linear (smooth) and nearest (sharp). */
 void display_set_smoothing(Display *d, bool smooth);
