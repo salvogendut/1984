@@ -366,6 +366,7 @@ static void usage(const char *prog, int code) {
         "                      path for a stable alias, or 'mouse'/'joystick' to pick the\n"
         "                      initial target. Send 'R THETA' lines (R=speed, THETA=deg,\n"
         "                      0=right/90=up); 'press N'/'click N'; 'target mouse|joy'.\n"
+        "  --pilot-replies-stderr Mirror machine-readable pilot replies to stderr.\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -417,6 +418,7 @@ int main(int argc, char *argv[]) {
     bool        pilot_enabled    = false;       /* --pilot */
     const char *pilot_link       = NULL;        /* --pilot=LINK (symlink alias) */
     PilotTarget pilot_target0    = PILOT_MOUSE;  /* --pilot=mouse|joystick */
+    bool        pilot_reply_stderr = false;    /* --pilot-replies-stderr */
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
     bool        dd1_override     = false;
     int         memory_override  = 0;             /* 0 = no override */
@@ -509,6 +511,8 @@ int main(int argc, char *argv[]) {
             if (!strcmp(a, "mouse"))                         pilot_target0 = PILOT_MOUSE;
             else if (!strcmp(a, "joystick") || !strcmp(a, "joy")) pilot_target0 = PILOT_JOY;
             else if (a[0])                                    pilot_link = a;  /* symlink path */
+        } else if (strcmp(argv[i], "--pilot-replies-stderr") == 0) {
+            pilot_reply_stderr = true;
         } else if (strcmp(argv[i], "--ocr-monitor") == 0) {
             kbd_pty_enabled = true;   /* OCR output piggybacks on the kbd PTY */
             ocr_monitor_enabled = true;
@@ -815,7 +819,7 @@ int main(int argc, char *argv[]) {
     Pilot pilot;
     pilot.fd = -1;
     if (pilot_enabled)
-        pilot_open(&pilot, pilot_link, pilot_target0);
+        pilot_open(&pilot, pilot_link, pilot_target0, pilot_reply_stderr);
 
     /* Load a snapshot AFTER all machine init (ROMs, IDE, Albireo, joysticks
      * etc.) is done — the snapshot overrides only the CPU + GA + CRTC + PPI
@@ -1258,7 +1262,7 @@ int main(int argc, char *argv[]) {
         screen_text_tick(&cpc);
         paste_tick(&paste, &cpc.kbd);
         if (have_joyscript) joyscript_tick(&joyscript, &cpc.kbd);
-        pilot_tick(&pilot, &cpc);
+        pilot_tick(&pilot, &cpc, &cpc.display, &paste);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
         net4cpc_poll();
@@ -1266,6 +1270,7 @@ int main(int argc, char *argv[]) {
         perryfi_poll(&cpc.perryfi);
         printer_tick(&cpc.printer);
         cpc_frame(&cpc);
+        pilot_post_frame(&pilot, &cpc, &cpc.display, frame_count + 1);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {
             /* Debug hook: ONE_K_DUMP_RAM=/path/to/file writes physical RAM

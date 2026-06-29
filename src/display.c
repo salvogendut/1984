@@ -258,3 +258,82 @@ void display_save_ppm(Display *d, const char *path) {
 
     fclose(f);
 }
+
+u32 display_hash(Display *d) {
+    /* FNV-1a over the visible CPC framebuffer after any CRT colour transform. */
+    const u32 *px = display_crt_pixels(d);
+    u32 h = 2166136261u;
+    int n = CPC_SCREEN_W * CPC_SCREEN_H;
+    for (int i = 0; i < n; i++) {
+        h ^= px[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+void display_copy_visible(Display *d, u32 *dst) {
+    const u32 *px = display_crt_pixels(d);
+    memcpy(dst, px, (size_t)CPC_SCREEN_W * CPC_SCREEN_H * sizeof(u32));
+}
+
+bool display_changed_rect(Display *d, u32 *prev, int *x, int *y, int *w, int *h) {
+    const u32 *cur = display_crt_pixels(d);
+    int min_x = CPC_SCREEN_W, min_y = CPC_SCREEN_H, max_x = -1, max_y = -1;
+
+    for (int yy = 0; yy < CPC_SCREEN_H; yy++) {
+        int row = yy * CPC_SCREEN_W;
+        for (int xx = 0; xx < CPC_SCREEN_W; xx++) {
+            int i = row + xx;
+            if (cur[i] != prev[i]) {
+                prev[i] = cur[i];
+                if (xx < min_x) min_x = xx;
+                if (yy < min_y) min_y = yy;
+                if (xx > max_x) max_x = xx;
+                if (yy > max_y) max_y = yy;
+            }
+        }
+    }
+
+    if (max_x < min_x || max_y < min_y) {
+        *x = *y = *w = *h = 0;
+        return false;
+    }
+
+    *x = min_x;
+    *y = min_y;
+    *w = max_x - min_x + 1;
+    *h = max_y - min_y + 1;
+    return true;
+}
+
+bool display_save_crop_ppm(Display *d, const char *path,
+                           int x, int y, int w, int h, int scale) {
+    FILE *f;
+    if (scale < 1) scale = 1;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x >= CPC_SCREEN_W || y >= CPC_SCREEN_H || w <= 0 || h <= 0) return false;
+    if (x + w > CPC_SCREEN_W) w = CPC_SCREEN_W - x;
+    if (y + h > CPC_SCREEN_H) h = CPC_SCREEN_H - y;
+    if (w <= 0 || h <= 0) return false;
+
+    f = fopen(path, "wb");
+    if (!f) return false;
+    fprintf(f, "P6\n%d %d\n255\n", w * scale, h * scale);
+    for (int yy = 0; yy < h; yy++) {
+        for (int sy = 0; sy < scale; sy++) {
+            for (int xx = 0; xx < w; xx++) {
+                u32 px = d->pixels[(y + yy) * CPC_SCREEN_W + (x + xx)];
+                unsigned char rgb[3] = {
+                    (unsigned char)((px >> 16) & 0xFF),
+                    (unsigned char)((px >> 8) & 0xFF),
+                    (unsigned char)(px & 0xFF),
+                };
+                for (int sx = 0; sx < scale; sx++)
+                    fwrite(rgb, 1, 3, f);
+            }
+        }
+    }
+    fclose(f);
+    return true;
+}
