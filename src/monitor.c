@@ -1,5 +1,10 @@
 #ifndef _WIN32
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
+/* See usifac.c / issue #203: the BSDs hide the Bxxxx baud constants behind
+ * __BSD_VISIBLE, which _XOPEN_SOURCE turns off. */
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#define __BSD_VISIBLE 1
+#endif
 #endif
 #include "monitor.h"
 #include "z80dis.h"

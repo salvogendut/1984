@@ -2,6 +2,12 @@
 
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 #define _DEFAULT_SOURCE     /* cfmakeraw */
+/* On the BSDs, defining _XOPEN_SOURCE/_POSIX_C_SOURCE turns __BSD_VISIBLE
+ * off, hiding cfmakeraw, B115200, INADDR_LOOPBACK and MSG_NOSIGNAL. Force
+ * it back on (see issue #203). */
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#define __BSD_VISIBLE 1
+#endif
 
 #include "usifac.h"
 #include "perryfi.h"
@@ -22,6 +28,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+/* MSG_NOSIGNAL is a Linux extension absent on macOS/older BSDs; 0 is a safe
+ * fallback. Defined AFTER <sys/socket.h> so the system header wins first. */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 #endif
 
 #define MASK (USIFAC_RING - 1)

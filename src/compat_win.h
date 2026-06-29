@@ -133,6 +133,14 @@ static inline unsigned long long compat_fs_free_bytes(const char *path) {
 #include <unistd.h>
 #include <errno.h>
 
+/* MSG_NOSIGNAL is a Linux extension absent on macOS and older BSDs (and
+ * hidden on the BSDs unless __BSD_VISIBLE is on). 0 is a safe fallback —
+ * sockets here are non-blocking. Defined AFTER <sys/socket.h> so the
+ * system header wins first where it has the constant (issue #203). */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 #define sock_close(fd)      close(fd)
 
 static inline int sock_set_nonblocking(int fd) {

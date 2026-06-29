@@ -2,6 +2,11 @@
 
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 #define _DEFAULT_SOURCE     /* cfmakeraw */
+/* See usifac.c / issue #203: the BSDs hide cfmakeraw behind __BSD_VISIBLE,
+ * which _XOPEN_SOURCE turns off. */
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#define __BSD_VISIBLE 1
+#endif
 
 #include "pilot.h"
 #include "cpc.h"
