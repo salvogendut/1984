@@ -631,13 +631,13 @@ int config_load_from(Config *cfg, const char *path_override) {
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
-    /* M4ROM is incompatible with UNIDOS/Albireo tooling and with the
-     * Cyboard RTC. Older configs may have both enabled — keep M4 and
-     * disable the conflicting peripherals so the runtime starts in a
-     * clean scenario that matches the overlay's mutual-exclusion rule. */
-    if (cfg->m4) {
-        if (cfg->rtc)     cfg->rtc = false;
-        if (cfg->albireo) { cfg->albireo = false; cfg->albireo_image[0] = '\0'; }
+    /* M4 and Albireo both decode port 0xFExx and M4ROM clashes with
+     * Albireo's UNIDOS tooling — they can't run together. Older configs may
+     * have both; keep M4 and drop Albireo. RTC, the SymbIface mouse, IDE and
+     * Net4CPC sit on other ports and coexist with M4, so leave them alone. */
+    if (cfg->m4 && cfg->albireo) {
+        cfg->albireo = false;
+        cfg->albireo_image[0] = '\0';
     }
 
     return rc;
