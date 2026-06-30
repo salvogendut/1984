@@ -801,8 +801,9 @@ under Wine on Linux). Four points worth knowing:
 
 ## Continuous integration
 
-`.github/workflows/build.yml` defines two jobs that run on every push
-to `main`/`windows-port` and on every PR to `main`:
+`.github/workflows/build.yml` defines the build, package, and release jobs.
+Linux and Windows run on every push to `main`/`windows-port` and every PR to
+`main`; the Flatpak job runs on `main`, tags, and manual dispatch (not PRs).
 
 - **Linux** — runs inside a `fedora:41` container, installs the standard
   build deps (`gcc make autoconf automake pkgconf SDL3-devel`), runs
@@ -814,6 +815,13 @@ to `main`/`windows-port` and on every PR to `main`:
   into the `1984-windows-x86_64` artifact. `cache: true` keeps the
   pacman package cache between runs so subsequent setups drop from ~8
   minutes to ~30 seconds.
+- **Flatpak** — builds `io.github.salvogendut.Emulator1984.yml` in the
+  `freedesktop-24.08` container via the `flatpak/flatpak-github-actions`
+  action and uploads the `1984.flatpak` bundle. Skipped on PRs because the
+  manifest builds `branch: main` (the Linux job already covers PR compile
+  breakage). See [docs/FLATPAK.md](docs/FLATPAK.md).
 
-No release pipeline yet — artifacts are downloadable from the Actions
-tab but not attached to GitHub Releases.
+On a `v*` tag the **release** job (`needs: [linux, windows, flatpak]`)
+packages all three artifacts and publishes them to a GitHub Release —
+`1984-<tag>-linux-x86_64`, `1984-<tag>-windows-x86_64.zip`, and
+`1984-<tag>-x86_64.flatpak`.

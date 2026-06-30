@@ -84,6 +84,7 @@ Pre-built Linux and Windows binaries are attached to each [GitHub Release](https
 - **[INSTALL.md](INSTALL.md)** — installing pre-built binaries, building from source on each supported platform, ROM file requirements
 - **[USAGE.md](USAGE.md)** — command-line options, keyboard shortcuts, joystick mapping, options overlay (F9), memory monitor (F8), F10 host-side card browse, config file format
 - **[Development.md](Development.md)** — architecture, render pipeline, hardware emulation details, CI, port-specific notes (Haiku / NetBSD / Windows)
+- **[docs/FLATPAK.md](docs/FLATPAK.md)** — building and distributing the Flatpak from `main`; manifest layout, local bundle build, CI auto-build on tags
 
 Per-expansion guides:
 

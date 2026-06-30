@@ -6,6 +6,7 @@ on:
     tags:     ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   linux:
@@ -73,9 +74,37 @@ jobs:
           name: 1984-windows-x86_64
           path: dist/
 
+  flatpak:
+    name: Flatpak (x86_64)
+    # Slow (~15 min); skip on PRs (the manifest builds branch:main, so a PR
+    # build wouldn't reflect the PR anyway). Runs on main, tags, and manual
+    # dispatch. The Linux job already covers PR compile breakage.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: 1984.flatpak
+          manifest-path: io.github.salvogendut.Emulator1984.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1984-flatpak-x86_64
+          path: 1984.flatpak
+
   release:
     name: Publish GitHub Release
-    needs: [linux, windows]
+    needs: [linux, windows, flatpak]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -98,6 +127,9 @@ jobs:
 
           # Windows: zip the full bundle (exe + DLLs + roms)
           (cd artifacts/1984-windows-x86_64 && zip -r "../../assets/1984-${tag}-windows-x86_64.zip" .)
+
+          # Flatpak: single-file bundle, installable with `flatpak install`
+          cp artifacts/1984-flatpak-x86_64/1984.flatpak "assets/1984-${tag}-x86_64.flatpak"
 
           ls -la assets/
       - name: Create release
