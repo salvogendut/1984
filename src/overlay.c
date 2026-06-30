@@ -278,8 +278,8 @@ static void item_text(const Overlay *ov, int row,
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "M4 (experimental)");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "[needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
             } else if (ov->cfg->m4 && ov->cfg->m4_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -343,8 +343,8 @@ static void item_text(const Overlay *ov, int row,
         }
         case 7:
             snprintf(lbl, lsz, "SYMBiFACE IDE");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "[needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
             } else if (ov->cfg->symbiface_ide && ov->cfg->ide_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -356,8 +356,8 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 8:
             snprintf(lbl, lsz, "SYMBiFACE Mouse");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "[needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
             } else {
                 snprintf(val, vsz, "%s", ov->cfg->symbiface_mouse ? "enabled" : "disabled");
@@ -365,8 +365,8 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 9:
             snprintf(lbl, lsz, "CH376-A Mouse");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "(Albireo compatible) [needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "(Albireo compatible) [needs MX4]");
                 *readonly = true;
             } else if (!ov->cfg->albireo) {
                 snprintf(val, vsz, "(Albireo compatible) [needs CH376-B Disk]");
@@ -378,8 +378,8 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 10:
             snprintf(lbl, lsz, "CH376-B Disk");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "(Albireo compatible) [needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "(Albireo compatible) [needs MX4]");
                 *readonly = true;
             } else if (ov->cfg->albireo && ov->cfg->albireo_image[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -394,8 +394,8 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 11: {
             snprintf(lbl, lsz, "Cyboard");
-            if (!ov->cfg->rom_board) {
-                snprintf(val, vsz, "[needs Roms Board]");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
             } else {
                 bool all = ov->cfg->net4cpc && ov->cfg->rtc &&
@@ -730,11 +730,10 @@ static void activate_item(Overlay *ov) {
         break;
 
     case OV_ADVANCED:
-        /* Without the Roms Board fitted, every ROM-backed expansion is
-         * inert — block toggle on those rows. Net4CPC / RTC / DD1 / Diag
-         * Cart / ROM Slots have their own gating; the rest are nailed
-         * down here. */
-        if (!ov->cfg->rom_board &&
+        /* Without the MX4 bus connected, these cards are unplugged — block
+         * toggle on those rows. Net4CPC / RTC / DD1 / Diag Cart / ROM Slots
+         * have their own gating; the rest are nailed down here. */
+        if (!ov->cfg->mx4 &&
             (ov->row == 0 || ov->row == 7 || ov->row == 8 ||
              ov->row == 9 || ov->row == 10 || ov->row == 11))
             break;
@@ -946,7 +945,7 @@ static void activate_item(Overlay *ov) {
              * storage on chip B at 0xFE40). Requires the dual-CH376
              * card to be enabled; mutually exclusive with the SymbIface
              * PS/2 mouse. */
-            if (!ov->cfg->rom_board || !ov->cfg->albireo) break;
+            if (!ov->cfg->mx4 || !ov->cfg->albireo) break;
             ov->cfg->albireo_mouse = !ov->cfg->albireo_mouse;
             if (ov->cfg->albireo_mouse && ov->cfg->symbiface_mouse) {
                 ov->cfg->symbiface_mouse = false;
