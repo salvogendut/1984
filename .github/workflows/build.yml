@@ -18,8 +18,12 @@ jobs:
         run: |
           dnf install -y --setopt=install_weak_deps=False \
             gcc make autoconf automake pkgconf-pkg-config \
-            SDL3-devel git
+            SDL3-devel cairo-devel git \
+            rpm-build rpmdevtools \
+            desktop-file-utils libappstream-glib
       - uses: actions/checkout@v4
+      - name: Mark workspace as a safe git dir
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Configure
         run: |
           autoreconf -iv
@@ -31,6 +35,24 @@ jobs:
         with:
           name: 1984-linux-x86_64
           path: 1984
+      - name: Build RPM
+        run: |
+          set -e
+          rpmdev-setuptree
+          # `make dist` produces 1984-<version>.tar.gz that the spec
+          # expects under Source0.
+          make dist
+          cp 1984-*.tar.gz ~/rpmbuild/SOURCES/
+          cp 1984.spec     ~/rpmbuild/SPECS/
+          rpmbuild -bb ~/rpmbuild/SPECS/1984.spec
+          mkdir -p rpm-out
+          find ~/rpmbuild/RPMS -name '1984-*.rpm' -exec cp {} rpm-out/ \;
+          ls -la rpm-out/
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1984-fedora-x86_64-rpm
+          path: rpm-out/*.rpm
 
   windows:
     name: Windows (MinGW)
@@ -124,6 +146,9 @@ jobs:
           # Linux: rename the bare ELF so it does not collide with the tag name
           cp artifacts/1984-linux-x86_64/1984 "assets/1984-${tag}-linux-x86_64"
           chmod +x "assets/1984-${tag}-linux-x86_64"
+
+          # Fedora RPM (single .x86_64.rpm produced from the spec)
+          cp artifacts/1984-fedora-x86_64-rpm/*.rpm assets/
 
           # Windows: zip the full bundle (exe + DLLs + roms)
           (cd artifacts/1984-windows-x86_64 && zip -r "../../assets/1984-${tag}-windows-x86_64.zip" .)
