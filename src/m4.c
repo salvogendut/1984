@@ -1176,11 +1176,23 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_ERASEFILE: {
-        if (!m->root[0] || plen < 1) { err = M4_ERR_IO; break; }
-        char hostpath[M4_PATH_MAX];
-        if (!resolve_path(m, (const char *)p, hostpath, sizeof(hostpath)))
-            { err = M4_ERR_NOFILE; break; }
-        err = (remove(hostpath) == 0) ? M4_OK : M4_ERR_IO;
+        u8 erase_err = M4_ERR_IO;
+        if (plen >= 1) {
+            if (m4_use_fat(m)) {
+                char abs[M4_PATH_MAX];
+                fat_abs_path(m, (const char *)p, abs, sizeof(abs));
+                erase_err = m->image_read_only ? M4_ERR_RDONLY :
+                    (fat_delete(&m->image_vol, abs) ? M4_OK : M4_ERR_NOFILE);
+            } else if (m->root[0]) {
+                char hostpath[M4_PATH_MAX];
+                if (resolve_path(m, (const char *)p, hostpath, sizeof(hostpath)))
+                    erase_err = (remove(hostpath) == 0) ? M4_OK : M4_ERR_IO;
+                else
+                    erase_err = M4_ERR_NOFILE;
+            }
+        }
+        resp_u8(m, &roff, erase_err);
+        err = M4_OK;
         break;
     }
 

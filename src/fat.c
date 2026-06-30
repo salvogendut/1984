@@ -697,6 +697,34 @@ bool fat_seek(FatFile *f, u32 pos) {
 u32 fat_tell(FatFile *f)      { return f ? f->file_offset : 0; }
 u32 fat_file_size(FatFile *f) { return f ? f->file_size   : 0; }
 
+bool fat_delete(FatVol *v, const char *path) {
+    if (!v || !v->fp || !path) return false;
+
+    char leaf[256];
+    u32  parent;
+    if (!split_parent(v, path, &parent, leaf, sizeof(leaf))) return false;
+
+    u32 lba = 0;
+    u16 off = 0;
+    u8 slot[32];
+    if (!find_in_dir(v, parent, leaf, &lba, &off, slot)) return false;
+    if (slot[11] & 0x18) return false;  /* refuse directories and volume labels */
+
+    u32 c = ((u32)rd_u16(&slot[20]) << 16) | rd_u16(&slot[26]);
+    while (c >= 2 && !fat_is_eoc(v, c)) {
+        u32 n = fat_read_entry(v, c);
+        if (!fat_write_entry(v, c, 0)) return false;
+        c = n;
+    }
+
+    u8 sec[512];
+    if (!sec_read(v, lba, sec)) return false;
+    sec[off] = 0xE5;
+    if (!sec_write(v, lba, sec)) return false;
+    fat_flush_cache(v);
+    return true;
+}
+
 bool fat_write_dir_entry(FatVol *v, u32 sector, u16 byte_offset,
                          const u8 entry[32]) {
     if (!v || !v->fp || byte_offset + 32 > v->bytes_per_sector) return false;
