@@ -277,7 +277,7 @@ static void item_text(const Overlay *ov, int row,
     case OV_ADVANCED:
         switch (row) {
         case 0:
-            snprintf(lbl, lsz, "M4 (experimental)");
+            snprintf(lbl, lsz, "M4");
             if (!ov->cfg->mx4) {
                 snprintf(val, vsz, "[needs MX4]");
                 *readonly = true;
