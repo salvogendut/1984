@@ -272,8 +272,9 @@ static void apply_led_enables(const Config *cfg) {
     bool fdc_present = (cfg->model == MODEL_6128) || (cfg->model == MODEL_664) || cfg->dd1;
     leds_set_enabled(LED_FDC_A, fdc_present);
     leds_set_enabled(LED_FDC_B, fdc_present);
-    /* MX4 expansions need both rom_board and the expansion toggle. */
-    bool mx4 = cfg->rom_board;
+    /* MX4-bus cards light when the expansion bus is connected — they carry
+     * their own onboard ROM and no longer depend on the generic ROM Board. */
+    bool mx4 = cfg->mx4;
     leds_set_enabled(LED_IDE, mx4 && cfg->symbiface_ide);
     leds_set_enabled(LED_USB, mx4 && cfg->albireo);
     leds_set_enabled(LED_SD,  false);            /* retired — replaced by LED_M4 */
@@ -649,13 +650,12 @@ int main(int argc, char *argv[]) {
     cpc.rtc             = cfg.rtc;
 
     net4cpc_tap_sync(&cfg, tap_dev_arg);
-    /* These four expansions install their drivers as upper ROMs, so without
-     * the Roms Board fitted they can't run — force them off in the live CPC
-     * state while leaving the cfg values intact (re-enabling Roms Board
-     * restores them from cfg on the next cold boot). */
-    cpc.symbiface_ide   = cfg.symbiface_ide   && cfg.rom_board;
-    cpc.symbiface_mouse = cfg.symbiface_mouse && cfg.rom_board;
-    cpc.m4              = cfg.m4              && cfg.rom_board;
+    /* These cards plug into the MX4 expansion bus and carry their own onboard
+     * driver ROM, so they gate on the bus alone — not the generic ROM Board.
+     * Their ROMs map independently below (see the slot-load loop). */
+    cpc.symbiface_ide   = cfg.symbiface_ide   && cfg.mx4;
+    cpc.symbiface_mouse = cfg.symbiface_mouse && cfg.mx4;
+    cpc.m4              = cfg.m4              && cfg.mx4;
     cpc.symbnet         = cfg.symbnet;
     if (cfg.m4 && cfg.m4_path[0])
         snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
@@ -663,7 +663,7 @@ int main(int argc, char *argv[]) {
         m4_set_image(&cpc.m4_card, cfg.m4_image);
     if (cfg.symbiface_ide && cfg.ide_image[0])
         ide_open(&cpc.ide_chip, cfg.ide_image);
-    cpc.albireo       = cfg.albireo && cfg.rom_board;
+    cpc.albireo       = cfg.albireo && cfg.mx4;
     cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
     cpc.ch376.has_mouse   = cpc.albireo_mouse;
     cpc.ch376_b.has_mouse = false;
@@ -697,20 +697,21 @@ int main(int argc, char *argv[]) {
     if (cfg.rom_amsdos[0])
         mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
 
-    /* Load expansion ROMs into slots 0-31 (from config) when the ROM Board
-     * is fitted. With rom_board=false the cfg paths are preserved but
-     * unused — re-enabling restores the prior layout from a single source
-     * of truth. */
-    if (cfg.rom_board) {
-        for (int s = 0; s < ROM_EXT_COUNT; s++) {
-            /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
-            if (s == M4_ROM_SLOT && cfg.m4) continue;
-            if (cfg.rom_ext[s][0])
-                mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
-        }
+    /* Load expansion ROMs into slots 0-31. A slot owned by an MX4 card (its
+     * onboard driver ROM, tagged in rom_ext_boards[]) maps whenever the MX4
+     * bus is connected; a plain user slot needs the generic ROM Board fitted.
+     * With a gate off the cfg paths are preserved but unused — re-enabling
+     * restores the layout from a single source of truth. */
+    for (int s = 0; s < ROM_EXT_COUNT; s++) {
+        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
+        if (s == M4_ROM_SLOT && cfg.m4) continue;
+        if (!cfg.rom_ext[s][0]) continue;
+        bool board_owned = cfg.rom_ext_boards[s][0] != '\0';
+        if (board_owned ? cfg.mx4 : cfg.rom_board)
+            mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
     }
-    /* Load M4ROM into its dedicated slot when M4 is enabled */
-    if (cfg.m4) {
+    /* Load M4ROM into its dedicated slot when the M4 card is on the bus */
+    if (cfg.mx4 && cfg.m4) {
         char m4rom[512];
         config_default_m4rom(m4rom, sizeof(m4rom));
         mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
@@ -1183,19 +1184,21 @@ int main(int argc, char *argv[]) {
                 mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
             else
                 mem_unload_amsdos(&cpc.mem);
-            /* First unload every slot — covers the rom_board=true→false
+            /* First unload every slot — covers any gate true→false
              * transition. The cfg.rom_ext paths stay intact so the next
              * re-enable reloads them. */
             for (int s = 0; s < ROM_EXT_COUNT; s++)
                 mem_unload_rom_ext(&cpc.mem, s);
-            if (cfg.rom_board) {
-                for (int s = 0; s < ROM_EXT_COUNT; s++) {
-                    if (s == M4_ROM_SLOT && cfg.m4) continue;
-                    if (cfg.rom_ext[s][0])
-                        mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
-                }
+            /* Board-owned slots map on the MX4 bus; generic user slots need
+             * the ROM Board. Mirrors the cold-boot loop above. */
+            for (int s = 0; s < ROM_EXT_COUNT; s++) {
+                if (s == M4_ROM_SLOT && cfg.m4) continue;
+                if (!cfg.rom_ext[s][0]) continue;
+                bool board_owned = cfg.rom_ext_boards[s][0] != '\0';
+                if (board_owned ? cfg.mx4 : cfg.rom_board)
+                    mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
             }
-            if (cfg.m4) {
+            if (cfg.mx4 && cfg.m4) {
                 char m4rom[512];
                 config_default_m4rom(m4rom, sizeof(m4rom));
                 mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
@@ -1209,10 +1212,10 @@ int main(int argc, char *argv[]) {
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
             net4cpc_tap_sync(&cfg, tap_dev_arg);
-            /* See boot-time comment: these four need the Roms Board. */
-            cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.rom_board;
-            cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.rom_board;
-            cpc.m4               = cfg.m4              && cfg.rom_board;
+            /* See boot-time comment: these MX4 cards gate on the bus alone. */
+            cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.mx4;
+            cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.mx4;
+            cpc.m4               = cfg.m4              && cfg.mx4;
             cpc.symbnet          = cfg.symbnet;
             if (cpc.m4 && cfg.m4_path[0])
                 snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
@@ -1221,7 +1224,7 @@ int main(int argc, char *argv[]) {
             ide_close(&cpc.ide_chip);
             if (cpc.symbiface_ide && cfg.ide_image[0])
                 ide_open(&cpc.ide_chip, cfg.ide_image);
-            cpc.albireo       = cfg.albireo && cfg.rom_board;
+            cpc.albireo       = cfg.albireo && cfg.mx4;
             cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
             cpc.ch376.has_mouse   = cpc.albireo_mouse;
             cpc.ch376_b.has_mouse = false;

@@ -257,9 +257,9 @@ static void config_create_default(const char *path) {
         "# mx4: MX4 expansion bus — when false, all extension peripherals\n"
         "# (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) are disconnected.\n"
         "mx4=true\n"
-        "# rom_board: emulate the expansion ROM board (32 upper-ROM slots).\n"
-        "# When false, only OS + BASIC + AMSDOS are loaded; the slot_N entries\n"
-        "# below are remembered but ignored until re-enabled.\n"
+        "# rom_board: emulate the generic expansion ROM board (32 user upper-ROM\n"
+        "# slots). When false, user slot_N entries are remembered but ignored;\n"
+        "# MX4 cards (M4, SYMBiFACE, Albireo) still map their own onboard ROMs.\n"
         "rom_board=true\n"
         "# dd1: CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS)\n"
         "dd1=false\n"
@@ -631,13 +631,13 @@ int config_load_from(Config *cfg, const char *path_override) {
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
-    /* M4ROM is incompatible with UNIDOS/Albireo tooling and with the
-     * Cyboard RTC. Older configs may have both enabled — keep M4 and
-     * disable the conflicting peripherals so the runtime starts in a
-     * clean scenario that matches the overlay's mutual-exclusion rule. */
-    if (cfg->m4) {
-        if (cfg->rtc)     cfg->rtc = false;
-        if (cfg->albireo) { cfg->albireo = false; cfg->albireo_image[0] = '\0'; }
+    /* M4 and Albireo both decode port 0xFExx and M4ROM clashes with
+     * Albireo's UNIDOS tooling — they can't run together. Older configs may
+     * have both; keep M4 and drop Albireo. RTC, the SymbIface mouse, IDE and
+     * Net4CPC sit on other ports and coexist with M4, so leave them alone. */
+    if (cfg->m4 && cfg->albireo) {
+        cfg->albireo = false;
+        cfg->albireo_image[0] = '\0';
     }
 
     return rc;
