@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.11
+Version:        0.4.12
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,6 +83,18 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Tue Jun 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.12-1
+- M4 no longer needs the ROM Board and now coexists with the RTC,
+  SYMBiFACE mouse/IDE and Net4CPC; only Albireo stays mutually exclusive.
+  MX4 cards map their own onboard ROM independently (#205).
+- M4 SD-card image files can now be erased from the overlay (#206).
+- New --pilot host-PTY auto-pilot: drive the mouse pointer or CPC
+  joystick from a script or AI via polar-coordinate commands (#200).
+- Fix FreeBSD build: re-expose BSD extensions hidden by _XOPEN_SOURCE
+  (#203).
+- Flatpak now builds from main and ships as a release asset; the separate
+  flatpak branch was retired (#199).
+
 * Sun Jun 28 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.11-1
 - Display: new Real CRT post-process under Advanced with adjustable
   scanlines, brightness, contrast, and per-channel RGB gain (#81, #195).
