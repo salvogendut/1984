@@ -15,6 +15,14 @@ roms/*
 # dist tarballs produced by `make dist`
 /1984-*.tar.gz
 
+# flatpak-builder artifacts and bundles
+/.flatpak-builder/
+/flatpak-repo/
+/fp-build/
+/build-dir/
+/flatpak-build.log
+/1984*.flatpak
+
 # Windows build output dirs (CI artifacts cover these now)
 /dist-win*/
 

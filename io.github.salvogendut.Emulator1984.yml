@@ -2,7 +2,8 @@ app-id: io.github.salvogendut.Emulator1984
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk//24.08
-command: 1984
+# Quoted so flatpak-builder parses it as a string, not the integer 1984.
+command: '1984'
 
 finish-args:
   - --socket=wayland
