@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.12" date="2026-06-30">
+      <description>
+        <p>M4 no longer requires the ROM Board and now coexists with the RTC, SYMBiFACE mouse/IDE and Net4CPC — only Albireo stays mutually exclusive — and each MX4 card maps its own onboard ROM. M4 SD-card image files can be erased from the overlay. New --pilot host-PTY auto-pilot drives the mouse pointer or CPC joystick from a script or AI via polar-coordinate commands. FreeBSD build fixed. Flatpak now builds from main and ships as a release asset.</p>
+      </description>
+    </release>
     <release version="0.4.11" date="2026-06-28">
       <description>
         <p>Display and audio overhaul. New Real CRT post-process under Advanced — adjustable scanline opacity, brightness, contrast, and per-channel red/green/blue gain for white-point and tint correction (#81, #195). AY-3-8912 output is now interleaved stereo with Caprice32-style ABC channel panning (blendable from mono to full separation), a perceptual master volume control, and a DC blocker that kills the clicks register 7 used to make when toggling a channel mid-frame (#178); the envelope prescaler and sampled-audio playback are corrected so digi-tunes and effects sound right (#179, #186). On-screen toast notifications surface hardware events (USIfAC link-up, client connect/disconnect) in a fading bottom-left "smoked" panel, toggleable between screen / console / off, with a debug-gated stderr echo (#190); the activity LEDs gain hover labels (#191). The MC6845 CRTC gains overscan and hybrid screen-mode support — split-screen via mid-frame R-register reprogramming, R9 character-height changes, rupture-style raster tricks, and a modelled displayed-address pipeline — fixing raster timing in Bomb Jack, Batman Forever, and Xevious (#170, #181, #183, #105). CP/M Plus ROM probe fallback fixed (#108).</p>
