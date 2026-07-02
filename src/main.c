@@ -1032,9 +1032,12 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            /* Joystick/gamepad events — suppressed while the AMX mouse owns
-             * the joystick port (row 9), so the two don't fight over it. */
-            if (!cpc.amx_mouse && joy_handle_event(&joy, &ev, &cpc.kbd))
+            /* Joystick/gamepad events. Always processed so pads open/close and
+             * stay in sync; while the AMX mouse owns the joystick port (row 9)
+             * we pass NULL so the pad doesn't drive CPC joystick 1 — otherwise
+             * a pad hotplugged during AMX mode would never open and stay dead
+             * after switching back to Joystick. */
+            if (joy_handle_event(&joy, &ev, cpc.amx_mouse ? NULL : &cpc.kbd))
                 continue;
             /* Monitor window gets its own events */
             if (monitor_handle_event(monitor, &ev))
