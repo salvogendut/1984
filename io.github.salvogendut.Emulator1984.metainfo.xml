@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.13" date="2026-07-02">
+      <description>
+        <p>New General -&gt; Fallback Input toggle switches the primary host input between the USB joystick and an AMX mouse — a joystick-port mouse that captures the host pointer (Ctrl+Enter releases). It is mutually exclusive with the SYMBiFACE and Albireo pointer mice.</p>
+      </description>
+    </release>
     <release version="0.4.12" date="2026-06-30">
       <description>
         <p>M4 no longer requires the ROM Board and now coexists with the RTC, SYMBiFACE mouse/IDE and Net4CPC — only Albireo stays mutually exclusive — and each MX4 card maps its own onboard ROM. M4 SD-card image files can be erased from the overlay. New --pilot host-PTY auto-pilot drives the mouse pointer or CPC joystick from a script or AI via polar-coordinate commands. FreeBSD build fixed. Flatpak now builds from main and ships as a release asset.</p>
