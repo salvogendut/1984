@@ -1,5 +1,6 @@
 #include "overlay.h"
 #include "cpc.h"
+#include "amx.h"
 #include "tap.h"     /* TAP_SUPPORTED */
 #include "m4.h"
 #include "disk.h"
@@ -32,14 +33,14 @@ static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Media", "Extensions", "Advanced"
 };
 static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
-/* General has 7 rows on CPC 464, 8 on 6128 (the extra one is the
+/* General has 8 rows on CPC 464, 9 on 6128 (the extra one is the
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 7, 3, 14, 16 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 16 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
-    if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 8;
+    if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 9;
     if (s == OV_TINKER && ov->cfg->real_crt) return sec_row_count[s] + 6;
     return sec_row_count[s];
 }
@@ -228,6 +229,11 @@ static void item_text(const Overlay *ov, int row,
         case 7:
             snprintf(lbl, lsz, "Tinker");
             snprintf(val, vsz, "%s", ov->cfg->tinker ? "enabled" : "disabled");
+            break;
+        case 8:
+            snprintf(lbl, lsz, "Fallback Input");
+            snprintf(val, vsz, "%s",
+                ov->cfg->fallback_input == FALLBACK_AMX_MOUSE ? "AMX Mouse" : "Joystick");
             break;
         }
         break;
@@ -612,6 +618,43 @@ static void item_text(const Overlay *ov, int row,
 
 /* ---- Value cycling — marks dirty, does NOT save ---- */
 
+/* Turn off the AMX fallback mouse (General tab). Used when an MX4 pointer
+ * mouse is enabled in Extensions — the two contend for the host pointer, so
+ * only one can be active. Pure input routing, no cold boot needed. */
+static void amx_release_pointer(Overlay *ov) {
+    if (ov->cfg->fallback_input != FALLBACK_AMX_MOUSE) return;
+    ov->cfg->fallback_input = FALLBACK_JOYSTICK;
+    if (ov->cpc) {
+        ov->cpc->amx_mouse = false;
+        amx_reset(&ov->cpc->amx, &ov->cpc->kbd);
+    }
+}
+
+/* Turn off both MX4 pointer mice (SymbIface PS/2 + Albireo HID). Used when the
+ * AMX fallback mouse is selected — mirrors the SymbIface<->Albireo exclusion.
+ * These are MX4 hardware, so disabling them requires a cold boot. */
+static void amx_take_pointer(Overlay *ov) {
+    bool changed = false;
+    if (ov->cfg->symbiface_mouse) {
+        ov->cfg->symbiface_mouse = false;
+        if (ov->cpc) ov->cpc->symbiface_mouse = false;
+        changed = true;
+    }
+    if (ov->cfg->albireo_mouse) {
+        ov->cfg->albireo_mouse = false;
+        if (ov->cpc) {
+            ov->cpc->albireo_mouse = false;
+            ov->cpc->ch376.has_mouse = false;
+            ch376_close(&ov->cpc->ch376);
+            ch376_close(&ov->cpc->ch376_b);
+            if (ov->cfg->albireo_image[0])
+                ch376_open(&ov->cpc->ch376, ov->cfg->albireo_image);
+        }
+        changed = true;
+    }
+    if (changed) ov->needs_cold_boot = true;
+}
+
 static void activate_item(Overlay *ov) {
     switch (ov->section) {
 
@@ -695,6 +738,24 @@ static void activate_item(Overlay *ov) {
             if (!ov->cfg->tinker && ov->section == OV_TINKER) {
                 ov->section = OV_GENERAL;
                 ov->row = 0;
+            }
+            ov->dirty = true;
+            break;
+        case 8:
+            /* Fallback Input: Joystick <-> AMX Mouse. Pure input routing —
+             * mirror the flag live, no cold boot. */
+            ov->cfg->fallback_input =
+                (ov->cfg->fallback_input == FALLBACK_JOYSTICK)
+                    ? FALLBACK_AMX_MOUSE : FALLBACK_JOYSTICK;
+            if (ov->cfg->fallback_input == FALLBACK_AMX_MOUSE)
+                amx_take_pointer(ov);   /* AMX and the MX4 mice can't coexist */
+            if (ov->cpc) {
+                ov->cpc->amx_mouse =
+                    (ov->cfg->fallback_input == FALLBACK_AMX_MOUSE);
+                /* Hand off row 9: drop any lingering joystick/AMX bits. */
+                for (int col = AMX_UP; col <= AMX_FIRE2; col++)
+                    kbd_key_up(&ov->cpc->kbd, AMX_ROW, col);
+                amx_reset(&ov->cpc->amx, &ov->cpc->kbd);
             }
             ov->dirty = true;
             break;
@@ -888,8 +949,9 @@ static void activate_item(Overlay *ov) {
             break;
         case 8:
             ov->cfg->symbiface_mouse = !ov->cfg->symbiface_mouse;
-            /* SymbIface Mouse and Albireo Mouse both drive the host
-             * pointer — only one can own it at a time. */
+            /* SymbIface Mouse, Albireo Mouse and the AMX fallback mouse all
+             * drive the host pointer — only one can own it at a time. */
+            if (ov->cfg->symbiface_mouse) amx_release_pointer(ov);
             if (ov->cfg->symbiface_mouse && ov->cfg->albireo_mouse) {
                 ov->cfg->albireo_mouse = false;
                 if (ov->cpc) {
@@ -911,6 +973,7 @@ static void activate_item(Overlay *ov) {
              * PS/2 mouse. */
             if (!ov->cfg->mx4 || !ov->cfg->albireo) break;
             ov->cfg->albireo_mouse = !ov->cfg->albireo_mouse;
+            if (ov->cfg->albireo_mouse) amx_release_pointer(ov);
             if (ov->cfg->albireo_mouse && ov->cfg->symbiface_mouse) {
                 ov->cfg->symbiface_mouse = false;
                 if (ov->cpc) ov->cpc->symbiface_mouse = false;

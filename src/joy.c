@@ -96,6 +96,7 @@ void joy_destroy(Joy *j) {
 }
 
 static void axis_update(Keyboard *k, int neg_col, int pos_col, int val) {
+    if (!k) return;   /* row-9 writes suppressed (AMX mouse owns the port) */
     if (val < -AXIS_DEAD) {
         kbd_key_down(k, JOY_ROW, neg_col);
         kbd_key_up  (k, JOY_ROW, pos_col);
@@ -108,6 +109,10 @@ static void axis_update(Keyboard *k, int neg_col, int pos_col, int val) {
     }
 }
 
+/* Handle an SDL gamepad/joystick event. Device add/remove is always processed
+ * so the pad list stays in sync; when `k` is NULL the row-9 matrix writes are
+ * suppressed (used when the AMX mouse owns the joystick port) — the pad still
+ * opens/closes, it just doesn't drive CPC joystick 1. */
 bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
     switch (ev->type) {
 
@@ -133,8 +138,9 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
                 break;
             }
         }
-        for (int c = 0; c <= JOY_FIRE2; c++)
-            kbd_key_up(k, JOY_ROW, c);
+        if (k)
+            for (int c = 0; c <= JOY_FIRE2; c++)
+                kbd_key_up(k, JOY_ROW, c);
         return true;
     }
 
@@ -157,8 +163,10 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
         default: break;
         }
         if (col >= 0) {
-            if (pressed) kbd_key_down(k, JOY_ROW, col);
-            else         kbd_key_up  (k, JOY_ROW, col);
+            if (k) {
+                if (pressed) kbd_key_down(k, JOY_ROW, col);
+                else         kbd_key_up  (k, JOY_ROW, col);
+            }
             return true;
         }
         break;
@@ -201,8 +209,9 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
                 break;
             }
         }
-        for (int c = 0; c <= JOY_FIRE2; c++)
-            kbd_key_up(k, JOY_ROW, c);
+        if (k)
+            for (int c = 0; c <= JOY_FIRE2; c++)
+                kbd_key_up(k, JOY_ROW, c);
         return true;
     }
 
@@ -224,8 +233,10 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
         default: break;
         }
         if (col >= 0) {
-            if (pressed) kbd_key_down(k, JOY_ROW, col);
-            else         kbd_key_up  (k, JOY_ROW, col);
+            if (k) {
+                if (pressed) kbd_key_down(k, JOY_ROW, col);
+                else         kbd_key_up  (k, JOY_ROW, col);
+            }
             return true;
         }
         break;
@@ -259,6 +270,7 @@ bool joy_handle_event(Joy *j, const SDL_Event *ev, Keyboard *k) {
             }
         }
         if (!is_raw) break;
+        if (!k) return true;   /* row-9 writes suppressed (AMX mouse owns port) */
         Uint8 hat = ev->jhat.value;
         if (hat & SDL_HAT_UP)    kbd_key_down(k, JOY_ROW, JOY_UP);
         else                     kbd_key_up  (k, JOY_ROW, JOY_UP);

@@ -11,6 +11,7 @@ dist_man1_MANS = 1984.1
 	src/z80dis.c \
 	src/crtc.c \
 	src/disk.c \
+	src/amx.c \
 	src/display.c \
 	src/fdc.c \
 	src/gate_array.c \
@@ -49,6 +50,7 @@ dist_man1_MANS = 1984.1
 	src/z80.c
 
 noinst_HEADERS = \
+	src/amx.h \
 	src/ch376.h \
 	src/compat_win.h \
 	src/config.h \

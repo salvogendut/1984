@@ -15,6 +15,7 @@
 #include "rtc.h"
 #include "ide.h"
 #include "mouse.h"
+#include "amx.h"
 #include "m4.h"
 #include "symbnet.h"
 #include "ch376.h"
@@ -51,6 +52,8 @@ typedef struct {
     IDE        ide_chip;
     bool       symbiface_mouse; /* SYMBiFACE II / Cyboard PS/2 mouse present */
     Mouse      mouse;
+    bool       amx_mouse;      /* AMX mouse on the joystick port (Fallback Input) */
+    Amx        amx;
     bool       m4;             /* M4 board hardware present */
     M4         m4_card;
     bool       symbnet;        /* 1984 emulator synthetic SymbOS network port */

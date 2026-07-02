@@ -655,6 +655,7 @@ int main(int argc, char *argv[]) {
      * Their ROMs map independently below (see the slot-load loop). */
     cpc.symbiface_ide   = cfg.symbiface_ide   && cfg.mx4;
     cpc.symbiface_mouse = cfg.symbiface_mouse && cfg.mx4;
+    cpc.amx_mouse       = (cfg.fallback_input == FALLBACK_AMX_MOUSE); /* joystick port, no MX4 gate */
     cpc.m4              = cfg.m4              && cfg.mx4;
     cpc.symbnet         = cfg.symbnet;
     if (cfg.m4 && cfg.m4_path[0])
@@ -969,6 +970,8 @@ int main(int argc, char *argv[]) {
                         mouse_move(&cpc.mouse, (int)ev.motion.xrel, (int)ev.motion.yrel);
                     if (cpc.albireo_mouse)
                         ch376_mouse_move(&cpc.ch376, (int)ev.motion.xrel, (int)ev.motion.yrel);
+                    if (cpc.amx_mouse)
+                        amx_move(&cpc.amx, (int)ev.motion.xrel, (int)ev.motion.yrel);
                     continue;
                 }
                 if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
@@ -982,6 +985,8 @@ int main(int argc, char *argv[]) {
                             mouse_button(&cpc.mouse, btn, pressed);
                         if (cpc.albireo_mouse)
                             ch376_mouse_button(&cpc.ch376, btn, pressed);
+                        if (cpc.amx_mouse)
+                            amx_button(&cpc.amx, &cpc.kbd, btn, pressed);
                     }
                     continue;
                 }
@@ -996,14 +1001,17 @@ int main(int argc, char *argv[]) {
                     (SDL_GetModState() & SDL_KMOD_CTRL)) {
                     set_mouse_capture(cpc.display.window, false,
                                       &mouse_captured, cpc.model);
+                    if (cpc.amx_mouse)   /* drop any held fire/pulse bits on row 9 */
+                        amx_reset(&cpc.amx, &cpc.kbd);
                     continue;
                 }
             }
 
-            /* Click in emulator window captures mouse when either the
-             * SYMBiFACE II PS/2 mouse or the Albireo USB HID mouse is
-             * enabled. Ctrl+Enter releases capture. */
-            if (!mouse_captured && (cpc.symbiface_mouse || cpc.albireo_mouse) &&
+            /* Click in emulator window captures mouse when a pointer device is
+             * active: the SYMBiFACE II PS/2 mouse, the Albireo USB HID mouse,
+             * or the AMX joystick-port mouse. Ctrl+Enter releases capture. */
+            if (!mouse_captured &&
+                (cpc.symbiface_mouse || cpc.albireo_mouse || cpc.amx_mouse) &&
                 !overlay.visible &&
                 ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                 ev.button.windowID == SDL_GetWindowID(cpc.display.window)) {
@@ -1018,12 +1026,18 @@ int main(int argc, char *argv[]) {
                         mouse_button(&cpc.mouse, btn, true);
                     if (cpc.albireo_mouse)
                         ch376_mouse_button(&cpc.ch376, btn, true);
+                    if (cpc.amx_mouse)
+                        amx_button(&cpc.amx, &cpc.kbd, btn, true);
                 }
                 continue;
             }
 
-            /* Joystick/gamepad events */
-            if (joy_handle_event(&joy, &ev, &cpc.kbd))
+            /* Joystick/gamepad events. Always processed so pads open/close and
+             * stay in sync; while the AMX mouse owns the joystick port (row 9)
+             * we pass NULL so the pad doesn't drive CPC joystick 1 — otherwise
+             * a pad hotplugged during AMX mode would never open and stay dead
+             * after switching back to Joystick. */
+            if (joy_handle_event(&joy, &ev, cpc.amx_mouse ? NULL : &cpc.kbd))
                 continue;
             /* Monitor window gets its own events */
             if (monitor_handle_event(monitor, &ev))
@@ -1215,6 +1229,7 @@ int main(int argc, char *argv[]) {
             /* See boot-time comment: these MX4 cards gate on the bus alone. */
             cpc.symbiface_ide    = cfg.symbiface_ide   && cfg.mx4;
             cpc.symbiface_mouse  = cfg.symbiface_mouse && cfg.mx4;
+            cpc.amx_mouse        = (cfg.fallback_input == FALLBACK_AMX_MOUSE);
             cpc.m4               = cfg.m4              && cfg.mx4;
             cpc.symbnet          = cfg.symbnet;
             if (cpc.m4 && cfg.m4_path[0])
