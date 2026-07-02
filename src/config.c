@@ -190,6 +190,16 @@ static bool parse_mono(const char *val, MonoMode *out) {
     return false;
 }
 
+static const char *fallback_to_str(FallbackInput f) {
+    return f == FALLBACK_AMX_MOUSE ? "amx_mouse" : "joystick";
+}
+
+static bool parse_fallback(const char *val, FallbackInput *out) {
+    if (!strcasecmp(val, "joystick"))  { *out = FALLBACK_JOYSTICK;  return true; }
+    if (!strcasecmp(val, "amx_mouse")) { *out = FALLBACK_AMX_MOUSE; return true; }
+    return false;
+}
+
 static bool parse_bool(const char *val, bool *out) {
     if (!strcmp(val, "true") || !strcmp(val, "1") || !strcmp(val, "yes")) {
         *out = true; return true;
@@ -229,6 +239,8 @@ static void config_create_default(const char *path) {
         "model=6128\n"
         "# RAM size in KB: 64 (CPC 464/664) or 128+ (CPC 6128)\n"
         "memory=128\n"
+        "# Primary host input: joystick or amx_mouse\n"
+        "fallback_input=joystick\n"
         "\n"
         "[roms]\n"
         "# Paths to ROM images. ~ is expanded to your home directory.\n"
@@ -401,6 +413,10 @@ int config_load_from(Config *cfg, const char *path_override) {
                         || kb == 768 || kb == 1024)
                     cfg->memory_kb = kb;
                 else { fprintf(stderr, "1984.conf:%d: invalid memory '%s', using default (%d KB)\n", lineno, val, cfg->memory_kb); }
+            } else if (!strcmp(key, "fallback_input")) {
+                FallbackInput fi;
+                if (parse_fallback(val, &fi)) cfg->fallback_input = fi;
+                else { fprintf(stderr, "1984.conf:%d: fallback_input must be joystick/amx_mouse\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "roms")) {
             if (!strcmp(key, "os"))
@@ -664,7 +680,8 @@ int config_save(const Config *cfg) {
         "# 1984 CPC Emulator — configuration file\n\n"
         "[machine]\n"
         "model=%s\n"
-        "memory=%d\n\n"
+        "memory=%d\n"
+        "fallback_input=%s\n\n"
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n"
@@ -672,6 +689,7 @@ int config_save(const Config *cfg) {
         cfg->model == MODEL_464 ? "464" :
             (cfg->model == MODEL_664 ? "664" : "6128"),
         cfg->memory_kb,
+        fallback_to_str(cfg->fallback_input),
         cfg->rom_os,
         cfg->rom_basic,
         cfg->rom_amsdos);

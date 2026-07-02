@@ -565,6 +565,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
             psg_write(&cpc->psg, cpc->ppi.port_a);
         }
         else if (psg_ctrl == 0x01) {
+            /* AMX mouse (Fallback Input) delivers one row-9 pulse per fresh
+             * select-edge; run it on the value being read so it's robust to
+             * both PPI row-select write paths. */
+            if (cpc->amx_mouse)
+                amx_pre_read(&cpc->amx, &cpc->kbd, cpc->ppi.kbd_row);
             psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
             /* PSG read mode on CPC always reads I/O port A (reg 14 = keyboard matrix).
              * Bypass psg_read() to avoid depending on psg->selected being 14. */
@@ -809,6 +814,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     rtc_init(&cpc->rtc_chip);
     ide_init(&cpc->ide_chip);
     mouse_init(&cpc->mouse);
+    amx_init(&cpc->amx);
     m4_init(&cpc->m4_card, "");
     symbnet_init(&cpc->symbnet_card, &cpc->m4_card);
     ch376_init(&cpc->ch376);
@@ -861,6 +867,7 @@ void cpc_reset(CPC *cpc) {
     rtc_init(&cpc->rtc_chip);
     ide_reset(&cpc->ide_chip);  /* keeps image file open across warm reset */
     mouse_init(&cpc->mouse);    /* clear accumulated deltas; capture state managed by main */
+    amx_reset(&cpc->amx, &cpc->kbd);
     m4_reset(&cpc->m4_card);
     ch376_reset(&cpc->ch376);
     ch376_reset(&cpc->ch376_b);

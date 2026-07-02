@@ -7,12 +7,20 @@
  * and we want config.h to stay narrow. PrintSink: see src/printer.h. */
 typedef enum { PRINTER_SINK_PDF = 0, PRINTER_SINK_REAL_PRINTER } ConfigPrintSink;
 
+/* Primary host input device, selectable from the overlay's General tab.
+ * Joystick (default) routes the host gamepad to CPC joystick 1; AMX Mouse
+ * captures the host pointer and drives the same joystick port as an AMX mouse.
+ * Mutually exclusive with the MX4 pointer mice (symbiface_mouse/albireo_mouse),
+ * which all contend for the host pointer. */
+typedef enum { FALLBACK_JOYSTICK = 0, FALLBACK_AMX_MOUSE } FallbackInput;
+
 #define CONFIG_PATH_MAX 512
 
 typedef struct {
     /* [machine] */
     CpcModel model;
     int      memory_kb;     /* 64, 128, 256, 512, or 576 */
+    FallbackInput fallback_input;   /* primary host input: joystick | amx_mouse */
 
     /* [roms] */
     char rom_os[CONFIG_PATH_MAX];
