@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.12
+Version:        0.4.13
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -83,6 +83,12 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Wed Jul 02 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.13-1
+- New General -> Fallback Input toggle: switch the primary host input
+  between the USB joystick and an AMX mouse (joystick-port mouse, host
+  pointer captured; Ctrl+Enter releases). Mutually exclusive with the
+  SYMBiFACE/Albireo pointer mice (#211).
+
 * Tue Jun 30 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.12-1
 - M4 no longer needs the ROM Board and now coexists with the RTC,
   SYMBiFACE mouse/IDE and Net4CPC; only Albireo stays mutually exclusive.
