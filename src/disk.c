@@ -18,6 +18,7 @@ void disk_eject(Disk *d) {
 
 static int load_track(DiskTrack *tr, FILE *f, int track_size, long track_file_offset) {
     if (track_size < 256) return 0;
+    tr->file_offset = track_file_offset;
 
     uint8_t hdr[256];
     if (fread(hdr, 1, 256, f) != 256) return -1;
@@ -222,5 +223,92 @@ int disk_write_sector(Disk *d, DiskSector *sec, const uint8_t *data, int len) {
     }
 
     fclose(f);
+    return rc;
+}
+
+int disk_format_track(Disk *d, int side, const uint8_t *chrn, int count,
+                      uint8_t default_N, uint8_t gap3, uint8_t filler) {
+    if (!d || !chrn || !d->inserted || d->write_protected || !d->path[0] ||
+        side < 0 || side >= d->sides || d->cur_track >= d->track_count ||
+        count <= 0 || count > DISK_MAX_SECTORS)
+        return -1;
+
+    DiskTrack *tr = &d->track[d->cur_track][side];
+    if (!tr->data || tr->data_size <= 0 || tr->file_offset < 0)
+        return -1;
+
+    DiskSector sectors[DISK_MAX_SECTORS];
+    memset(sectors, 0, sizeof(sectors));
+
+    int offset = 0;
+    for (int i = 0; i < count; i++) {
+        uint8_t N = chrn[i * 4 + 3];
+        if (N > 7) return -1;
+        int size = 128 << N;
+        if (offset + size > tr->data_size) return -1;
+
+        DiskSector *sec = &sectors[i];
+        sec->C = chrn[i * 4 + 0];
+        sec->H = chrn[i * 4 + 1];
+        sec->R = chrn[i * 4 + 2];
+        sec->N = N;
+        sec->st1 = 0;
+        sec->st2 = 0;
+        sec->offset = offset;
+        sec->file_offset = tr->file_offset + 256 + offset;
+        sec->size = size;
+        offset += size;
+    }
+
+    uint8_t hdr[256];
+    memset(hdr, 0, sizeof(hdr));
+    memcpy(hdr, "Track-Info\r\n", 12);
+    hdr[0x10] = (uint8_t)d->cur_track;
+    hdr[0x11] = (uint8_t)side;
+    hdr[0x14] = default_N;
+    hdr[0x15] = (uint8_t)count;
+    hdr[0x16] = gap3;
+    hdr[0x17] = filler;
+    for (int i = 0; i < count; i++) {
+        uint8_t *si = hdr + 0x18 + i * 8;
+        const DiskSector *sec = &sectors[i];
+        si[0] = sec->C;
+        si[1] = sec->H;
+        si[2] = sec->R;
+        si[3] = sec->N;
+        si[4] = sec->st1;
+        si[5] = sec->st2;
+        si[6] = (uint8_t)(sec->size & 0xFF);
+        si[7] = (uint8_t)(sec->size >> 8);
+    }
+
+    uint8_t *data = malloc((size_t)tr->data_size);
+    if (!data) return -1;
+    memset(data, filler, (size_t)tr->data_size);
+
+    FILE *f = fopen(d->path, "r+b");
+    if (!f) {
+        d->write_protected = true;
+        free(data);
+        return -1;
+    }
+
+    int rc = 0;
+    if (fseek(f, tr->file_offset, SEEK_SET) != 0 ||
+        fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr) ||
+        fwrite(data, 1, (size_t)tr->data_size, f) != (size_t)tr->data_size ||
+        fflush(f) != 0) {
+        rc = -1;
+        d->write_protected = true;
+    }
+    fclose(f);
+
+    if (rc == 0) {
+        memcpy(tr->data, data, (size_t)tr->data_size);
+        memcpy(tr->sectors, sectors, sizeof(sectors));
+        tr->sector_count = count;
+    }
+
+    free(data);
     return rc;
 }

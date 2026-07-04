@@ -20,6 +20,7 @@ typedef struct {
     DiskSector sectors[DISK_MAX_SECTORS];
     uint8_t   *data;        /* raw sector data (heap-allocated) */
     int        data_size;
+    long       file_offset;  /* absolute byte offset of track header in .dsk */
 } DiskTrack;
 
 typedef struct {
@@ -50,3 +51,8 @@ DiskSector *disk_find_sector(Disk *d, int side, uint8_t C, uint8_t H,
 
 /* Persist an already-committed sector write back into the mounted .dsk image. */
 int disk_write_sector(Disk *d, DiskSector *sec, const uint8_t *data, int len);
+
+/* Reformat the current track on `side` using `count` CHRN records (4 bytes
+ * each: C,H,R,N), filling all sector data with `filler`. */
+int disk_format_track(Disk *d, int side, const uint8_t *chrn, int count,
+                      uint8_t default_N, uint8_t gap3, uint8_t filler);

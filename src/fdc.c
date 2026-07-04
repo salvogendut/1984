@@ -2,6 +2,8 @@
 #include "leds.h"
 #include <string.h>
 
+#define FDC_FORMAT_TRACK_DELAY_CYCLES 800000  /* 200 ms at 4 MHz */
+
 /* Command byte counts (total bytes including the command byte itself).
  * Index = command code & 0x1F. 0 = unknown/invalid. */
 static const int cmd_len[32] = {
@@ -44,6 +46,8 @@ uint8_t fdc_read_status(FDC *fdc) {
         else                    /* CPU → FDC */
             return FDC_MSR_RQM | FDC_MSR_NDM | FDC_MSR_BUSY;
     case FDC_PHASE_RESULT:
+        if (fdc->result_delay_cycles > 0)
+            return FDC_MSR_BUSY;
         return FDC_MSR_RQM | FDC_MSR_DIO | FDC_MSR_BUSY;
     }
     return FDC_MSR_RQM;
@@ -291,15 +295,33 @@ static void exec_cmd(FDC *fdc) {
 
     /* FORMAT TRACK */
     case 0x0D: {
-        /* Accept the CPU's format data then produce a dummy result */
-        int drv = fdc->cmd[1] & 0x01;
-        uint8_t N   = fdc->cmd[2];
-        uint8_t sc  = fdc->cmd[3];   /* sectors per track */
-        int total = (128 << N) * sc;
-        fdc->exec_len   = total > FDC_EXEC_BUF ? FDC_EXEC_BUF : total;
+        int drv  = fdc->cmd[1] & 0x01;
+        int side = (fdc->cmd[1] >> 2) & 0x01;
+        uint8_t sc = fdc->cmd[3];   /* sectors per track */
+        Disk *d = fdc->drive[drv];
+
+        leds_ping(drv ? LED_FDC_B : LED_FDC_A);
+        if (!d || !d->inserted) {
+            set_result(fdc, FDC_ST0_IC_AT | FDC_ST0_NR | (uint8_t)drv,
+                       0, 0, 0, (uint8_t)side, 0, fdc->cmd[2]);
+            break;
+        }
+        if (d->write_protected) {
+            set_result(fdc, FDC_ST0_IC_AT | (uint8_t)drv, FDC_ST1_NW, 0,
+                       0, (uint8_t)side, 0, fdc->cmd[2]);
+            break;
+        }
+        if (sc == 0 || sc > DISK_MAX_SECTORS || (int)sc * 4 > FDC_EXEC_BUF) {
+            set_result(fdc, FDC_ST0_IC_AT | (uint8_t)drv, FDC_ST1_OR, 0,
+                       0, (uint8_t)side, 0, fdc->cmd[2]);
+            break;
+        }
+
+        fdc->exec_len   = sc * 4;    /* CHRN records, not sector payload */
         fdc->exec_pos   = 0;
         fdc->exec_write = true;
         fdc->result[0] = (uint8_t)drv;
+        fdc->result[1] = (uint8_t)side;
         fdc->result_len = 7;
         fdc->result_pos = 0;
         fdc->phase = FDC_PHASE_EXEC;
@@ -316,12 +338,37 @@ static void exec_cmd(FDC *fdc) {
 
 static void commit_write(FDC *fdc) {
     uint8_t code = fdc->cmd[0] & 0x1F;
-    if (code != 0x05 && code != 0x09) {
-        /* FORMAT or unknown — just return OK result */
+    if (code == 0x0D) {
         int drv = fdc->result[0] & 0x01;
-        uint8_t C = fdc->cmd[2], H = fdc->cmd[3];
-        uint8_t R = fdc->cmd[4], N = fdc->cmd[5];
-        set_result(fdc, (uint8_t)(FDC_ST0_IC_OK | drv), 0, 0, C, H, R, N);
+        int side = fdc->result[1] & 0x01;
+        uint8_t N = fdc->cmd[2];
+        uint8_t sc = fdc->cmd[3];
+        uint8_t gap3 = fdc->cmd[4];
+        uint8_t filler = fdc->cmd[5];
+        Disk *d = fdc->drive[drv];
+        uint8_t C = sc ? fdc->exec_buf[(sc - 1) * 4 + 0] : 0;
+        uint8_t H = sc ? fdc->exec_buf[(sc - 1) * 4 + 1] : (uint8_t)side;
+        uint8_t R = sc ? fdc->exec_buf[(sc - 1) * 4 + 2] : 0;
+        uint8_t idN = sc ? fdc->exec_buf[(sc - 1) * 4 + 3] : N;
+
+        if (!d || !d->inserted) {
+            set_result(fdc, FDC_ST0_IC_AT | FDC_ST0_NR | (uint8_t)drv,
+                       0, 0, C, H, R, idN);
+            return;
+        }
+        if (disk_format_track(d, side, fdc->exec_buf, sc, N, gap3, filler) < 0) {
+            set_result(fdc, FDC_ST0_IC_AT | (uint8_t)drv, FDC_ST1_NW, 0,
+                       C, H, R, idN);
+            return;
+        }
+
+        set_result(fdc, (uint8_t)(FDC_ST0_IC_OK | drv), 0, 0, C, H, R, idN);
+        fdc->result_delay_cycles = FDC_FORMAT_TRACK_DELAY_CYCLES;
+        return;
+    }
+
+    if (code != 0x05 && code != 0x09) {
+        set_invalid(fdc);
         return;
     }
 
@@ -373,6 +420,8 @@ uint8_t fdc_read_data(FDC *fdc) {
         return val;
     }
     if (fdc->phase == FDC_PHASE_RESULT) {
+        if (fdc->result_delay_cycles > 0)
+            return 0xFF;
         uint8_t val = (fdc->result_pos < fdc->result_len)
                     ? fdc->result[fdc->result_pos++]
                     : 0xFF;
@@ -412,4 +461,13 @@ void fdc_write_data(FDC *fdc, uint8_t val) {
 
 void fdc_motor_write(FDC *fdc, uint8_t val) {
     fdc->motor = (val & 0x01) != 0;
+}
+
+void fdc_tick(FDC *fdc, int cycles) {
+    if (!fdc || cycles <= 0 || fdc->result_delay_cycles <= 0)
+        return;
+    if (cycles >= fdc->result_delay_cycles)
+        fdc->result_delay_cycles = 0;
+    else
+        fdc->result_delay_cycles -= cycles;
 }
