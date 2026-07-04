@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -O2
 CPPFLAGS ?=
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk
 
 .PHONY: all check clean
 
@@ -28,12 +28,17 @@ test-mem: test_mem.c ../src/mem.c ../src/mem.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_mem.c ../src/mem.c -o $@
 
+test-disk: test_disk.c ../src/disk.c ../src/disk.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_disk.c ../src/disk.c -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
 	./test-z80
 	./test-psg
 	./test-mem
+	./test-disk
 
 clean:
 	rm -f $(TESTS)

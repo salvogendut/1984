@@ -1144,6 +1144,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
     /* Tape (no-op when no tape loaded / motor off) */
     tape_step(&cpc->tape, cycles);
     ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
+    fdc_tick(&cpc->fdc, cycles);
     /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
      * frame end so AY register writes take effect at their CPU-cycle time;
      * this is required for volume-register sample playback. */

@@ -64,6 +64,7 @@ typedef struct {
 
     bool     motor;
     int      read_status_delay;  /* first status read after data-ready returns BUSY (matches Caprice32) */
+    int      result_delay_cycles; /* post-operation busy time before result bytes are ready */
 
     Disk    *drive[2];      /* drive[0]=A, drive[1]=B */
 } FDC;
@@ -75,3 +76,4 @@ uint8_t fdc_read_status(FDC *fdc);
 uint8_t fdc_read_data(FDC *fdc);
 void    fdc_write_data(FDC *fdc, uint8_t val);
 void    fdc_motor_write(FDC *fdc, uint8_t val);
+void    fdc_tick(FDC *fdc, int cycles);
