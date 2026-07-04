@@ -345,8 +345,14 @@ static void commit_write(FDC *fdc) {
         DiskTrack *tr = &d->track[d->cur_track][side];
         int copy = sec->size;
         if (buf_off + copy > fdc->exec_len) copy = fdc->exec_len - buf_off;
-        if (tr->data && sec->offset + copy <= tr->data_size)
+        if (tr->data && sec->offset + copy <= tr->data_size) {
+            if (disk_write_sector(d, sec, fdc->exec_buf + buf_off, copy) < 0) {
+                set_result(fdc, FDC_ST0_IC_AT | (uint8_t)drv, FDC_ST1_NW, 0,
+                           C, H, cur_R, N);
+                return;
+            }
             memcpy(tr->data + sec->offset, fdc->exec_buf + buf_off, copy);
+        }
         buf_off += copy;
         cur_R++;
     }

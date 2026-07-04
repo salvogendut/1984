@@ -16,7 +16,7 @@ void disk_eject(Disk *d) {
     d->cur_track = cur_track;   /* preserve head position across eject */
 }
 
-static int load_track(DiskTrack *tr, FILE *f, int track_size) {
+static int load_track(DiskTrack *tr, FILE *f, int track_size, long track_file_offset) {
     if (track_size < 256) return 0;
 
     uint8_t hdr[256];
@@ -30,6 +30,7 @@ static int load_track(DiskTrack *tr, FILE *f, int track_size) {
     tr->sector_count = spt;
 
     /* Sector data follows the 256-byte header */
+    long data_file_offset = track_file_offset + 256;
     int data_size = track_size - 256;
     if (data_size > 0) {
         tr->data = malloc(data_size);
@@ -52,13 +53,19 @@ static int load_track(DiskTrack *tr, FILE *f, int track_size) {
         if (sz == 0) sz = 128 << sec->N;
         sec->size   = sz;
         sec->offset = offset;
+        sec->file_offset = data_file_offset + offset;
         offset += sz;
     }
     return 0;
 }
 
 int disk_load(Disk *d, const char *path) {
-    FILE *f = fopen(path, "rb");
+    bool write_protected = false;
+    FILE *f = fopen(path, "r+b");
+    if (!f) {
+        f = fopen(path, "rb");
+        write_protected = true;
+    }
     if (!f) { fprintf(stderr, "disk: cannot open %s\n", path); return -1; }
 
     uint8_t hdr[256];
@@ -84,6 +91,8 @@ int disk_load(Disk *d, const char *path) {
     d->track_count = tracks;
     d->sides       = sides;
     d->inserted    = true;
+    snprintf(d->path, sizeof(d->path), "%s", path);
+    d->write_protected = write_protected;
 
     /* Normal DSK: fixed track size for all tracks */
     int fixed_track_size = 0;
@@ -100,7 +109,9 @@ int disk_load(Disk *d, const char *path) {
 
             if (ts == 0) continue;  /* missing track in extended DSK */
 
-            if (load_track(&d->track[t][s], f, ts) < 0) {
+            long track_file_offset = ftell(f);
+            if (track_file_offset < 0 ||
+                load_track(&d->track[t][s], f, ts, track_file_offset) < 0) {
                 fprintf(stderr, "disk: error reading track %d side %d\n", t, s);
                 fclose(f);
                 return -1;
@@ -187,4 +198,29 @@ DiskSector *disk_find_sector(Disk *d, int side, uint8_t C, uint8_t H,
             return s;
     }
     return NULL;
+}
+
+int disk_write_sector(Disk *d, DiskSector *sec, const uint8_t *data, int len) {
+    if (!d || !sec || !data || !d->inserted || d->write_protected ||
+        !d->path[0] || sec->file_offset < 0 || len < 0)
+        return -1;
+
+    if (len > sec->size) len = sec->size;
+
+    FILE *f = fopen(d->path, "r+b");
+    if (!f) {
+        d->write_protected = true;
+        return -1;
+    }
+
+    int rc = 0;
+    if (fseek(f, sec->file_offset, SEEK_SET) != 0 ||
+        fwrite(data, 1, (size_t)len, f) != (size_t)len ||
+        fflush(f) != 0) {
+        rc = -1;
+        d->write_protected = true;
+    }
+
+    fclose(f);
+    return rc;
 }
