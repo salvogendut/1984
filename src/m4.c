@@ -789,12 +789,24 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u8 mode = p[0];
             const char *name = (const char *)&p[1];
             bool is_write = (mode & 0x02) != 0;
+            bool create_always = (mode & 0x08) != 0;
+            bool open_always = (mode & 0x10) != 0;
 
             if (m4_use_fat(m)) {
                 /* Image-mode: route through the FAT volume. */
                 char abs[M4_PATH_MAX];
                 fat_abs_path(m, name, abs, sizeof(abs));
-                FatFile *ff = fat_open(&m->image_vol, abs, is_write);
+                FatFile *ff = NULL;
+                if (is_write && open_always && !create_always) {
+                    ff = fat_open(&m->image_vol, abs, false);
+                    if (ff) {
+                        ff->write_mode = true;
+                    } else {
+                        ff = fat_open(&m->image_vol, abs, true);
+                    }
+                } else {
+                    ff = fat_open(&m->image_vol, abs, is_write);
+                }
                 if (!ff && !is_write && !strchr(name, '.')) {
                     /* Try .BAS / .BIN auto-extension for read mode. */
                     static const char *exts[] = { ".BAS", ".BIN", NULL };
@@ -862,7 +874,6 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             if (!path_ok) {
                 open_err = M4_ERR_NOFILE;
             } else {
-                const char *fmode = (mode & 0x02) ? "wb" : (mode & 0x30) ? "ab" : "rb";
                 int idx;
                 if (mode & 0x80) {                  /* real-mode dynamic alloc (3..N) */
                     idx = -1;
@@ -880,7 +891,13 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 if (idx < 0) {
                     open_err = M4_ERR_FULL;
                 } else {
-                    FILE *fp = fopen(hostpath, fmode);
+                    FILE *fp = NULL;
+                    if (is_write && open_always && !create_always) {
+                        fp = fopen(hostpath, "r+b");
+                        if (!fp) fp = fopen(hostpath, "w+b");
+                    } else {
+                        fp = fopen(hostpath, is_write ? "w+b" : "rb");
+                    }
                     if (!fp) {
                         open_err = M4_ERR_NOFILE;
                     } else {
@@ -984,9 +1001,9 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
     case C_WRITE: {
         leds_ping_m4_disk();
-        if (plen < 1) { err = M4_ERR_IO; break; }
+        if (plen < 1) { err = M4_ERR_IO; resp_u8(m, &roff, err); break; }
         u8 fd = p[0];
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
+        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; resp_u8(m, &roff, err); break; }
         size_t actual = (size_t)(plen - 1);
         size_t written;
         if (m->fds[fd - 1].fatf)
@@ -994,20 +1011,22 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         else
             written = fwrite(&p[1], 1, actual, m->fds[fd - 1].fp);
         err = (written == actual) ? M4_OK : M4_ERR_IO;
+        resp_u8(m, &roff, err);
         break;
     }
 
     case C_WRITE2: {
         leds_ping_m4_disk();
-        if (plen < 2) { err = M4_ERR_IO; break; }
+        if (plen < 2) { err = M4_ERR_IO; resp_u8(m, &roff, err); break; }
         u8 fd = p[0];
         u8 ch = p[1];
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
+        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; resp_u8(m, &roff, err); break; }
         if (m->fds[fd - 1].fatf)
             fat_write(m->fds[fd - 1].fatf, &ch, 1);
         else
             fputc(ch, m->fds[fd - 1].fp);
         err = M4_OK;
+        resp_u8(m, &roff, err);
         break;
     }
 
@@ -1044,15 +1063,16 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         /* M4 protocol: data[0]=fd, data[1..4]=offset (32-bit LE). Absolute
          * seek (SET) only — there's no whence byte. M4ROM's fseek wrapper
          * sends exactly 5 bytes after the command header. */
-        if (plen < 5) { err = M4_ERR_IO; break; }
+        if (plen < 5) { err = M4_ERR_IO; resp_u8(m, &roff, err); break; }
         u8  fd  = p[0];
         u32 pos = (u32)p[1] | ((u32)p[2] << 8) | ((u32)p[3] << 16) | ((u32)p[4] << 24);
-        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; break; }
+        if (!valid_fd(m, fd)) { err = M4_ERR_BADFD; resp_u8(m, &roff, err); break; }
         if (m->fds[fd - 1].fatf)
             err = fat_seek(m->fds[fd - 1].fatf, pos) ? M4_OK : M4_ERR_IO;
         else
             err = (fseek(m->fds[fd - 1].fp, (long)pos, SEEK_SET) == 0)
                   ? M4_OK : M4_ERR_IO;
+        resp_u8(m, &roff, err);
         break;
     }
 
