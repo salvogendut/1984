@@ -632,8 +632,13 @@ static void execute(CH376 *ch) {
         ch->bytes_remaining = n;
         ch->writing = true;
         leds_ping(LED_USB);
-        if (!ch->file) raise_int(ch, USB_INT_DISK_ERR);
-        else           raise_int(ch, USB_INT_DISK_WRITE);
+        if (!ch->file) {
+            raise_int(ch, USB_INT_DISK_ERR);
+        } else {
+            ch->file->write_mode = true;  /* FILE_OPEN + BYTE_WRITE appends existing files. */
+            ch->file_writing = true;
+            raise_int(ch, USB_INT_DISK_WRITE);
+        }
         break;
     }
 
