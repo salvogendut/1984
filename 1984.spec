@@ -14,6 +14,7 @@ BuildRequires:  automake
 BuildRequires:  pkgconfig(sdl3)
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
+BuildRequires:  systemd-rpm-macros
 
 %description
 1984 is a cycle-stepped Amstrad CPC 464/6128 emulator written in C
@@ -61,11 +62,18 @@ autoreconf -fiv
 desktop-file-validate %{buildroot}%{_datadir}/applications/io.github.salvogendut.Emulator1984.desktop
 appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github.salvogendut.Emulator1984.metainfo.xml
 
+%post
+%systemd_user_post 1984-web.service
+
+%preun
+%systemd_user_preun 1984-web.service
+
 %files
 %license LICENSE
 %doc README.md INSTALL.md USAGE.md
 %{_bindir}/%{name}
 %{_mandir}/man1/%{name}.1*
+%{_userunitdir}/1984-web.service
 %{_datadir}/applications/io.github.salvogendut.Emulator1984.desktop
 %{_datadir}/metainfo/io.github.salvogendut.Emulator1984.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/io.github.salvogendut.Emulator1984.png

@@ -115,7 +115,8 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" \
 	"$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" \
 	"$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" \
-	"$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"
+	"$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)" \
+	"$(DESTDIR)$(userunitdir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
@@ -240,7 +241,7 @@ MANS = $(dist_man1_MANS)
 DATA = $(dist_desktop_DATA) $(dist_icon128_DATA) $(dist_icon16_DATA) \
 	$(dist_icon256_DATA) $(dist_icon32_DATA) $(dist_icon48_DATA) \
 	$(dist_icon512_DATA) $(dist_icon64_DATA) $(dist_metainfo_DATA) \
-	$(dist_roms_DATA)
+	$(dist_roms_DATA) $(userunit_DATA)
 HEADERS = $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
@@ -512,7 +513,12 @@ noinst_HEADERS = \
 # the link step — items only in _LDADD are linked but not built.
 1984_LDADD = $(SDL3_LIBS) $(CAIRO_LIBS) -lm $(WIN_LIBS) $(WIN_RC_OBJ)
 1984_DEPENDENCIES = $(WIN_RC_OBJ)
-CLEANFILES = icons/1984-rc.o
+CLEANFILES = icons/1984-rc.o packaging/1984-web.service
+
+# systemd user unit for the headless Web GUI service. Generated from
+# the .in template so ExecStart points at the configured bindir.
+userunitdir = $(prefix)/lib/systemd/user
+userunit_DATA = packaging/1984-web.service
 
 # Bundled ROM images installed to $(datadir)/1984/roms/
 # (CPC firmware are freely redistributable for emulator use; M4ROM and
@@ -553,7 +559,8 @@ dist_icon512_DATA = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
 EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico \
-	src/webgui_page.html scripts/gen_webgui_page.sh
+	src/webgui_page.html scripts/gen_webgui_page.sh \
+	packaging/1984-web.service.in
 
 all: all-am
 
@@ -1690,6 +1697,27 @@ uninstall-dist_romsDATA:
 	@list='$(dist_roms_DATA)'; test -n "$(romsdir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
 	dir='$(DESTDIR)$(romsdir)'; $(am__uninstall_files_from_dir)
+install-userunitDATA: $(userunit_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(userunit_DATA)'; test -n "$(userunitdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(userunitdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(userunitdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(userunitdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(userunitdir)" || exit $$?; \
+	done
+
+uninstall-userunitDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(userunit_DATA)'; test -n "$(userunitdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(userunitdir)'; $(am__uninstall_files_from_dir)
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -1932,7 +1960,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(MANS) $(DATA) $(HEADERS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(icon128dir)" "$(DESTDIR)$(icon16dir)" "$(DESTDIR)$(icon256dir)" "$(DESTDIR)$(icon32dir)" "$(DESTDIR)$(icon48dir)" "$(DESTDIR)$(icon512dir)" "$(DESTDIR)$(icon64dir)" "$(DESTDIR)$(metainfodir)" "$(DESTDIR)$(romsdir)" "$(DESTDIR)$(userunitdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -2039,7 +2067,8 @@ install-data-am: install-dist_desktopDATA install-dist_icon128DATA \
 	install-dist_icon16DATA install-dist_icon256DATA \
 	install-dist_icon32DATA install-dist_icon48DATA \
 	install-dist_icon512DATA install-dist_icon64DATA \
-	install-dist_metainfoDATA install-dist_romsDATA install-man
+	install-dist_metainfoDATA install-dist_romsDATA install-man \
+	install-userunitDATA
 
 install-dvi: install-dvi-am
 
@@ -2135,7 +2164,7 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_desktopDATA \
 	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
 	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
 	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
-	uninstall-dist_romsDATA uninstall-man
+	uninstall-dist_romsDATA uninstall-man uninstall-userunitDATA
 
 uninstall-man: uninstall-man1
 
@@ -2158,15 +2187,16 @@ uninstall-man: uninstall-man1
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-man1 install-pdf \
 	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-compile \
-	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am uninstall-binPROGRAMS uninstall-dist_desktopDATA \
-	uninstall-dist_icon128DATA uninstall-dist_icon16DATA \
-	uninstall-dist_icon256DATA uninstall-dist_icon32DATA \
-	uninstall-dist_icon48DATA uninstall-dist_icon512DATA \
-	uninstall-dist_icon64DATA uninstall-dist_metainfoDATA \
-	uninstall-dist_romsDATA uninstall-man uninstall-man1
+	install-userunitDATA installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS \
+	uninstall-dist_desktopDATA uninstall-dist_icon128DATA \
+	uninstall-dist_icon16DATA uninstall-dist_icon256DATA \
+	uninstall-dist_icon32DATA uninstall-dist_icon48DATA \
+	uninstall-dist_icon512DATA uninstall-dist_icon64DATA \
+	uninstall-dist_metainfoDATA uninstall-dist_romsDATA \
+	uninstall-man uninstall-man1 uninstall-userunitDATA
 
 .PRECIOUS: Makefile
 
@@ -2174,6 +2204,11 @@ uninstall-man: uninstall-man1
 icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico
 	@mkdir -p icons
 	$(WINDRES) -I$(srcdir)/icons -i $< -O coff -o $@
+
+packaging/1984-web.service: packaging/1984-web.service.in Makefile
+	@$(MKDIR_P) packaging
+	sed -e 's|@BINDIR[@]|$(bindir)|g' \
+	    $(srcdir)/packaging/1984-web.service.in > $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

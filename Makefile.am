@@ -115,7 +115,17 @@ icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico
 	@mkdir -p icons
 	$(WINDRES) -I$(srcdir)/icons -i $< -O coff -o $@
 
-CLEANFILES = icons/1984-rc.o
+CLEANFILES = icons/1984-rc.o packaging/1984-web.service
+
+# systemd user unit for the headless Web GUI service. Generated from
+# the .in template so ExecStart points at the configured bindir.
+userunitdir   = $(prefix)/lib/systemd/user
+userunit_DATA = packaging/1984-web.service
+
+packaging/1984-web.service: packaging/1984-web.service.in Makefile
+	@$(MKDIR_P) packaging
+	sed -e 's|@BINDIR[@]|$(bindir)|g' \
+	    $(srcdir)/packaging/1984-web.service.in > $@
 
 # Bundled ROM images installed to $(datadir)/1984/roms/
 # (CPC firmware are freely redistributable for emulator use; M4ROM and
@@ -157,4 +167,5 @@ dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
 EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico \
-	src/webgui_page.html scripts/gen_webgui_page.sh
+	src/webgui_page.html scripts/gen_webgui_page.sh \
+	packaging/1984-web.service.in

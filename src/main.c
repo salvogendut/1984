@@ -373,6 +373,9 @@ static void usage(const char *prog, int code) {
         "                      keyboard/joystick/paste/reset controls over HTTP\n"
         "                      (default port 1984). Binds 0.0.0.0 — anyone on the\n"
         "                      network can view and type; no authentication.\n"
+        "  --headless          No window on the host: render off-screen and use\n"
+        "                      the dummy audio driver. Meant for running as a\n"
+        "                      service with --web as the only interface.\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -421,6 +424,7 @@ int main(int argc, char *argv[]) {
     bool        monitor_pty      = false;
     bool        web_cli          = false;   /* --web[=PORT] */
     int         web_cli_port     = 0;       /* 0 = use config value */
+    bool        headless         = false;   /* --headless: offscreen video */
     bool        kbd_pty_enabled  = false;
     bool        ocr_monitor_enabled = false;
     bool        pilot_enabled    = false;       /* --pilot */
@@ -518,6 +522,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "%s: --web=PORT must be 1..65535\n", argv[0]);
                 return 2;
             }
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            headless = true;
         } else if (strcmp(argv[i], "--kbd-pty") == 0) {
             kbd_pty_enabled = true;
         } else if (strcmp(argv[i], "--pilot") == 0) {
@@ -640,6 +646,15 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    if (headless) {
+        /* Truly windowless: force the offscreen video and dummy audio
+         * drivers with OVERRIDE priority so a session's DISPLAY /
+         * WAYLAND_DISPLAY / SDL_VIDEODRIVER cannot bring a window up. */
+        SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "offscreen",
+                                SDL_HINT_OVERRIDE);
+        SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy",
+                                SDL_HINT_OVERRIDE);
+    }
     SD_LOG("calling SDL_Init(VIDEO|AUDIO|GAMEPAD)");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         SD_LOG("SDL_Init FAILED: %s", SDL_GetError());
