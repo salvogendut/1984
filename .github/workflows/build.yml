@@ -20,7 +20,7 @@ jobs:
             gcc make autoconf automake pkgconf-pkg-config \
             SDL3-devel cairo-devel git \
             rpm-build rpmdevtools \
-            desktop-file-utils libappstream-glib
+            desktop-file-utils libappstream-glib systemd-rpm-macros
       - uses: actions/checkout@v4
       - name: Mark workspace as a safe git dir
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"

@@ -31,6 +31,7 @@
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 #include "gifcap.h"
 #include "webmcap.h"
+#include "webgui.h"
 #include "symbos_trace.h"
 
 /* --- Video capture state. F6 → GIF (lean, no deps); overlay file
@@ -368,6 +369,16 @@ static void usage(const char *prog, int code) {
         "                      initial target. Send 'R THETA' lines (R=speed, THETA=deg,\n"
         "                      0=right/90=up); 'press N'/'click N'; 'target mouse|joy'.\n"
         "  --pilot-replies-stderr Mirror machine-readable pilot replies to stderr.\n"
+        "  --web[=PORT]        Serve the emulator to a browser: live screen plus\n"
+        "                      keyboard/joystick/paste/reset controls over HTTP\n"
+        "                      (default port 1984). Implies --headless: no window\n"
+        "                      on the host, the browser is the only interface.\n"
+        "                      (The overlay toggle / web_gui config key start the\n"
+        "                      same server with the host window still visible.)\n"
+        "                      Binds 0.0.0.0 — anyone on the network can view and\n"
+        "                      type; no authentication.\n"
+        "  --headless          No window on the host: render off-screen and use\n"
+        "                      the dummy audio driver (implied by --web).\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -414,6 +425,9 @@ int main(int argc, char *argv[]) {
     bool        printer_real_arg = false;   /* --printer-real */
     bool        trace_io         = false;
     bool        monitor_pty      = false;
+    bool        web_cli          = false;   /* --web[=PORT] */
+    int         web_cli_port     = 0;       /* 0 = use config value */
+    bool        headless         = false;   /* --headless: offscreen video */
     bool        kbd_pty_enabled  = false;
     bool        ocr_monitor_enabled = false;
     bool        pilot_enabled    = false;       /* --pilot */
@@ -502,6 +516,17 @@ int main(int argc, char *argv[]) {
             symbols_load(path, mmr);
         } else if (strcmp(argv[i], "--monitor-pty") == 0) {
             monitor_pty = true;
+        } else if (strcmp(argv[i], "--web") == 0) {
+            web_cli = true;
+        } else if (strncmp(argv[i], "--web=", 6) == 0 && argv[i][6] != '\0') {
+            web_cli = true;
+            web_cli_port = atoi(argv[i] + 6);
+            if (web_cli_port < 1 || web_cli_port > 65535) {
+                fprintf(stderr, "%s: --web=PORT must be 1..65535\n", argv[0]);
+                return 2;
+            }
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            headless = true;
         } else if (strcmp(argv[i], "--kbd-pty") == 0) {
             kbd_pty_enabled = true;
         } else if (strcmp(argv[i], "--pilot") == 0) {
@@ -618,8 +643,25 @@ int main(int argc, char *argv[]) {
         cfg.print_sink  = PRINTER_SINK_REAL_PRINTER;
         cfg.pdf_printer = true;   /* needed so capture is active */
     }
+    if (web_cli) {
+        cfg.web_gui = true;
+        if (web_cli_port) cfg.web_port = web_cli_port;
+        /* --web means "web appliance": completely headless, the browser
+         * is the only interface. The overlay toggle and the web_gui
+         * config key start the server WITHOUT hiding the host window. */
+        headless = true;
+    }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    if (headless) {
+        /* Truly windowless: force the offscreen video and dummy audio
+         * drivers with OVERRIDE priority so a session's DISPLAY /
+         * WAYLAND_DISPLAY / SDL_VIDEODRIVER cannot bring a window up. */
+        SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "offscreen",
+                                SDL_HINT_OVERRIDE);
+        SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy",
+                                SDL_HINT_OVERRIDE);
+    }
     SD_LOG("calling SDL_Init(VIDEO|AUDIO|GAMEPAD)");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         SD_LOG("SDL_Init FAILED: %s", SDL_GetError());
@@ -787,6 +829,11 @@ int main(int argc, char *argv[]) {
 
     Paste paste;
     paste_init(&paste);
+
+    webgui_init(&cpc, &paste);
+    webgui_set_log(web_cli);   /* --web = headless service: log to stderr */
+    if (cfg.web_gui)
+        webgui_start(cfg.web_port);
 
     if (kbd_pty_enabled) {
         const char *p = kbd_pty_open();
@@ -1286,6 +1333,7 @@ int main(int argc, char *argv[]) {
         net4cpc_poll();
         usifac_poll(&cpc.usifac);
         perryfi_poll(&cpc.perryfi);
+        webgui_poll();
         printer_tick(&cpc.printer);
         cpc_frame(&cpc);
         pilot_post_frame(&pilot, &cpc, &cpc.display, frame_count + 1);
@@ -1335,6 +1383,7 @@ int main(int argc, char *argv[]) {
             if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))
                 videocap_stop();
         }
+        webgui_frame();
         /* Paused-state visual: greyscale the frozen frame and re-composite
          * it each iteration (cpc_frame early-returns when paused, so it
          * stops calling display_upload itself — the back buffer would
@@ -1520,6 +1569,7 @@ int main(int argc, char *argv[]) {
     if (sfx_buf)    SDL_free(sfx_buf);
     videocap_stop();   /* finalise GIF if recording */
     audiocap_stop();   /* finalise WAV if recording */
+    webgui_stop();
     printer_shutdown(&cpc.printer);
     perryfi_shutdown(&cpc.perryfi);
     cpc_destroy(&cpc);

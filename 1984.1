@@ -209,6 +209,61 @@ changes. Lets probes follow CP/M+ output that bypasses
 Implies
 .BR --kbd-pty .
 .TP
+.B --web[=PORT]
+Start the embedded
+.B Web GUI
+HTTP server (default port 1984): any browser on the network gets the
+live emulator screen (a multipart GIF stream) plus full input capture
+\(em clicking the screen captures the browser's keyboard and mouse
+(pointer lock; motion feeds the enabled SYMBiFACE / Albireo / AMX
+pointer device) until
+.B Ctrl+Enter
+releases them, the same combo as the emulator window \(em and an
+on-screen joystick, paste-text and reset controls for touch devices. The same server
+can be toggled at runtime from the
+.B Advanced
+overlay tab. The server binds
+.B 0.0.0.0
+and has
+.BR "no authentication" :
+anyone on the local network can watch the screen and type into the
+emulator. Only enable it on networks you trust. .B --web
+implies
+.BR --headless :
+no window appears on the host and the browser is the only interface.
+To serve the Web GUI with the host window still visible, use the
+overlay toggle or set
+.B web_gui=true
+in the configuration file instead. Settings persist as
+.B web_gui
+and
+.B web_port
+in the configuration file.
+.TP
+.B --headless
+No window on the host: force SDL's
+.B offscreen
+video driver and
+.B dummy
+audio driver (overriding any
+.BR DISPLAY / WAYLAND_DISPLAY / SDL_VIDEODRIVER
+in the environment). Implied by
+.BR --web .
+A ready-made systemd user unit is installed as
+.BR 1984-web.service :
+.IP
+.nf
+systemctl --user enable --now 1984-web
+.fi
+.IP
+It runs
+.B 1984 --web
+and can be customised with a drop-in
+.RB ( "systemctl --user edit 1984-web" ).
+Use
+.B loginctl enable-linger
+to start it at boot without logging in.
+.TP
 .BR -h ", " --help
 Show help and exit.
 .SH KEYBOARD SHORTCUTS
@@ -267,9 +322,13 @@ TAP toggle, debug machinery, video capture, USIfAC mode (PTY /
 TCP), USIfAC PTY link (stable host-side symlink alias for the
 randomised
 .IR /dev/pts/N
-slave), and the
+slave), the
 .B Monochrome
-phosphor tint (off, green, amber, white). The Advanced tab is
+phosphor tint (off, green, amber, white), and the
+.B Web GUI
+toggle (start/stop the embedded HTTP server described under
+.BR --web ).
+The Advanced tab is
 hidden unless
 .B tinker=true
 is set in the config.
