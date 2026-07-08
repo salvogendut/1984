@@ -830,7 +830,7 @@ int main(int argc, char *argv[]) {
     Paste paste;
     paste_init(&paste);
 
-    webgui_init(&cpc, &paste);
+    webgui_init(&cpc, &cfg, &paste);
     webgui_set_log(web_cli);   /* --web = headless service: log to stderr */
     if (cfg.web_gui)
         webgui_start(cfg.web_port);

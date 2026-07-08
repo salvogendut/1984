@@ -162,6 +162,9 @@ typedef struct {
 
 /* Load ~/.config/1984/1984.conf into cfg. Missing file = silent defaults.
  * Returns 0 on success, -1 if a value is invalid (error printed to stderr). */
+/* Directory for runtime-created files (Web GUI disk uploads); see config.c. */
+int config_state_dir(char *out, size_t sz);
+
 int config_load(Config *cfg);
 
 /* Same as config_load but reads from path_override (if non-NULL and non-empty)

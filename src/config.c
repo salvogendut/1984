@@ -69,6 +69,17 @@ static int config_dir(char *out, size_t sz, bool make_dirs) {
 #endif
 }
 
+/* Directory for files the emulator itself creates at runtime (currently
+ * just Web GUI disk uploads) — sibling of the config dir, created on
+ * first use. Returns 0 on success, -1 if no usable home dir is set. */
+int config_state_dir(char *out, size_t sz) {
+    char base[CONFIG_PATH_MAX];
+    if (config_dir(base, sizeof(base), true) != 0) return -1;
+    snprintf(out, sz, "%s/web_uploads", base);
+    mkdir(out, 0755);
+    return 0;
+}
+
 #define ROM_FILE_OS_464      "OS_464.ROM"
 #define ROM_FILE_BASIC_464   "BASIC_1.0.ROM"
 #define ROM_FILE_OS_664      "OS_664.ROM"

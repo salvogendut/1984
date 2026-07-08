@@ -6,6 +6,7 @@
  * POST /key     ?c=<SDL scancode name>&d=1|0   key down/up
  * POST /joy     ?b=0..5&d=1|0                  joystick row-9 bit
  * POST /paste   body = text typed via the paste queue
+ * POST /disk    ?drive=0|1&name=<file.dsk>     body = raw .dsk bytes
  * POST /reset   machine reset
  *
  * Single-threaded and non-blocking: webgui_poll() runs once per frame
@@ -16,10 +17,11 @@
 #pragma once
 #include <stdbool.h>
 #include "cpc.h"
+#include "config.h"
 #include "paste.h"
 
 /* Capture machine pointers once; opens no socket. */
-void webgui_init(CPC *cpc, Paste *paste);
+void webgui_init(CPC *cpc, Config *cfg, Paste *paste);
 
 /* Log server lifecycle and client activity to stderr (listen URLs,
  * viewer connect/disconnect). Enabled by --web for journald/log
