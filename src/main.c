@@ -32,6 +32,7 @@
 #include "gifcap.h"
 #include "webmcap.h"
 #include "webgui.h"
+#include "websvc.h"
 #include "symbos_trace.h"
 
 /* --- Video capture state. F6 → GIF (lean, no deps); overlay file
@@ -603,6 +604,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* --web is "emulator as a service": a self-contained multi-session
+     * daemon, not just a headless flavor of the classic single-CPC loop.
+     * Dispatch here before config_load_from() ever touches the host
+     * user's real config — every session boots from clean defaults
+     * instead (see websvc.c's session_create()). */
+    if (web_cli) {
+        SD_LOG("--web: dispatching to websvc_run");
+        return websvc_run(web_cli_port ? web_cli_port : 1984);
+    }
+
     SD_LOG("args parsed, calling config_load");
     Config cfg;
     if (config_load_from(&cfg, config_path) < 0) {
@@ -643,14 +654,10 @@ int main(int argc, char *argv[]) {
         cfg.print_sink  = PRINTER_SINK_REAL_PRINTER;
         cfg.pdf_printer = true;   /* needed so capture is active */
     }
-    if (web_cli) {
-        cfg.web_gui = true;
-        if (web_cli_port) cfg.web_port = web_cli_port;
-        /* --web means "web appliance": completely headless, the browser
-         * is the only interface. The overlay toggle and the web_gui
-         * config key start the server WITHOUT hiding the host window. */
-        headless = true;
-    }
+    /* web_cli (--web) already returned above via websvc_run(); reaching
+     * this point means the classic single-CPC path — either fully
+     * interactive, or headless-via-`web_gui=true` in the config file /
+     * the F9 overlay toggle, neither of which forces --headless. */
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (headless) {
@@ -674,123 +681,23 @@ int main(int argc, char *argv[]) {
      * which exceeds the default 1 MB thread stack on Windows. BSS keeps
      * the same scope without stack pressure or heap bookkeeping. */
     static CPC cpc;
-    if (cpc_init(&cpc, cfg.model, cfg.rom_os, cfg.rom_basic, cfg.scale) < 0) {
-        SD_LOG("cpc_init FAILED (rom_os=%s rom_basic=%s)", cfg.rom_os, cfg.rom_basic);
+    if (cpc_build_from_config(&cpc, &cfg) < 0) {
+        SD_LOG("cpc_build_from_config FAILED (rom_os=%s rom_basic=%s)", cfg.rom_os, cfg.rom_basic);
         fprintf(stderr, "Failed to initialise CPC (check ROM paths in ~/.config/1984/1984.conf)\n");
         SDL_Quit();
         return 1;
     }
     SD_LOG("cpc_init OK");
-    ga_set_monochrome(&cpc.ga, cfg.monochrome);
-    psg_set_volume(&cpc.psg, cfg.audio_volume);
-    psg_set_stereo(&cpc.psg, cfg.audio_stereo_sep);
     notify_init();
     notify_set_mode(cfg.notifications);
-    cpc.mem.ram_size    = cfg.memory_kb * 1024;
-    cpc.mx4             = cfg.mx4;
-    cpc.net4cpc         = cfg.net4cpc;
-    cpc.rtc             = cfg.rtc;
-
     net4cpc_tap_sync(&cfg, tap_dev_arg);
-    /* These cards plug into the MX4 expansion bus and carry their own onboard
-     * driver ROM, so they gate on the bus alone — not the generic ROM Board.
-     * Their ROMs map independently below (see the slot-load loop). */
-    cpc.symbiface_ide   = cfg.symbiface_ide   && cfg.mx4;
-    cpc.symbiface_mouse = cfg.symbiface_mouse && cfg.mx4;
-    cpc.amx_mouse       = (cfg.fallback_input == FALLBACK_AMX_MOUSE); /* joystick port, no MX4 gate */
-    cpc.m4              = cfg.m4              && cfg.mx4;
-    cpc.symbnet         = cfg.symbnet;
-    if (cfg.m4 && cfg.m4_path[0])
-        snprintf(cpc.m4_card.root, M4_PATH_MAX, "%s", cfg.m4_path);
-    if (cfg.m4)
-        m4_set_image(&cpc.m4_card, cfg.m4_image);
-    if (cfg.symbiface_ide && cfg.ide_image[0])
-        ide_open(&cpc.ide_chip, cfg.ide_image);
-    cpc.albireo       = cfg.albireo && cfg.mx4;
-    cpc.albireo_mouse = cpc.albireo && cfg.albireo_mouse;
-    cpc.ch376.has_mouse   = cpc.albireo_mouse;
-    cpc.ch376_b.has_mouse = false;
-    if (cpc.albireo && cfg.albireo_image[0]) {
-        CH376 *storage = cpc.albireo_mouse ? &cpc.ch376_b : &cpc.ch376;
-        ch376_open(storage, cfg.albireo_image);
-    }
-    ch376_disable_disk_read = cfg.albireo_disable_disk_read ? 1 : 0;
-    /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
-    if (cpc.albireo && cpc.m4) {
-        cpc.m4 = false;
-        cfg.m4 = false;
-    }
-    usifac_init(&cpc.usifac, cfg.mx4 && cfg.usifac, cfg.usifac_backend, cfg.usifac_tcp_port,
-                cfg.usifac_pty_link);
-    perryfi_init(&cpc.perryfi, cfg.mx4 && cfg.usifac && cfg.perryfi);
-    usifac_attach_perryfi(&cpc.usifac, &cpc.perryfi);
-    printer_set_connected(&cpc.printer, cfg.mx4);
-    printer_set_pdf_output_dir(&cpc.printer, cfg.pdf_printer_dir);
-    printer_set_pdf_enabled(&cpc.printer, cfg.pdf_printer && cfg.pdf_printer_dir[0]);
-    printer_set_sink(&cpc.printer,
-                     cfg.print_sink == PRINTER_SINK_REAL_PRINTER ? PRINT_SINK_REAL
-                                                                 : PRINT_SINK_PDF);
     apply_led_enables(&cfg);
-    /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
-    if (cfg.tape[0] &&
-            (cpc.model == MODEL_464 || cfg.external_tape))
-        tape_load(&cpc.tape, cfg.tape);
-
-    /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
-    if (cfg.rom_amsdos[0])
-        mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
-
-    /* Load expansion ROMs into slots 0-31. A slot owned by an MX4 card (its
-     * onboard driver ROM, tagged in rom_ext_boards[]) maps whenever the MX4
-     * bus is connected; a plain user slot needs the generic ROM Board fitted.
-     * With a gate off the cfg paths are preserved but unused — re-enabling
-     * restores the layout from a single source of truth. */
-    for (int s = 0; s < ROM_EXT_COUNT; s++) {
-        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
-        if (s == M4_ROM_SLOT && cfg.m4) continue;
-        if (!cfg.rom_ext[s][0]) continue;
-        bool board_owned = cfg.rom_ext_boards[s][0] != '\0';
-        if (board_owned ? cfg.mx4 : cfg.rom_board)
-            mem_load_rom_ext(&cpc.mem, s, cfg.rom_ext[s]);
-    }
-    /* Load M4ROM into its dedicated slot when the M4 card is on the bus */
-    if (cfg.mx4 && cfg.m4) {
-        char m4rom[512];
-        config_default_m4rom(m4rom, sizeof(m4rom));
-        mem_load_rom_ext(&cpc.mem, M4_ROM_SLOT, m4rom);
-        /* Seed the M4 board's config buffer (read via bus bypass at 0xF400)
-         * with the ROM's default contents so reads return valid pointers
-         * (e.g. runfile_ptr → autoexec_fn) before any C_CONFIG write. */
-        memcpy(cpc.m4_card.cfg_mem,
-               &cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
-               sizeof(cpc.m4_card.cfg_mem));
-        /* Patch M4ROM's helper-pointer table NOW so SymbOS netd-m4c.exe's
-         * m4crom routine picks up our trap addresses on its first read.
-         * Without this the daemon copies the original M4ROM helper entries
-         * and bypasses our trap, breaking the bulk transfer needed by
-         * GETNETWORK and every TCP send/recv. */
-        m4_install_helper_shim(&cpc.m4_card, &cpc.mem);
-    }
 
     /* Apply --rom-slot=N:PATH overrides from CLI */
     for (int i = 0; i < rom_slot_count; i++) {
         if (mem_load_rom_ext(&cpc.mem, rom_slots[i].slot, rom_slots[i].path) < 0)
             fprintf(stderr, "1984: failed to load ROM slot %d: %s\n",
                     rom_slots[i].slot, rom_slots[i].path);
-    }
-
-    /* Load floppy images from config */
-    if (cfg.disk_a[0]) {
-        if (disk_load(&cpc.drive[0], cfg.disk_a) < 0) {
-            fprintf(stderr, "1984: failed to load drive A: %s\n", cfg.disk_a);
-            cfg.disk_a[0] = '\0';
-        }
-    }
-    if (cfg.disk_b[0]) {
-        if (disk_load(&cpc.drive[1], cfg.disk_b) < 0) {
-            fprintf(stderr, "1984: failed to load drive B: %s\n", cfg.disk_b);
-            cfg.disk_b[0] = '\0';
-        }
     }
 
     /* Camera shutter SFX — loaded from embedded WAV data in shutter_wav.h.
@@ -831,7 +738,7 @@ int main(int argc, char *argv[]) {
     paste_init(&paste);
 
     webgui_init(&cpc, &cfg, &paste);
-    webgui_set_log(web_cli);   /* --web = headless service: log to stderr */
+    webgui_set_log(false);   /* --web now goes through websvc_run(); this path is toast-only */
     if (cfg.web_gui)
         webgui_start(cfg.web_port);
 

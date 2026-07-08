@@ -160,10 +160,19 @@ typedef struct {
                               * has no effect at all. */
 } Config;
 
+/* Build a CPC instance from cfg: ROM/board/mouse/serial/printer setup and
+ * disk mounting. Shared by the classic single-instance main() path and each
+ * Web Service session (websvc.c). See cpc.c for what it deliberately
+ * excludes. Returns -1 (cpc_init failed) or 0. */
+int cpc_build_from_config(CPC *cpc, Config *cfg);
+
 /* Load ~/.config/1984/1984.conf into cfg. Missing file = silent defaults.
  * Returns 0 on success, -1 if a value is invalid (error printed to stderr). */
 /* Directory for runtime-created files (Web GUI disk uploads); see config.c. */
 int config_state_dir(char *out, size_t sz);
+
+/* Parent directory for Web Service per-session scratch dirs; see config.c. */
+int config_websvc_dir(char *out, size_t sz);
 
 int config_load(Config *cfg);
 

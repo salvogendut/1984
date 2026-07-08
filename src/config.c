@@ -80,6 +80,17 @@ int config_state_dir(char *out, size_t sz) {
     return 0;
 }
 
+/* Parent directory for Web Service (--web) per-session scratch dirs —
+ * sibling of web_uploads, one subdirectory per live session (see
+ * websvc.c), removed when that session is destroyed. */
+int config_websvc_dir(char *out, size_t sz) {
+    char base[CONFIG_PATH_MAX];
+    if (config_dir(base, sizeof(base), true) != 0) return -1;
+    snprintf(out, sz, "%s/web_sessions", base);
+    mkdir(out, 0755);
+    return 0;
+}
+
 #define ROM_FILE_OS_464      "OS_464.ROM"
 #define ROM_FILE_BASIC_464   "BASIC_1.0.ROM"
 #define ROM_FILE_OS_664      "OS_664.ROM"

@@ -36,6 +36,7 @@ dist_man1_MANS = 1984.1
 	src/gifcap.c \
 	src/webmcap.c \
 	src/webgui.c \
+	src/websvc.c \
 	src/host_mount.c \
 	src/leds.c \
 	src/m4.c \
@@ -66,6 +67,7 @@ noinst_HEADERS = \
 	src/webmcap.h \
 	src/webgui.h \
 	src/webgui_page.h \
+	src/websvc.h \
 	src/host_mount.h \
 	src/ide.h \
 	src/joy.h \
