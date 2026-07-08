@@ -30,12 +30,14 @@
 #define WG_MAX_CLIENTS   8
 #define WG_REQ_MAX       4096      /* request head + small POST body */
 #define WG_PASTE_MAX     2048
+#define WG_DISK_MAX      (8 * 1024 * 1024)  /* generous cap for an uploaded .dsk */
 #define WG_BOUNDARY      "1984frame"
 #define WG_KEEPALIVE_MS  500       /* resend interval for static screens */
 
 typedef enum {
     WC_FREE = 0,
     WC_READ_REQUEST,   /* accumulating request bytes */
+    WC_READ_UPLOAD,    /* accumulating a large POST /disk body */
     WC_STREAMING       /* /stream client: parts queued as they drain */
 } WcState;
 
@@ -45,6 +47,10 @@ typedef struct {
     WcState  state;
     char     req[WG_REQ_MAX];
     int      req_len;
+    uint8_t *upload;              /* POST /disk body, malloc'd to Content-Length */
+    size_t   upload_len, upload_cap;
+    int      upload_drive;
+    char     upload_name[64];
     uint8_t *out;                /* response bytes awaiting send */
     size_t   out_cap, out_len, out_off;
     bool     close_after_send;
@@ -54,6 +60,7 @@ typedef struct {
 
 static struct {
     CPC      *cpc;
+    Config   *cfg;
     Paste    *paste;
     int       listen_fd;
     int       port;
@@ -138,6 +145,7 @@ static void wc_close(WebClient *c) {
         wlog("viewer %s disconnected", c->ip);
     if (c->fd >= 0) sock_close(c->fd);
     free(c->out);
+    free(c->upload);
     memset(c, 0, sizeof(*c));
     c->fd = -1;
     c->state = WC_FREE;
@@ -360,6 +368,64 @@ static void route_status(WebClient *c) {
     wc_out(c, body, (size_t)n);
 }
 
+/* Uploaded .dsk bytes are stored under a fixed per-drive filename in the
+ * state dir rather than the browser-supplied name — sidesteps any path-
+ * traversal concerns and matches "insert a new disk in drive A" semantics
+ * (the previous upload to that drive is simply overwritten). */
+static bool mount_disk_bytes(int drive, const void *data, size_t len,
+                             const char *name) {
+    char dir[CONFIG_PATH_MAX], path[CONFIG_PATH_MAX];
+    bool ok = false;
+    if (config_state_dir(dir, sizeof(dir)) == 0) {
+        snprintf(path, sizeof(path), "%s/drive_%c.dsk", dir,
+                 drive == 0 ? 'a' : 'b');
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            size_t w = fwrite(data, 1, len, f);
+            fclose(f);
+            ok = (w == len);
+        }
+    }
+    if (ok) {
+        Disk *d = &wg.cpc->drive[drive];
+        disk_eject(d);
+        ok = disk_load(d, path) == 0;
+        if (ok && wg.cfg) {
+            char *dest = (drive == 0) ? wg.cfg->disk_a : wg.cfg->disk_b;
+            snprintf(dest, CONFIG_PATH_MAX, "%s", path);
+        }
+    }
+    wlog(ok ? "drive %c: mounted \"%s\" (%zu bytes, uploaded)"
+            : "drive %c: failed to mount uploaded \"%s\"",
+         drive == 0 ? 'A' : 'B', name, len);
+    return ok;
+}
+
+static void complete_disk_upload(WebClient *c) {
+    bool ok = mount_disk_bytes(c->upload_drive, c->upload, c->upload_len,
+                               c->upload_name);
+    free(c->upload);
+    c->upload = NULL;
+    c->upload_len = c->upload_cap = 0;
+    c->state = WC_READ_REQUEST;
+    respond_status(c, ok ? "204 No Content" : "500 Internal Server Error", true);
+}
+
+/* Small uploads (rare — a real .dsk is normally well over WG_REQ_MAX)
+ * arrive fully buffered and go through the ordinary route() path. */
+static void route_disk_small(WebClient *c, const char *query,
+                             const char *body, int body_len) {
+    char dv[4], name[64] = "upload.dsk";
+    if (!query_param(query, "drive", dv, sizeof(dv)) ||
+        (dv[0] != '0' && dv[0] != '1') || dv[1] != '\0' || body_len <= 0) {
+        respond_status(c, "400 Bad Request", true);
+        return;
+    }
+    query_param(query, "name", name, sizeof(name));
+    bool ok = mount_disk_bytes(dv[0] - '0', body, (size_t)body_len, name);
+    respond_status(c, ok ? "204 No Content" : "500 Internal Server Error", true);
+}
+
 static void route_paste(WebClient *c, const char *body, int body_len) {
     char text[WG_PASTE_MAX + 1];
     int n = 0;
@@ -393,6 +459,7 @@ static void route(WebClient *c, const char *method, char *path,
     else if (strcmp(path, "/joy") == 0)          route_joy(c, query);
     else if (strcmp(path, "/mouse") == 0)        route_mouse(c, query);
     else if (strcmp(path, "/paste") == 0)        route_paste(c, body, body_len);
+    else if (strcmp(path, "/disk") == 0)         route_disk_small(c, query, body, body_len);
     else if (strcmp(path, "/reset") == 0) {
         cpc_reset(wg.cpc);
         respond_status(c, "204 No Content", true);
@@ -423,18 +490,57 @@ static bool try_dispatch(WebClient *c) {
                        str_ieq(conn, "close");
     c->req[head_len - 2] = '\r';
 
+    char method[8] = "", target[512] = "";
+    if (sscanf(c->req, "%7s %511s", method, target) != 2) {
+        respond_status(c, "400 Bad Request", false);
+        return true;
+    }
+
+    /* POST /disk bodies routinely exceed the fixed request buffer (a real
+     * .dsk is 180 KB+); switch to a dedicated heap buffer sized to
+     * Content-Length instead of folding this into WG_REQ_MAX for every
+     * client. */
+    bool is_disk_post = strcmp(method, "POST") == 0 &&
+                        (strncmp(target, "/disk?", 6) == 0 ||
+                         strcmp(target, "/disk") == 0);
+    if (is_disk_post && content_len > WG_REQ_MAX - 1 - head_len) {
+        if (content_len <= 0 || content_len > WG_DISK_MAX) {
+            respond_status(c, "413 Content Too Large", false);
+            return true;
+        }
+        char *query = strchr(target, '?');
+        if (query) *query++ = '\0';
+        else query = target + strlen(target);
+        char dv[4];
+        if (!query_param(query, "drive", dv, sizeof(dv)) ||
+            (dv[0] != '0' && dv[0] != '1') || dv[1] != '\0') {
+            respond_status(c, "400 Bad Request", false);
+            return true;
+        }
+        uint8_t *buf = malloc((size_t)content_len);
+        if (!buf) {
+            respond_status(c, "500 Internal Server Error", false);
+            return true;
+        }
+        int already = c->req_len - head_len;   /* bytes of body buffered so far */
+        if (already > 0) memcpy(buf, c->req + head_len, (size_t)already);
+        c->upload = buf;
+        c->upload_len = (size_t)already;
+        c->upload_cap = (size_t)content_len;
+        c->upload_drive = dv[0] - '0';
+        snprintf(c->upload_name, sizeof(c->upload_name), "upload.dsk");
+        query_param(query, "name", c->upload_name, sizeof(c->upload_name));
+        c->state = WC_READ_UPLOAD;
+        c->req_len = 0;
+        return true;
+    }
+
     if (content_len < 0 || head_len + content_len > WG_REQ_MAX - 1) {
         respond_status(c, "413 Content Too Large", false);
         return true;
     }
     if (c->req_len < head_len + content_len)
         return false;   /* body still arriving */
-
-    char method[8] = "", target[512] = "";
-    if (sscanf(c->req, "%7s %511s", method, target) != 2) {
-        respond_status(c, "400 Bad Request", false);
-        return true;
-    }
 
     route(c, method, target, c->req + head_len, content_len);
     if (asked_close && c->state != WC_STREAMING)
@@ -451,8 +557,9 @@ static bool try_dispatch(WebClient *c) {
 
 /* ---------- public API ---------- */
 
-void webgui_init(CPC *cpc, Paste *paste) {
+void webgui_init(CPC *cpc, Config *cfg, Paste *paste) {
     wg.cpc = cpc;
+    wg.cfg = cfg;
     wg.paste = paste;
     wg.listen_fd = -1;
     for (int i = 0; i < WG_MAX_CLIENTS; i++) wg.cl[i].fd = -1;
@@ -574,6 +681,10 @@ void webgui_poll(void) {
                 dst = c->req + c->req_len;
                 room = WG_REQ_MAX - 1 - c->req_len;
                 if (room <= 0) break;   /* full head handled in try_dispatch */
+            } else if (c->state == WC_READ_UPLOAD) {
+                dst = (char *)c->upload + c->upload_len;
+                room = (int)(c->upload_cap - c->upload_len);
+                if (room <= 0) break;
             }
             ssize_t n = recv(c->fd, dst, (size_t)room, MSG_DONTWAIT);
             if (n == 0 || (n < 0 && !sock_would_block())) {
@@ -587,6 +698,10 @@ void webgui_poll(void) {
                 while (c->state == WC_READ_REQUEST && c->req_len > 0 &&
                        !c->close_after_send && try_dispatch(c))
                     ;
+            } else if (c->state == WC_READ_UPLOAD) {
+                c->upload_len += (size_t)n;
+                if (c->upload_len >= c->upload_cap)
+                    complete_disk_upload(c);
             }
             /* WC_STREAMING: incoming bytes are discarded. */
         }

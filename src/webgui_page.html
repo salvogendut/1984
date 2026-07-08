@@ -61,9 +61,17 @@
     border: 1px solid #444; border-radius: 4px; padding: 6px;
     font: 13px monospace;
   }
-  #pastebox button, #actions button { padding: 8px 14px; font-size: 14px; }
+  #pastebox button, #actions button, #diskbox button { padding: 8px 14px; font-size: 14px; }
   #actions { display: flex; flex-direction: column; gap: 8px; }
   #reset { border-color: #a44; }
+  #diskbox { display: flex; flex-direction: column; gap: 8px; width: 200px; }
+  .diskrow { display: flex; gap: 6px; align-items: center; }
+  .diskrow span { width: 14px; color: #888; }
+  .diskrow button {
+    background: #26262e; color: #d8d8e0; border: 1px solid #444;
+    border-radius: 6px; cursor: pointer; flex: 1;
+  }
+  #diskstatus { color: #888; font-size: 12px; min-height: 1em; }
   footer { color: #555; font-size: 12px; }
 </style>
 </head>
@@ -96,6 +104,20 @@
     <legend>Paste text</legend>
     <textarea id="pastetext" placeholder="PRINT &quot;HELLO&quot;" spellcheck="false"></textarea>
     <button id="pastebtn">Paste to CPC</button>
+  </fieldset>
+
+  <fieldset id="diskbox">
+    <legend>Disks</legend>
+    <div class="diskrow">
+      <span>A:</span>
+      <button data-drive="0">Load .dsk…</button>
+    </div>
+    <div class="diskrow">
+      <span>B:</span>
+      <button data-drive="1">Load .dsk…</button>
+    </div>
+    <div id="diskstatus"></div>
+    <input type="file" id="diskfile" accept=".dsk" style="display:none">
   </fieldset>
 
   <fieldset>
@@ -279,6 +301,33 @@ document.getElementById("pastebtn").addEventListener("click", function () {
 });
 document.getElementById("reset").addEventListener("click", function () {
   if (confirm("Reset the CPC?")) post("/reset");
+});
+
+/* --- disk load: hidden file input, one per drive button --- */
+var diskfile = document.getElementById("diskfile");
+var diskstatus = document.getElementById("diskstatus");
+var diskDrive = 0;
+document.querySelectorAll("#diskbox button[data-drive]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    diskDrive = btn.dataset.drive;
+    diskfile.value = "";
+    diskfile.click();
+  });
+});
+diskfile.addEventListener("change", function () {
+  var file = diskfile.files[0];
+  if (!file) return;
+  var letter = diskDrive === "0" ? "A" : "B";
+  diskstatus.textContent = "loading " + file.name + " into drive " + letter + "…";
+  fetch("/disk?drive=" + diskDrive + "&name=" + encodeURIComponent(file.name), {
+    method: "POST", body: file
+  }).then(function (r) {
+    diskstatus.textContent = r.ok
+      ? file.name + " mounted in drive " + letter
+      : "failed to mount " + file.name + " (" + r.status + ")";
+  }).catch(function () {
+    diskstatus.textContent = "upload failed (connection lost)";
+  });
 });
 
 /* --- stream status + auto-reconnect --- */
