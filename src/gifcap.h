@@ -31,6 +31,21 @@ GifCap *gifcap_open(const char *path,
  * (or 0xAARRGGBB — alpha is ignored). Returns true on success. */
 bool gifcap_frame(GifCap *g, const uint32_t *pixels);
 
+/* Persistent memory-mode encoder for streaming single-frame GIFs
+ * (e.g. one image per multipart HTTP part). Same scaling semantics as
+ * gifcap_open; no file is created. Use with gifcap_encode_single, not
+ * gifcap_frame. Returns NULL on failure. */
+GifCap *gifcap_open_mem(int in_w, int in_h, int out_w, int out_h,
+                        int frame_delay_cs);
+
+/* Encode one frame as a COMPLETE standalone GIF (header + image +
+ * trailer, no loop extension) into an internal buffer that is reused by
+ * the next call. Only valid on a gifcap_open_mem encoder. Returns a
+ * pointer to the encoded bytes (valid until the next call or
+ * gifcap_close) and stores the byte count in *out_len; NULL on OOM. */
+const uint8_t *gifcap_encode_single(GifCap *g, const uint32_t *pixels,
+                                    size_t *out_len);
+
 /* Finalise the file (writes trailer) and free the encoder. Safe with NULL. */
 void gifcap_close(GifCap *g);
 

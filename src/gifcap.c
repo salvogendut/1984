@@ -7,8 +7,36 @@
 #define GIFCAP_MAX_W   2048
 #define GIFCAP_MAX_H   2048
 
+/* Output sink: file mode (fp non-NULL) or growable memory buffer. */
+typedef struct {
+    FILE    *fp;
+    uint8_t *buf;
+    size_t   len, cap;
+    bool     oom;
+} GifOut;
+
+static void go_write(GifOut *o, const void *p, size_t n) {
+    if (o->fp) { fwrite(p, 1, n, o->fp); return; }
+    if (o->oom) return;
+    if (o->len + n > o->cap) {
+        size_t cap = o->cap ? o->cap : 16384;
+        while (cap < o->len + n) cap *= 2;
+        uint8_t *nb = realloc(o->buf, cap);
+        if (!nb) { o->oom = true; return; }
+        o->buf = nb;
+        o->cap = cap;
+    }
+    memcpy(o->buf + o->len, p, n);
+    o->len += n;
+}
+
+static inline void go_putc(GifOut *o, int c) {
+    uint8_t b = (uint8_t)c;
+    go_write(o, &b, 1);
+}
+
 struct GifCap {
-    FILE   *fp;
+    GifOut  out;
     int     in_w, in_h;      /* input framebuffer size */
     int     w, h;            /* output (GIF) size, nearest-neighbour scaled */
     int     delay_cs;
@@ -92,7 +120,7 @@ static void build_palette_rgb332(GifCap *g, const uint32_t *pixels) {
 /* ---------- LZW encoder + sub-block packer ---------- */
 
 typedef struct {
-    FILE   *fp;
+    GifOut *out;
     uint8_t buf[255];
     int     buf_len;
     uint32_t bit_buf;
@@ -101,9 +129,8 @@ typedef struct {
 
 static void lzw_flush_block(LzwOut *o) {
     if (o->buf_len == 0) return;
-    uint8_t sz = (uint8_t)o->buf_len;
-    fwrite(&sz, 1, 1, o->fp);
-    fwrite(o->buf, 1, o->buf_len, o->fp);
+    go_putc(o->out, o->buf_len);
+    go_write(o->out, o->buf, (size_t)o->buf_len);
     o->buf_len = 0;
 }
 
@@ -126,16 +153,15 @@ static void lzw_finish(LzwOut *o) {
         if (o->buf_len == 255) lzw_flush_block(o);
     }
     lzw_flush_block(o);
-    uint8_t zero = 0;
-    fwrite(&zero, 1, 1, o->fp);   /* end-of-sub-block-stream */
+    go_putc(o->out, 0);   /* end-of-sub-block-stream */
 }
 
 /* Dictionary: chained hash keyed on (prefix << 8) | byte → code.
  * 5021 is a small prime > 4096 (max LZW table size). */
 #define LZW_HASH_N 5021
-static void lzw_encode(FILE *fp, const uint8_t *data, int n, int min_code_size) {
-    LzwOut o = { .fp = fp };
-    fputc(min_code_size, fp);
+static void lzw_encode(GifOut *out, const uint8_t *data, int n, int min_code_size) {
+    LzwOut o = { .out = out };
+    go_putc(out, min_code_size);
 
     uint32_t hash_key[LZW_HASH_N];
     int16_t  hash_val[LZW_HASH_N];
@@ -188,22 +214,27 @@ static void lzw_encode(FILE *fp, const uint8_t *data, int n, int min_code_size) 
 
 /* ---------- GIF header / per-frame block ---------- */
 
-static void write_u16(FILE *fp, uint16_t v) { fputc(v & 0xFF, fp); fputc((v >> 8) & 0xFF, fp); }
+static void write_u16(GifOut *o, uint16_t v) { go_putc(o, v & 0xFF); go_putc(o, (v >> 8) & 0xFF); }
 
-static void write_header(GifCap *g) {
-    fwrite("GIF89a", 1, 6, g->fp);
+static void write_header(GifCap *g, bool loop) {
+    GifOut *o = &g->out;
+    go_write(o, "GIF89a", 6);
     /* Logical Screen Descriptor */
-    write_u16(g->fp, (uint16_t)g->w);
-    write_u16(g->fp, (uint16_t)g->h);
-    fputc(0x00, g->fp);    /* packed: no global colour table */
-    fputc(0x00, g->fp);    /* background index */
-    fputc(0x00, g->fp);    /* pixel aspect ratio */
-    /* NETSCAPE2.0 application extension — loop forever. */
-    fputc(0x21, g->fp); fputc(0xFF, g->fp); fputc(0x0B, g->fp);
-    fwrite("NETSCAPE2.0", 1, 11, g->fp);
-    fputc(0x03, g->fp); fputc(0x01, g->fp);
-    write_u16(g->fp, 0);   /* 0 = loop forever */
-    fputc(0x00, g->fp);
+    write_u16(o, (uint16_t)g->w);
+    write_u16(o, (uint16_t)g->h);
+    go_putc(o, 0x00);    /* packed: no global colour table */
+    go_putc(o, 0x00);    /* background index */
+    go_putc(o, 0x00);    /* pixel aspect ratio */
+    if (loop) {
+        /* NETSCAPE2.0 application extension — loop forever. Only
+         * meaningful for multi-frame files; single-frame stream
+         * images omit it. */
+        go_putc(o, 0x21); go_putc(o, 0xFF); go_putc(o, 0x0B);
+        go_write(o, "NETSCAPE2.0", 11);
+        go_putc(o, 0x03); go_putc(o, 0x01);
+        write_u16(o, 0);   /* 0 = loop forever */
+        go_putc(o, 0x00);
+    }
 }
 
 static int log2_ceil(int n) {
@@ -214,50 +245,48 @@ static int log2_ceil(int n) {
 }
 
 static void write_frame(GifCap *g) {
+    GifOut *o = &g->out;
     int lct_bits = log2_ceil(g->palette_size);
     if (lct_bits < 2) lct_bits = 2;            /* GIF requires at least 4 entries */
     int lct_count = 1 << lct_bits;
 
     /* Graphic Control Extension */
-    fputc(0x21, g->fp); fputc(0xF9, g->fp); fputc(0x04, g->fp);
-    fputc(0x00, g->fp);                         /* no transparency, no disposal */
-    write_u16(g->fp, (uint16_t)g->delay_cs);
-    fputc(0x00, g->fp); fputc(0x00, g->fp);
+    go_putc(o, 0x21); go_putc(o, 0xF9); go_putc(o, 0x04);
+    go_putc(o, 0x00);                           /* no transparency, no disposal */
+    write_u16(o, (uint16_t)g->delay_cs);
+    go_putc(o, 0x00); go_putc(o, 0x00);
 
     /* Image Descriptor */
-    fputc(0x2C, g->fp);
-    write_u16(g->fp, 0); write_u16(g->fp, 0);
-    write_u16(g->fp, (uint16_t)g->w);
-    write_u16(g->fp, (uint16_t)g->h);
+    go_putc(o, 0x2C);
+    write_u16(o, 0); write_u16(o, 0);
+    write_u16(o, (uint16_t)g->w);
+    write_u16(o, (uint16_t)g->h);
     /* packed: LCT=1, interlace=0, sort=0, reserved=0, size = lct_bits-1 */
-    fputc((uint8_t)(0x80 | (lct_bits - 1)), g->fp);
+    go_putc(o, 0x80 | (lct_bits - 1));
 
     /* Local colour table — pad to power-of-two size. */
     for (int i = 0; i < lct_count; i++) {
         uint32_t c = (i < g->palette_size) ? g->palette[i] : 0;
-        fputc((c >> 16) & 0xFF, g->fp);
-        fputc((c >> 8)  & 0xFF, g->fp);
-        fputc((c)       & 0xFF, g->fp);
+        go_putc(o, (c >> 16) & 0xFF);
+        go_putc(o, (c >> 8)  & 0xFF);
+        go_putc(o, (c)       & 0xFF);
     }
 
     /* LZW image data. Min code size must be at least 2. */
     int min_code_size = lct_bits;
     if (min_code_size < 2) min_code_size = 2;
-    lzw_encode(g->fp, g->indices, g->w * g->h, min_code_size);
+    lzw_encode(o, g->indices, g->w * g->h, min_code_size);
 }
 
 /* ---------- public ---------- */
 
-GifCap *gifcap_open(const char *path,
-                    int in_w, int in_h, int out_w, int out_h,
-                    int frame_delay_cs) {
-    if (!path || in_w <= 0 || in_h <= 0 || out_w <= 0 || out_h <= 0 ||
+static GifCap *gifcap_alloc(int in_w, int in_h, int out_w, int out_h,
+                            int frame_delay_cs) {
+    if (in_w <= 0 || in_h <= 0 || out_w <= 0 || out_h <= 0 ||
         out_w > GIFCAP_MAX_W || out_h > GIFCAP_MAX_H) return NULL;
     if (frame_delay_cs < 1) frame_delay_cs = 1;
     GifCap *g = calloc(1, sizeof(*g));
     if (!g) return NULL;
-    g->fp = fopen(path, "wb");
-    if (!g->fp) { free(g); return NULL; }
     g->in_w = in_w;
     g->in_h = in_h;
     g->w = out_w;
@@ -268,7 +297,7 @@ GifCap *gifcap_open(const char *path,
     g->col_src = malloc(sizeof(int) * out_w);
     if (!g->indices || !g->row_src || !g->col_src) {
         free(g->indices); free(g->row_src); free(g->col_src);
-        fclose(g->fp); free(g); return NULL;
+        free(g); return NULL;
     }
     /* Precompute nearest-neighbour source coordinates. */
     for (int y = 0; y < out_h; y++) {
@@ -281,8 +310,40 @@ GifCap *gifcap_open(const char *path,
         if (s >= in_w) s = in_w - 1;
         g->col_src[x] = s;
     }
-    write_header(g);
     return g;
+}
+
+GifCap *gifcap_open(const char *path,
+                    int in_w, int in_h, int out_w, int out_h,
+                    int frame_delay_cs) {
+    if (!path) return NULL;
+    GifCap *g = gifcap_alloc(in_w, in_h, out_w, out_h, frame_delay_cs);
+    if (!g) return NULL;
+    g->out.fp = fopen(path, "wb");
+    if (!g->out.fp) { gifcap_close(g); return NULL; }
+    write_header(g, true);
+    return g;
+}
+
+GifCap *gifcap_open_mem(int in_w, int in_h, int out_w, int out_h,
+                        int frame_delay_cs) {
+    return gifcap_alloc(in_w, in_h, out_w, out_h, frame_delay_cs);
+}
+
+const uint8_t *gifcap_encode_single(GifCap *g, const uint32_t *pixels,
+                                    size_t *out_len) {
+    if (!g || !pixels || !out_len || g->out.fp) return NULL;
+    g->out.len = 0;
+    g->out.oom = false;
+    write_header(g, false);
+    if (!build_palette(g, pixels))
+        build_palette_rgb332(g, pixels);
+    write_frame(g);
+    go_putc(&g->out, 0x3B);    /* trailer — complete standalone GIF */
+    g->frames++;
+    if (g->out.oom) return NULL;
+    *out_len = g->out.len;
+    return g->out.buf;
 }
 
 bool gifcap_frame(GifCap *g, const uint32_t *pixels) {
@@ -296,10 +357,11 @@ bool gifcap_frame(GifCap *g, const uint32_t *pixels) {
 
 void gifcap_close(GifCap *g) {
     if (!g) return;
-    if (g->fp) {
-        fputc(0x3B, g->fp);    /* trailer */
-        fclose(g->fp);
+    if (g->out.fp) {
+        fputc(0x3B, g->out.fp);    /* trailer */
+        fclose(g->out.fp);
     }
+    free(g->out.buf);
     free(g->indices);
     free(g->row_src);
     free(g->col_src);
