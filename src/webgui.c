@@ -13,6 +13,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef _WIN32
+#include <ifaddrs.h>
+#endif
+
 #include <SDL3/SDL.h>
 
 #include "webgui.h"
@@ -37,6 +41,7 @@ typedef enum {
 
 typedef struct {
     int      fd;                 /* -1 when WC_FREE */
+    char     ip[16];             /* peer IPv4, for logging */
     WcState  state;
     char     req[WG_REQ_MAX];
     int      req_len;
@@ -61,6 +66,43 @@ static struct {
     int       decim;             /* 50 -> 25 fps toggle */
     bool      joy_held[6];       /* web-held row-9 bits, released on stop */
 } wg = { .listen_fd = -1 };
+
+/* ---------- stderr logging (enabled by --web; journald-friendly) ---------- */
+
+static bool wg_log = false;
+
+void webgui_set_log(bool on) { wg_log = on; }
+
+static void wlog(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void wlog(const char *fmt, ...) {
+    if (!wg_log) return;
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(stderr, "1984 web: ");
+    vfprintf(stderr, fmt, ap);
+    fputc('\n', stderr);
+    va_end(ap);
+}
+
+/* One "http://ip:port/ (ifname)" line per IPv4 interface, so the URL
+ * to open is right there in the service log. */
+static void wlog_urls(int port) {
+#ifndef _WIN32
+    if (!wg_log) return;
+    struct ifaddrs *list;
+    if (getifaddrs(&list) != 0) return;
+    for (struct ifaddrs *ifa = list; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+        const struct sockaddr_in *sa = (const struct sockaddr_in *)ifa->ifa_addr;
+        char ip[INET_ADDRSTRLEN];
+        if (!inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) continue;
+        wlog("  http://%s:%d/  (%s)", ip, port, ifa->ifa_name);
+    }
+    freeifaddrs(list);
+#else
+    (void)port;
+#endif
+}
 
 /* ---------- output buffer ---------- */
 
@@ -91,6 +133,8 @@ static bool wc_printf(WebClient *c, const char *fmt, ...) {
 }
 
 static void wc_close(WebClient *c) {
+    if (c->state == WC_STREAMING)
+        wlog("viewer %s disconnected", c->ip);
     if (c->fd >= 0) sock_close(c->fd);
     free(c->out);
     memset(c, 0, sizeof(*c));
@@ -210,6 +254,7 @@ static void route_stream(WebClient *c) {
     c->state = WC_STREAMING;
     c->sent_hash = 0;
     c->sent_ms = 0;    /* keepalive rule pushes the first frame at once */
+    wlog("viewer %s started streaming", c->ip);
 }
 
 static void route_key(WebClient *c, const char *query) {
@@ -362,6 +407,7 @@ bool webgui_start(int port) {
     if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0 ||
         listen(fd, 4) < 0) {
         notify_post("Web GUI: cannot listen on port %d", port);
+        fprintf(stderr, "1984 web: cannot listen on port %d\n", port);
         sock_close(fd);
         return false;
     }
@@ -380,6 +426,8 @@ bool webgui_start(int port) {
     wg.last_hash = 0;
     wg.last_encode_ms = 0;
     notify_post("Web GUI: listening on 0.0.0.0:%d", port);
+    wlog("listening on 0.0.0.0:%d — no authentication, LAN-visible", port);
+    wlog_urls(port);
     return true;
 }
 
@@ -399,6 +447,7 @@ void webgui_stop(void) {
             if (wg.joy_held[b]) kbd_key_up(&wg.cpc->kbd, 9, b);
     memset(wg.joy_held, 0, sizeof(wg.joy_held));
     notify_post("Web GUI: stopped");
+    wlog("stopped");
 }
 
 bool webgui_active(void) { return wg.listen_fd >= 0; }
@@ -409,7 +458,9 @@ void webgui_poll(void) {
 
     /* Accept new connections. */
     for (;;) {
-        int fd = accept(wg.listen_fd, NULL, NULL);
+        struct sockaddr_in peer;
+        socklen_t plen = sizeof(peer);
+        int fd = accept(wg.listen_fd, (struct sockaddr *)&peer, &plen);
         if (fd < 0) break;
         WebClient *c = NULL;
         for (int i = 0; i < WG_MAX_CLIENTS; i++)
@@ -420,10 +471,13 @@ void webgui_poll(void) {
                 "Connection: close\r\nContent-Length: 0\r\n\r\n";
             send(fd, busy, sizeof(busy) - 1, MSG_NOSIGNAL | MSG_DONTWAIT);
             sock_close(fd);
+            wlog("connection refused: all %d slots busy", WG_MAX_CLIENTS);
             continue;
         }
         sock_set_nonblocking(fd);
         c->fd = fd;
+        if (!inet_ntop(AF_INET, &peer.sin_addr, c->ip, sizeof(c->ip)))
+            snprintf(c->ip, sizeof(c->ip), "?");
         c->state = WC_READ_REQUEST;
         leds_ping(LED_NET);
     }

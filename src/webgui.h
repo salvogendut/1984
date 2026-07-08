@@ -21,6 +21,11 @@
 /* Capture machine pointers once; opens no socket. */
 void webgui_init(CPC *cpc, Paste *paste);
 
+/* Log server lifecycle and client activity to stderr (listen URLs,
+ * viewer connect/disconnect). Enabled by --web for journald/log
+ * capture in headless service use; off by default (toasts only). */
+void webgui_set_log(bool on);
+
 /* Start listening on 0.0.0.0:port. Posts a notify toast either way;
  * returns false if the socket could not be opened. */
 bool webgui_start(int port);
