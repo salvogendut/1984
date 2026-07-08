@@ -35,6 +35,7 @@ dist_man1_MANS = 1984.1
 	src/symbols.c \
 	src/gifcap.c \
 	src/webmcap.c \
+	src/webgui.c \
 	src/host_mount.c \
 	src/leds.c \
 	src/m4.c \
@@ -63,6 +64,8 @@ noinst_HEADERS = \
 	src/gate_array.h \
 	src/gifcap.h \
 	src/webmcap.h \
+	src/webgui.h \
+	src/webgui_page.h \
 	src/host_mount.h \
 	src/ide.h \
 	src/joy.h \
@@ -153,4 +156,5 @@ dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 # Files shipped in the dist tarball but not built (license, hand-written
 # Makefile alternative, project docs).
-EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico
+EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico \
+	src/webgui_page.html scripts/gen_webgui_page.sh

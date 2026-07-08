@@ -150,6 +150,9 @@ typedef struct {
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
+    bool web_gui;            /* embedded HTTP server serving the emulator to a
+                              * browser. Binds 0.0.0.0 — LAN-visible, no auth. */
+    int  web_port;           /* Web GUI TCP port; default 1984 */
     NotifyMode notifications; /* screen / console / off; default screen */
     bool debug;              /* enable debug machinery (env-var traces, panic
                               * dumps, text capture). Off by default; when off,

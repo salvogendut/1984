@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1984 — Amstrad CPC</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #101014; color: #d8d8e0;
+    font: 14px/1.45 system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 12px; padding: 12px; min-height: 100vh;
+  }
+  header { display: flex; align-items: center; gap: 10px; }
+  h1 { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
+  #dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #d33; transition: background .3s;
+  }
+  #dot.live { background: #3c3; }
+  #screenwrap {
+    outline: none; border: 2px solid #333; border-radius: 4px;
+    position: relative; max-width: 100%;
+  }
+  #screenwrap:focus { border-color: #3c3; }
+  #screen {
+    display: block; width: min(90vw, 768px); aspect-ratio: 4 / 3;
+    image-rendering: pixelated; background: #000;
+  }
+  #kbhint {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    text-align: center; padding: 3px; font-size: 12px;
+    background: rgba(0,0,0,.65); color: #aaa; pointer-events: none;
+  }
+  #screenwrap:focus #kbhint { display: none; }
+  #controls {
+    display: flex; flex-wrap: wrap; gap: 24px;
+    align-items: flex-start; justify-content: center;
+  }
+  fieldset {
+    border: 1px solid #333; border-radius: 6px; padding: 10px 12px;
+  }
+  legend { padding: 0 6px; color: #888; font-size: 12px; }
+  #dpad {
+    display: grid; grid-template-columns: repeat(3, 52px);
+    grid-template-rows: repeat(3, 52px); gap: 4px;
+  }
+  .jbtn, #fires button, #actions button, #pastebox button {
+    background: #26262e; color: #d8d8e0; border: 1px solid #444;
+    border-radius: 6px; font-size: 16px; cursor: pointer;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .jbtn:active, .jbtn.held, #fires button:active { background: #3a6; }
+  #fires { display: flex; gap: 8px; margin-top: 8px; }
+  #fires button { width: 76px; height: 44px; }
+  #pastebox { display: flex; flex-direction: column; gap: 8px; }
+  #pastetext {
+    width: 260px; height: 84px; resize: vertical;
+    background: #16161c; color: #d8d8e0;
+    border: 1px solid #444; border-radius: 4px; padding: 6px;
+    font: 13px monospace;
+  }
+  #pastebox button, #actions button { padding: 8px 14px; font-size: 14px; }
+  #actions { display: flex; flex-direction: column; gap: 8px; }
+  #reset { border-color: #a44; }
+  footer { color: #555; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span>
+  <h1>1984 — Amstrad CPC</h1>
+</header>
+
+<div id="screenwrap" tabindex="0">
+  <img id="screen" src="/stream" alt="CPC screen">
+  <div id="kbhint">click the screen to capture your keyboard</div>
+</div>
+
+<div id="controls">
+  <fieldset>
+    <legend>Joystick</legend>
+    <div id="dpad">
+      <span></span><button class="jbtn" data-b="0">▲</button><span></span>
+      <button class="jbtn" data-b="2">◀</button><span></span><button class="jbtn" data-b="3">▶</button>
+      <span></span><button class="jbtn" data-b="1">▼</button><span></span>
+    </div>
+    <div id="fires">
+      <button class="jbtn" data-b="4">Fire 1</button>
+      <button class="jbtn" data-b="5">Fire 2</button>
+    </div>
+  </fieldset>
+
+  <fieldset id="pastebox">
+    <legend>Paste text</legend>
+    <textarea id="pastetext" placeholder="PRINT &quot;HELLO&quot;" spellcheck="false"></textarea>
+    <button id="pastebtn">Paste to CPC</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Machine</legend>
+    <div id="actions">
+      <button id="reset">Reset (F5)</button>
+    </div>
+  </fieldset>
+</div>
+
+<footer>1984 Web GUI — everyone on this network can view and control the emulator</footer>
+
+<script>
+"use strict";
+
+function post(url) { fetch(url, { method: "POST" }).catch(function () {}); }
+
+/* --- keyboard: KeyboardEvent.code -> SDL scancode name --- */
+var KEYMAP = {
+  Enter: "Return", NumpadEnter: "Keypad Enter",
+  ShiftLeft: "Left Shift", ShiftRight: "Right Shift",
+  ControlLeft: "Left Ctrl", ControlRight: "Right Ctrl",
+  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+  Backspace: "Backspace", Tab: "Tab", Escape: "Escape", Space: "Space",
+  CapsLock: "CapsLock", Delete: "Delete",
+  Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]",
+  Semicolon: ";", Quote: "'", Backquote: "`", Backslash: "\\",
+  Comma: ",", Period: ".", Slash: "/"
+};
+function sdlName(code) {
+  if (KEYMAP[code]) return KEYMAP[code];
+  var m;
+  if ((m = code.match(/^Key([A-Z])$/))) return m[1];
+  if ((m = code.match(/^Digit([0-9])$/))) return m[1];
+  if ((m = code.match(/^Numpad([0-9])$/))) return "Keypad " + m[1];
+  if (/^F([1-9]|1[0-2])$/.test(code)) return code;
+  return null;
+}
+
+var held = new Set();
+function sendKey(name, down) {
+  post("/key?c=" + encodeURIComponent(name) + "&d=" + (down ? 1 : 0));
+}
+var wrap = document.getElementById("screenwrap");
+wrap.addEventListener("keydown", function (e) {
+  var name = sdlName(e.code);
+  if (!name) return;
+  e.preventDefault();
+  if (e.repeat || held.has(name)) return;   /* CPC firmware auto-repeats */
+  held.add(name);
+  sendKey(name, true);
+});
+wrap.addEventListener("keyup", function (e) {
+  var name = sdlName(e.code);
+  if (!name) return;
+  e.preventDefault();
+  held.delete(name);
+  sendKey(name, false);
+});
+function releaseAll() {
+  held.forEach(function (name) { sendKey(name, false); });
+  held.clear();
+}
+window.addEventListener("blur", releaseAll);
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) releaseAll();
+});
+
+/* --- joystick buttons (matrix row 9) --- */
+document.querySelectorAll(".jbtn").forEach(function (btn) {
+  var b = btn.dataset.b;
+  function down(e) { e.preventDefault(); btn.classList.add("held"); post("/joy?b=" + b + "&d=1"); }
+  function up(e)   { e.preventDefault(); btn.classList.remove("held"); post("/joy?b=" + b + "&d=0"); }
+  btn.addEventListener("pointerdown", down);
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("pointercancel", up);
+  btn.addEventListener("pointerleave", function (e) {
+    if (btn.classList.contains("held")) up(e);
+  });
+});
+
+/* --- paste + reset --- */
+document.getElementById("pastebtn").addEventListener("click", function () {
+  var text = document.getElementById("pastetext").value;
+  if (!text) return;
+  fetch("/paste", { method: "POST", body: text }).catch(function () {});
+  wrap.focus();
+});
+document.getElementById("reset").addEventListener("click", function () {
+  if (confirm("Reset the CPC?")) post("/reset");
+});
+
+/* --- stream status + auto-reconnect --- */
+var img = document.getElementById("screen");
+var dot = document.getElementById("dot");
+img.addEventListener("load", function () { dot.classList.add("live"); });
+img.addEventListener("error", function () {
+  dot.classList.remove("live");
+  setTimeout(function () { img.src = "/stream?" + Date.now(); }, 1000);
+});
+</script>
+</body>
+</html>

@@ -138,6 +138,8 @@ void config_defaults(Config *cfg) {
     cfg->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
     cfg->tinker    = false;
     cfg->debug     = false;
+    cfg->web_gui   = false;
+    cfg->web_port  = 1984;
     snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
     snprintf(cfg->net4cpc_tap_netmask,    sizeof(cfg->net4cpc_tap_netmask),    "255.255.255.0");
     snprintf(cfg->net4cpc_tap_lease_start, sizeof(cfg->net4cpc_tap_lease_start), "10.0.0.100");
@@ -339,6 +341,10 @@ static void config_create_default(const char *path) {
         "# text capture, etc.). Off by default; when off, none of the\n"
         "# debug machinery runs and ONE_K_* trace env vars are no-ops.\n"
         "debug=false\n"
+        "# Web GUI: serve the emulator screen + controls over HTTP.\n"
+        "# Binds 0.0.0.0 — anyone on your network can view and type. No auth.\n"
+        "web_gui=false\n"
+        "web_port=1984\n"
         "# On-screen notifications: screen=fading bottom-left toast,\n"
         "# console=stderr only, off=silent.\n"
         "notifications=screen\n"
@@ -626,6 +632,14 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "web_gui")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->web_gui = b;
+                else { fprintf(stderr, "1984.conf:%d: web_gui must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "web_port")) {
+                int p = atoi(val);
+                if (p > 0 && p < 65536) cfg->web_port = p;
+                else { fprintf(stderr, "1984.conf:%d: web_port must be 1..65535\n", lineno); rc = -1; }
             } else if (!strcmp(key, "notifications")) {
                 if      (!strcasecmp(val, "screen"))  cfg->notifications = NOTIFY_MODE_SCREEN;
                 else if (!strcasecmp(val, "console")) cfg->notifications = NOTIFY_MODE_CONSOLE;
@@ -783,6 +797,8 @@ int config_save(const Config *cfg) {
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
+        "web_gui=%s\n"
+        "web_port=%d\n"
         "notifications=%s\n"
         "last_dir=%s\n",
         cfg->disk_a,
@@ -833,6 +849,8 @@ int config_save(const Config *cfg) {
         cfg->audio_stereo_sep,
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
+        cfg->web_gui    ? "true" : "false",
+        cfg->web_port,
         cfg->notifications == NOTIFY_MODE_SCREEN  ? "screen"  :
         cfg->notifications == NOTIFY_MODE_CONSOLE ? "console" : "off",
         cfg->last_dir

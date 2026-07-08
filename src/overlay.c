@@ -7,6 +7,7 @@
 #include "mem.h"
 #include "snapshot.h"
 #include "webmcap.h"   /* WEBMCAP_SUPPORTED */
+#include "webgui.h"
 #include "leds.h"
 #include "notify.h"
 #include <string.h>
@@ -37,7 +38,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 16 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 17 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 9;
@@ -604,6 +605,13 @@ static void item_text(const Overlay *ov, int row,
                      ov->cfg->notifications == NOTIFY_MODE_CONSOLE ? "console" : "off");
             break;
         case 15:
+            snprintf(lbl, lsz, "Web GUI");
+            if (webgui_active())
+                snprintf(val, vsz, "on - 0.0.0.0:%d", webgui_port());
+            else
+                snprintf(val, vsz, "off (port %d)", ov->cfg->web_port);
+            break;
+        case 16:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -1296,6 +1304,17 @@ static void activate_item(Overlay *ov) {
             ov->cfg->notifications =
                 (NotifyMode)((ov->cfg->notifications + 1) % 3);
             notify_set_mode(ov->cfg->notifications);
+            ov->dirty = true;
+            break;
+        case 15:
+            /* Web GUI: live start/stop, no reboot. On start failure the
+             * flag stays off (webgui_start posted the toast). */
+            if (webgui_active()) {
+                webgui_stop();
+                ov->cfg->web_gui = false;
+            } else if (webgui_start(ov->cfg->web_port)) {
+                ov->cfg->web_gui = true;
+            }
             ov->dirty = true;
             break;
         }
