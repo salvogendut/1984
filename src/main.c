@@ -371,11 +371,14 @@ static void usage(const char *prog, int code) {
         "  --pilot-replies-stderr Mirror machine-readable pilot replies to stderr.\n"
         "  --web[=PORT]        Serve the emulator to a browser: live screen plus\n"
         "                      keyboard/joystick/paste/reset controls over HTTP\n"
-        "                      (default port 1984). Binds 0.0.0.0 — anyone on the\n"
-        "                      network can view and type; no authentication.\n"
+        "                      (default port 1984). Implies --headless: no window\n"
+        "                      on the host, the browser is the only interface.\n"
+        "                      (The overlay toggle / web_gui config key start the\n"
+        "                      same server with the host window still visible.)\n"
+        "                      Binds 0.0.0.0 — anyone on the network can view and\n"
+        "                      type; no authentication.\n"
         "  --headless          No window on the host: render off-screen and use\n"
-        "                      the dummy audio driver. Meant for running as a\n"
-        "                      service with --web as the only interface.\n"
+        "                      the dummy audio driver (implied by --web).\n"
         "  -h, --help          Show this help and exit\n"
         "\n"
         "Keyboard shortcuts:\n"
@@ -643,6 +646,10 @@ int main(int argc, char *argv[]) {
     if (web_cli) {
         cfg.web_gui = true;
         if (web_cli_port) cfg.web_port = web_cli_port;
+        /* --web means "web appliance": completely headless, the browser
+         * is the only interface. The overlay toggle and the web_gui
+         * config key start the server WITHOUT hiding the host window. */
+        headless = true;
     }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");

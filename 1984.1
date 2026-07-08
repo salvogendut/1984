@@ -222,7 +222,14 @@ overlay tab. The server binds
 and has
 .BR "no authentication" :
 anyone on the local network can watch the screen and type into the
-emulator. Only enable it on networks you trust. Settings persist as
+emulator. Only enable it on networks you trust. .B --web
+implies
+.BR --headless :
+no window appears on the host and the browser is the only interface.
+To serve the Web GUI with the host window still visible, use the
+overlay toggle or set
+.B web_gui=true
+in the configuration file instead. Settings persist as
 .B web_gui
 and
 .B web_port
@@ -235,9 +242,9 @@ video driver and
 .B dummy
 audio driver (overriding any
 .BR DISPLAY / WAYLAND_DISPLAY / SDL_VIDEODRIVER
-in the environment). Meant for running the emulator as a service with
-.B --web
-as the only interface. A ready-made systemd user unit is installed as
+in the environment). Implied by
+.BR --web .
+A ready-made systemd user unit is installed as
 .BR 1984-web.service :
 .IP
 .nf
@@ -245,7 +252,7 @@ systemctl --user enable --now 1984-web
 .fi
 .IP
 It runs
-.B 1984 --web --headless
+.B 1984 --web
 and can be customised with a drop-in
 .RB ( "systemctl --user edit 1984-web" ).
 Use

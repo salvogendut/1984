@@ -1,8 +1,8 @@
 # 1984-web.service — run the 1984 Amstrad CPC emulator as a headless
 # systemd user service, serving the Web GUI to browsers on the network
-# (see 1984(1), options --web and --headless). No window ever appears
-# on the host: --headless forces SDL's offscreen video and dummy audio
-# drivers, so the browser is the only interface.
+# (see 1984(1), option --web). --web implies --headless: SDL's
+# offscreen video and dummy audio drivers are forced, no window ever
+# appears on the host, and the browser is the only interface.
 #
 #   systemctl --user enable --now 1984-web    # start and enable
 #   systemctl --user stop 1984-web            # stop
@@ -13,7 +13,7 @@
 #   systemctl --user edit 1984-web
 #   [Service]
 #   ExecStart=
-#   ExecStart=@BINDIR@/1984 --web=8080 --headless --6128 --disk-a=%h/games/game.dsk
+#   ExecStart=@BINDIR@/1984 --web=8080 --6128 --disk-a=%h/games/game.dsk
 #
 # To start at boot without an active login session:
 #   loginctl enable-linger $USER
@@ -27,7 +27,7 @@ Documentation=man:1984(1)
 After=network.target
 
 [Service]
-ExecStart=@BINDIR@/1984 --web --headless
+ExecStart=@BINDIR@/1984 --web
 Restart=on-failure
 RestartSec=3
 
