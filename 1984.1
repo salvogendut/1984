@@ -213,8 +213,13 @@ Implies
 Start the embedded
 .B Web GUI
 HTTP server (default port 1984): any browser on the network gets the
-live emulator screen (a multipart GIF stream) plus keyboard capture,
-an on-screen joystick, paste-text and reset controls. The same server
+live emulator screen (a multipart GIF stream) plus full input capture
+\(em clicking the screen captures the browser's keyboard and mouse
+(pointer lock; motion feeds the enabled SYMBiFACE / Albireo / AMX
+pointer device) until
+.B Ctrl+Enter
+releases them, the same combo as the emulator window \(em and an
+on-screen joystick, paste-text and reset controls for touch devices. The same server
 can be toggled at runtime from the
 .B Advanced
 overlay tab. The server binds

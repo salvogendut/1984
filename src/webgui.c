@@ -65,6 +65,7 @@ static struct {
     uint64_t  last_encode_ms;
     int       decim;             /* 50 -> 25 fps toggle */
     bool      joy_held[6];       /* web-held row-9 bits, released on stop */
+    bool      mbtn_held[3];      /* web-held mouse buttons, released on stop */
 } wg = { .listen_fd = -1 };
 
 /* ---------- stderr logging (enabled by --web; journald-friendly) ---------- */
@@ -290,6 +291,75 @@ static void route_joy(WebClient *c, const char *query) {
     respond_status(c, "204 No Content", true);
 }
 
+static bool cpc_has_pointer(void) {
+    return wg.cpc->symbiface_mouse || wg.cpc->albireo_mouse ||
+           wg.cpc->amx_mouse;
+}
+
+/* Relative mouse input, mirroring the host's captured-mouse dispatch
+ * (main.c): motion/buttons/wheel go to whichever pointer devices are
+ * enabled. ?dx=&dy= (host pixels), ?dz= (wheel), ?b=0..2&d=1|0. */
+static void route_mouse(WebClient *c, const char *query) {
+    char v[16], b[4], d[4];
+    bool any = false;
+
+    int dx = 0, dy = 0;
+    if (query_param(query, "dx", v, sizeof(v))) { dx = atoi(v); any = true; }
+    if (query_param(query, "dy", v, sizeof(v))) { dy = atoi(v); any = true; }
+    if (dx < -1024 || dx > 1024 || dy < -1024 || dy > 1024) {
+        respond_status(c, "400 Bad Request", true);
+        return;
+    }
+    if (dx || dy) {
+        if (wg.cpc->symbiface_mouse) mouse_move(&wg.cpc->mouse, dx, dy);
+        if (wg.cpc->albireo_mouse)   ch376_mouse_move(&wg.cpc->ch376, dx, dy);
+        if (wg.cpc->amx_mouse)       amx_move(&wg.cpc->amx, dx, dy);
+    }
+
+    if (query_param(query, "dz", v, sizeof(v))) {
+        int dz = atoi(v);
+        if (dz < -16 || dz > 16) {
+            respond_status(c, "400 Bad Request", true);
+            return;
+        }
+        if (dz && wg.cpc->symbiface_mouse)
+            mouse_scroll(&wg.cpc->mouse, dz);
+        any = true;
+    }
+
+    if (query_param(query, "b", b, sizeof(b)) &&
+        query_param(query, "d", d, sizeof(d))) {
+        if (b[0] < '0' || b[0] > '2' || b[1] != '\0' ||
+            (d[0] != '0' && d[0] != '1') || d[1] != '\0') {
+            respond_status(c, "400 Bad Request", true);
+            return;
+        }
+        int btn = b[0] - '0';
+        bool pressed = (d[0] == '1');
+        if (wg.cpc->symbiface_mouse) mouse_button(&wg.cpc->mouse, btn, pressed);
+        if (wg.cpc->albireo_mouse)   ch376_mouse_button(&wg.cpc->ch376, btn, pressed);
+        if (wg.cpc->amx_mouse)       amx_button(&wg.cpc->amx, &wg.cpc->kbd, btn, pressed);
+        wg.mbtn_held[btn] = pressed;
+        any = true;
+    }
+
+    respond_status(c, any ? "204 No Content" : "400 Bad Request", true);
+}
+
+/* Machine facts the page needs to shape its UI (e.g. only request
+ * browser pointer lock when a CPC pointer device is enabled). */
+static void route_status(WebClient *c) {
+    char body[64];
+    int n = snprintf(body, sizeof(body), "{\"mouse\":%s}",
+                     cpc_has_pointer() ? "true" : "false");
+    wc_printf(c, "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: application/json\r\n"
+                 "Cache-Control: no-store\r\n"
+                 "Connection: keep-alive\r\n"
+                 "Content-Length: %d\r\n\r\n", n);
+    wc_out(c, body, (size_t)n);
+}
+
 static void route_paste(WebClient *c, const char *body, int body_len) {
     char text[WG_PASTE_MAX + 1];
     int n = 0;
@@ -318,8 +388,10 @@ static void route(WebClient *c, const char *method, char *path,
 
     if (strcmp(path, "/") == 0 && get)           route_page(c);
     else if (strcmp(path, "/stream") == 0 && get) route_stream(c);
+    else if (strcmp(path, "/status") == 0 && get) route_status(c);
     else if (strcmp(path, "/key") == 0)          route_key(c, query);
     else if (strcmp(path, "/joy") == 0)          route_joy(c, query);
+    else if (strcmp(path, "/mouse") == 0)        route_mouse(c, query);
     else if (strcmp(path, "/paste") == 0)        route_paste(c, body, body_len);
     else if (strcmp(path, "/reset") == 0) {
         cpc_reset(wg.cpc);
@@ -442,10 +514,18 @@ void webgui_stop(void) {
     wg.enc = NULL;
     wg.last_gif = NULL;
     wg.last_gif_len = 0;
-    if (wg.cpc)
+    if (wg.cpc) {
         for (int b = 0; b < 6; b++)
             if (wg.joy_held[b]) kbd_key_up(&wg.cpc->kbd, 9, b);
+        for (int b = 0; b < 3; b++) {
+            if (!wg.mbtn_held[b]) continue;
+            if (wg.cpc->symbiface_mouse) mouse_button(&wg.cpc->mouse, b, false);
+            if (wg.cpc->albireo_mouse)   ch376_mouse_button(&wg.cpc->ch376, b, false);
+            if (wg.cpc->amx_mouse)       amx_button(&wg.cpc->amx, &wg.cpc->kbd, b, false);
+        }
+    }
     memset(wg.joy_held, 0, sizeof(wg.joy_held));
+    memset(wg.mbtn_held, 0, sizeof(wg.mbtn_held));
     notify_post("Web GUI: stopped");
     wlog("stopped");
 }

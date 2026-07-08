@@ -33,7 +33,7 @@
     text-align: center; padding: 3px; font-size: 12px;
     background: rgba(0,0,0,.65); color: #aaa; pointer-events: none;
   }
-  #screenwrap:focus #kbhint { display: none; }
+  #kbhint.live { color: #6d6; }
   #controls {
     display: flex; flex-wrap: wrap; gap: 24px;
     align-items: flex-start; justify-content: center;
@@ -75,7 +75,7 @@
 
 <div id="screenwrap" tabindex="0">
   <img id="screen" src="/stream" alt="CPC screen">
-  <div id="kbhint">click the screen to capture your keyboard</div>
+  <div id="kbhint">click the screen to capture keyboard &amp; mouse</div>
 </div>
 
 <div id="controls">
@@ -106,7 +106,8 @@
   </fieldset>
 </div>
 
-<footer>1984 Web GUI — everyone on this network can view and control the emulator</footer>
+<footer>1984 Web GUI — everyone on this network can view and control the emulator.
+Esc also drops mouse capture (browser rule); click the screen to recapture.</footer>
 
 <script>
 "use strict";
@@ -135,12 +136,65 @@ function sdlName(code) {
   return null;
 }
 
+/* --- input capture: click the screen to own keyboard + mouse, ---
+ * --- Ctrl+Enter to release (same combo as the emulator window) --- */
+var wrap = document.getElementById("screenwrap");
+var hint = document.getElementById("kbhint");
 var held = new Set();
+var hasMouse = false;      /* does the CPC have a pointer device? */
+var mheld = new Set();     /* mouse buttons currently down */
+
+fetch("/status").then(function (r) { return r.json(); })
+  .then(function (s) { hasMouse = !!s.mouse; updateHint(); })
+  .catch(function () {});
+
 function sendKey(name, down) {
   post("/key?c=" + encodeURIComponent(name) + "&d=" + (down ? 1 : 0));
 }
-var wrap = document.getElementById("screenwrap");
+function captured() { return document.activeElement === wrap; }
+function mouseLocked() { return document.pointerLockElement === wrap; }
+
+function updateHint() {
+  if (captured()) {
+    hint.classList.add("live");
+    hint.textContent = mouseLocked()
+      ? "keyboard + mouse captured — Ctrl+Enter releases"
+      : (hasMouse ? "keyboard captured — click again for mouse, Ctrl+Enter releases"
+                  : "keyboard captured — Ctrl+Enter releases");
+  } else {
+    hint.classList.remove("live");
+    hint.textContent = hasMouse
+      ? "click the screen to capture keyboard & mouse"
+      : "click the screen to capture your keyboard";
+  }
+}
+
+function releaseAll() {
+  held.forEach(function (name) { sendKey(name, false); });
+  held.clear();
+  mheld.forEach(function (b) { post("/mouse?b=" + b + "&d=0"); });
+  mheld.clear();
+}
+function releaseCapture() {
+  if (mouseLocked()) document.exitPointerLock();
+  releaseAll();
+  wrap.blur();
+  updateHint();
+}
+
+wrap.addEventListener("click", function () {
+  wrap.focus();
+  if (hasMouse && !mouseLocked()) wrap.requestPointerLock();
+  updateHint();
+});
+
 wrap.addEventListener("keydown", function (e) {
+  /* Ctrl+Enter releases capture — never forwarded to the CPC. */
+  if (e.ctrlKey && e.code === "Enter") {
+    e.preventDefault();
+    releaseCapture();
+    return;
+  }
   var name = sdlName(e.code);
   if (!name) return;
   e.preventDefault();
@@ -155,13 +209,52 @@ wrap.addEventListener("keyup", function (e) {
   held.delete(name);
   sendKey(name, false);
 });
-function releaseAll() {
-  held.forEach(function (name) { sendKey(name, false); });
-  held.clear();
-}
 window.addEventListener("blur", releaseAll);
 document.addEventListener("visibilitychange", function () {
   if (document.hidden) releaseAll();
+});
+
+/* --- mouse: pointer-locked relative motion -> /mouse --- */
+var mdx = 0, mdy = 0;
+document.addEventListener("pointerlockchange", updateHint);
+wrap.addEventListener("mousemove", function (e) {
+  if (!mouseLocked()) return;
+  mdx += e.movementX;
+  mdy += e.movementY;
+});
+setInterval(function () {              /* flush motion at ~30 Hz */
+  if (!mouseLocked() || (!mdx && !mdy)) return;
+  var dx = Math.max(-1024, Math.min(1024, Math.round(mdx)));
+  var dy = Math.max(-1024, Math.min(1024, Math.round(mdy)));
+  mdx = mdy = 0;
+  post("/mouse?dx=" + dx + "&dy=" + dy);
+}, 33);
+function cpcBtn(b) {                   /* browser 0/1/2 -> CPC L/R/M 0/1/2 */
+  return b === 0 ? 0 : b === 2 ? 1 : b === 1 ? 2 : -1;
+}
+wrap.addEventListener("mousedown", function (e) {
+  if (!mouseLocked()) return;
+  e.preventDefault();
+  var b = cpcBtn(e.button);
+  if (b < 0) return;
+  mheld.add(b);
+  post("/mouse?b=" + b + "&d=1");
+});
+wrap.addEventListener("mouseup", function (e) {
+  if (!mouseLocked()) return;
+  e.preventDefault();
+  var b = cpcBtn(e.button);
+  if (b < 0) return;
+  mheld.delete(b);
+  post("/mouse?b=" + b + "&d=0");
+});
+wrap.addEventListener("wheel", function (e) {
+  if (!mouseLocked()) return;
+  e.preventDefault();
+  post("/mouse?dz=" + (e.deltaY < 0 ? 1 : -1));
+}, { passive: false });
+wrap.addEventListener("contextmenu", function (e) {
+  if (mouseLocked() || captured()) e.preventDefault();
 });
 
 /* --- joystick buttons (matrix row 9) --- */
