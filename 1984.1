@@ -210,34 +210,49 @@ Implies
 .BR --kbd-pty .
 .TP
 .B --web[=PORT]
-Start the embedded
-.B Web GUI
-HTTP server (default port 1984): any browser on the network gets the
-live emulator screen (a multipart GIF stream) plus full input capture
-\(em clicking the screen captures the browser's keyboard and mouse
-(pointer lock; motion feeds the enabled SYMBiFACE / Albireo / AMX
-pointer device) until
+Start the
+.B Web Service
+(default port 1984): a self-contained multi-session HTTP daemon, distinct
+from the single-shared-machine Web GUI described below. Every distinct
+browser (cookie jar) gets its
+.B own, fully isolated CPC instance
+automatically on first visit \(em live emulator screen (a multipart GIF
+stream), full input capture (click the screen to capture keyboard and
+mouse, pointer lock, same
 .B Ctrl+Enter
-releases them, the same combo as the emulator window \(em an
-on-screen joystick, paste-text and reset controls for touch devices, and
-a per-drive file picker to upload a
+release as the emulator window), on-screen joystick, paste-text and reset
+controls, per-drive
 .B .dsk
-image straight into drive A or B. The same server
-can be toggled at runtime from the
-.B Advanced
-overlay tab. The server binds
+upload, and a per-session
+.B "Load session config\&..."
+control that uploads a
+.B 1984.conf
+to rebuild just that session (model, ROMs, disks \(em everything the
+config file covers). Sessions always boot from clean defaults, never the
+host user's real configuration file. Capped at 4 concurrent sessions; one
+with no attached viewer for 10 minutes is destroyed to free the slot; a
+5th concurrent session gets a "busy" page instead. The server binds
 .B 0.0.0.0
 and has
 .BR "no authentication" :
-anyone on the local network can watch the screen and type into the
-emulator. Only enable it on networks you trust. .B --web
+anyone on the local network can create a session and watch/type into it.
+Session isolation means a new browser gets a new
+.IR machine ,
+not new
+.IR credentials .
+Only enable it on networks you trust.
+.B --web
 implies
 .BR --headless :
 no window appears on the host and the browser is the only interface.
-To serve the Web GUI with the host window still visible, use the
-overlay toggle or set
-.B web_gui=true
-in the configuration file instead. Settings persist as
+.TP
+.B "Web GUI (Advanced overlay tab / " web_gui "=true in the config file)"
+A separate, simpler HTTP server mirroring the
+.B one currently running machine
+to every connected browser \(em screen-sharing, not per-session isolation.
+Same video/input/disk-upload capabilities as the Web Service above, minus
+session routing and config upload. Starting it from the overlay or the
+config key leaves the host window visible; settings persist as
 .B web_gui
 and
 .B web_port

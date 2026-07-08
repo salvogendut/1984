@@ -2,6 +2,7 @@
 #include "net4cpc.h"
 #include "snapshot.h"
 #include "kbd_pty.h"
+#include "config.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -852,6 +853,120 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
                 AUDIO_SAMPLE_RATE);
     }
 
+    return 0;
+}
+
+/* Build a CPC instance from a Config: ROM/board/mouse/serial/printer setup
+ * and disk mounting. Shared by the classic single-instance main() path and
+ * each Web Service session (websvc.c) so both build a machine the same way.
+ * Deliberately excludes process-global/singleton subsystems that don't
+ * belong to one CPC instance (toast notifications, the LED bar, the shared
+ * Net4CPC TAP interface, --rom-slot CLI overrides) — callers that need
+ * those still set them up themselves. Returns -1 (cpc_init failed) or 0. */
+int cpc_build_from_config(CPC *cpc, Config *cfg) {
+    if (cpc_init(cpc, cfg->model, cfg->rom_os, cfg->rom_basic, cfg->scale) < 0)
+        return -1;
+
+    ga_set_monochrome(&cpc->ga, cfg->monochrome);
+    psg_set_volume(&cpc->psg, cfg->audio_volume);
+    psg_set_stereo(&cpc->psg, cfg->audio_stereo_sep);
+    cpc->mem.ram_size = cfg->memory_kb * 1024;
+    cpc->mx4          = cfg->mx4;
+    cpc->net4cpc      = cfg->net4cpc;
+    cpc->rtc          = cfg->rtc;
+
+    /* These cards plug into the MX4 expansion bus and carry their own onboard
+     * driver ROM, so they gate on the bus alone — not the generic ROM Board.
+     * Their ROMs map independently below (see the slot-load loop). */
+    cpc->symbiface_ide   = cfg->symbiface_ide   && cfg->mx4;
+    cpc->symbiface_mouse = cfg->symbiface_mouse && cfg->mx4;
+    cpc->amx_mouse       = (cfg->fallback_input == FALLBACK_AMX_MOUSE); /* joystick port, no MX4 gate */
+    cpc->m4              = cfg->m4              && cfg->mx4;
+    cpc->symbnet         = cfg->symbnet;
+    if (cfg->m4 && cfg->m4_path[0])
+        snprintf(cpc->m4_card.root, M4_PATH_MAX, "%s", cfg->m4_path);
+    if (cfg->m4)
+        m4_set_image(&cpc->m4_card, cfg->m4_image);
+    if (cpc->symbiface_ide && cfg->ide_image[0])
+        ide_open(&cpc->ide_chip, cfg->ide_image);
+    cpc->albireo       = cfg->albireo && cfg->mx4;
+    cpc->albireo_mouse = cpc->albireo && cfg->albireo_mouse;
+    cpc->ch376.has_mouse   = cpc->albireo_mouse;
+    cpc->ch376_b.has_mouse = false;
+    if (cpc->albireo && cfg->albireo_image[0]) {
+        CH376 *storage = cpc->albireo_mouse ? &cpc->ch376_b : &cpc->ch376;
+        ch376_open(storage, cfg->albireo_image);
+    }
+    ch376_disable_disk_read = cfg->albireo_disable_disk_read ? 1 : 0;
+    /* M4 and Albireo share the 0xFExx port range — Albireo wins if both set. */
+    if (cpc->albireo && cpc->m4) {
+        cpc->m4 = false;
+        cfg->m4 = false;
+    }
+    usifac_init(&cpc->usifac, cfg->mx4 && cfg->usifac, cfg->usifac_backend, cfg->usifac_tcp_port,
+                cfg->usifac_pty_link);
+    perryfi_init(&cpc->perryfi, cfg->mx4 && cfg->usifac && cfg->perryfi);
+    usifac_attach_perryfi(&cpc->usifac, &cpc->perryfi);
+    printer_set_connected(&cpc->printer, cfg->mx4);
+    printer_set_pdf_output_dir(&cpc->printer, cfg->pdf_printer_dir);
+    printer_set_pdf_enabled(&cpc->printer, cfg->pdf_printer && cfg->pdf_printer_dir[0]);
+    printer_set_sink(&cpc->printer,
+                     cfg->print_sink == PRINTER_SINK_REAL_PRINTER ? PRINT_SINK_REAL
+                                                                   : PRINT_SINK_PDF);
+    /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
+    if (cfg->tape[0] &&
+            (cpc->model == MODEL_464 || cfg->external_tape))
+        tape_load(&cpc->tape, cfg->tape);
+
+    /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
+    if (cfg->rom_amsdos[0])
+        mem_load_amsdos(&cpc->mem, cfg->rom_amsdos);
+
+    /* Load expansion ROMs into slots 0-31. A slot owned by an MX4 card (its
+     * onboard driver ROM, tagged in rom_ext_boards[]) maps whenever the MX4
+     * bus is connected; a plain user slot needs the generic ROM Board fitted.
+     * With a gate off the cfg paths are preserved but unused — re-enabling
+     * restores the layout from a single source of truth. */
+    for (int s = 0; s < ROM_EXT_COUNT; s++) {
+        /* Slot 7 is loaded below when M4 is enabled — skip any stale config entry */
+        if (s == M4_ROM_SLOT && cfg->m4) continue;
+        if (!cfg->rom_ext[s][0]) continue;
+        bool board_owned = cfg->rom_ext_boards[s][0] != '\0';
+        if (board_owned ? cfg->mx4 : cfg->rom_board)
+            mem_load_rom_ext(&cpc->mem, s, cfg->rom_ext[s]);
+    }
+    /* Load M4ROM into its dedicated slot when the M4 card is on the bus */
+    if (cfg->mx4 && cfg->m4) {
+        char m4rom[512];
+        config_default_m4rom(m4rom, sizeof(m4rom));
+        mem_load_rom_ext(&cpc->mem, M4_ROM_SLOT, m4rom);
+        /* Seed the M4 board's config buffer (read via bus bypass at 0xF400)
+         * with the ROM's default contents so reads return valid pointers
+         * (e.g. runfile_ptr → autoexec_fn) before any C_CONFIG write. */
+        memcpy(cpc->m4_card.cfg_mem,
+               &cpc->mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+               sizeof(cpc->m4_card.cfg_mem));
+        /* Patch M4ROM's helper-pointer table NOW so SymbOS netd-m4c.exe's
+         * m4crom routine picks up our trap addresses on its first read.
+         * Without this the daemon copies the original M4ROM helper entries
+         * and bypasses our trap, breaking the bulk transfer needed by
+         * GETNETWORK and every TCP send/recv. */
+        m4_install_helper_shim(&cpc->m4_card, &cpc->mem);
+    }
+
+    /* Load floppy images from config */
+    if (cfg->disk_a[0]) {
+        if (disk_load(&cpc->drive[0], cfg->disk_a) < 0) {
+            fprintf(stderr, "1984: failed to load drive A: %s\n", cfg->disk_a);
+            cfg->disk_a[0] = '\0';
+        }
+    }
+    if (cfg->disk_b[0]) {
+        if (disk_load(&cpc->drive[1], cfg->disk_b) < 0) {
+            fprintf(stderr, "1984: failed to load drive B: %s\n", cfg->disk_b);
+            cfg->disk_b[0] = '\0';
+        }
+    }
     return 0;
 }
 
