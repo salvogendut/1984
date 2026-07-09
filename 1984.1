@@ -267,20 +267,26 @@ audio driver (overriding any
 .BR DISPLAY / WAYLAND_DISPLAY / SDL_VIDEODRIVER
 in the environment). Implied by
 .BR --web .
-A ready-made systemd user unit is installed as
+A ready-made systemd system unit is installed as
 .BR 1984-web.service :
 .IP
 .nf
-systemctl --user enable --now 1984-web
+systemctl enable --now 1984-web
 .fi
 .IP
 It runs
 .B 1984 --web
-and can be customised with a drop-in
-.RB ( "systemctl --user edit 1984-web" ).
-Use
-.B loginctl enable-linger
-to start it at boot without logging in.
+as a dedicated, shell-less
+.B emulator
+system account (created automatically via sysusers, shared with 1985's
+equivalent unit if both packages are installed) rather than root or an
+interactive login user, with systemd sandboxing
+.RB ( ProtectSystem=strict ,
+.BR NoNewPrivileges ,
+no capabilities, ...) on top. It can be customised with a drop-in
+.RB ( "systemctl edit 1984-web" );
+its config file lives at
+.IR /var/lib/emulator/.config/1984/1984.conf .
 .TP
 .BR -h ", " --help
 Show help and exit.
