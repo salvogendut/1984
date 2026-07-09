@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.13
+Version:        0.4.14
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -15,6 +15,8 @@ BuildRequires:  pkgconfig(sdl3)
 BuildRequires:  desktop-file-utils
 BuildRequires:  libappstream-glib
 BuildRequires:  systemd-rpm-macros
+%{?systemd_requires}
+Requires(pre):  systemd
 
 %description
 1984 is a cycle-stepped Amstrad CPC 464/6128 emulator written in C
@@ -62,18 +64,27 @@ autoreconf -fiv
 desktop-file-validate %{buildroot}%{_datadir}/applications/io.github.salvogendut.Emulator1984.desktop
 appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github.salvogendut.Emulator1984.metainfo.xml
 
+%pre
+# Dedicated, shell-less system account the 1984-web.service unit runs as
+# (shared with 1985's equivalent unit if both packages are installed) —
+# never the interactive user who happens to enable the service.
+%sysusers_create_inline u emulator - "1984/1985 Web Service" /var/lib/emulator /usr/sbin/nologin
+
 %post
-%systemd_user_post 1984-web.service
+%systemd_post 1984-web.service
 
 %preun
-%systemd_user_preun 1984-web.service
+%systemd_preun 1984-web.service
+
+%postun
+%systemd_postun_with_restart 1984-web.service
 
 %files
 %license LICENSE
 %doc README.md INSTALL.md USAGE.md
 %{_bindir}/%{name}
 %{_mandir}/man1/%{name}.1*
-%{_userunitdir}/1984-web.service
+%{_unitdir}/1984-web.service
 %{_datadir}/applications/io.github.salvogendut.Emulator1984.desktop
 %{_datadir}/metainfo/io.github.salvogendut.Emulator1984.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/io.github.salvogendut.Emulator1984.png
@@ -91,6 +102,16 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Thu Jul 09 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.14-1
+- 1984-web.service is now a sandboxed system unit running as a dedicated,
+  shell-less 'emulator' account (created via sysusers) instead of a
+  systemd --user unit running as whoever enables it; heavy systemd
+  sandboxing (ProtectSystem=strict, NoNewPrivileges, no capabilities,
+  etc.) added on top. Session-config upload can no longer redirect
+  disk/ROM/printer/PTY paths to arbitrary host locations, and Web
+  Service session cookies now come from the OS CSPRNG instead of seeded
+  libc rand().
+
 * Wed Jul 02 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.13-1
 - New General -> Fallback Input toggle: switch the primary host input
   between the USB joystick and an AMX mouse (joystick-port mouse, host

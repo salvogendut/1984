@@ -1,28 +1,35 @@
-# 1984-web.service — run the 1984 Amstrad CPC emulator as a headless
-# systemd user service, serving the Web GUI to browsers on the network
-# (see 1984(1), option --web). --web implies --headless: SDL's
+# 1984-web.service — run the 1984 Amstrad CPC emulator as a sandboxed,
+# system-wide systemd service, serving the Web Service to browsers on the
+# network (see 1984(1), option --web). --web implies --headless: SDL's
 # offscreen video and dummy audio drivers are forced, no window ever
 # appears on the host, and the browser is the only interface.
 #
-#   systemctl --user enable --now 1984-web    # start and enable
-#   systemctl --user stop 1984-web            # stop
+# Runs as the dedicated, shell-less 'emulator' system account (shared with
+# 1985's equivalent unit, if installed) rather than root or an interactive
+# login user, with systemd sandboxing on top of that — see SECURITY below.
 #
-# The port defaults to web_port in ~/.config/1984/1984.conf (1984).
-# To override it (or add disks, pick a model, ...) use a drop-in:
+#   systemctl enable --now 1984-web    # start and enable at boot
+#   systemctl stop 1984-web            # stop
 #
-#   systemctl --user edit 1984-web
+# The port defaults to web_port in the emulator account's config file
+# (/var/lib/emulator/.config/1984/1984.conf). To override it (or add disks,
+# pick a model, ...) use a drop-in:
+#
+#   systemctl edit 1984-web
 #   [Service]
 #   ExecStart=
-#   ExecStart=@BINDIR@/1984 --web=8080 --6128 --disk-a=%h/games/game.dsk
+#   ExecStart=@BINDIR@/1984 --web=8080 --6128 --disk-a=/var/lib/emulator/games/game.dsk
 #
-# To start at boot without an active login session:
-#   loginctl enable-linger $USER
-#
-# SECURITY: the Web GUI binds 0.0.0.0 with no authentication — anyone
-# on the local network can watch the screen and type into the emulator.
+# SECURITY: the Web Service binds 0.0.0.0 with no authentication — anyone
+# who can reach the port gets a full, isolated emulator session. Do not
+# expose this directly to the internet: put it behind a VPN (Tailscale,
+# WireGuard) or a reverse proxy that adds TLS and authentication. Running
+# as 'emulator' plus the sandboxing below limits the blast radius if the
+# service is ever compromised — it is not a substitute for network-level
+# access control.
 
 [Unit]
-Description=1984 Amstrad CPC emulator (headless Web GUI)
+Description=1984 Amstrad CPC emulator (Web Service, sandboxed)
 Documentation=man:1984(1)
 After=network.target
 
@@ -31,5 +38,33 @@ ExecStart=@BINDIR@/1984 --web
 Restart=on-failure
 RestartSec=3
 
+User=emulator
+Group=emulator
+# Creates/owns /var/lib/emulator (also this account's $HOME, per its
+# passwd entry) and grants it write access under ProtectSystem=strict.
+StateDirectory=emulator
+
+# Offscreen video + dummy audio (forced by --web) need no GPU/audio device
+# access; the service needs no elevated privileges and no host filesystem
+# access beyond its own state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+UMask=0077
+
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

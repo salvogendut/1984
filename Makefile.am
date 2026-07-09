@@ -119,10 +119,12 @@ icons/1984-rc.o: $(srcdir)/icons/1984.rc $(srcdir)/icons/1984.ico
 
 CLEANFILES = icons/1984-rc.o packaging/1984-web.service
 
-# systemd user unit for the headless Web GUI service. Generated from
-# the .in template so ExecStart points at the configured bindir.
-userunitdir   = $(prefix)/lib/systemd/user
-userunit_DATA = packaging/1984-web.service
+# systemd system unit for the sandboxed Web Service (runs as the dedicated
+# 'emulator' user — see 1984.spec's %pre — not as whoever enables it).
+# Generated from the .in template so ExecStart points at the configured
+# bindir.
+unitdir   = $(prefix)/lib/systemd/system
+unit_DATA = packaging/1984-web.service
 
 packaging/1984-web.service: packaging/1984-web.service.in Makefile
 	@$(MKDIR_P) packaging
