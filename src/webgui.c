@@ -38,7 +38,8 @@ typedef enum {
     WC_FREE = 0,
     WC_READ_REQUEST,   /* accumulating request bytes */
     WC_READ_UPLOAD,    /* accumulating a large POST /disk body */
-    WC_STREAMING       /* /stream client: parts queued as they drain */
+    WC_STREAMING,      /* /stream client: video parts queued as they drain */
+    WC_AUDIO_STREAM    /* /audio client: WAV header + PCM frames */
 } WcState;
 
 typedef struct {
@@ -56,6 +57,7 @@ typedef struct {
     bool     close_after_send;
     uint32_t sent_hash;          /* hash of last frame queued to this client */
     uint64_t sent_ms;
+    uint64_t sent_audio_seq;
 } WebClient;
 
 static struct {
@@ -70,10 +72,31 @@ static struct {
     size_t    last_gif_len;
     uint32_t  last_hash;         /* hash of last encoded frame */
     uint64_t  last_encode_ms;
+    uint8_t   audio_bytes[CPC_AUDIO_FRAME_CAPACITY * 2 * sizeof(s16)];
+    size_t    audio_len;
+    uint64_t  audio_seq;
     int       decim;             /* 50 -> 25 fps toggle */
     bool      joy_held[6];       /* web-held row-9 bits, released on stop */
     bool      mbtn_held[3];      /* web-held mouse buttons, released on stop */
 } wg = { .listen_fd = -1 };
+
+static void audio_sink(void *userdata, const s16 *samples,
+                       int frames, int sample_rate) {
+    (void)userdata;
+    if (wg.listen_fd < 0 || sample_rate != CPC_AUDIO_SAMPLE_RATE ||
+        !samples || frames <= 0)
+        return;
+    if (frames > CPC_AUDIO_FRAME_CAPACITY)
+        frames = CPC_AUDIO_FRAME_CAPACITY;
+    int nsamples = frames * 2;
+    for (int i = 0; i < nsamples; i++) {
+        uint16_t v = (uint16_t)samples[i];
+        wg.audio_bytes[i * 2] = (uint8_t)v;
+        wg.audio_bytes[i * 2 + 1] = (uint8_t)(v >> 8);
+    }
+    wg.audio_len = (size_t)nsamples * 2u;
+    wg.audio_seq++;
+}
 
 /* ---------- stderr logging (enabled by --web; journald-friendly) ---------- */
 
@@ -140,9 +163,39 @@ static bool wc_printf(WebClient *c, const char *fmt, ...) {
     return wc_out(c, buf, (size_t)n);
 }
 
+static void le16(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void le32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static void wav_stream_header(uint8_t hdr[44]) {
+    const uint32_t data_bytes = 0x7fffffffU - 36U;
+    memcpy(hdr + 0, "RIFF", 4);
+    le32(hdr + 4, 36U + data_bytes);
+    memcpy(hdr + 8, "WAVE", 4);
+    memcpy(hdr + 12, "fmt ", 4);
+    le32(hdr + 16, 16);
+    le16(hdr + 20, 1);                         /* PCM */
+    le16(hdr + 22, 2);                         /* stereo */
+    le32(hdr + 24, CPC_AUDIO_SAMPLE_RATE);
+    le32(hdr + 28, CPC_AUDIO_SAMPLE_RATE * 2U * 16U / 8U);
+    le16(hdr + 32, 2U * 16U / 8U);             /* block align */
+    le16(hdr + 34, 16);                        /* bits per sample */
+    memcpy(hdr + 36, "data", 4);
+    le32(hdr + 40, data_bytes);
+}
+
 static void wc_close(WebClient *c) {
-    if (c->state == WC_STREAMING)
-        wlog("viewer %s disconnected", c->ip);
+    if (c->state == WC_STREAMING || c->state == WC_AUDIO_STREAM)
+        wlog("%s stream %s disconnected",
+             c->state == WC_AUDIO_STREAM ? "audio" : "video", c->ip);
     if (c->fd >= 0) sock_close(c->fd);
     free(c->out);
     free(c->upload);
@@ -264,6 +317,19 @@ static void route_stream(WebClient *c) {
     c->sent_hash = 0;
     c->sent_ms = 0;    /* keepalive rule pushes the first frame at once */
     wlog("viewer %s started streaming", c->ip);
+}
+
+static void route_audio(WebClient *c) {
+    uint8_t hdr[44];
+    wav_stream_header(hdr);
+    wc_printf(c, "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: audio/wav\r\n"
+                 "Cache-Control: no-store\r\n"
+                 "Connection: close\r\n\r\n");
+    wc_out(c, hdr, sizeof(hdr));
+    c->state = WC_AUDIO_STREAM;
+    c->sent_audio_seq = 0;
+    wlog("audio stream %s started", c->ip);
 }
 
 static void route_key(WebClient *c, const char *query) {
@@ -454,6 +520,7 @@ static void route(WebClient *c, const char *method, char *path,
 
     if (strcmp(path, "/") == 0 && get)           route_page(c);
     else if (strcmp(path, "/stream") == 0 && get) route_stream(c);
+    else if (strcmp(path, "/audio") == 0 && get) route_audio(c);
     else if (strcmp(path, "/status") == 0 && get) route_status(c);
     else if (strcmp(path, "/key") == 0)          route_key(c, query);
     else if (strcmp(path, "/joy") == 0)          route_joy(c, query);
@@ -543,7 +610,7 @@ static bool try_dispatch(WebClient *c) {
         return false;   /* body still arriving */
 
     route(c, method, target, c->req + head_len, content_len);
-    if (asked_close && c->state != WC_STREAMING)
+    if (asked_close && c->state != WC_STREAMING && c->state != WC_AUDIO_STREAM)
         c->close_after_send = true;
 
     /* Keep-alive: shift any pipelined leftovers to the front. */
@@ -604,6 +671,9 @@ bool webgui_start(int port) {
     wg.last_gif_len = 0;
     wg.last_hash = 0;
     wg.last_encode_ms = 0;
+    wg.audio_len = 0;
+    wg.audio_seq = 0;
+    cpc_set_audio_sink(wg.cpc, audio_sink, NULL);
     notify_post("Web GUI: listening on 0.0.0.0:%d", port);
     wlog("listening on 0.0.0.0:%d — no authentication, LAN-visible", port);
     wlog_urls(port);
@@ -612,6 +682,7 @@ bool webgui_start(int port) {
 
 void webgui_stop(void) {
     if (wg.listen_fd < 0) return;
+    if (wg.cpc) cpc_set_audio_sink(wg.cpc, NULL, NULL);
     for (int i = 0; i < WG_MAX_CLIENTS; i++)
         if (wg.cl[i].fd >= 0) wc_close(&wg.cl[i]);
     sock_close(wg.listen_fd);
@@ -703,7 +774,7 @@ void webgui_poll(void) {
                 if (c->upload_len >= c->upload_cap)
                     complete_disk_upload(c);
             }
-            /* WC_STREAMING: incoming bytes are discarded. */
+            /* Stream clients: incoming bytes are discarded. */
         }
     }
 
@@ -713,8 +784,28 @@ void webgui_poll(void) {
             wc_send(&wg.cl[i]);
 }
 
+static void webgui_audio_frame(void) {
+    if (wg.audio_len == 0) return;
+
+    for (int i = 0; i < WG_MAX_CLIENTS; i++) {
+        WebClient *c = &wg.cl[i];
+        if (c->state != WC_AUDIO_STREAM || c->out_len != c->out_off) continue;
+        if (c->sent_audio_seq == wg.audio_seq) continue;
+        c->out_off = c->out_len = 0;
+        if (!wc_out(c, wg.audio_bytes, wg.audio_len)) {
+            wc_close(c);
+            continue;
+        }
+        c->sent_audio_seq = wg.audio_seq;
+        wc_send(c);
+        leds_ping(LED_NET);
+    }
+}
+
 void webgui_frame(void) {
-    if (wg.listen_fd < 0 || !wg.enc) return;
+    if (wg.listen_fd < 0) return;
+    webgui_audio_frame();
+    if (!wg.enc) return;
     if ((wg.decim ^= 1) != 0) return;   /* 25 fps cap */
 
     uint64_t now = SDL_GetTicks();

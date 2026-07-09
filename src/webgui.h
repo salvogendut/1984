@@ -3,6 +3,7 @@
  *
  * GET  /        self-contained HTML page (video + keyboard/joystick/paste)
  * GET  /stream  multipart/x-mixed-replace stream of GIF frames
+ * GET  /audio   streaming WAV (44.1 kHz stereo s16)
  * POST /key     ?c=<SDL scancode name>&d=1|0   key down/up
  * POST /joy     ?b=0..5&d=1|0                  joystick row-9 bit
  * POST /paste   body = text typed via the paste queue

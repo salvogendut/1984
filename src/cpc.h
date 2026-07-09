@@ -30,6 +30,9 @@ typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
 #define CPC_AUDIO_SAMPLES_FRAME   (CPC_AUDIO_SAMPLE_RATE / 50)
 #define CPC_AUDIO_FRAME_CAPACITY  (CPC_AUDIO_SAMPLES_FRAME * 4)
 
+typedef void (*CpcAudioSink)(void *userdata, const s16 *samples,
+                             int frames, int sample_rate);
+
 typedef struct {
     CpcModel   model;
     Z80        cpu;
@@ -75,6 +78,8 @@ typedef struct {
     s16        audio_frame[CPC_AUDIO_FRAME_CAPACITY * 2];
     int        audio_frame_pos;
     int        audio_sample_cycles;
+    CpcAudioSink audio_sink;
+    void      *audio_sink_user;
 
     /* Timing */
     int  cpu_clk_hz;      /* 4 MHz */
@@ -161,5 +166,6 @@ void audiocap_write(const s16 *samples, int frames, int sample_rate);
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
+void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);
 void cpc_frame(CPC *cpc);        /* run one video frame (~20 ms) */
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed);
