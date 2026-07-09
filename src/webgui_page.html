@@ -46,7 +46,7 @@
     display: grid; grid-template-columns: repeat(3, 52px);
     grid-template-rows: repeat(3, 52px); gap: 4px;
   }
-  .jbtn, #fires button, #actions button, #pastebox button {
+  .jbtn, #fires button, #actions button, #pastebox button, #audiobox button {
     background: #26262e; color: #d8d8e0; border: 1px solid #444;
     border-radius: 6px; font-size: 16px; cursor: pointer;
     touch-action: none; user-select: none; -webkit-user-select: none;
@@ -61,9 +61,15 @@
     border: 1px solid #444; border-radius: 4px; padding: 6px;
     font: 13px monospace;
   }
-  #pastebox button, #actions button, #diskbox button, #sessionbox button { padding: 8px 14px; font-size: 14px; }
+  #pastebox button, #actions button, #diskbox button, #sessionbox button, #audiobox button { padding: 8px 14px; font-size: 14px; }
   #actions { display: flex; flex-direction: column; gap: 8px; }
   #reset { border-color: #a44; }
+  #audiobox { display: flex; flex-direction: column; gap: 8px; width: 200px; }
+  #audiobox button {
+    background: #26262e; color: #d8d8e0; border: 1px solid #444;
+    border-radius: 6px; cursor: pointer;
+  }
+  #audiostatus { color: #888; font-size: 12px; min-height: 1em; }
   #diskbox { display: flex; flex-direction: column; gap: 8px; width: 200px; }
   .diskrow { display: flex; gap: 6px; align-items: center; }
   .diskrow span { width: 14px; color: #888; }
@@ -130,6 +136,13 @@
     <button id="sessioncfgbtn">Load session config…</button>
     <div id="sessioncfgstatus"></div>
     <input type="file" id="sessioncfgfile" accept=".conf,.txt" style="display:none">
+  </fieldset>
+
+  <fieldset id="audiobox">
+    <legend>Audio</legend>
+    <button id="audiobtn">Start audio</button>
+    <div id="audiostatus">off</div>
+    <audio id="audio" preload="none"></audio>
   </fieldset>
 
   <fieldset>
@@ -317,6 +330,43 @@ document.getElementById("pastebtn").addEventListener("click", function () {
 });
 document.getElementById("reset").addEventListener("click", function () {
   if (confirm("Reset the CPC?")) post("/reset");
+});
+
+/* --- audio: browser policies require a user gesture before playback --- */
+var audio = document.getElementById("audio");
+var audiobtn = document.getElementById("audiobtn");
+var audiostatus = document.getElementById("audiostatus");
+var audioOn = false;
+
+function stopAudio() {
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  audioOn = false;
+  audiobtn.textContent = "Start audio";
+  audiostatus.textContent = "off";
+}
+
+audiobtn.addEventListener("click", function () {
+  if (audioOn) {
+    stopAudio();
+    return;
+  }
+  audiostatus.textContent = "buffering...";
+  audio.src = "/audio?" + Date.now();
+  audio.play().then(function () {
+    audioOn = true;
+    audiobtn.textContent = "Stop audio";
+    audiostatus.textContent = "playing";
+    wrap.focus();
+  }).catch(function () {
+    stopAudio();
+    audiostatus.textContent = "blocked by browser";
+  });
+});
+audio.addEventListener("error", function () {
+  if (audioOn) stopAudio();
+  audiostatus.textContent = "connection lost";
 });
 
 /* --- disk load: hidden file input, one per drive button --- */

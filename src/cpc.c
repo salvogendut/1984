@@ -1008,6 +1008,11 @@ void cpc_destroy(CPC *cpc) {
     display_destroy(&cpc->display);
 }
 
+void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata) {
+    cpc->audio_sink = sink;
+    cpc->audio_sink_user = userdata;
+}
+
 /* ---- Pixel rendering ----
  *
  * Each CRTC character clock fetches 2 bytes and outputs 16 pixels.
@@ -1854,6 +1859,9 @@ void cpc_frame(CPC *cpc) {
     /* Push cycle-generated audio to SDL / WAV (skip on breakpoint/step to avoid burst). */
     if (!stop_early && cpc->audio_frame_pos > 0) {
         int bytes = cpc->audio_frame_pos * 2 * (int)sizeof(cpc->audio_frame[0]);
+        if (cpc->audio_sink)
+            cpc->audio_sink(cpc->audio_sink_user, cpc->audio_frame,
+                            cpc->audio_frame_pos, AUDIO_SAMPLE_RATE);
         if (audiocap_active())
             audiocap_write(cpc->audio_frame, cpc->audio_frame_pos, AUDIO_SAMPLE_RATE);
         if (cpc->audio_stream &&
