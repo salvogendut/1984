@@ -1376,8 +1376,15 @@ static void cpc_bus_tick(void *ctx, int cycles) {
     cpc->bus_ticked_in_step += cycles;
 }
 
-void cpc_frame(CPC *cpc) {
-    if (cpc->paused && !cpc->step_once) return;
+uint64_t cpc_cycles_to_ns(const CPC *cpc, int cycles) {
+    if (!cpc || cpc->cpu_clk_hz <= 0 || cycles <= 0)
+        return 20000000ULL;
+    return ((uint64_t)cycles * 1000000000ULL +
+            (uint64_t)cpc->cpu_clk_hz / 2) / (uint64_t)cpc->cpu_clk_hz;
+}
+
+int cpc_frame(CPC *cpc) {
+    if (cpc->paused && !cpc->step_once) return 0;
     bool was_stepping = cpc->step_once;
     cpc->step_once = false;
 
@@ -1884,6 +1891,7 @@ void cpc_frame(CPC *cpc) {
     cpc->audio_frame_pos = 0;
     if (stop_early)
         cpc->audio_sample_cycles = 0;
+    return done;
 }
 
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed) {

@@ -810,8 +810,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* 50 Hz frame pacer — audio is pushed every 20 ms, matching the CPC's PAL rate.
-     * VSync is off; we sleep for any leftover time in each 20 ms budget. */
+    /* Host pacer. A normal CPC frame is 20 ms, but software can program a
+     * different CRTC frame length. Pace from the CPU cycles cpc_frame()
+     * actually consumed so video stays locked to the 4 MHz audio clock. */
 #define FRAME_NS 20000000ULL
     Uint64 next_frame = SDL_GetTicksNS();
 
@@ -1242,7 +1243,10 @@ int main(int argc, char *argv[]) {
         perryfi_poll(&cpc.perryfi);
         webgui_poll();
         printer_tick(&cpc.printer);
-        cpc_frame(&cpc);
+        int emulated_cycles = cpc_frame(&cpc);
+        Uint64 emulated_frame_ns = cpc_cycles_to_ns(&cpc, emulated_cycles);
+        if (cpc.paused)
+            emulated_frame_ns = FRAME_NS;
         pilot_post_frame(&pilot, &cpc, &cpc.display, frame_count + 1);
         /* Auto-open monitor on breakpoint hit */
         if (!was_paused && cpc.paused) {
@@ -1304,7 +1308,7 @@ int main(int argc, char *argv[]) {
         }
         prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
-        notify_tick(20);   /* 50 Hz frame => 20 ms per displayed frame */
+        notify_tick((int)((emulated_frame_ns + 500000ULL) / 1000000ULL));
         if (cpc.paused)
             display_draw_paused_label(&cpc.display);
         /* Debug-mode FPS overlay (bottom-left, just above the LED bar).
@@ -1457,12 +1461,14 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Sleep for whatever is left of the 20 ms frame budget */
-        next_frame += FRAME_NS;
+        /* Sleep until the amount of real time represented by this emulated
+         * frame has elapsed. This also prevents SDL's audio queue growing
+         * when a game uses a CRTC frame longer than the standard 80K cycles. */
+        next_frame += emulated_frame_ns;
         Uint64 now = SDL_GetTicksNS();
         if (now < next_frame) {
             SDL_DelayNS(next_frame - now);
-        } else if (now > next_frame + 3 * FRAME_NS) {
+        } else if (now > next_frame + 3 * emulated_frame_ns) {
             next_frame = now; /* reset if more than 3 frames behind */
         }
     }

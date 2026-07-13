@@ -167,5 +167,13 @@ int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basi
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);
-void cpc_frame(CPC *cpc);        /* run one video frame (~20 ms) */
+/* Run until the monitor completes one video frame. Returns the number of
+ * emulated CPU cycles consumed, or zero while paused. CRTC programs can make
+ * a frame shorter or longer than the nominal 80,000 cycles, so frontends must
+ * pace from this value rather than assuming every frame lasts exactly 20 ms. */
+int cpc_frame(CPC *cpc);
+
+/* Convert emulated CPU cycles to host nanoseconds. Invalid/paused values use
+ * the nominal 50 Hz period so frontend event loops remain responsive. */
+uint64_t cpc_cycles_to_ns(const CPC *cpc, int cycles);
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed);

@@ -67,6 +67,7 @@ typedef struct Session {
     char      upload_dir[CONFIG_PATH_MAX];
     uint64_t  created_ms;
     uint64_t  last_attached_ms;   /* refreshed whenever a streaming client attaches */
+    uint64_t  next_frame_ns;      /* per-session CRTC/cycle-clock deadline */
     int       attached;           /* currently attached video/audio stream clients */
 } Session;
 
@@ -477,6 +478,7 @@ static bool session_build(Session *s, Config *cfg) {
     s->decim = 0;
     memset(s->joy_held, 0, sizeof(s->joy_held));
     memset(s->mbtn_held, 0, sizeof(s->mbtn_held));
+    s->next_frame_ns = SDL_GetTicksNS();
     return true;
 }
 
@@ -1151,20 +1153,33 @@ int websvc_run(int port) {
 
     for (int i = 0; i < WS_MAX_CLIENTS; i++) g_clients[i].fd = -1;
 
-    const uint64_t FRAME_NS = 20000000ULL;   /* 50 Hz, matches the classic loop */
-    uint64_t next_frame = SDL_GetTicksNS();
+    const uint64_t IDLE_POLL_NS = 5000000ULL;
     g_last_sweep_ms = SDL_GetTicks();
 
     while (g_running) {
         ws_poll();
 
+        uint64_t now_ns = SDL_GetTicksNS();
         uint64_t now_ms = SDL_GetTicks();
+        uint64_t wake_ns = now_ns + IDLE_POLL_NS;
         for (int i = 0; i < WS_MAX_SESSIONS; i++) {
             Session *s = &g_sessions[i];
             if (!s->in_use) continue;
+
+            if (now_ns < s->next_frame_ns) {
+                if (s->next_frame_ns < wake_ns) wake_ns = s->next_frame_ns;
+                continue;
+            }
+
             paste_tick(&s->paste, &s->cpc.kbd);
-            cpc_frame(&s->cpc);
+            int emulated_cycles = cpc_frame(&s->cpc);
             session_frame(s, now_ms);
+
+            uint64_t frame_ns = cpc_cycles_to_ns(&s->cpc, emulated_cycles);
+            s->next_frame_ns += frame_ns;
+            if (now_ns > s->next_frame_ns + 3 * frame_ns)
+                s->next_frame_ns = now_ns;
+            if (s->next_frame_ns < wake_ns) wake_ns = s->next_frame_ns;
         }
 
         if (now_ms - g_last_sweep_ms >= WS_SWEEP_INTERVAL_MS) {
@@ -1172,10 +1187,8 @@ int websvc_run(int port) {
             g_last_sweep_ms = now_ms;
         }
 
-        next_frame += FRAME_NS;
-        uint64_t now_ns = SDL_GetTicksNS();
-        if (now_ns < next_frame) SDL_DelayNS(next_frame - now_ns);
-        else if (now_ns > next_frame + 3 * FRAME_NS) next_frame = now_ns;
+        now_ns = SDL_GetTicksNS();
+        if (now_ns < wake_ns) SDL_DelayNS(wake_ns - now_ns);
     }
 
     wlog("shutting down");
