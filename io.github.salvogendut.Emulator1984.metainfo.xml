@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.15" date="2026-07-13">
+      <description>
+        <p>Adds an embedded Web GUI and an isolated multi-session Web Service with browser keyboard, mouse, joystick, disk upload, video, and audio streaming. The service is hardened with path-confined uploads, CSPRNG session cookies, and a sandboxed system unit running as a dedicated account. Floppy sector writes and formatted tracks now persist, GEOBENCH card-copy append writes are corrected, and cycle-derived frame pacing keeps nonstandard CRTC video synchronized with AY audio in Bomb Jack Extra Sugar and similar software.</p>
+      </description>
+    </release>
     <release version="0.4.13" date="2026-07-02">
       <description>
         <p>New General -&gt; Fallback Input toggle switches the primary host input between the USB joystick and an AMX mouse — a joystick-port mouse that captures the host pointer (Ctrl+Enter releases). It is mutually exclusive with the SYMBiFACE and Albireo pointer mice.</p>
