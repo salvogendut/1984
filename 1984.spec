@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.14
+Version:        0.4.15
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -102,6 +102,16 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Mon Jul 13 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.15-1
+- Add the embedded Web GUI and isolated multi-session Web Service with
+  browser keyboard, mouse, joystick, disk upload, video, and audio streaming.
+- Harden the Web Service with confined uploads, CSPRNG session cookies, and
+  a sandboxed system unit running as a dedicated emulator account.
+- Persist floppy sector writes and formatted tracks, and fix GEOBENCH append
+  writes when copying files between floppy and card storage.
+- Pace nonstandard CRTC frames from emulated CPU time so Bomb Jack Extra
+  Sugar and similar software keep video synchronized with AY audio.
+
 * Thu Jul 09 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.14-1
 - 1984-web.service is now a sandboxed system unit running as a dedicated,
   shell-less 'emulator' account (created via sysusers) instead of a
