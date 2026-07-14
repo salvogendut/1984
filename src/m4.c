@@ -260,6 +260,12 @@ static void m4_open_image(M4 *m) {
 
 /* ---- Network helpers ---- */
 
+/* M4ROM exposes IPv4 addresses as little-endian 32-bit values. Socket APIs
+ * use network-order bytes, so keep that conversion at the emulated boundary. */
+static void m4_ip_reverse(u8 out[4], const u8 in[4]) {
+    out[0] = in[3]; out[1] = in[2]; out[2] = in[1]; out[3] = in[0];
+}
+
 /* sock_info layout (16 bytes per socket): status, lastcmd, rxlo, rxhi,
  * ip0..ip3, portlo, porthi, 6 reserved. Mirror M4Socket → sock_mem. */
 static void sync_sock_mem(M4 *m, int s) {
@@ -1341,8 +1347,10 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 s = m->last_tcp_sock;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
                 struct sockaddr_in sa = {0};
+                u8 ip[4];
                 sa.sin_family = AF_INET;
-                memcpy(&sa.sin_addr.s_addr, &p[1], 4);
+                m4_ip_reverse(ip, &p[1]);
+                memcpy(&sa.sin_addr.s_addr, ip, 4);
                 sa.sin_port = htons((u16)p[5] | ((u16)p[6] << 8));
                 memcpy(m->sockets[s].peer_ip, &p[1], 4);
                 m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
@@ -1490,7 +1498,8 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         struct addrinfo *res = NULL;
         if (getaddrinfo(host, NULL, &hints, &res) == 0 && res) {
             struct sockaddr_in *sa = (struct sockaddr_in *)res->ai_addr;
-            memcpy(m->sockets[0].peer_ip, &sa->sin_addr.s_addr, 4);
+            m4_ip_reverse(m->sockets[0].peer_ip,
+                          (const u8 *)&sa->sin_addr.s_addr);
             m->sockets[0].status = 0;
             freeaddrinfo(res);
         } else {
