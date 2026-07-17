@@ -1,5 +1,9 @@
 /* usifac.c — USIfAC II RS232 emulation. See usifac.h. */
 
+#if defined(__NetBSD__)
+#define _NETBSD_SOURCE 1
+#endif
+
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 #define _DEFAULT_SOURCE     /* cfmakeraw */
 /* On the BSDs, defining _XOPEN_SOURCE/_POSIX_C_SOURCE turns __BSD_VISIBLE

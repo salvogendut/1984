@@ -50,8 +50,11 @@ void screen_text_init(CPC *cpc) {
 }
 
 /* Hamming distance over 64-bit u64s (popcount of XOR). Standard
- * trick; compiler emits popcnt on x86-64. */
-static inline int popcount64(uint64_t v) { return __builtin_popcountll(v); }
+ * trick; compiler emits popcnt on x86-64. Keep the private helper
+ * distinct from NetBSD libc's popcount64(). */
+static inline int screen_text_popcount64(uint64_t v) {
+    return __builtin_popcountll(v);
+}
 
 /* Look up an 8-byte glyph fingerprint. First try exact match (fast
  * common case), then fall back to a nearest-neighbour search across
@@ -71,7 +74,7 @@ static char glyph_to_char(uint64_t h) {
      * lower-codepoint matches on ties so '0' wins over 'O' etc. */
     int best_c = 0, best_d = 9;       /* > 8-bit threshold = no match */
     for (int c = 0x20; c < 0x7F; c++) {
-        int d = popcount64(s_font_hash[c] ^ h);
+        int d = screen_text_popcount64(s_font_hash[c] ^ h);
         if (d < best_d) { best_d = d; best_c = c; }
     }
     if (best_d <= 8 && best_c >= 0x20) return (char)best_c;

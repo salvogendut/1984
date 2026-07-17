@@ -1,5 +1,9 @@
 /* pilot.c — host-PTY "auto-pilot" input device. See pilot.h. */
 
+#if defined(__NetBSD__)
+#define _NETBSD_SOURCE 1
+#endif
+
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 #define _DEFAULT_SOURCE     /* cfmakeraw */
 /* See usifac.c / issue #203: the BSDs hide cfmakeraw behind __BSD_VISIBLE,
