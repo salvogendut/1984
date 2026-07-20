@@ -15,6 +15,7 @@
 | `--memory=KB` | RAM size: 64, 128, 256, 512 or 576 (overrides config) |
 | `--disk-a=PATH` | Mount a DSK image in drive A (overrides config) |
 | `--disk-b=PATH` | Mount a DSK image in drive B (overrides config) |
+| `--sdl-fm` | Force the built-in SDL disk browser instead of the platform file dialog |
 | `--rom-slot=N:PATH` | Load a ROM image into upper ROM slot N (0-31); may be repeated |
 | `--rom-os=PATH` | Override the lower ROM (OS) with a custom image at PATH |
 | `--autostart=NAME` | After boot, types `run"NAME` into BASIC |
@@ -142,6 +143,13 @@ Pressing Ctrl+V types the host clipboard contents into the emulator one characte
 The overlay lets you change the machine model, RAM size, ROM paths, and hardware options without editing the config file. Navigate with arrow keys, press Enter to cycle a value. On close, if anything changed you will be asked whether to save.
 
 Switching the model automatically sets the matching ROM paths and RAM size.
+
+**Media disk picker:** Enter on Drive A or Drive B uses the platform file
+dialog. Shift+Enter opens the built-in, keyboard-driven DSK browser instead.
+If the platform dialog is unavailable, 1984 falls back to the built-in browser
+automatically. Use `--sdl-fm` to force it for every disk selection. In the
+built-in browser, use Up/Down or Page Up/Page Down to navigate, Enter to open a
+directory or select a DSK, Backspace/Left to move up, and Escape to cancel.
 
 **RAM size** (General → Memory): press Enter to cycle through 64, 128, 256, 512, 576, 768, and 1024 KB. Up to 576 KB uses DK'tronics-compatible banking (Gate Array port 0x7Fxx, data bits[5:3] select the 64 KB bank group). 768 KB and 1024 KB switch to the Yarek/RAM7 extended scheme, where port address bits A10–A8 carry an additional bank group selector: port 0x7Exx adds a second 512 KB block (576–1088 KB range), giving a practical ceiling of 1024 KB with bank_high values 0–1. Banking is supported on all three models. Changing RAM size triggers a cold boot on save.
 
