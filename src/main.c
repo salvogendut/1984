@@ -324,6 +324,7 @@ static void usage(const char *prog, int code) {
         "                      (read-only; config_save still targets the default path)\n"
         "  --disk-a=PATH       Mount a DSK image in drive A (overrides config)\n"
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
+        "  --sdl-fm            Force the built-in SDL disk-image browser\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
@@ -411,6 +412,7 @@ int main(int argc, char *argv[]) {
     const char *tap_dev_arg     = NULL;   /* --tap=DEVNAME for Net4CPC backend */
     const char *disk_a_arg      = NULL;
     const char *disk_b_arg      = NULL;
+    bool        sdl_fm          = false;  /* force built-in Media disk browser */
     const char *rom_os_arg      = NULL;
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
@@ -460,6 +462,8 @@ int main(int argc, char *argv[]) {
             disk_a_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--disk-b=", 9) == 0 && argv[i][9] != '\0')
             disk_b_arg = argv[i] + 9;
+        else if (strcmp(argv[i], "--sdl-fm") == 0)
+            sdl_fm = true;
         else if (strncmp(argv[i], "--rom-os=", 9) == 0 && argv[i][9] != '\0')
             rom_os_arg = argv[i] + 9;
         else if (strncmp(argv[i], "--rom-slot=", 11) == 0 && argv[i][11] != '\0') {
@@ -719,7 +723,7 @@ int main(int argc, char *argv[]) {
 
     SD_LOG("ROMs/disks loaded; calling overlay_init");
     Overlay overlay;
-    overlay_init(&overlay, &cfg, &cpc);
+    overlay_init(&overlay, &cfg, &cpc, sdl_fm);
     SD_LOG("overlay_init OK");
 
     HostMount host_mount = {0};   /* F10 toggle state; see host_mount.c */
@@ -1485,6 +1489,7 @@ int main(int argc, char *argv[]) {
     webgui_stop();
     printer_shutdown(&cpc.printer);
     perryfi_shutdown(&cpc.perryfi);
+    overlay_quit(&overlay);
     cpc_destroy(&cpc);
     SDL_Quit();
     return 0;

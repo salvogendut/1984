@@ -10,6 +10,7 @@
 #include "webgui.h"
 #include "leds.h"
 #include "notify.h"
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <libgen.h>
@@ -29,6 +30,14 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 /* ROM slots panel: idx 0 = Lower ROM, idx 1-32 = upper slots 0-31 */
 #define ROMSLOT_VISIBLE 10
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
+#define BROWSER_VISIBLE_ROWS 16
+#define BROWSER_ROW_H 16
+
+typedef struct OverlayBrowserEntry {
+    char *name;
+    bool  directory;
+    bool  parent;
+} OverlayBrowserEntry;
 
 static const char *const sec_labels[OV_SEC_COUNT] = {
     "General", "Media", "Extensions", "Advanced"
@@ -170,6 +179,319 @@ static void trunc_path(const char *path, char *out, size_t sz) {
 /* True when floppy drives are accessible (664/6128 always; 464 only with DD1) */
 static bool floppy_accessible(const Overlay *ov) {
     return ov->cfg->model != MODEL_464 || ov->cfg->dd1;
+}
+
+static bool path_separator(char c) {
+    return c == '/' || c == '\\';
+}
+
+static void copy_dirname(char *dst, size_t cap, const char *path) {
+    if (!path || !path[0] || cap == 0) return;
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    if (!slash || (backslash && backslash > slash)) slash = backslash;
+    if (!slash) return;
+
+    size_t n = (size_t)(slash - path);
+    if (n == 0) n = 1;
+    if (n == 2 && path[1] == ':') n = 3;
+    if (n >= cap) n = cap - 1;
+    memcpy(dst, path, n);
+    dst[n] = '\0';
+}
+
+static bool dsk_filename(const char *name) {
+    const char *dot = name ? strrchr(name, '.') : NULL;
+    return dot && SDL_strcasecmp(dot, ".dsk") == 0;
+}
+
+static void browser_clear_entries(Overlay *ov) {
+    for (int i = 0; i < ov->browser_entry_count; i++)
+        SDL_free(ov->browser_entries[i].name);
+    SDL_free(ov->browser_entries);
+    ov->browser_entries = NULL;
+    ov->browser_entry_count = 0;
+    ov->browser_entry_capacity = 0;
+    ov->browser_row = 0;
+    ov->browser_scroll = 0;
+}
+
+static bool browser_add_entry(Overlay *ov, const char *name,
+                              bool directory, bool parent) {
+    if (ov->browser_entry_count == ov->browser_entry_capacity) {
+        int next = ov->browser_entry_capacity
+                 ? ov->browser_entry_capacity * 2 : 32;
+        OverlayBrowserEntry *entries = SDL_realloc(
+            ov->browser_entries, (size_t)next * sizeof(*entries));
+        if (!entries) {
+            SDL_SetError("Out of memory while listing disk images");
+            return false;
+        }
+        ov->browser_entries = entries;
+        ov->browser_entry_capacity = next;
+    }
+
+    char *copy = SDL_strdup(name);
+    if (!copy) {
+        SDL_SetError("Out of memory while listing disk images");
+        return false;
+    }
+    OverlayBrowserEntry *entry =
+        &ov->browser_entries[ov->browser_entry_count++];
+    entry->name = copy;
+    entry->directory = directory;
+    entry->parent = parent;
+    return true;
+}
+
+static bool join_path(char *dst, size_t cap, const char *dir,
+                      const char *name) {
+    size_t len = strlen(dir);
+    const char *sep = (len > 0 && path_separator(dir[len - 1])) ? "" : "/";
+    int written = snprintf(dst, cap, "%s%s%s", dir, sep, name);
+    return written >= 0 && (size_t)written < cap;
+}
+
+static SDL_EnumerationResult SDLCALL browser_enum_entry(
+    void *userdata, const char *dirname, const char *fname) {
+    Overlay *ov = userdata;
+    char path[CONFIG_PATH_MAX];
+    SDL_PathInfo info;
+
+    if (!fname[0] || strcmp(fname, ".") == 0 || strcmp(fname, "..") == 0)
+        return SDL_ENUM_CONTINUE;
+    int written = snprintf(path, sizeof(path), "%s%s", dirname, fname);
+    if (written < 0 || written >= (int)sizeof(path))
+        return SDL_ENUM_CONTINUE;
+    if (!SDL_GetPathInfo(path, &info))
+        return SDL_ENUM_CONTINUE;
+
+    bool directory = info.type == SDL_PATHTYPE_DIRECTORY;
+    if (!directory && (info.type != SDL_PATHTYPE_FILE || !dsk_filename(fname)))
+        return SDL_ENUM_CONTINUE;
+    return browser_add_entry(ov, fname, directory, false)
+         ? SDL_ENUM_CONTINUE : SDL_ENUM_FAILURE;
+}
+
+static int browser_entry_compare(const void *a, const void *b) {
+    const OverlayBrowserEntry *ea = a;
+    const OverlayBrowserEntry *eb = b;
+    if (ea->parent != eb->parent) return ea->parent ? -1 : 1;
+    if (ea->directory != eb->directory) return ea->directory ? -1 : 1;
+    return SDL_strcasecmp(ea->name, eb->name);
+}
+
+static void normalize_directory(char *path) {
+    size_t len = strlen(path);
+    while (len > 1 && path_separator(path[len - 1])) {
+        if (len == 3 && path[1] == ':') break;
+        path[--len] = '\0';
+    }
+}
+
+static bool parent_directory(const char *dir, char *parent, size_t cap) {
+    if (!dir || !dir[0] || cap == 0) return false;
+    snprintf(parent, cap, "%s", dir);
+    normalize_directory(parent);
+    size_t len = strlen(parent);
+    size_t slash = len;
+    while (slash > 0 && !path_separator(parent[slash - 1])) slash--;
+    if (slash == 0) return false;
+
+    size_t keep = slash - 1;
+    if (keep == 0) keep = 1;
+    if (keep == 2 && parent[1] == ':') keep = 3;
+    parent[keep] = '\0';
+    return strcmp(parent, dir) != 0;
+}
+
+static bool browser_set_directory(Overlay *ov, const char *dir) {
+    SDL_PathInfo info;
+    char normalized[CONFIG_PATH_MAX];
+    char parent[CONFIG_PATH_MAX];
+
+    if (!dir || !dir[0]) return false;
+    snprintf(normalized, sizeof(normalized), "%s", dir);
+    normalize_directory(normalized);
+    if (!SDL_GetPathInfo(normalized, &info)
+        || info.type != SDL_PATHTYPE_DIRECTORY)
+        return false;
+
+    browser_clear_entries(ov);
+    snprintf(ov->browser_dir, sizeof(ov->browser_dir), "%s", normalized);
+    ov->browser_error[0] = '\0';
+
+    if (parent_directory(normalized, parent, sizeof(parent))
+        && !browser_add_entry(ov, "..", true, true)) {
+        snprintf(ov->browser_error, sizeof(ov->browser_error), "%s",
+                 SDL_GetError());
+        return true;
+    }
+
+    if (!SDL_EnumerateDirectory(normalized, browser_enum_entry, ov)) {
+        snprintf(ov->browser_error, sizeof(ov->browser_error), "%s",
+                 SDL_GetError());
+    }
+    if (ov->browser_entry_count > 1) {
+        qsort(ov->browser_entries, (size_t)ov->browser_entry_count,
+              sizeof(*ov->browser_entries), browser_entry_compare);
+    }
+    return true;
+}
+
+static void open_internal_disk_browser(Overlay *ov, int drive) {
+    char seed[CONFIG_PATH_MAX] = "";
+    const char *mounted = drive == 0 ? ov->cfg->disk_a : ov->cfg->disk_b;
+    copy_dirname(seed, sizeof(seed), mounted);
+
+    ov->browser_drive = drive;
+    ov->browser_error[0] = '\0';
+    ov->dialog_kind = DIALOG_NONE;
+    ov->dialog_drive = -1;
+    ov->dialog_ready = false;
+    ov->dialog_failed = false;
+
+    bool opened = seed[0] && browser_set_directory(ov, seed);
+    if (!opened && ov->cfg->last_dir[0])
+        opened = browser_set_directory(ov, ov->cfg->last_dir);
+
+    char *cwd = NULL;
+    if (!opened) {
+        cwd = SDL_GetCurrentDirectory();
+        if (cwd) opened = browser_set_directory(ov, cwd);
+    }
+    SDL_free(cwd);
+
+    if (!opened) {
+        browser_clear_entries(ov);
+        snprintf(ov->browser_dir, sizeof(ov->browser_dir), ".");
+        snprintf(ov->browser_error, sizeof(ov->browser_error),
+                 "Cannot read the current directory: %s", SDL_GetError());
+    }
+    ov->state = OV_STATE_FILE_BROWSER;
+}
+
+static void open_disk_dialog(Overlay *ov, int drive) {
+    if (ov->sdl_fm) {
+        open_internal_disk_browser(ov, drive);
+        return;
+    }
+
+    ov->dialog_kind = DIALOG_DISK;
+    ov->dialog_drive = drive;
+    ov->dialog_ready = false;
+    ov->dialog_failed = false;
+    ov->dialog_error[0] = '\0';
+    static const SDL_DialogFileFilter filters[] = {
+        { "DSK images", "dsk;DSK" },
+        { "All files",  "*"       },
+    };
+    SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+        ov->cpc ? ov->cpc->display.window : NULL,
+        filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
+}
+
+static void browser_ensure_visible(Overlay *ov) {
+    if (ov->browser_row < ov->browser_scroll)
+        ov->browser_scroll = ov->browser_row;
+    if (ov->browser_row >= ov->browser_scroll + BROWSER_VISIBLE_ROWS)
+        ov->browser_scroll = ov->browser_row - BROWSER_VISIBLE_ROWS + 1;
+    if (ov->browser_scroll < 0) ov->browser_scroll = 0;
+}
+
+static void browser_move(Overlay *ov, int delta) {
+    if (ov->browser_entry_count == 0) return;
+    int row = ov->browser_row + delta;
+    if (row < 0) row = 0;
+    if (row >= ov->browser_entry_count)
+        row = ov->browser_entry_count - 1;
+    ov->browser_row = row;
+    browser_ensure_visible(ov);
+}
+
+static void browser_open_parent(Overlay *ov) {
+    char parent[CONFIG_PATH_MAX];
+    if (parent_directory(ov->browser_dir, parent, sizeof(parent)))
+        browser_set_directory(ov, parent);
+}
+
+static void browser_activate_entry(Overlay *ov, bool directories_only) {
+    if (ov->browser_row < 0
+        || ov->browser_row >= ov->browser_entry_count)
+        return;
+
+    OverlayBrowserEntry *entry = &ov->browser_entries[ov->browser_row];
+    if (entry->parent) {
+        browser_open_parent(ov);
+        return;
+    }
+
+    char path[CONFIG_PATH_MAX];
+    if (!join_path(path, sizeof(path), ov->browser_dir, entry->name)) {
+        snprintf(ov->browser_error, sizeof(ov->browser_error),
+                 "Path is too long");
+        return;
+    }
+    if (entry->directory) {
+        if (!browser_set_directory(ov, path)) {
+            snprintf(ov->browser_error, sizeof(ov->browser_error),
+                     "Cannot open directory: %.220s", entry->name);
+        }
+        return;
+    }
+    if (directories_only) return;
+
+    snprintf(ov->dialog_path, sizeof(ov->dialog_path), "%s", path);
+    ov->dialog_kind = DIALOG_DISK;
+    ov->dialog_drive = ov->browser_drive;
+    ov->state = OV_STATE_MENU;
+    browser_clear_entries(ov);
+    SDL_MemoryBarrierRelease();
+    ov->dialog_ready = true;
+}
+
+static void browser_handle_key(Overlay *ov, SDL_Keycode key) {
+    switch (key) {
+    case SDLK_ESCAPE:
+        browser_clear_entries(ov);
+        ov->state = OV_STATE_MENU;
+        break;
+    case SDLK_UP:
+        browser_move(ov, -1);
+        break;
+    case SDLK_DOWN:
+        browser_move(ov, 1);
+        break;
+    case SDLK_PAGEUP:
+        browser_move(ov, -BROWSER_VISIBLE_ROWS);
+        break;
+    case SDLK_PAGEDOWN:
+        browser_move(ov, BROWSER_VISIBLE_ROWS);
+        break;
+    case SDLK_HOME:
+        ov->browser_row = 0;
+        browser_ensure_visible(ov);
+        break;
+    case SDLK_END:
+        if (ov->browser_entry_count > 0)
+            ov->browser_row = ov->browser_entry_count - 1;
+        browser_ensure_visible(ov);
+        break;
+    case SDLK_LEFT:
+    case SDLK_BACKSPACE:
+        browser_open_parent(ov);
+        break;
+    case SDLK_RIGHT:
+        browser_activate_entry(ov, true);
+        break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+    case SDLK_SPACE:
+        browser_activate_entry(ov, false);
+        break;
+    default:
+        break;
+    }
 }
 
 /* ---- Menu item text ---- */
@@ -663,7 +985,7 @@ static void amx_take_pointer(Overlay *ov) {
     if (changed) ov->needs_cold_boot = true;
 }
 
-static void activate_item(Overlay *ov) {
+static void activate_item(Overlay *ov, SDL_Keymod mods) {
     switch (ov->section) {
 
     case OV_GENERAL: {
@@ -773,16 +1095,10 @@ static void activate_item(Overlay *ov) {
 
     case OV_STORAGE:
         if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
-            ov->dialog_kind  = DIALOG_DISK;
-            ov->dialog_drive = ov->row;
-            ov->dialog_ready = false;
-            static const SDL_DialogFileFilter filters[] = {
-                { "DSK images", "dsk;DSK" },
-                { "All files",  "*"       },
-            };
-            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
-                ov->cpc ? ov->cpc->display.window : NULL,
-                filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
+            if (mods & SDL_KMOD_SHIFT)
+                open_internal_disk_browser(ov, ov->row);
+            else
+                open_disk_dialog(ov, ov->row);
         } else if (ov->row == 2) {
             /* Tape — stub: file picker captures the .cdt path into
              * cfg.tape, but nothing reads it yet. */
@@ -1326,6 +1642,7 @@ static void activate_item(Overlay *ov) {
 }
 
 static void try_close(Overlay *ov) {
+    browser_clear_entries(ov);
     if (ov->dirty)
         ov->state = OV_STATE_CONFIRM;
     else
@@ -1344,7 +1661,12 @@ static void overlay_file_callback(void *userdata, const char * const *files,
                                   int filter) {
     (void)filter;
     Overlay *ov = userdata;
-    if (files && files[0]) {
+    if (!files) {
+        snprintf(ov->dialog_error, sizeof(ov->dialog_error), "%s",
+                 SDL_GetError());
+        SDL_MemoryBarrierRelease();
+        ov->dialog_failed = true;
+    } else if (files[0]) {
         snprintf(ov->dialog_path, sizeof(ov->dialog_path), "%s", files[0]);
         SDL_MemoryBarrierRelease();
         ov->dialog_ready = true;
@@ -1355,16 +1677,21 @@ static void overlay_file_callback(void *userdata, const char * const *files,
     }
 }
 
-void overlay_init(Overlay *ov, Config *cfg, CPC *cpc) {
+void overlay_init(Overlay *ov, Config *cfg, CPC *cpc, bool sdl_fm) {
     memset(ov, 0, sizeof(*ov));
     ov->cfg          = cfg;
     ov->cpc          = cpc;
+    ov->sdl_fm       = sdl_fm;
     ov->dialog_kind  = DIALOG_NONE;
     ov->dialog_drive = -1;
     ov->dialog_slot  = -1;
     ov->last_m4            = cfg->m4;
     ov->last_albireo       = cfg->albireo;
     ov->last_symbiface_ide = cfg->symbiface_ide;
+}
+
+void overlay_quit(Overlay *ov) {
+    browser_clear_entries(ov);
 }
 
 /* Check whether any of the ROM-owning hardware toggles flipped since
@@ -1407,6 +1734,25 @@ static void remember_last_dir(Config *cfg, const char *picked) {
 }
 
 void overlay_tick(Overlay *ov) {
+    if (ov->dialog_failed) {
+        SDL_MemoryBarrierAcquire();
+        DialogKind failed_kind = ov->dialog_kind;
+        int failed_drive = ov->dialog_drive;
+        ov->dialog_failed = false;
+        ov->dialog_kind = DIALOG_NONE;
+        ov->dialog_drive = -1;
+        ov->dialog_slot = -1;
+
+        if (failed_kind == DIALOG_DISK && ov->visible
+            && failed_drive >= 0 && failed_drive < 2) {
+            open_internal_disk_browser(ov, failed_drive);
+        } else {
+            notify_post("File picker unavailable: %s",
+                        ov->dialog_error[0]
+                            ? ov->dialog_error : "unknown SDL error");
+        }
+        return;
+    }
     if (!ov->dialog_ready) return;
     SDL_MemoryBarrierAcquire();
     ov->dialog_ready = false;
@@ -1632,6 +1978,11 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
     }
 
     if (!ov->visible) return false;
+
+    if (ov->state == OV_STATE_FILE_BROWSER) {
+        browser_handle_key(ov, ev->key.key);
+        return true;
+    }
 
     /* ---- Confirm dialog ---- */
     if (ov->state == OV_STATE_CONFIRM) {
@@ -1880,7 +2231,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         break;
     case SDL_SCANCODE_RETURN:
     case SDL_SCANCODE_KP_ENTER:
-        activate_item(ov);
+        activate_item(ov, ev->key.mod);
         overlay_check_board_changes(ov);
         break;
     case SDL_SCANCODE_N:
@@ -1970,6 +2321,92 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         break;
     }
     return true;
+}
+
+static void fit_browser_text(char *dst, size_t cap, const char *src,
+                             size_t max_chars, bool keep_tail) {
+    size_t len = strlen(src);
+    if (len <= max_chars) {
+        snprintf(dst, cap, "%s", src);
+        return;
+    }
+    if (max_chars < 4) {
+        snprintf(dst, cap, "%.*s", (int)max_chars, src);
+        return;
+    }
+    if (keep_tail)
+        snprintf(dst, cap, "...%s", src + len - (max_chars - 3));
+    else
+        snprintf(dst, cap, "%.*s...", (int)(max_chars - 3), src);
+}
+
+static void render_file_browser(const Overlay *ov, SDL_Renderer *r,
+                                float lw, float lh) {
+    float box_w = lw - 16.0f;
+    if (box_w > 496.0f) box_w = 496.0f;
+    float box_h = 344.0f;
+    if (box_h > lh - 16.0f) box_h = lh - 16.0f;
+    float bx = (lw - box_w) / 2.0f;
+    float by = (lh - box_h) / 2.0f;
+    float list_y = by + 46.0f;
+
+    fill_rect(r, 0, 0, lw, lh, 0, 0, 0, 170);
+    fill_rect(r, bx, by, box_w, box_h, 15, 15, 40, 255);
+    draw_rect_outline(r, bx, by, box_w, box_h, 70, 90, 200);
+
+    char title[64];
+    snprintf(title, sizeof(title), "Select DSK image for Drive %c",
+             ov->browser_drive == 0 ? 'A' : 'B');
+    draw_text(r, bx + 10.0f, by + 7.0f, title, 255, 255, 120);
+
+    char shown_path[64];
+    fit_browser_text(shown_path, sizeof(shown_path), ov->browser_dir,
+                     57, true);
+    draw_text(r, bx + 10.0f, by + 24.0f, shown_path, 170, 205, 230);
+
+    for (int shown = 0; shown < BROWSER_VISIBLE_ROWS; shown++) {
+        int index = ov->browser_scroll + shown;
+        if (index >= ov->browser_entry_count) break;
+        const OverlayBrowserEntry *entry = &ov->browser_entries[index];
+        float y = list_y + (float)(shown * BROWSER_ROW_H);
+        bool selected = index == ov->browser_row;
+        if (selected)
+            fill_rect(r, bx + 7.0f, y - 2.0f, box_w - 14.0f,
+                      13.0f, 70, 90, 200, 255);
+
+        char line[64];
+        char name[54];
+        fit_browser_text(name, sizeof(name), entry->name, 50, false);
+        if (entry->parent)
+            snprintf(line, sizeof(line), "[UP]  %s", name);
+        else if (entry->directory)
+            snprintf(line, sizeof(line), "[DIR] %s", name);
+        else
+            snprintf(line, sizeof(line), "      %s", name);
+        draw_text(r, bx + 12.0f, y, line,
+                  selected ? 255 : 215,
+                  selected ? 255 : 220,
+                  selected ? 120 : 225);
+    }
+
+    float status_y = list_y + BROWSER_VISIBLE_ROWS * BROWSER_ROW_H + 2.0f;
+    if (ov->browser_error[0]) {
+        char error[64];
+        fit_browser_text(error, sizeof(error), ov->browser_error, 57, false);
+        draw_text(r, bx + 10.0f, status_y, error, 255, 130, 130);
+    } else if (ov->browser_entry_count == 0) {
+        draw_text(r, bx + 10.0f, status_y,
+                  "No directories or DSK images", 150, 150, 175);
+    } else {
+        char count[64];
+        snprintf(count, sizeof(count), "%d item%s",
+                 ov->browser_entry_count,
+                 ov->browser_entry_count == 1 ? "" : "s");
+        draw_text(r, bx + 10.0f, status_y, count, 140, 150, 175);
+    }
+    draw_text(r, bx + 10.0f, status_y + 17.0f,
+              "Enter: open/select  Backspace/Left: up  Esc: cancel",
+              180, 185, 200);
 }
 
 void overlay_render(const Overlay *ov, SDL_Renderer *r) {
@@ -2143,6 +2580,20 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         } else {
             draw_text(r, VAL_X, ty, val, 255, 200, 50);
         }
+    }
+
+    if (ov->section == OV_STORAGE) {
+        draw_text(r, DROP_PAD, BAR_H + drop_h + 7.0f,
+                  ov->sdl_fm
+                      ? "Enter: built-in  N:new  Del:eject"
+                      : "Enter: system  Shift+Enter: built-in  N:new  Del:eject",
+                  150, 150, 175);
+    }
+
+    if (ov->state == OV_STATE_FILE_BROWSER) {
+        render_file_browser(ov, r, lw, lh);
+        SDL_SetRenderScale(r, 1.0f, 1.0f);
+        return;
     }
 
     /* ---- Confirm dialog ---- */

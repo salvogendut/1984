@@ -57,6 +57,11 @@ Mount a .dsk image in drive A (overrides config).
 .BI --disk-b= PATH
 Mount a .dsk image in drive B (overrides config).
 .TP
+.B --sdl-fm
+Force the built-in SDL disk-image browser for Drive A and Drive B instead of
+the platform file dialog. This keeps disk selection usable on minimal systems
+without an XDG portal or another native dialog provider.
+.TP
 .BI --rom-os= PATH
 Replace the OS (lower) ROM image.
 .TP
@@ -325,8 +330,9 @@ Model (464 / 664 / 6128), RAM size, MX4 expansion bus, Roms Board,
 DDI-1.
 .TP
 .B Media
-Floppy drives A and B, cassette tape, external tape toggle (CPC
-6128).
+Floppy drives A and B, cassette tape, external tape toggle (CPC 6128).
+Enter on a floppy drive uses the platform dialog, Shift+Enter opens the
+built-in browser, and native-dialog errors fall back automatically.
 .TP
 .B Extensions
 M4 board, Albireo USB, SYMBiFACE II IDE / mouse, Cyboard RTC,

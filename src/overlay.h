@@ -14,7 +14,8 @@ typedef enum {
 typedef enum {
     OV_STATE_MENU     = 0,   /* normal navigation */
     OV_STATE_CONFIRM  = 1,   /* "save changes?" prompt */
-    OV_STATE_ROMSLOTS = 2    /* ROM slots sub-panel */
+    OV_STATE_ROMSLOTS = 2,   /* ROM slots sub-panel */
+    OV_STATE_FILE_BROWSER = 3
 } OvState;
 
 typedef enum {
@@ -34,6 +35,8 @@ typedef enum {
     DIALOG_DISK_NEW      = 13   /* save-as: create a blank .dsk */
 } DialogKind;
 
+struct OverlayBrowserEntry;
+
 typedef struct {
     bool         visible;
     OvSection    section;
@@ -49,6 +52,19 @@ typedef struct {
     int          dialog_slot;  /* 0-31     (DIALOG_ROMSLOT) */
     char         dialog_path[512];
     bool         dialog_ready;
+    bool         dialog_failed;
+    char         dialog_error[256];
+    /* SDL-rendered DSK browser. Forced by --sdl-fm, available with
+     * Shift+Enter, and used when the platform dialog reports an error. */
+    bool         sdl_fm;
+    int          browser_drive;
+    char         browser_dir[CONFIG_PATH_MAX];
+    char         browser_error[256];
+    struct OverlayBrowserEntry *browser_entries;
+    int          browser_entry_count;
+    int          browser_entry_capacity;
+    int          browser_row;
+    int          browser_scroll;
     /* ROM slots sub-panel state */
     int          romslot_row;    /* selected slot 0-31 */
     int          romslot_scroll; /* index of first visible slot */
@@ -76,7 +92,8 @@ typedef struct {
     bool         last_symbiface_ide;
 } Overlay;
 
-void overlay_init(Overlay *ov, Config *cfg, CPC *cpc);
+void overlay_init(Overlay *ov, Config *cfg, CPC *cpc, bool sdl_fm);
+void overlay_quit(Overlay *ov);
 
 /* Returns true if the event was consumed by the overlay. */
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev);
