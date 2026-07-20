@@ -1,18 +1,29 @@
-# 1984 — Amstrad CPC Emulator
+# 1984 - Amstrad CPC emulator
 
 ![1984](1984.png)
 
-A cycle-stepped Amstrad CPC 464/664/6128 emulator written in C with SDL3.
+1984 is a cycle-stepped Amstrad CPC 464, 664, and 6128 emulator written in C
+using SDL3. It aims to run ordinary CPC software and timing-sensitive programs
+while also modelling modern storage, networking, and input expansions.
 
-## Status
+## Current status
 
-Boots to Locomotive BASIC. Commercial games and standard software run well. Most demos and other software relying on undocumented hardware behaviour or cycle-exact CRTC tricks are untested but should, in general, run ok.
+All three models boot their bundled firmware to Locomotive BASIC. Disk and
+tape software, commercial games, and a growing set of timing-sensitive demos
+run; Bomb Jack and Batman Forever are among the current CRTC/audio regression
+targets.
 
-**HDCPM / CP/M+ boots from FAT-formatted SYMBiFACE II / Cyboard IDE drives**, mounting up to four `CPMDSKxx.IMG` images as CP/M drives A–D with the M: ramdisk, ZCPR shell, and SYMBiFACE RTC sync. **SymbOS desktop runs on both Albireo (USB / CH376) and Cyboard (Net4CPC + RTC + SYMBiFACE IDE).**
+| Workload | Current result |
+|----------|----------------|
+| Locomotive BASIC and AMSDOS | Working on CPC 464, 664, and 6128, with DDI-1 available for the 464 |
+| HDCPM / CP/M Plus | Boots from SYMBiFACE II/Cyboard IDE images with CP/M drives, ramdisk, ZCPR, and RTC time |
+| SymbOS with M4 | Boots with the unmodified M4 network daemon; time, Telnet, and HTTP applications work |
+| SymbOS with Cyboard | Boots with Net4CPC, RTC, IDE storage, and SYMBiFACE mouse |
+| SymbOS with Albireo | Desktop and storage paths boot, subject to the text-rendering/application-loading limitation below |
+| FUZIX `cpcsme` | Boots from SYMBiFACE IDE or Albireo storage and reaches the Internet through Net4CPC |
 
-**M4 board emulation runs SymbOS unmodified.** ROM signature, FAT file API, single-image SAVE/LOAD/CAT, DNS resolution, TCP connect, send, and receive all work — both for cpc-sdcc network examples (TCPTEST, NTP, TELNET, WGET) and for SymbOS-native apps through `netd-m4c.exe`. The daemon may be left in SymbOS autostart; `settime.com` fetches the time over HTTP and the desktop clock updates end-to-end, `symtel` connects to telnet servers, `wget` downloads complete.
-
-**FUZIX (ajcasado port, `cpcsme` platform) boots to a multi-user shell and networks over Net4CPC.** With a 6128 + 512 KB RAM + SymbIface IDE pointing at the FUZIX `disk.img`, the kernel boots through the splash, IDE probe, and partition table; entering `hda1` at the `bootdev:` prompt mounts the root filesystem and `root` logs in to the FUZIX shell. FUZIX also boots from an **Albireo (CH376) USB-mass-storage** image — point `albireo_image` at the same `disk.img` and the probe registers it as `hda` with `hda1`–`hda4` visible. **Net4CPC works end-to-end:** `ifconfig eth0 …` brings the interface up and `telnet <host>` reaches real Internet hosts (telehack banner verified). See [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md).
+See [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md) and
+[docs/FUZIX_BUILD.md](docs/FUZIX_BUILD.md) for the tested FUZIX setup.
 
 <p align="center">
   <img src="screenshots/fuzix-boot.png" alt="FUZIX boot splash" width="380">
@@ -21,51 +32,177 @@ Boots to Locomotive BASIC. Commercial games and standard software run well. Most
 </p>
 
 <p align="center">
-  <img src="screenshots/fuzix-network.gif" alt="FUZIX networking works" width="480">
-  &nbsp;
-  <img src="screenshots/fuzix-network-2.gif" alt="FUZIX networking — second view" width="480"><br>
-  <sub><b>FUZIX networking works</b></sub>
+  <img src="screenshots/fuzix-network.gif" alt="FUZIX networking through Net4CPC" width="600"><br>
+  <sub><b>FUZIX using Net4CPC networking</b></sub>
 </p>
 
-## Features
+## Core emulation
 
-**Core machine** — cycle-stepped Z80 CPU (full documented set + undocumented IX/IY half-register ops, accurate interrupt/contention timing), MC6845 CRTC with overscan and hybrid screen modes (split-screen, mid-frame R-register reprogramming, rupture tricks), AY-3-8912 PSG (tone, noise, envelope with correct prescaler, sampled-audio playback), 8255 PPI, Gate Array with all 32 hardware colours, configurable RAM 64–1024 KB (DK'tronics + Yarek banking), 32 expansion ROM slots, `.sna` v1–v3 snapshot load/save, F8 memory monitor + Z80 disassembler with breakpoints.
+- CPC 464, 664, and 6128 model defaults, including the correct firmware,
+  memory, floppy, and cassette configuration.
+- Cycle-stepped Z80 with documented and commonly used undocumented opcodes,
+  interrupt timing, and memory contention.
+- MC6845 CRTC, Gate Array, 8255 PPI, overscan, split screens, hybrid display
+  modes, mid-frame CRTC changes, and all 32 hardware colours.
+- AY-3-8912 tone, noise, envelope, and sampled-audio playback.
+- RAM configurations from 64 KB through 1 MB using DK'TRONICS and Yarek/RAM7
+  banking.
+- A 32-slot expansion ROM board, automatic removal of AMSDOS headers from ROM
+  images, and board-tagged ROM/image profiles for M4, Albireo, and Cyboard.
+- Amstrad SNA v1-v3 loading and v3 saving, plus an F8 monitor/disassembler
+  with breakpoints and optional SDCC symbol maps.
 
-**Media** — DSK images via µPD765 FDC (drive A + B), AMSDOS file loading, `.cdt` / TZX cassette tape decoder with audio mixed into PSG output, AMSDOS-headed ROM auto-unwrap.
+The F9 overlay provides General, Media, Extensions, and Advanced tabs. MX4
+controls the expansion bus. Roms Board controls generic user-managed ROM
+slots, while board-tagged driver ROMs follow their active MX4 device. Enable
+**Tinker** in General to expose the Advanced tab.
 
-**Display** — integer-scaled output 1×–4× (Ctrl ± at runtime) with smooth/sharp texture filtering, fullscreen with letterbox gutter. Optional **Real CRT** post-process with adjustable scanline opacity, brightness, contrast, and per-channel red/green/blue gain. **Monochrome** phosphor tint (green / amber / paper-white) emulating a period GT65-style monitor via a Rec. 601 luma transform. On-screen **toast notifications** for hardware events (USIfAC link-up, client connect/disconnect) — a fading bottom-left panel, toggleable between screen / console / off.
+## Media and files
 
-**Audio** — AY-3-8912 output as interleaved stereo with ABC channel panning (Caprice32-style, blendable from mono to full separation), a perceptual master volume control, and a DC blocker to kill register-toggle clicks. Tape loading screech mixed into the PSG output.
+1984 reads standard and extended DSK images through the uPD765-compatible
+floppy controller. Sector writes and FORMAT TRACK operations are persisted to
+the mounted image. The Media tab can also create a blank 40-track CPC DATA
+disk.
 
-**Input** — keyboard, host-clipboard paste, USB/Bluetooth joystick and gamepad with hot-plug, scripted-joystick driver for automated UI tests.
+Drive A and B use the platform file picker by default. **Shift+Enter** opens
+the built-in keyboard-driven DSK browser, and 1984 falls back to it
+automatically when the platform picker is unavailable. `--sdl-fm` forces the
+built-in browser, which makes disk changes usable on systems without a GUI
+file manager.
 
-**Host file exchange** — F10 pauses the guest and mounts every active card image (M4 SD / IDE / Albireo) on the host so files can be dragged in or out from the file manager. Uses `gnome-disk-image-mounter` / `udisksctl` for first-class Nautilus integration, with `guestmount` as a fallback. Press F10 again or eject the card from the file manager to unmount, sync, and cold-boot.
+CPC 664 and 6128 models have floppy hardware built in. On the 464, enabling
+DDI-1 adds the controller and AMSDOS ROM. CDT/TZX cassette images support the
+common standard, turbo, pure-tone, pulse, pure-data, and pause blocks; tape
+audio is mixed into the AY output. The 464 deck is built in, while 664/6128
+use the External Tape setting.
 
-**Capture** — F4 still-screenshot (`.ppm`), F6 GIF screen-recording (in-tree LZW encoder, no dependencies), and WebM/VP9 recording via `ffmpeg` (optional, detected by `./configure`) — YouTube-native.
+On Linux, **F10** can pause the guest and mount active FAT card images from M4,
+SYMBiFACE IDE, and Albireo on the host. Pressing F10 again unmounts, syncs, and
+cold-boots the CPC so guest filesystem caches cannot overwrite host changes.
 
-**Web GUI** — an embedded HTTP server (the Web GUI toggle under Advanced in the F9 overlay, or the `web_gui`/`web_port` config keys) that serves the **one running machine** to any browser on the network: live screen as a multipart GIF stream (in-tree encoder, no dependencies, ~25 fps with change detection so static screens cost nothing), browser-started audio as a streaming 44.1 kHz stereo WAV feed, full input capture — click the screen and the browser's keyboard **and mouse** (pointer lock, relative motion into the SYMBiFACE / Albireo / AMX pointer device, same dispatch as the emulator window) belong to the CPC until **Ctrl+Enter** releases them — plus a touch-friendly on-screen joystick, paste-text box, reset button, and per-drive "Load .dsk…" buttons that upload a disk image straight from the browser's file picker into drive A or B (stored under `~/.config/1984/web_uploads/`, mounted the same way the overlay's disk picker does). Single-threaded and polled from the frame loop like every other subsystem; up to 8 simultaneous connections, all watching/controlling the same machine; slow viewers just receive fewer frames. This is the "watch/control the machine I'm sitting at, from my phone too" mode — starting it keeps the host window visible.
+## Display, audio, and input
 
-**Web Service** (`--web[=PORT]`) — "emulator as a service": every distinct browser (strictly, every distinct cookie jar — multiple tabs in the same browser share one machine, a different browser or incognito profile gets its own) gets its **own, fully isolated CPC instance** on first visit, automatically, with the same video and browser-started audio streams as the Web GUI. Up to 4 concurrent sessions; a session with no attached viewer for 10 minutes is destroyed to free the slot, and a 5th concurrent session gets a friendly "all sessions busy" page instead of a machine. Sessions always boot from clean defaults — never the host user's real `~/.config/1984/1984.conf` — but a session can upload its own `.conf` via the page's "Load session config…" control to rewrite just that session's boot state (model, ROMs, disks, everything `1984.conf` covers). Each session gets the same disk-upload buttons as the Web GUI, scoped to that session's own `~/.config/1984/web_sessions/<token>/` directory (removed when the session is destroyed). `--web` implies `--headless`: no window on the host at all, the browser is the only interface, and it is a genuinely separate, self-contained server (`src/websvc.c`) — not just a headless flavor of the Web GUI above. For a permanent web appliance, a systemd **system** unit is installed as `1984-web.service`: `systemctl enable --now 1984-web` gives you a multi-user browser-only CPC service. It runs as a dedicated, shell-less `emulator` system account (created automatically, shared with 1985's equivalent unit if both are installed) rather than root or an interactive login user, with systemd sandboxing (`ProtectSystem=strict`, `NoNewPrivileges`, no capabilities, ...) on top — see the unit file's comments for the full rationale.
+The SDL display supports 1x through 4x integer scaling, smooth or sharp
+filtering, and fullscreen letterboxing. Real CRT processing adds adjustable
+scanlines, brightness, contrast, and RGB gain. Green, amber, and paper-white
+monochrome modes derive luminance from the CPC colour image.
 
-**Security note (both modes): they bind `0.0.0.0` with no authentication — anyone on your network can watch and type. Web Service's session isolation means a new browser gets a new *machine*, not new *credentials* — it is not a substitute for network trust. Enable either only on networks you trust.**
+Audio is 44.1 kHz stereo with adjustable volume and ABC channel separation,
+a DC blocker, and cassette sound. SDL gamepads and joysticks support hot-plug
+and map to CPC joystick 1. The fallback input can instead be an AMX mouse;
+SYMBiFACE PS/2 and Albireo CH376-A mouse devices are available with their
+respective expansions. Click the emulator to capture a selected mouse and
+press **Ctrl+Enter** to release it.
 
-**Printer** — Centronics parallel port (`&EFxx`) wired to a Cairo-backed PDF surface on the host. `PRINT #8` / `LIST #8` / CP/M `LST:` / AMSDOS printer routing all land in timestamped PDFs in a user-picked directory. A "Real printer" mode spools each page to the host's default CUPS printer via `lp` (with `distrobox-host-exec` / `flatpak-spawn --host` escape so it works from sandboxed builds). Live in the overlay under Extensions, with the PDF/Real-printer sink selector under Advanced; cairo is optional (`--without-cairo` falls back to a no-op so the port is still decoded). LED bar gets a warm-amber slot for printer activity.
+F4 saves a PPM screenshot. F6 records a dependency-free animated GIF, while
+Advanced > **Capture video** records WebM/VP9 when `ffmpeg` was found during
+configuration. Audio can also be recorded to WAV from the command line.
 
-**Extensions** — DDI-1 floppy interface (464), DS12887 RTC (Cyboard / SYMBiFACE II), SYMBiFACE II / Cyboard IDE (FAT16/FAT32 disk images), SYMBiFACE II PS/2 mouse, Albireo USB mass-storage (CH376 host controller, driven by UNIDOS), **USIfAC II RS232 serial interface — wire-level emulation of the PIC-based board's serial pipe at `&FBD0`/`&FBD1`, with a host-side PTY or TCP listener as the backend, switchable live in the overlay. An optional stable symlink alias for the live `/dev/pts/N` slave lets external tools find the serial port at a fixed path across launches. A bundled **Retro Wi-Fi Modem** (PerryFi-inspired) rides on top of USIfAC: a Hayes-style AT modem that turns the serial port into a TCP dialler (`ATDT host:port`, `+++`, `ATH`, `ATO`) for CP/M comms tools and terminal programs. FUZIX completes its USIfAC handshake at boot; a split LED in the activity bar shows RX (red) and TX (green) traffic. See [docs/USIFAC.md](docs/USIFAC.md)**, **Net4CPC Ethernet (W5100S) with one-click TAP backend on Linux — auto-creates the tap device, runs a built-in DHCP server, DNS proxy, and NAT to the host network. The CPC is fully on the LAN: pingable from the host, accepts inbound connections, and DHCP works end-to-end (verified in HDCPM + SymbOS)**, Amstrad Diagnostics ROM as a one-click toggle. Per-board ROM groupings (`Ins` in the ROM Slots menu) tag each slot with the boards that need it — M4 / Albireo / Cyboard — so enabling a board auto-loads its ROMs and cached disk image; disabling clears them. No re-prompt for paths between sessions.
+## Expansion hardware
 
-## Supported platforms
+The MX4 expansion bus is enabled by default. Disabling it disconnects the
+peripherals on the Extensions tab, including the printer; built-in model
+hardware remains available.
 
-| Platform | Status |
-|---|---|
-| Linux (x86_64) | Tested daily; Fedora RPM provided |
-| Windows (MinGW-w64) | Tested under Wine and on native Windows 7+; CI-built `.exe` bundle |
-| NetBSD | Builds and runs from pkgsrc |
-| OpenBSD | Builds and runs |
-| macOS | Builds and runs |
-| Haiku (32-bit nightly) | Builds and runs |
-| FreeBSD | Builds and runs |
+| Expansion | Current implementation |
+|-----------|------------------------|
+| M4 | M4ROM, FAT image or host-directory file API, SD-sector access, clock, DNS, and TCP client operations |
+| Net4CPC | W5100S register and socket model with four sockets; host-socket and TAP backends |
+| Cyboard | Convenience control for Net4CPC, DS12887 RTC, SYMBiFACE IDE, and SYMBiFACE mouse |
+| SYMBiFACE IDE | FAT16/FAT32 raw images with ATA identify, read, write, reset, and multi-sector transfers |
+| Albireo | CH376 USB mass storage plus optional CH376-A HID mouse, usable from UNIDOS and FUZIX |
+| USIfAC II | Wire-level serial pipe at `&FBD0`/`&FBD1`, backed by a PTY or localhost TCP listener on POSIX hosts |
+| Wi-Fi Modem | PerryFi-inspired Hayes AT modem over USIfAC, with host TCP dial-out through `ATDT host:port` |
+| Printer | Centronics output at `&EFxx`, captured to PDF with Cairo or spooled to `lp` |
+| Diagnostics | Bundled Amstrad Diagnostics lower ROM selectable from the overlay |
 
-Pre-built Linux and Windows binaries are attached to each [GitHub Release](https://github.com/salvogendut/1984/releases).
+M4 can now coexist with Net4CPC, RTC, SYMBiFACE IDE, and the SYMBiFACE mouse,
+including the full Cyboard group. M4 and Albireo remain mutually exclusive
+because both decode the `0xFExx` range and their firmware stacks conflict.
+Board-tagged ROM profiles load and clear only the slots associated with the
+board being toggled.
+
+Net4CPC's default backend maps W5100S operations to host sockets. Its TAP
+backend makes the CPC a layer-2 endpoint with ARP, ICMP, TCP, UDP, DHCP, and
+DNS support. Linux auto-setup adds a private TAP network and NAT after one
+privilege prompt. FreeBSD, NetBSD, and OpenBSD support TAP with manual host NAT
+when wider network access is required. See [NET4CPC.md](NET4CPC.md).
+
+The printer requires MX4 in this emulator. With Cairo enabled, output from
+BASIC, AMSDOS, and CP/M is finalised into timestamped PDFs after an idle
+period. Real Printer mode submits the PDF to the host's default CUPS printer.
+Without Cairo the guest port still responds, but no host document is created.
+
+## Web access
+
+1984 has two browser-facing modes:
+
+- **Web GUI** mirrors the one CPC already running in the SDL application. It
+  streams screen and browser-started stereo audio, accepts keyboard, mouse,
+  touch joystick, paste, and reset input, and can upload DSK images into either
+  drive. Enable it from Advanced or with `web_gui=true`.
+- **Web Service**, started with `--web[=PORT]`, runs headless and creates an
+  isolated CPC for each browser cookie jar. It supports four concurrent
+  sessions, session-specific configuration and disk uploads, and removes
+  sessions ten minutes after their last viewer disconnects. Packages install
+  the sandboxed `1984-web.service` system service.
+
+Both modes bind to `0.0.0.0` and provide no authentication. Anyone who can
+reach the port can view and control a machine, so use them only on a trusted
+network. The default port is `1984`.
+
+## Development and automation
+
+The command line supports deterministic autostart and paste input, scripted
+joystick motion, scheduled snapshot and screenshot capture, GIF and WAV
+recording, headless execution, trace flags, and SDCC map symbols. PTY interfaces
+are available for the monitor, keyboard/text output, OCR screen reader, and
+`--pilot` mouse/joystick automation protocol. Run `./1984 --help` for the
+current option list.
+
+On-screen notifications report hardware and network events and can be routed
+to the screen, console, or disabled. Hovering over an activity LED shows its
+device label.
+
+## Build and downloads
+
+Fedora dependencies and build commands:
+
+```bash
+sudo dnf install gcc make autoconf automake pkgconf-pkg-config sdl3-devel cairo-devel
+autoreconf -iv
+./configure
+make -j"$(nproc)"
+./1984 --disk-a=/path/to/software.dsk
+```
+
+Cairo is optional (`./configure --without-cairo` disables PDF capture), and
+`ffmpeg` is optional for WebM recording. The required CPC firmware, M4ROM, and
+Amstrad Diagnostics ROMs are bundled in `roms/`.
+
+Tagged releases publish a Linux x86_64 binary, Fedora RPM, Windows x86_64 zip,
+and Flatpak bundle on the
+[GitHub Releases page](https://github.com/salvogendut/1984/releases). Pushes to
+`main` also produce workflow artifacts. Linux and Windows are built in CI;
+source builds are maintained for macOS, FreeBSD, NetBSD, OpenBSD, and Haiku.
+See [INSTALL.md](INSTALL.md) and [docs/FLATPAK.md](docs/FLATPAK.md).
+
+## Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| F4 | Save a PPM screenshot |
+| F5 | Warm reset |
+| F6 | Start or stop GIF recording |
+| F8 | Open or close the monitor/disassembler |
+| F9 | Open or close the options overlay |
+| F10 | Mount or unmount active card images on the Linux host |
+| F11 | Toggle fullscreen |
+| F12 | Quit |
+| Ctrl+= / Ctrl+- | Change window scale from 1x through 4x |
+| Ctrl+V | Paste host clipboard text into the CPC |
+| Click in window | Capture the active mouse device |
+| Ctrl+Enter | Release captured mouse input |
 
 ## Screenshots
 
@@ -85,45 +222,59 @@ Pre-built Linux and Windows binaries are attached to each [GitHub Release](https
   </tr>
 </table>
 
-## Documentation
+## Configuration and guides
 
-- **[INSTALL.md](INSTALL.md)** — installing pre-built binaries, building from source on each supported platform, ROM file requirements
-- **[USAGE.md](USAGE.md)** — command-line options, keyboard shortcuts, joystick mapping, options overlay (F9), memory monitor (F8), F10 host-side card browse, config file format
-- **[Development.md](Development.md)** — architecture, render pipeline, hardware emulation details, CI, port-specific notes (Haiku / NetBSD / Windows)
-- **[docs/FLATPAK.md](docs/FLATPAK.md)** — building and distributing the Flatpak from `main`; manifest layout, local bundle build, CI auto-build on tags
+Settings are stored in `~/.config/1984/1984.conf` and can normally be managed
+from F9. `--config=PATH` loads an alternate configuration without changing the
+normal save destination.
 
-Per-expansion guides:
+- [USAGE.md](USAGE.md) - command line, keyboard, overlay, debugger, and config
+- [Development.md](Development.md) - architecture, timing, and porting notes
+- [M4.md](M4.md) - M4 storage and network setup
+- [CYBOARD.md](CYBOARD.md) - Cyboard hardware and ROM layout
+- [ALBIREO.md](ALBIREO.md) - Albireo/UNIDOS setup and current SymbOS caveat
+- [NET4CPC.md](NET4CPC.md) - Net4CPC host-socket and TAP networking
+- [docs/USIFAC.md](docs/USIFAC.md) - USIfAC PTY/TCP setup and port map
+- [docs/SYMBOLS.md](docs/SYMBOLS.md) - SDCC symbols in the monitor
+- [docs/LEDS.md](docs/LEDS.md) - activity LED layout
+- [docs/PILOT.md](docs/PILOT.md) - PTY automation protocol
 
-- **[M4.md](M4.md)** — M4 board (SD card + Wi-Fi networking); SymbOS netd-m4c.exe autostart caveat
-- **[CYBOARD.md](CYBOARD.md)** — Cyboard pack (Net4CPC + RTC + SYMBiFACE IDE/Mouse); UNIDOS + UNITOOLS + FATFS ROM layout
-- **[ALBIREO.md](ALBIREO.md)** — Albireo USB host (CH376); UNIDOS + ALBIREO.ROM layout; coexistence with Cyboard
-- **[NET4CPC.md](NET4CPC.md)** — Net4CPC (W5100S) TAP backend; host-side device setup, bridge vs point-to-point, KCNet `NCFG.INI` profiles, `--trace-tap` walkthrough
-- **[docs/USIFAC.md](docs/USIFAC.md)** — USIfAC II RS232 serial interface; PTY and TCP backend wiring, port map (`&FBD0/D1/D8/DD`), BASIC smoke tests
-- **[docs/FUZIX_BUILD.md](docs/FUZIX_BUILD.md)** — building ajcasado/FUZIX from source against this emulator; cpctools/hex2bin/iDSK/flip shim, `CONFIG_USIFAC_SERIAL` mode toggle
-- **[docs/SYMBOLS.md](docs/SYMBOLS.md)** — loading SDCC `.map` files for symbol-annotated disassembly in the F8 monitor; per-MMR matching, `S` / `BS` commands
-- **[docs/LEDS.md](docs/LEDS.md)** — what each LED in the activity bar means; M4's 3-segment split (power / disk / net), USIfAC's RX/TX split, colour map per slot
-- **[docs/PILOT.md](docs/PILOT.md)** — `--pilot` host-PTY auto-pilot; polar-coordinate command protocol for steering the mouse pointer or CPC joystick from a script or an AI during debugging
+## Known limitations
 
-## Related projects
+- Timing-sensitive CPC software is broad; the named regression targets do not
+  imply that every demo or undocumented CRTC technique has been verified.
+- In SymbOS, Albireo raw-sector mode loads applications but corrupts some
+  desktop text. Its file-command fallback renders text correctly but cannot
+  launch applications. BASIC/UNIDOS and FUZIX storage are unaffected.
+- M4 and Albireo cannot be enabled together in the current emulator.
+- Net4CPC TAP is unavailable on Windows and macOS; those platforms use the
+  host-socket backend. USIfAC/PerryFi host backends are also unavailable on
+  Windows.
 
-- **[1985](https://github.com/salvogendut/1985)** — sibling project: Amstrad PCW 8256 emulator built on the same SDL3 + autotools foundation as 1984.
+## Related project
+
+[1985](https://github.com/salvogendut/1985) emulates the Amstrad PCW 8256,
+8512, and 9512 using the same SDL3/autotools foundation and Z80 core.
 
 ## Acknowledgements
 
-- **[ColinPitrat/caprice32](https://github.com/ColinPitrat/caprice32)** — well-maintained CPC emulator used extensively as a behavioural reference. Hardware colour palette RGB values in `src/gate_array.c` were derived from Caprice32's colour table; the µPD765 FDC semantics in `src/fdc.c` (status register layout per phase, ST0.AT/ST1.EN on EOT termination, settling delay on first EXEC MSR read, port 0xFB lo-byte bit-7 gating) and several Z80/Gate Array timing details (hsync falling-edge interrupt counter advance, CRTC tick cycle accumulator) follow Caprice32's implementation.
-- **[ikari-pl/konCePCja](https://github.com/ikari-pl/konCePCja)** — Caprice32 fork by Cezar "ikari" Pokorski with a documented SYMBiFACE II implementation, IPC-controllable debugger and headless mode. Used as the gold-standard reference for the HDCPM / CP/M+ boot path: a byte-by-byte LBA-sequence comparison with konCePCja isolated the divergence point that led to the GA-interrupt acknowledge timing fix (deferring `ga_irq_ack()` until the Z80 actually accepts the maskable interrupt, plus restoring `IFF1` from `IFF2` on RETI — both behaviours mirroring konCePCja / Caprice32). The Z80 cycle tables in `src/z80.c` (`cc_op`, `cc_cb`, `cc_ed`, `cc_xy`, `cc_xycb`, `cc_ex`) are ported verbatim from konCePCja and fixed the residual HDCPM / CP/M+ kernel-ISR bank-save/restore race (#102) by getting CALL/RET/JR cycle counts into agreement with real Z80 timing.
-
-  Between them, Caprice32 and konCePCja were indispensable references for cycle-exact CRTC and Z80 behaviour. Without studying their implementations and cross-checking 1984's output against them, supporting specific timing-sensitive demos and games (Bomb Jack, Batman Forever, and others that depend on undocumented hardware quirks or mid-frame CRTC tricks) would have been nearly impossible.
-- **[CPCWIKI](https://www.cpcwiki.eu/)** — primary reference for CPC hardware documentation: CRTC registers and timing, Gate Array behaviour, memory map, I/O port decoding, and keyboard matrix.
-- **[The Undocumented Z80 Documented](http://www.z80.info/zip/z80-documented.pdf)** (Sean Young) — reference for flag behaviour, undocumented opcodes (IX/IY bit instructions, DDCB/FDCB prefixes), and interrupt modes.
-- **[µPD765 FDC Application Note](https://www.nec.com/)** and Amstrad CPC service manual — reference for the FDC command set and DSK image format used in `src/fdc.c` and `src/disk.c`.
-- **[SDL3](https://github.com/libsdl-org/SDL)** — cross-platform library providing window management, rendering, audio, and input used throughout the emulator.
-- **[llopis/amstrad-diagnostics](https://github.com/llopis/amstrad-diagnostics)** — Amstrad Diagnostics ROM used as an optional lower-ROM override for hardware testing (Diag Cart toggle in the options overlay).
-- **[salafek/Net4CPC](https://github.com/salafek/Net4CPC)** — Net4CPC Ethernet add-on hardware design and W5100S interface reference; the emulated I/O ports (0xFD20–0xFD23) and register map in `src/net4cpc.c` follow this hardware specification.
-- **[salafek/cyboard-for-cpc](https://github.com/salafek/cyboard-for-cpc)** — Cyboard hardware design; source of the DS12887 I/O port mapping (0xFD14/0xFD15) implemented in `src/rtc.c`.
-- **[PulkoMandy's Albireo documentation](https://pulkomandy.github.io/shinra.github.io/albireo.html)** — CH376 / SC16C650B port map and command-flow notes used as the spec for `src/ch376.c`.
-- **[UNIDOS](https://unidos.cpcscene.net/)** (OffseT/Futurs') — DOS-node ROM the Albireo emulation is verified against; `src/ch376.c` follows the CH376 command sequence in UNIDOS's `Albireo.rom` source (`LowLevel.a` / `DOSNode.a`).
-- **[Prodatron's SymbOS](https://www.symbos.org/)** — multitasking operating system for Z80 machines; a key test target and reference for CPC system-level behaviour and expanded memory use.
+- [Caprice32](https://github.com/ColinPitrat/caprice32) and
+  [konCePCja](https://github.com/ikari-pl/konCePCja) provided the main
+  behavioural references for Z80 timing, CRTC/Gate Array behaviour, floppy
+  semantics, and the HDCPM boot path.
+- [CPCWiki](https://www.cpcwiki.eu/),
+  [The Undocumented Z80 Documented](http://www.z80.info/zip/z80-documented.pdf),
+  the NEC uPD765 documentation, and the Amstrad service manuals provided the
+  hardware references.
+- [SDL3](https://github.com/libsdl-org/SDL) provides the cross-platform video,
+  audio, and input layer.
+- [Amstrad Diagnostics](https://github.com/llopis/amstrad-diagnostics),
+  [Net4CPC](https://github.com/salafek/Net4CPC),
+  [Cyboard](https://github.com/salafek/cyboard-for-cpc),
+  [Albireo documentation](https://pulkomandy.github.io/shinra.github.io/albireo.html),
+  [UNIDOS](https://unidos.cpcscene.net/), and
+  [SymbOS](https://www.symbos.org/) define or exercise the expansion hardware
+  emulated here.
 
 ## License
 

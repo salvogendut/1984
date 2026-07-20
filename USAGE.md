@@ -25,7 +25,7 @@
 | `--trace-io` | Log CRTC and Gate Array register writes to stderr |
 | `--trace-palette` | Log palette writes and the firmware-flush fallback to stderr |
 | `--trace-input` | Log keyboard and joystick events to stderr |
-| `--trace-m4` | Log every M4 board command/response to stderr (M4 emulation is unstable) |
+| `--trace-m4` | Log every M4 board command/response to stderr |
 | `--trace-albireo` | Log every Albireo (CH376) command/response to stderr |
 | `--trace-net4cpc` | Log every Net4CPC (W5100S) register read/write and socket command to stderr |
 | `--printer-pdf=DIR` | Capture parallel-printer output (`&EFxx`) to timestamped PDFs in DIR |
@@ -54,7 +54,7 @@ Passing an unrecognised option prints the usage summary to stderr and exits with
 
 # Boot FUZIX (ajcasado port). Needs 6128 + ≥512 KB + SymbIface IDE pointed at disk.img;
 # at the bootdev: prompt type hda1, then log in as root.
-1984 --model=6128 --memory=512 \
+1984 --6128 --memory=512 \
      --disk-a=~/Downloads/fuzix-cpc/fuzix.dsk \
      --disk-b=~/Downloads/fuzix-cpc/root.dsk \
      --autostart=fuzix
@@ -161,9 +161,9 @@ On the **CPC 464** the tape is always wired (the deck is built in). On the **664
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
 
-**Roms Board** (General → Roms Board): toggles whether the 32 expansion ROM slots are populated at boot. When `enabled` (default), every non-empty `slot_N=` entry in `1984.conf` is loaded into the matching upper ROM slot and the Extensions → ROM Slots sub-panel is active. When `disabled`, only the three standard ROMs for the model — OS + BASIC + AMSDOS — are loaded; the `slot_N=` entries are kept in the config untouched, so re-enabling the toggle restores the previous layout from a single source of truth. Triggers a cold boot on save.
+**Roms Board** (General → Roms Board): controls generic, user-managed expansion ROM slots. When enabled (the default), non-empty untagged `slot_N=` entries in `1984.conf` are loaded and the Extensions → ROM Slots sub-panel is available. When disabled, those paths remain saved but are not mapped into the CPC. The change triggers a cold boot.
 
-Because **M4**, **SYMBiFACE IDE**, **SYMBiFACE Mouse**, and **Albireo** install their drivers as upper-ROM cartridges, they cannot function without the Roms Board. When Roms Board is `disabled`, those rows in the Extensions tab show `[needs Roms Board]` and refuse to toggle; the live CPC state forces them off too (their cfg values are preserved). **Net4CPC** and **RTC** are bare-hardware peripherals that don't need any companion ROM and remain available either way.
+Driver ROMs owned by an MX4 device are handled separately. A slot tagged `m4`, `albireo`, or `cyboard` follows that board and is mapped whenever the board and MX4 are active, even if the generic Roms Board is off. M4ROM is loaded automatically into its dedicated slot. Net4CPC and RTC are bare-hardware peripherals and need no driver ROM for their register-level interfaces.
 
 **OS ROM / BASIC ROM** (General → OS ROM, General → BASIC ROM): press Enter on either row to open a file picker and select a different ROM image. Changing either triggers a cold boot on save so the new ROM is in effect from the next reset. The values shown next to each row are the basename of the currently-configured ROM.
 
@@ -189,9 +189,9 @@ Because **M4**, **SYMBiFACE IDE**, **SYMBiFACE Mouse**, and **Albireo** install 
 
 Socket operations (TCP connect/send/receive, UDP sendto) are backed by host POSIX sockets. Four sockets (0–3) are available, each with 2 KB TX and 2 KB RX ring buffers. This is compatible with the Z80 driver in the [N4C-NETTOOLS](https://github.com/salvogendut/n4c-nettools) library and with the SymbOS N4C network daemon. The toggle triggers a cold boot on save.
 
-**Net4CPC TAP** (Advanced → Net4CPC TAP, Linux only): swaps the legacy host-socket backend for a real L2 endpoint on a kernel TAP device. The W5100S is no longer just a thin shim around POSIX sockets — outbound frames are assembled as real Ethernet + IP + UDP/TCP, ARP / ICMP / TCP are handled inside the emulator, and inbound frames are demultiplexed back to the matching W5100S socket. The CPC becomes pingable from the host, accepts inbound connections, and **DHCP works**.
+**Net4CPC TAP** (Advanced → Net4CPC TAP, Linux and BSD): swaps the legacy host-socket backend for a real L2 endpoint on a kernel TAP device. The W5100S is no longer just a thin shim around POSIX sockets — outbound frames are assembled as real Ethernet + IP + UDP/TCP, ARP / ICMP / TCP are handled inside the emulator, and inbound frames are demultiplexed back to the matching W5100S socket. The CPC becomes pingable from the host, accepts inbound connections, and **DHCP works**.
 
-When enabled, 1984 auto-provisions everything via a single `pkexec` prompt: creates `cpc-tap0`, assigns the configured host IP, adds the device to firewalld's trusted zone, enables IPv4 forwarding, and installs narrow MASQUERADE + FORWARD rules so the CPC can reach the wider network through the host. An in-process DHCP server hands out the configured lease range; an in-process DNS proxy forwards to the host's `/etc/resolv.conf` upstream. The tap device is reused across 1984 launches and only re-created when the configured subnet changes or the host reboots — so you get **one polkit prompt per host uptime**, not per launch.
+On Linux, 1984 auto-provisions everything via a single `pkexec` prompt: it creates `cpc-tap0`, assigns the configured host IP, adds the device to firewalld's trusted zone, enables IPv4 forwarding, and installs narrow MASQUERADE + FORWARD rules so the CPC can reach the wider network through the host. On FreeBSD, NetBSD, and OpenBSD, auto-setup creates and addresses the TAP through `doas` or `sudo`; host-to-CPC traffic works immediately, while wider network access requires a manual packet-filter NAT rule. An in-process DHCP server hands out the configured lease range and an in-process DNS proxy forwards to the host resolver. See [NET4CPC.md](NET4CPC.md) for platform setup.
 
 **Pick a subnet that doesn't collide with your LAN.** Defaults to `10.0.0.0/24`. If your home Wi-Fi or router already uses that range, edit `~/.config/1984/1984.conf` and change the four keys before enabling TAP:
 
@@ -269,7 +269,7 @@ Implemented CH376 commands: `GET_IC_VER`, `RESET_ALL`, `CHECK_EXIST`, `SET_USB_M
 
 **Printer** (Extensions → Printer): captures parallel-printer output from the CPC's Centronics port (`&EFxx`) into timestamped PDFs on the host. Enter on the row pops a folder picker; the chosen directory persists across runs (`pdf_printer_dir` in `1984.conf`). Each printed page comes out as `1984-print-YYYYMMDD-HHMMSS.pdf` written ~2 seconds after the last byte (idle-finalise so the file is openable mid-job). `PRINT #8` / `LIST #8` / CP/M `LST:` / AMSDOS `|PRINTER` all route here automatically. Cairo is required for capture (`./configure --without-cairo` falls back to a no-op so the port is still decoded). The printer is gated on MX4 — disable the expansion bus and the row reads `[needs MX4]`.
 
-**Printer mode** (Extensions → Printer mode): cycles the captured output between `PDF file` (kept in the directory above) and `Real printer (CUPS lp)`, which spools each finalised page to the host's default CUPS printer via `lp`. When 1984 runs inside a sandboxed environment, the spooler tries `distrobox-host-exec lp` and `flatpak-spawn --host lp` before falling back to plain `lp` so the host's CUPS stack is reachable without installing `cups-client` in the container. Sink changes take effect on the next character.
+**Printer mode** (Advanced → Printer mode): cycles the captured output between `PDF file` (kept in the directory above) and `Real printer (CUPS lp)`, which spools each finalised page to the host's default CUPS printer via `lp`. When 1984 runs inside a sandboxed environment, the spooler tries `distrobox-host-exec lp` and `flatpak-spawn --host lp` before falling back to plain `lp` so the host's CUPS stack is reachable without installing `cups-client` in the container. Sink changes take effect on the next character.
 
 Changes to the model, RAM size, DD1 toggle, any ROM slot, lower ROM, SYMBiFACE IDE, SYMBiFACE Mouse, or Albireo image trigger an automatic cold boot so the new configuration takes effect immediately. The machine re-boots without needing to quit and restart.
 
@@ -308,7 +308,7 @@ On first run a configuration file is created at `~/.config/1984/1984.conf`. You 
 ```ini
 [machine]
 model=6128        # 464, 664, or 6128
-memory=128        # 64, 128, 256, 512, or 576 (KB); default 64 for 464/664, 128 for 6128
+memory=128        # 64, 128, 256, 512, 576, 768, or 1024 KB
 
 [roms]
 os=~/.config/1984/roms/OS_6128.ROM
@@ -347,10 +347,9 @@ rom_board=true    # Expansion ROM board fitted — when false, only OS + BASIC +
                   # AMSDOS load at boot. slot_N entries above stay in the
                   # config but are ignored until re-enabled.
 dd1=false         # CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS in slot 7)
-m4=false          # M4 board emulation — file API + ESP8266 networking. UNSTABLE
-ulifac=false      # [unimplemented]
+m4=false          # M4 board emulation - file API + ESP8266 networking
 net4cpc=false
-net4cpc_tap=false                       # Linux TAP backend (auto-tap + built-in DHCP + DNS proxy + NAT)
+net4cpc_tap=false                       # Linux/BSD TAP backend; Linux auto-configures NAT
 net4cpc_tap_host_ip=10.0.0.1            # Host side of the tap interface
 net4cpc_tap_netmask=255.255.255.0
 net4cpc_tap_lease_start=10.0.0.100      # DHCP lease range — pick something

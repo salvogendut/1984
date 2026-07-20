@@ -53,19 +53,15 @@ all sit at slots ≥ 8.
 
 ## Incompatibility with M4
 
-The M4 board's `M4ROM.ROM` and UNIDOS both claim overlapping firmware territory
-and cannot coexist. The overlay enforces this mutual exclusion:
+M4 and Albireo both decode the `0xFExx` range, and their M4ROM and UNIDOS
+firmware stacks conflict. The overlay enforces this mutual exclusion:
 
 - Enabling **Albireo** disables **M4** (and triggers a cold boot).
-- Enabling **M4** clears every expansion ROM override — including the slot-7
-  UNIDOS and any Albireo / Cyboard node ROMs — and disables both Albireo and
-  Cyboard's RTC, restoring the stock BASIC and AMSDOS defaults.
+- Enabling **M4** disables Albireo and unloads Albireo-managed ROM slots.
 
-> **Note:** This Albireo ↔ M4 mutual exclusion is enforced only inside this
-> emulator, to keep the configuration clean while M4 support remains
-> experimental. It is not necessarily a real-hardware constraint — on actual
-> CPCs the boards may well coexist if the physical ROM slots and I/O ports
-> do not collide.
+Cyboard is unaffected in both directions: its Net4CPC, RTC, IDE, and mouse
+devices use independent I/O ranges and can coexist with either board. Cached
+board image and ROM templates remain available for the next enable.
 
 ## Where to obtain the ROMs
 

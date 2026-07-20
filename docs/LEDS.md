@@ -44,12 +44,12 @@ LED visibility tracks the board toggles in `~/.config/1984/1984.conf`
 | Slot   | Config key driving it                 |
 |--------|---------------------------------------|
 | FDC A/B| `model` (664/6128) or `dd1=true` (464)|
-| IDE    | `rom_board=true` + `symbiface_ide=true`|
-| USB    | `rom_board=true` + `albireo=true`     |
-| Net    | `rom_board=true` + `net4cpc=true`     |
-| USIfAC | `rom_board=true` + `usifac=true`      |
+| IDE    | `mx4=true` + `symbiface_ide=true`     |
+| USB    | `mx4=true` + `albireo=true`           |
+| Net    | `mx4=true` + `net4cpc=true`           |
+| USIfAC | `mx4=true` + `usifac=true`            |
 | Printer| `mx4=true` (Centronics port is always decoded on the bus)|
-| M4     | `rom_board=true` + `m4=true`          |
+| M4     | `mx4=true` + `m4=true`                |
 
 Turning a board off hides its LED and re-centres the bar.
 

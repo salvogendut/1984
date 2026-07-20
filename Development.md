@@ -297,10 +297,10 @@ The overlay (`src/overlay.c`) is a lightweight immediate-mode UI rendered with `
 
 | Tab | Rows |
 |-----|------|
-| General | Model, Memory, MX4, Roms Board, OS ROM, BASIC ROM, External Tape (6128) |
+| General | Model, Memory, MX4, Roms Board, External Tape (664/6128), OS ROM, BASIC ROM, Tinker, Fallback Input |
 | Media | Drive A, Drive B, Tape |
-| Extensions | M4, UliFAC [unimplemented], Net4CPC, RTC, DD1, ROM Slots →, Diag Cart, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo, Cyboard |
-| Advanced | Smoothing, Real CRT (+ Scanlines / Brightness / Contrast / R / G / B sub-rows when on), Load/Save Snapshot, Net4CPC TAP, DHCP server, Debugging, Capture video, USIfAC mode, USIfAC PTY link, Monochrome, Printer mode, Volume, Stereo, Notifications, Version |
+| Extensions | M4, USIfAC RS232, Net4CPC, RTC, DD1, ROM Slots, Diag Cart, SYMBiFACE IDE/Mouse, CH376-A Mouse, CH376-B Disk, Cyboard, Printer, Wi-Fi Modem |
+| Advanced | Smoothing, Real CRT (+ Scanlines / Brightness / Contrast / R / G / B sub-rows when on), Load/Save Snapshot, Net4CPC TAP, DHCP server, Debugging, Capture video, USIfAC mode/link, Monochrome, Printer mode, Volume, Stereo, Notifications, Web GUI, Version |
 
 The **Advanced** tab (`OV_TINKER`) is hidden unless `cfg.tinker` is enabled (General → Tinker). Most of its rows cycle a value on Enter (Volume steps 5%; Stereo cycles mono → half → full; Notifications cycles screen → console → off; Monochrome cycles off → green → amber → white) and apply live without a cold boot; a few open file pickers (snapshots, video capture) or an inline text editor (USIfAC PTY link). The CRT rows (Scanlines / Brightness / Contrast / R / G / B) only appear while Real CRT is on, via a `tinker_logical_row()` remap.
 
@@ -308,9 +308,19 @@ The overlay snapshots the Config struct on open. If the user changes any value a
 
 The **Memory** row (General tab, row 1) cycles through 64 → 128 → 256 → 512 → 576 → 768 → 1024 KB on Enter for all three models. A memory change sets `dirty = true` and, on save, adds `memory_kb != saved.memory_kb` to the cold boot trigger so `main.c` updates `Mem.ram_size` before calling `cpc_reset()`.
 
-The **Roms Board** row (General tab, row 3) toggles `cfg.rom_board`. When false, `main.c`'s boot and cold-boot paths skip the loop that copies `cfg.rom_ext[]` into the upper ROM slots — only the model's default OS, BASIC, and AMSDOS ROMs are loaded. The `cfg.rom_ext[]` paths themselves are *not* cleared, so re-enabling the toggle restores the previous layout from a single source of truth. The Extensions → ROM Slots row is also rendered as `[disabled]` and its sub-panel is unreachable while `rom_board` is off. Triggers a cold boot on save.
+The **Roms Board** row (General tab, row 3) toggles `cfg.rom_board`. In
+`cpc_build_from_config()`, false suppresses generic user-managed
+`cfg.rom_ext[]` entries while preserving their paths for the next enable. The
+model OS, BASIC, and AMSDOS ROMs remain, as do board-owned slots whose
+`rom_ext_boards[]` tag follows an active MX4 device. The Extensions -> ROM
+Slots sub-panel is unreachable while the generic board is off. Changing the
+setting triggers a cold boot.
 
-When `rom_board=false`, the four ROM-backed expansions (M4, SYMBiFACE IDE, SYMBiFACE Mouse, Albireo) are forced off in the live CPC state at boot/cold-boot time — `cpc.m4 = cfg.m4 && cfg.rom_board`, and likewise for the others. The cfg values stay intact so re-enabling Roms Board restores them. In the overlay, those four rows (plus the Cyboard combo, which contains two ROM-backed peripherals) render as `[needs Roms Board]` and their `activate_item()` paths short-circuit early. Net4CPC and RTC are unaffected because they don't need a companion ROM driver.
+M4, SYMBiFACE IDE/Mouse, and Albireo are gated by `cfg.mx4`, not by the generic
+Roms Board. `config_apply_boards()` maps their tagged driver ROMs while the
+corresponding board is active, and M4ROM is loaded separately into its
+dedicated slot. Net4CPC and RTC need no companion ROM for their register-level
+interfaces.
 
 The **MX4** row (General tab, row 2) toggles `cfg.mx4`, which gates the expansion-bus dispatch in `cpc.c` — every `0xFDxx` / `0xFExx` / `0xFFxx` extension branch in `bus_io_read`/`bus_io_write` is conditional on `cpc->mx4`. When MX4 is off, the **Extensions** tab is hidden from the top bar entirely (the render loop skips `i == OV_ADVANCED`, and the `LEFT`/`RIGHT` navigation does a `do/while` that steps past `OV_ADVANCED`). Changing MX4 triggers a cold boot on save so the CPC firmware re-probes the bus.
 
@@ -452,7 +462,7 @@ A minimal **DHCPv4 server** lives in `n4c_stack.c::dhcp_try_handle()`, hooked fr
 
 **W5100S correctness fixes** required for KCNet/SymbOS DHCP to actually work: `Sn_IR` is write-1-to-clear per datasheet §4.2.10; soft reset (`MR.RST`) preserves the common-config block (`0x0000`–`0x002F`); `PHYCFGR` reads `0x07` (LNK | SPD | DPX); the indirect-bus `0x8000` mask is applied. Without these the bring-up showed `DHCPDECLINE` after `ACK`, BASIC reset on `ncfg -r`, and `network-cable not connected` from KCNet utilities.
 
-**Legacy POSIX-socket backend** (TAP off, or non-Linux): outbound TCP/UDP work, but no DHCP — the host kernel silently drops broadcast OFFERs that aren't addressed to it. Use a static IP for N4C consumers in that mode, or switch to TAP.
+**Legacy POSIX-socket backend** (TAP off, or TAP unsupported): outbound TCP/UDP work, but no DHCP — the host kernel silently drops broadcast OFFERs that aren't addressed to it. Use a static IP for N4C consumers in that mode, or switch to TAP on Linux or BSD.
 
 **Tracing.** `--trace-net4cpc` enables `net4cpc_trace = 1`. Every register access is logged with its decoded name (`MR`, `SHAR`, `SIPR`, `Sn_MR`, `Sn_DIPR`, etc.) and socket index where applicable. Socket commands are logged with mnemonic (`OPEN`, `CONNECT`, `SEND`, `RECV`, `CLOSE`). TX/RX ring-buffer accesses are summarised as `burst R/W [start..end] N bytes` to avoid spamming one line per byte. The MR shortcut read at `0xFD20` and `MR.RST` events get their own labelled lines.
 
@@ -488,7 +498,7 @@ The Albireo CPC expansion exposes a WCH **CH376** USB host controller. It is ena
 | `0xFE81` | w   | COMMAND — start a command |
 | `0xFE81` | r   | STATUS — bit7 = !INT (0 = interrupt pending), bit4 = BUSY (always 0 in emulation) |
 
-**M4 mutex.** The real M4 board decodes the whole `0xFExx` / `0xFFxx` range as its data port, which would collide with the CH376 ports. In the emulator we route `0xFE80`/`0xFE81` to the CH376 first when `cpc->albireo` is set, but to keep configuration honest the overlay (and the boot-time config wiring in `main.c`) enforces mutual exclusion: enabling either Albireo or M4 disables the other and clears the corresponding image path. If a hand-edited config has both `albireo=true` and `m4=true`, Albireo wins.
+**M4 mutex.** The real M4 board decodes the whole `0xFExx` / `0xFFxx` range as its data port, which would collide with the CH376 ports. The overlay therefore makes M4 and Albireo mutually exclusive, clearing the other board's live image while retaining its cached board profile. Cyboard remains active because its components use independent ports. If a hand-edited config enables both M4 and Albireo, `config_load_from()` keeps M4 and disables Albireo before the CPC is built.
 
 **Command/response state machine.** The chip is driven by writing a command byte to `0xFE81`, then zero or more parameter bytes to `0xFE80`. Each command has a known fixed parameter count, or `-1` for variable-length (NUL-terminated) parameters used by `SET_FILE_NAME`. Once all parameters arrive, `execute()` runs.
 

@@ -41,23 +41,16 @@ file-system or device), drop them in slots 11, 12, … in the same order.
 > set. Disk A/B (`.dsk` images via the µPD765 FDC) keep working through the OS
 > ROM regardless of slot 7's contents.
 
-## Incompatibility with M4
+## Compatibility with M4 and Albireo
 
-The M4 board's `M4ROM.ROM` and UNIDOS both claim overlapping firmware territory
-and cannot coexist. The overlay enforces this mutual exclusion:
+Cyboard can coexist with M4. Net4CPC, RTC, SYMBiFACE IDE, and the SYMBiFACE
+mouse use I/O ranges that do not overlap M4, so toggling Cyboard no longer
+tears M4 down. Board-tagged ROM profiles load the firmware needed by each
+active board without clearing unrelated slots.
 
-- Enabling **Cyboard** disables **M4** (and triggers a cold boot).
-- Enabling **M4** disables **Cyboard's RTC** and clears every expansion ROM
-  override — including the slot-7 UNIDOS — restoring the stock BASIC and AMSDOS
-  defaults.
-
-So a switch from one stack to the other never requires editing the config file
-by hand: pick the option you want and the other side is torn down for you.
-
-> **Note:** This mutual exclusion is enforced only inside this emulator, to
-> keep the configuration clean while M4 support remains experimental. It is
-> not necessarily a real-hardware constraint — on actual CPCs the boards may
-> well coexist if the physical ROM slots and I/O ports do not collide.
+Cyboard can also coexist with Albireo. A single UNIDOS ROM in slot 7 can serve
+the relevant Cyboard and Albireo nodes. The only enforced board conflict is
+between M4 and Albireo, which both decode the `0xFExx` range.
 
 ## Where to obtain the ROMs
 
