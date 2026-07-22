@@ -75,17 +75,17 @@ AC_SUBST([WIN_LIBS])
 AC_SUBST([WIN_RC_OBJ])
 AC_SUBST([WINDRES])
 
-# ffmpeg — optional. Enables WebM/VP9 video capture from the overlay's
-# "Capture video" menu. The F6-triggered .gif capture works without it.
-# Detected at configure time so the overlay can gate the menu row; the
-# path is hardcoded into the binary as FFMPEG_PATH for popen().
+# ffmpeg - optional. Enables WebM/VP9 capture and the post-capture GIF
+# optimization pass. The F6-triggered built-in GIF encoder works without it.
+# Detected at configure time so the overlay can gate both options; the path is
+# hardcoded into the binary as FFMPEG_PATH for subprocess invocation.
 AC_PATH_PROG([FFMPEG], [ffmpeg], [])
 AS_IF([test -n "$FFMPEG"],
       [AC_DEFINE_UNQUOTED([FFMPEG_PATH], ["$FFMPEG"],
-           [Path to ffmpeg binary for WebM video capture])
-       AC_DEFINE([HAVE_FFMPEG], [1], [ffmpeg available for WebM capture])
-       AC_MSG_NOTICE([video capture: WebM enabled via $FFMPEG])],
-      [AC_MSG_NOTICE([video capture: WebM disabled (no ffmpeg found)])])
+           [Path to ffmpeg binary for video capture])
+       AC_DEFINE([HAVE_FFMPEG], [1], [ffmpeg available for video capture])
+       AC_MSG_NOTICE([video capture: WebM and GIF optimization enabled via $FFMPEG])],
+      [AC_MSG_NOTICE([video capture: WebM and GIF optimization disabled (no ffmpeg found)])])
 
 # Short git commit shown in the Advanced overlay alongside PACKAGE_VERSION.
 # Resolved at configure time so non-git source trees (dist tarballs, flatpak

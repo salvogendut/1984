@@ -160,6 +160,9 @@ void config_defaults(Config *cfg) {
     cfg->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
     cfg->tinker    = false;
     cfg->debug     = false;
+    cfg->gif_width = GIF_CAPTURE_WIDTH_DEFAULT;
+    cfg->gif_fps   = GIF_CAPTURE_FPS_DEFAULT;
+    cfg->gif_ffmpeg = false;
     cfg->web_gui   = false;
     cfg->web_port  = 1984;
     snprintf(cfg->net4cpc_tap_host_ip,    sizeof(cfg->net4cpc_tap_host_ip),    "10.0.0.1");
@@ -363,6 +366,12 @@ static void config_create_default(const char *path) {
         "# text capture, etc.). Off by default; when off, none of the\n"
         "# debug machinery runs and ONE_K_* trace env vars are no-ops.\n"
         "debug=false\n"
+        "# Animated GIF profile used by F6 and --gif-out. Resolution must be\n"
+        "# 768x576, 576x432, 384x288, 256x192, or 192x144; fps must be\n"
+        "# 25, 20, 10, or 5. FFmpeg mode falls back to the built-in encoder.\n"
+        "gif_resolution=768x576\n"
+        "gif_fps=25\n"
+        "gif_ffmpeg=false\n"
         "# Web GUI: serve the emulator screen + controls over HTTP.\n"
         "# Binds 0.0.0.0 — anyone on your network can view and type. No auth.\n"
         "web_gui=false\n"
@@ -654,6 +663,27 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "gif_resolution")) {
+                int w = 0, h = 0;
+                char trailing = '\0';
+                bool allowed;
+                if (sscanf(val, "%dx%d%c", &w, &h, &trailing) != 2) {
+                    allowed = false;
+                } else {
+                    allowed = (w == 768 || w == 576 || w == 384 ||
+                               w == 256 || w == 192) && h == (w * 3) / 4;
+                }
+                if (allowed) cfg->gif_width = w;
+                else { fprintf(stderr, "1984.conf:%d: gif_resolution must be 768x576/576x432/384x288/256x192/192x144\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "gif_fps")) {
+                int fps = atoi(val);
+                if (fps == 25 || fps == 20 || fps == 10 || fps == 5)
+                    cfg->gif_fps = fps;
+                else { fprintf(stderr, "1984.conf:%d: gif_fps must be 25/20/10/5\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "gif_ffmpeg")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->gif_ffmpeg = b;
+                else { fprintf(stderr, "1984.conf:%d: gif_ffmpeg must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "web_gui")) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->web_gui = b;
@@ -819,6 +849,9 @@ int config_save(const Config *cfg) {
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
+        "gif_resolution=%dx%d\n"
+        "gif_fps=%d\n"
+        "gif_ffmpeg=%s\n"
         "web_gui=%s\n"
         "web_port=%d\n"
         "notifications=%s\n"
@@ -871,6 +904,10 @@ int config_save(const Config *cfg) {
         cfg->audio_stereo_sep,
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
+        cfg->gif_width,
+        (cfg->gif_width * 3) / 4,
+        cfg->gif_fps,
+        cfg->gif_ffmpeg ? "true" : "false",
         cfg->web_gui    ? "true" : "false",
         cfg->web_port,
         cfg->notifications == NOTIFY_MODE_SCREEN  ? "screen"  :

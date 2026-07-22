@@ -134,14 +134,15 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
 	src/1984-usifac.$(OBJEXT) src/1984-perryfi.$(OBJEXT) \
 	src/1984-symbols.$(OBJEXT) src/1984-gifcap.$(OBJEXT) \
-	src/1984-webmcap.$(OBJEXT) src/1984-webgui.$(OBJEXT) \
-	src/1984-websvc.$(OBJEXT) src/1984-host_mount.$(OBJEXT) \
-	src/1984-leds.$(OBJEXT) src/1984-m4.$(OBJEXT) \
-	src/1984-symbnet.$(OBJEXT) src/1984-symbos_trace.$(OBJEXT) \
-	src/1984-mouse.$(OBJEXT) src/1984-n4c_stack.$(OBJEXT) \
-	src/1984-notify.$(OBJEXT) src/1984-pilot.$(OBJEXT) \
-	src/1984-snapshot.$(OBJEXT) src/1984-tap.$(OBJEXT) \
-	src/1984-tape.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-ffmpeg_gif.$(OBJEXT) src/1984-webmcap.$(OBJEXT) \
+	src/1984-webgui.$(OBJEXT) src/1984-websvc.$(OBJEXT) \
+	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
+	src/1984-symbos_trace.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
+	src/1984-n4c_stack.$(OBJEXT) src/1984-notify.$(OBJEXT) \
+	src/1984-pilot.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
+	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
+	src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -166,6 +167,7 @@ am__depfiles_remade = src/$(DEPDIR)/1984-amx.Po \
 	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-crtc.Po \
 	src/$(DEPDIR)/1984-disk.Po src/$(DEPDIR)/1984-display.Po \
 	src/$(DEPDIR)/1984-fat.Po src/$(DEPDIR)/1984-fdc.Po \
+	src/$(DEPDIR)/1984-ffmpeg_gif.Po \
 	src/$(DEPDIR)/1984-gate_array.Po src/$(DEPDIR)/1984-gifcap.Po \
 	src/$(DEPDIR)/1984-host_mount.Po src/$(DEPDIR)/1984-ide.Po \
 	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
@@ -340,7 +342,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PROG_GIT_COMMIT = 41d2cc6
+PROG_GIT_COMMIT = b803e3e
 SDL3_CFLAGS = 
 SDL3_LIBS = -lSDL3
 SET_MAKE = 
@@ -437,6 +439,7 @@ dist_man1_MANS = 1984.1
 	src/perryfi.c \
 	src/symbols.c \
 	src/gifcap.c \
+	src/ffmpeg_gif.c \
 	src/webmcap.c \
 	src/webgui.c \
 	src/websvc.c \
@@ -467,6 +470,7 @@ noinst_HEADERS = \
 	src/fdc.h \
 	src/gate_array.h \
 	src/gifcap.h \
+	src/ffmpeg_gif.h \
 	src/webmcap.h \
 	src/webgui.h \
 	src/webgui_page.h \
@@ -712,6 +716,8 @@ src/1984-symbols.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-gifcap.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-ffmpeg_gif.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-webmcap.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-webgui.$(OBJEXT): src/$(am__dirstamp) \
@@ -765,6 +771,7 @@ include src/$(DEPDIR)/1984-disk.Po # am--include-marker
 include src/$(DEPDIR)/1984-display.Po # am--include-marker
 include src/$(DEPDIR)/1984-fat.Po # am--include-marker
 include src/$(DEPDIR)/1984-fdc.Po # am--include-marker
+include src/$(DEPDIR)/1984-ffmpeg_gif.Po # am--include-marker
 include src/$(DEPDIR)/1984-gate_array.Po # am--include-marker
 include src/$(DEPDIR)/1984-gifcap.Po # am--include-marker
 include src/$(DEPDIR)/1984-host_mount.Po # am--include-marker
@@ -1244,6 +1251,20 @@ src/1984-gifcap.obj: src/gifcap.c
 #	$(AM_V_CC)source='src/gifcap.c' object='src/1984-gifcap.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-gifcap.obj `if test -f 'src/gifcap.c'; then $(CYGPATH_W) 'src/gifcap.c'; else $(CYGPATH_W) '$(srcdir)/src/gifcap.c'; fi`
+
+src/1984-ffmpeg_gif.o: src/ffmpeg_gif.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ffmpeg_gif.o -MD -MP -MF src/$(DEPDIR)/1984-ffmpeg_gif.Tpo -c -o src/1984-ffmpeg_gif.o `test -f 'src/ffmpeg_gif.c' || echo '$(srcdir)/'`src/ffmpeg_gif.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ffmpeg_gif.Tpo src/$(DEPDIR)/1984-ffmpeg_gif.Po
+#	$(AM_V_CC)source='src/ffmpeg_gif.c' object='src/1984-ffmpeg_gif.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ffmpeg_gif.o `test -f 'src/ffmpeg_gif.c' || echo '$(srcdir)/'`src/ffmpeg_gif.c
+
+src/1984-ffmpeg_gif.obj: src/ffmpeg_gif.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ffmpeg_gif.obj -MD -MP -MF src/$(DEPDIR)/1984-ffmpeg_gif.Tpo -c -o src/1984-ffmpeg_gif.obj `if test -f 'src/ffmpeg_gif.c'; then $(CYGPATH_W) 'src/ffmpeg_gif.c'; else $(CYGPATH_W) '$(srcdir)/src/ffmpeg_gif.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-ffmpeg_gif.Tpo src/$(DEPDIR)/1984-ffmpeg_gif.Po
+#	$(AM_V_CC)source='src/ffmpeg_gif.c' object='src/1984-ffmpeg_gif.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-ffmpeg_gif.obj `if test -f 'src/ffmpeg_gif.c'; then $(CYGPATH_W) 'src/ffmpeg_gif.c'; else $(CYGPATH_W) '$(srcdir)/src/ffmpeg_gif.c'; fi`
 
 src/1984-webmcap.o: src/webmcap.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-webmcap.o -MD -MP -MF src/$(DEPDIR)/1984-webmcap.Tpo -c -o src/1984-webmcap.o `test -f 'src/webmcap.c' || echo '$(srcdir)/'`src/webmcap.c
@@ -2033,6 +2054,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-display.Po
 	-rm -f src/$(DEPDIR)/1984-fat.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
+	-rm -f src/$(DEPDIR)/1984-ffmpeg_gif.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
 	-rm -f src/$(DEPDIR)/1984-gifcap.Po
 	-rm -f src/$(DEPDIR)/1984-host_mount.Po
@@ -2131,6 +2153,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-display.Po
 	-rm -f src/$(DEPDIR)/1984-fat.Po
 	-rm -f src/$(DEPDIR)/1984-fdc.Po
+	-rm -f src/$(DEPDIR)/1984-ffmpeg_gif.Po
 	-rm -f src/$(DEPDIR)/1984-gate_array.Po
 	-rm -f src/$(DEPDIR)/1984-gifcap.Po
 	-rm -f src/$(DEPDIR)/1984-host_mount.Po

@@ -128,9 +128,11 @@ Two paths, picked by what you want from the output.
 | **F6** | `.gif` (animated) | Quick share, no dependencies, ≤ few seconds of gameplay |
 | **F9 → Advanced → Capture video** | `.webm` (VP9) | Longer clips, YouTube uploads, anything where GIF size becomes painful |
 
-Both video paths capture the CPC framebuffer **before** the overlay draws, so the recording shows only the CPC screen. Output is scaled to 768×576 (correct 4:3 — the CPC framebuffer is 768×272 with non-square pixels).
+Both video paths capture the CPC framebuffer **before** the overlay draws, so the recording shows only the CPC screen. WebM is scaled to 768×576. GIF resolution is selectable as 768×576, 576×432, 384×288, 256×192, or 192×144. Every choice preserves the correct 4:3 display aspect (the CPC framebuffer is 768×272 with non-square pixels).
 
-**GIF (F6)** uses an in-tree GIF89a + LZW encoder — no codec libraries, no ffmpeg required. Captured at 25 fps. Lossless palette for the CPC's ≤27 simultaneous colours. Toggle F6 again to stop; the file is finalised on stop or on clean exit.
+**GIF (F6)** uses an in-tree GIF89a + LZW encoder — no codec libraries or FFmpeg required. Under Advanced, **GIF resolution** controls output dimensions and **GIF frame rate** selects 25, 20, 10, or 5 fps. These are the useful size controls: GIF has no dependable target-bitrate setting, and file size is content-dependent. The default remains 768×576 at 25 fps. Toggle F6 again to stop; the file is finalised on stop or on clean exit. The same profile applies to `--gif-out`.
+
+**GIF encoder** defaults to `built-in`. When `FFmpeg optimize` is selected, capture still uses the reliable in-tree encoder, then FFmpeg builds a global palette and inter-frame differences when recording stops. The original GIF is retained if conversion fails or does not produce a smaller file. Conversion can briefly pause the emulator after a long recording. Press Delete on any of the three GIF rows to restore its default. The corresponding `[advanced]` keys are `gif_resolution`, `gif_fps`, and `gif_ffmpeg`.
 
 **WebM (overlay)** spawns `ffmpeg` as a subprocess and pipes raw frames to it; `ffmpeg` does the VP9 encoding (50 fps, 2 Mbit/s) and Matroska muxing. `./configure` detects ffmpeg at build time; on systems where it was absent the overlay row shows `[needs ffmpeg — F6 still records .gif]`. The encoded bitstream is YouTube-ingestible without re-encoding.
 

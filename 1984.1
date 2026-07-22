@@ -139,7 +139,8 @@ then exit.
 .BI --gif-out= PATH
 Record a GIF from boot to
 .IR PATH ,
-finalised on exit. Pairs with
+finalised on exit. The Advanced GIF resolution, frame-rate, and encoder
+profile applies. Pairs with
 .BR --exit-after .
 .TP
 .BI --exit-after= N
@@ -304,7 +305,8 @@ Save screenshot (.ppm).
 Warm reset.
 .TP
 .B F6
-Toggle video capture (.gif in the current directory).
+Toggle GIF capture in the current directory using the Advanced capture
+profile.
 .TP
 .B F8
 Open / close the memory monitor and disassembler.
@@ -348,7 +350,9 @@ the MX4 expansion bus).
 .TP
 .B Advanced
 Smoothing (linear vs nearest scaling), snapshot load/save, Net4CPC
-TAP toggle, debug machinery, video capture, USIfAC mode (PTY /
+TAP toggle, debug machinery, WebM video capture, GIF resolution
+(768x576 through 192x144), GIF frame rate (25/20/10/5), optional
+FFmpeg GIF optimization, USIfAC mode (PTY /
 TCP), USIfAC PTY link (stable host-side symlink alias for the
 randomised
 .IR /dev/pts/N
