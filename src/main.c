@@ -30,17 +30,21 @@
 #include "compat_win.h"   /* net_compat_init() — WSAStartup on Windows */
 #include "startup_debug.h"   /* SD_INIT()/SD_LOG() — no-ops unless -DSTARTUP_DEBUG */
 #include "gifcap.h"
+#include "ffmpeg_gif.h"
 #include "webmcap.h"
 #include "webgui.h"
 #include "websvc.h"
 #include "symbos_trace.h"
 
-/* --- Video capture state. F6 → GIF (lean, no deps); overlay file
- * picker → WebM via ffmpeg when configure detected it. Dispatch is by
- * file extension. Output is scaled to 768x576 (4:3) in both paths. */
+/* --- Video capture state. F6 -> configurable GIF (built-in, with an
+ * optional FFmpeg optimization pass); the overlay picker records WebM. */
 static GifCap  *g_videocap_gif  = NULL;
 static WebmCap *g_videocap_webm = NULL;
-static int      g_videocap_skip = 0;   /* GIF-only: halve to 25 fps */
+static uint64_t g_videocap_gif_interval_ns = 0;
+static uint64_t g_videocap_gif_elapsed_ns = 0;
+static bool     g_videocap_gif_first = false;
+static bool     g_videocap_gif_optimize = false;
+static char    *g_videocap_gif_path = NULL;
 static FILE    *g_audiocap_wav  = NULL;
 static uint32_t g_audiocap_bytes = 0;
 
@@ -59,7 +63,17 @@ static bool path_ends_with(const char *p, const char *suffix) {
     return strcasecmp(p + lp - ls, suffix) == 0;
 }
 
-bool videocap_start(const char *path) {
+static bool gif_width_supported(int width) {
+    return width == 768 || width == 576 || width == 384 ||
+           width == 256 || width == 192;
+}
+
+static bool gif_fps_supported(int fps) {
+    return fps == 25 || fps == 20 || fps == 10 || fps == 5;
+}
+
+bool videocap_start(const char *path, int gif_width, int gif_fps,
+                    bool gif_ffmpeg) {
     if (!path || !path[0]) return false;
     if (videocap_active()) return true;
     if (path_ends_with(path, ".webm")) {
@@ -71,19 +85,34 @@ bool videocap_start(const char *path) {
             return false;
         }
     } else {
-        /* 4 cs = 25 fps; decimate 50 Hz input by writing every other frame.
-         * Output at WINDOW_H for the correct 4:3 aspect — the CPC
-         * framebuffer is 768x272 non-square pixels, displayed at
-         * 768x576. */
+        if (!gif_width_supported(gif_width))
+            gif_width = GIF_CAPTURE_WIDTH_DEFAULT;
+        if (!gif_fps_supported(gif_fps))
+            gif_fps = GIF_CAPTURE_FPS_DEFAULT;
+        int gif_height = (gif_width * 3) / 4;
+
+        int delay_cs = 100 / gif_fps;
         g_videocap_gif = gifcap_open(path,
                                      CPC_SCREEN_W, CPC_SCREEN_H,
-                                     CPC_SCREEN_W, WINDOW_H,
-                                     4);
+                                     gif_width, gif_height,
+                                     delay_cs);
         if (!g_videocap_gif) {
             fprintf(stderr, "[videocap] GIF open failed for '%s'\n", path);
             return false;
         }
-        g_videocap_skip = 0;
+
+        g_videocap_gif_optimize = gif_ffmpeg && FFMPEG_GIF_SUPPORTED;
+        if (g_videocap_gif_optimize) {
+            size_t path_len = strlen(path) + 1;
+            g_videocap_gif_path = malloc(path_len);
+            if (g_videocap_gif_path)
+                memcpy(g_videocap_gif_path, path, path_len);
+            else
+                g_videocap_gif_optimize = false;
+        }
+        g_videocap_gif_interval_ns = 1000000000ULL / (uint64_t)gif_fps;
+        g_videocap_gif_elapsed_ns = 0;
+        g_videocap_gif_first = true;
     }
     fprintf(stderr, "[videocap] recording to %s\n", path);
     return true;
@@ -94,11 +123,28 @@ void videocap_stop(void) {
         gifcap_close(g_videocap_gif);
         g_videocap_gif = NULL;
         fprintf(stderr, "[videocap] GIF stopped (%d frames)\n", n);
+        if (g_videocap_gif_optimize && g_videocap_gif_path)
+            ffmpeg_gif_optimize(g_videocap_gif_path);
     }
+    free(g_videocap_gif_path);
+    g_videocap_gif_path = NULL;
+    g_videocap_gif_optimize = false;
     if (g_videocap_webm) {
         webmcap_close(g_videocap_webm);
         g_videocap_webm = NULL;
     }
+}
+
+static bool videocap_gif_due(uint64_t emulated_frame_ns) {
+    if (g_videocap_gif_first) {
+        g_videocap_gif_first = false;
+        return true;
+    }
+    g_videocap_gif_elapsed_ns += emulated_frame_ns;
+    if (g_videocap_gif_elapsed_ns < g_videocap_gif_interval_ns)
+        return false;
+    g_videocap_gif_elapsed_ns %= g_videocap_gif_interval_ns;
+    return true;
 }
 
 static void wav_u16(FILE *f, uint16_t v) {
@@ -348,7 +394,8 @@ static void usage(const char *prog, int code) {
         "  --joy-script=SPEC   Scripted joystick (row 9). SPEC = comma-separated DIRS:FRAMES\n"
         "                      steps; DIRS = u d l r 1 2 (Fire1/2) or - (neutral).\n"
         "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
-        "  --gif-out=PATH      Record a GIF from boot (finalised on exit; pairs with --exit-after)\n"
+        "  --gif-out=PATH      Record a GIF from boot using the configured capture profile\n"
+        "                      (finalised on exit; pairs with --exit-after)\n"
         "  --audio-out=PATH    Record emulator audio to a WAV file from boot\n"
         "  --exit-after=N      Quit after frame N (deterministic headless capture)\n"
         "  --printer-pdf=DIR   Capture parallel-printer output to timestamped PDFs in DIR\n"
@@ -823,7 +870,8 @@ int main(int argc, char *argv[]) {
     int  frame_count = 0;
     bool running = true;
     if (gifout_arg)            /* --gif-out: record from boot (finalised on exit) */
-        videocap_start(gifout_arg);
+        videocap_start(gifout_arg, cfg.gif_width, cfg.gif_fps,
+                       cfg.gif_ffmpeg);
     if (audioout_arg)
         audiocap_start(audioout_arg);
     SD_LOG("entering main loop — startup complete");
@@ -1091,7 +1139,8 @@ int main(int argc, char *argv[]) {
                                      "1984-%Y%m%d-%H%M%S.gif", lt);
                         else
                             snprintf(path, sizeof(path), "1984-capture.gif");
-                        videocap_start(path);
+                        videocap_start(path, cfg.gif_width, cfg.gif_fps,
+                                       cfg.gif_ffmpeg);
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_V &&
                            (SDL_GetModState() & SDL_KMOD_CTRL)) {
@@ -1287,12 +1336,12 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
-        /* Video capture: grab the CPC framebuffer before the overlay
-         * draws on top. GIF decimates to 25 fps; WebM takes every
-         * frame at 50 fps (VP9 compresses interframe deltas well). */
-        if (g_videocap_gif) {
-            if ((g_videocap_skip ^= 1) == 0)
-                gifcap_frame(g_videocap_gif, cpc.display.pixels);
+        /* Video capture: grab the CPC framebuffer before the overlay draws
+         * on top. GIF cadence follows emulated time and the selected profile;
+         * WebM retains its native-frame capture path. */
+        if (g_videocap_gif && videocap_gif_due(emulated_frame_ns)) {
+            if (!gifcap_frame(g_videocap_gif, cpc.display.pixels))
+                videocap_stop();
         }
         if (g_videocap_webm) {
             if (!webmcap_frame(g_videocap_webm, cpc.display.pixels))

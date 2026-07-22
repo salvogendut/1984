@@ -15,6 +15,8 @@ typedef enum { PRINTER_SINK_PDF = 0, PRINTER_SINK_REAL_PRINTER } ConfigPrintSink
 typedef enum { FALLBACK_JOYSTICK = 0, FALLBACK_AMX_MOUSE } FallbackInput;
 
 #define CONFIG_PATH_MAX 512
+#define GIF_CAPTURE_WIDTH_DEFAULT 768
+#define GIF_CAPTURE_FPS_DEFAULT   25
 
 typedef struct {
     /* [machine] */
@@ -150,6 +152,9 @@ typedef struct {
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */
+    int  gif_width;           /* animated GIF output width; height is width * 3 / 4 */
+    int  gif_fps;             /* animated GIF frame rate: 5, 10, 20, or 25 */
+    bool gif_ffmpeg;          /* use FFmpeg's optimized GIF encoder when available */
     bool web_gui;            /* embedded HTTP server serving the emulator to a
                               * browser. Binds 0.0.0.0 — LAN-visible, no auth. */
     int  web_port;           /* Web GUI TCP port; default 1984 */

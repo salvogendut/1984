@@ -5297,10 +5297,10 @@ esac
 
 
 
-# ffmpeg — optional. Enables WebM/VP9 video capture from the overlay's
-# "Capture video" menu. The F6-triggered .gif capture works without it.
-# Detected at configure time so the overlay can gate the menu row; the
-# path is hardcoded into the binary as FFMPEG_PATH for popen().
+# ffmpeg - optional. Enables WebM/VP9 capture and the post-capture GIF
+# optimization pass. The F6-triggered built-in GIF encoder works without it.
+# Detected at configure time so the overlay can gate both options; the path is
+# hardcoded into the binary as FFMPEG_PATH for subprocess invocation.
 # Extract the first word of "ffmpeg", so it can be a program name with args.
 set dummy ffmpeg; ac_word=$2
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
@@ -5355,11 +5355,11 @@ printf "%s\n" "#define FFMPEG_PATH \"$FFMPEG\"" >>confdefs.h
 
 printf "%s\n" "#define HAVE_FFMPEG 1" >>confdefs.h
 
-       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: video capture: WebM enabled via $FFMPEG" >&5
-printf "%s\n" "$as_me: video capture: WebM enabled via $FFMPEG" >&6;}
+       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: video capture: WebM and GIF optimization enabled via $FFMPEG" >&5
+printf "%s\n" "$as_me: video capture: WebM and GIF optimization enabled via $FFMPEG" >&6;}
 else case e in #(
-  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: video capture: WebM disabled (no ffmpeg found)" >&5
-printf "%s\n" "$as_me: video capture: WebM disabled (no ffmpeg found)" >&6;} ;;
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: video capture: WebM and GIF optimization disabled (no ffmpeg found)" >&5
+printf "%s\n" "$as_me: video capture: WebM and GIF optimization disabled (no ffmpeg found)" >&6;} ;;
 esac
 fi
 

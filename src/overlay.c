@@ -7,6 +7,7 @@
 #include "mem.h"
 #include "snapshot.h"
 #include "webmcap.h"   /* WEBMCAP_SUPPORTED */
+#include "ffmpeg_gif.h" /* FFMPEG_GIF_SUPPORTED */
 #include "webgui.h"
 #include "leds.h"
 #include "notify.h"
@@ -47,7 +48,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 17 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 20 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 9;
@@ -84,7 +85,26 @@ static int cycle_crt_percent(int v, int lo, int hi) {
     return v;
 }
 
-static bool reset_tinker_crt_item(Overlay *ov) {
+static int cycle_gif_width(int width) {
+    switch (width) {
+    case 768: return 576;
+    case 576: return 384;
+    case 384: return 256;
+    case 256: return 192;
+    default:  return 768;
+    }
+}
+
+static int cycle_gif_fps(int fps) {
+    switch (fps) {
+    case 25: return 20;
+    case 20: return 10;
+    case 10: return 5;
+    default: return 25;
+    }
+}
+
+static bool reset_tinker_item(Overlay *ov) {
     if (ov->section != OV_TINKER)
         return false;
 
@@ -95,6 +115,9 @@ static bool reset_tinker_crt_item(Overlay *ov) {
     int old_red = ov->cfg->crt_red;
     int old_green = ov->cfg->crt_green;
     int old_blue = ov->cfg->crt_blue;
+    int old_gif_width = ov->cfg->gif_width;
+    int old_gif_fps = ov->cfg->gif_fps;
+    bool old_gif_ffmpeg = ov->cfg->gif_ffmpeg;
 
     switch (tinker_logical_row(ov, ov->row)) {
     case -6:
@@ -124,18 +147,32 @@ static bool reset_tinker_crt_item(Overlay *ov) {
         ov->cfg->crt_green = DISPLAY_CRT_RGB_DEFAULT;
         ov->cfg->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
         break;
+    case 8:
+        ov->cfg->gif_width = GIF_CAPTURE_WIDTH_DEFAULT;
+        break;
+    case 9:
+        ov->cfg->gif_fps = GIF_CAPTURE_FPS_DEFAULT;
+        break;
+    case 10:
+        ov->cfg->gif_ffmpeg = false;
+        break;
     default:
         return false;
     }
 
-    if (old_real_crt != ov->cfg->real_crt ||
-        old_scanlines != ov->cfg->crt_scanlines ||
-        old_brightness != ov->cfg->crt_brightness ||
-        old_contrast != ov->cfg->crt_contrast ||
-        old_red != ov->cfg->crt_red ||
-        old_green != ov->cfg->crt_green ||
-        old_blue != ov->cfg->crt_blue) {
-        overlay_apply_crt(ov);
+    bool crt_changed = old_real_crt != ov->cfg->real_crt ||
+                       old_scanlines != ov->cfg->crt_scanlines ||
+                       old_brightness != ov->cfg->crt_brightness ||
+                       old_contrast != ov->cfg->crt_contrast ||
+                       old_red != ov->cfg->crt_red ||
+                       old_green != ov->cfg->crt_green ||
+                       old_blue != ov->cfg->crt_blue;
+    bool changed = crt_changed || old_gif_width != ov->cfg->gif_width ||
+                   old_gif_fps != ov->cfg->gif_fps ||
+                   old_gif_ffmpeg != ov->cfg->gif_ffmpeg;
+    if (changed) {
+        if (crt_changed)
+            overlay_apply_crt(ov);
         ov->dirty = true;
     }
     return true;
@@ -862,6 +899,25 @@ static void item_text(const Overlay *ov, int row,
             *readonly = true;
             break;
         case 8:
+            snprintf(lbl, lsz, "GIF resolution");
+            snprintf(val, vsz, "%dx%d", ov->cfg->gif_width,
+                     (ov->cfg->gif_width * 3) / 4);
+            break;
+        case 9:
+            snprintf(lbl, lsz, "GIF frame rate");
+            snprintf(val, vsz, "%d fps", ov->cfg->gif_fps);
+            break;
+        case 10:
+            snprintf(lbl, lsz, "GIF encoder");
+            if (!FFMPEG_GIF_SUPPORTED) {
+                snprintf(val, vsz, "built-in [ffmpeg unavailable]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->gif_ffmpeg ? "FFmpeg optimize" : "built-in");
+            }
+            break;
+        case 11:
             snprintf(lbl, lsz, "USIfAC mode");
             if (!ov->cfg->usifac) {
                 snprintf(val, vsz, "[USIfAC RS232 disabled]");
@@ -872,7 +928,7 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "PTY");
             }
             break;
-        case 9:
+        case 12:
             snprintf(lbl, lsz, "USIfAC PTY link");
             if (!ov->cfg->usifac) {
                 snprintf(val, vsz, "[USIfAC RS232 disabled]");
@@ -887,7 +943,7 @@ static void item_text(const Overlay *ov, int row,
                 *readonly = true;
             }
             break;
-        case 10:
+        case 13:
             snprintf(lbl, lsz, "Monochrome");
             switch (ov->cfg->monochrome) {
                 case MONO_GREEN: snprintf(val, vsz, "green"); break;
@@ -896,7 +952,7 @@ static void item_text(const Overlay *ov, int row,
                 default:         snprintf(val, vsz, "off");   break;
             }
             break;
-        case 11:
+        case 14:
             snprintf(lbl, lsz, "Printer mode");
             if (!ov->cfg->mx4) {
                 snprintf(val, vsz, "[needs MX4]");
@@ -907,11 +963,11 @@ static void item_text(const Overlay *ov, int row,
                              ? "Real printer (CUPS lp)" : "PDF file");
             }
             break;
-        case 12:
+        case 15:
             snprintf(lbl, lsz, "Volume");
             snprintf(val, vsz, "%d%%", ov->cfg->audio_volume);
             break;
-        case 13:
+        case 16:
             snprintf(lbl, lsz, "Stereo");
             if (ov->cfg->audio_stereo_sep == 0)
                 snprintf(val, vsz, "mono");
@@ -920,20 +976,20 @@ static void item_text(const Overlay *ov, int row,
             else
                 snprintf(val, vsz, "ABC %d/255", ov->cfg->audio_stereo_sep);
             break;
-        case 14:
+        case 17:
             snprintf(lbl, lsz, "Notifications");
             snprintf(val, vsz, "%s",
                      ov->cfg->notifications == NOTIFY_MODE_SCREEN  ? "screen"  :
                      ov->cfg->notifications == NOTIFY_MODE_CONSOLE ? "console" : "off");
             break;
-        case 15:
+        case 18:
             snprintf(lbl, lsz, "Web GUI");
             if (webgui_active())
                 snprintf(val, vsz, "on - 0.0.0.0:%d", webgui_port());
             else
                 snprintf(val, vsz, "off (port %d)", ov->cfg->web_port);
             break;
-        case 16:
+        case 19:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -1547,6 +1603,19 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             }
             break;
         case 8:
+            ov->cfg->gif_width = cycle_gif_width(ov->cfg->gif_width);
+            ov->dirty = true;
+            break;
+        case 9:
+            ov->cfg->gif_fps = cycle_gif_fps(ov->cfg->gif_fps);
+            ov->dirty = true;
+            break;
+        case 10:
+            if (!FFMPEG_GIF_SUPPORTED) break;
+            ov->cfg->gif_ffmpeg = !ov->cfg->gif_ffmpeg;
+            ov->dirty = true;
+            break;
+        case 11:
             if (!ov->cfg->usifac) break;
             /* Flip pty ↔ tcp; re-init the device on the new backend. */
             if (!strcmp(ov->cfg->usifac_backend, "tcp"))
@@ -1563,7 +1632,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             }
             ov->dirty = true;
             break;
-        case 9:
+        case 12:
             /* USIfAC PTY link: Enter starts an inline text editor seeded
              * with the current value (empty if none). Commit applies the
              * new path and re-inits USIfAC; clearing the field and
@@ -1576,7 +1645,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             if (ov->cpc && ov->cpc->display.window)
                 SDL_StartTextInput(ov->cpc->display.window);
             break;
-        case 10: {
+        case 13: {
             MonoMode next;
             switch (ov->cfg->monochrome) {
                 case MONO_OFF:   next = MONO_GREEN; break;
@@ -1589,7 +1658,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->dirty = true;
             break;
         }
-        case 11:
+        case 14:
             if (!ov->cfg->mx4) break;
             ov->cfg->print_sink = (ov->cfg->print_sink == PRINTER_SINK_PDF)
                                   ? PRINTER_SINK_REAL_PRINTER : PRINTER_SINK_PDF;
@@ -1599,7 +1668,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                                      ? PRINT_SINK_REAL : PRINT_SINK_PDF);
             ov->dirty = true;
             break;
-        case 12:
+        case 15:
             /* Volume: step 5% per Enter, wrap 0→100. Use Left/Right for
              * finer control (handled in handle_event). */
             ov->cfg->audio_volume += 5;
@@ -1607,7 +1676,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             if (ov->cpc) psg_set_volume(&ov->cpc->psg, ov->cfg->audio_volume);
             ov->dirty = true;
             break;
-        case 13:
+        case 16:
             /* Stereo separation: cycle mono → half → full. */
             ov->cfg->audio_stereo_sep =
                 ov->cfg->audio_stereo_sep == 0     ? 128 :
@@ -1615,14 +1684,14 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             if (ov->cpc) psg_set_stereo(&ov->cpc->psg, ov->cfg->audio_stereo_sep);
             ov->dirty = true;
             break;
-        case 14:
+        case 17:
             /* Notifications: cycle screen -> console -> off. */
             ov->cfg->notifications =
                 (NotifyMode)((ov->cfg->notifications + 1) % 3);
             notify_set_mode(ov->cfg->notifications);
             ov->dirty = true;
             break;
-        case 15:
+        case 18:
             /* Web GUI: live start/stop, no reboot. On start failure the
              * flag stays off (webgui_start posted the toast). */
             if (webgui_active()) {
@@ -1863,7 +1932,8 @@ void overlay_tick(Overlay *ov) {
             char *slash = strrchr(path, '/');
             if (!dot || (slash && dot < slash))
                 strncat(path, ".webm", sizeof(path) - strlen(path) - 1);
-            videocap_start(path);
+            videocap_start(path, ov->cfg->gif_width, ov->cfg->gif_fps,
+                           ov->cfg->gif_ffmpeg);
         }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
         /* User picked an SD card image — enable M4, load its ROM, and seed
@@ -2254,7 +2324,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         break;
     case SDL_SCANCODE_DELETE:
     case SDL_SCANCODE_BACKSPACE:
-        if (reset_tinker_crt_item(ov))
+        if (reset_tinker_item(ov))
             break;
 
         /* Del on Drive A / Drive B / Tape ejects the image and clears
@@ -2555,7 +2625,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
         float ty = iy + (ITEM_H - FONT_H) / 2.0f;
         draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
-        if (ov->section == OV_TINKER && logical == 9 && ov->pty_link_editing) {
+        if (ov->section == OV_TINKER && logical == 12 && ov->pty_link_editing) {
             /* Inline editor: show the live buffer with a blinking-style
              * trailing underscore cursor. Bright green to signal that
              * keystrokes are being captured. */
@@ -2564,7 +2634,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
             draw_text(r, VAL_X, ty, shown, 120, 255, 120);
         } else if (readonly) {
             draw_text(r, VAL_X, ty, val, 90, 90, 110);
-        } else if (ov->section == OV_TINKER && logical == 10
+        } else if (ov->section == OV_TINKER && logical == 13
                    && ov->cfg->monochrome != MONO_OFF) {
             /* Render the tint name in its own phosphor colour so the
              * choice is recognisable at a glance. Bright values picked

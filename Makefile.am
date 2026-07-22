@@ -34,6 +34,7 @@ dist_man1_MANS = 1984.1
 	src/perryfi.c \
 	src/symbols.c \
 	src/gifcap.c \
+	src/ffmpeg_gif.c \
 	src/webmcap.c \
 	src/webgui.c \
 	src/websvc.c \
@@ -64,6 +65,7 @@ noinst_HEADERS = \
 	src/fdc.h \
 	src/gate_array.h \
 	src/gifcap.h \
+	src/ffmpeg_gif.h \
 	src/webmcap.h \
 	src/webgui.h \
 	src/webgui_page.h \

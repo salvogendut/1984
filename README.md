@@ -94,9 +94,11 @@ SYMBiFACE PS/2 and Albireo CH376-A mouse devices are available with their
 respective expansions. Click the emulator to capture a selected mouse and
 press **Ctrl+Enter** to release it.
 
-F4 saves a PPM screenshot. F6 records a dependency-free animated GIF, while
-Advanced > **Capture video** records WebM/VP9 when `ffmpeg` was found during
-configuration. Audio can also be recorded to WAV from the command line.
+F4 saves a PPM screenshot. F6 records an animated GIF using the resolution,
+frame-rate, and encoder profile under Advanced. The built-in path has no
+dependencies; optional FFmpeg optimization reduces captures when possible.
+Advanced > **Capture video** records WebM/VP9. Audio can also be recorded to
+WAV from the command line.
 
 ## Expansion hardware
 

@@ -153,7 +153,8 @@ static inline const char *dbg_getenv(const char *name) {
 
 /* Video capture (GIF89a) — owned by main.c. Returns true if recording
  * is active, regardless of how the call resolved. */
-bool videocap_start(const char *path);   /* false on open failure */
+bool videocap_start(const char *path, int gif_width, int gif_fps,
+                    bool gif_ffmpeg);    /* false on open failure */
 void videocap_stop(void);
 bool videocap_active(void);
 int  videocap_frame_count(void);
