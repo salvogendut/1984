@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.16" date="2026-07-22">
+      <description>
+        <p>GIF capture now offers configurable output resolutions and frame rates, with optional FFmpeg post-capture optimization and a dependency-free fallback. A built-in keyboard-driven disk picker takes over when the platform file dialog is unavailable. M4 networking now matches the real board's IPv4 byte order, and NetBSD C11 build compatibility is fixed.</p>
+      </description>
+    </release>
     <release version="0.4.15" date="2026-07-13">
       <description>
         <p>Adds an embedded Web GUI and an isolated multi-session Web Service with browser keyboard, mouse, joystick, disk upload, video, and audio streaming. The service is hardened with path-confined uploads, CSPRNG session cookies, and a sandboxed system unit running as a dedicated account. Floppy sector writes and formatted tracks now persist, GEOBENCH card-copy append writes are corrected, and cycle-derived frame pacing keeps nonstandard CRTC video synchronized with AY audio in Bomb Jack Extra Sugar and similar software.</p>

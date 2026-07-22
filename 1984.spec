@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.15
+Version:        0.4.16
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -102,6 +102,14 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Wed Jul 22 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.16-1
+- Add configurable GIF output resolutions and frame rates, plus optional
+  FFmpeg post-capture optimization with a dependency-free fallback.
+- Add a built-in keyboard-driven disk picker with automatic fallback when
+  the platform file dialog is unavailable.
+- Match the real M4 board's IPv4 byte order and fix NetBSD C11 build
+  compatibility.
+
 * Mon Jul 13 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.15-1
 - Add the embedded Web GUI and isolated multi-session Web Service with
   browser keyboard, mouse, joystick, disk upload, video, and audio streaming.
