@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.16
+Version:        0.4.17
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -102,6 +102,11 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Fri Jul 24 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.17-1
+- Append the .dsk extension automatically when creating blank disk images.
+- Describe F10 as host card browsing and show its footer hint only when the
+  required host-mount support is available.
+
 * Wed Jul 22 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.16-1
 - Add configurable GIF output resolutions and frame rates, plus optional
   FFmpeg post-capture optimization with a dependency-free fallback.

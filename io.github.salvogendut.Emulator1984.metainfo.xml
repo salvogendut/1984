@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.17" date="2026-07-24">
+      <description>
+        <p>New blank disk images now receive the .dsk extension automatically. The F10 footer hint accurately identifies host card browsing and is shown only when the required host-mount support is available.</p>
+      </description>
+    </release>
     <release version="0.4.16" date="2026-07-22">
       <description>
         <p>GIF capture now offers configurable output resolutions and frame rates, with optional FFmpeg post-capture optimization and a dependency-free fallback. A built-in keyboard-driven disk picker takes over when the platform file dialog is unavailable. M4 networking now matches the real board's IPv4 byte order, and NetBSD C11 build compatibility is fixed.</p>
