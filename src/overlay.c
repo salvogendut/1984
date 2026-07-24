@@ -1846,7 +1846,11 @@ void overlay_tick(Overlay *ov) {
         int drv = ov->dialog_drive;
         ov->dialog_drive = -1;
         char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
-        if (disk_create_blank(ov->dialog_path) == 0) {
+        if (!disk_ensure_dsk_extension(ov->dialog_path,
+                                       sizeof(ov->dialog_path))) {
+            fprintf(stderr,
+                    "1984: cannot create disk: filename is empty or too long\n");
+        } else if (disk_create_blank(ov->dialog_path) == 0) {
             snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
             if (ov->cpc) {
                 Disk *d = &ov->cpc->drive[drv];

@@ -774,6 +774,7 @@ int main(int argc, char *argv[]) {
     SD_LOG("overlay_init OK");
 
     HostMount host_mount = {0};   /* F10 toggle state; see host_mount.c */
+    const bool host_mount_available = host_mount_supported();
 
     Monitor *monitor = monitor_create(&cpc);
     if (monitor_pty) {
@@ -1112,7 +1113,7 @@ int main(int argc, char *argv[]) {
                         host_mount_close(&host_mount);
                         cpc.paused = false;
                         overlay.needs_cold_boot = true;
-                    } else if (host_mount_supported()) {
+                    } else if (host_mount_available) {
                         cpc.paused = true;
                         if (host_mount_open(&host_mount, &cfg)) {
                             host_mount.active = true;
@@ -1123,7 +1124,8 @@ int main(int argc, char *argv[]) {
                         }
                     } else {
                         fprintf(stderr,
-                            "F10: needs libguestfs (guestmount, guestunmount) and xdg-open\n");
+                            "F10: host card browsing requires Linux, xdg-open, "
+                            "and udisks2 or libguestfs\n");
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F6) {
                     /* Toggle video capture. Auto-name in CWD when starting
@@ -1404,9 +1406,11 @@ int main(int argc, char *argv[]) {
             const char *model_str = "CPC 6128";
             if (cpc.model == MODEL_464) model_str = "CPC 464";
             else if (cpc.model == MODEL_664) model_str = "CPC 664";
-            const char *keys =
-                "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
-                "F9=options  F10=open image  F11=fullscreen  F12=quit";
+            const char *keys = host_mount_available
+                ? "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
+                  "F9=options  F10=cards  F11=fullscreen  F12=quit"
+                : "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
+                  "F9=options  F11=fullscreen  F12=quit";
 
             int hdr_ww, hdr_wh;
             SDL_GetWindowSize(cpc.display.window, &hdr_ww, &hdr_wh);

@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define DISK_MAX_TRACKS   84
@@ -44,6 +45,10 @@ int  disk_load(Disk *d, const char *path);
  * single-sided, 9 × 512-byte sectors, sector IDs 0xC1..0xC9, 0xE5 fill
  * — empty AMSDOS directory). Returns 0 on success, -1 on I/O error. */
 int  disk_create_blank(const char *path);
+
+/* Ensure a newly created disk path ends in .dsk (case-insensitive).
+ * Returns false if path is empty or the suffix would not fit. */
+bool disk_ensure_dsk_extension(char *path, size_t capacity);
 
 /* Find a sector by CHRN on the current track. Returns NULL if not found. */
 DiskSector *disk_find_sector(Disk *d, int side, uint8_t C, uint8_t H,

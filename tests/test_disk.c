@@ -6,6 +6,42 @@
 #include <string.h>
 #include <unistd.h>
 
+static void test_new_disk_extension(void) {
+    char plain[64] = "blank";
+    char lower[64] = "blank.dsk";
+    char upper[64] = "blank.DSK";
+    char other[64] = "blank.img";
+    char dotted_dir[64] = "/tmp/archive.v1/blank";
+    char exact[9] = "disk";
+    char too_small[8] = "disk";
+    char empty[8] = "";
+
+    assert(disk_ensure_dsk_extension(plain, sizeof(plain)));
+    assert(strcmp(plain, "blank.dsk") == 0);
+
+    assert(disk_ensure_dsk_extension(lower, sizeof(lower)));
+    assert(strcmp(lower, "blank.dsk") == 0);
+
+    assert(disk_ensure_dsk_extension(upper, sizeof(upper)));
+    assert(strcmp(upper, "blank.DSK") == 0);
+
+    assert(disk_ensure_dsk_extension(other, sizeof(other)));
+    assert(strcmp(other, "blank.img.dsk") == 0);
+
+    assert(disk_ensure_dsk_extension(dotted_dir, sizeof(dotted_dir)));
+    assert(strcmp(dotted_dir, "/tmp/archive.v1/blank.dsk") == 0);
+
+    assert(disk_ensure_dsk_extension(exact, sizeof(exact)));
+    assert(strcmp(exact, "disk.dsk") == 0);
+
+    assert(!disk_ensure_dsk_extension(too_small, sizeof(too_small)));
+    assert(strcmp(too_small, "disk") == 0);
+
+    assert(!disk_ensure_dsk_extension(empty, sizeof(empty)));
+    assert(empty[0] == '\0');
+    assert(!disk_ensure_dsk_extension(NULL, 0));
+}
+
 static void test_sector_write_persists_after_reload(void) {
     const char *path = "/tmp/1984-test-disk-writeback.dsk";
     uint8_t pattern[512];
@@ -87,6 +123,7 @@ static void test_format_track_persists_after_reload(void) {
 }
 
 int main(void) {
+    test_new_disk_extension();
     test_sector_write_persists_after_reload();
     test_format_track_persists_after_reload();
     return 0;

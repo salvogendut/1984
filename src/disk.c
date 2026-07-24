@@ -132,6 +132,30 @@ int disk_load(Disk *d, const char *path) {
 #define BLANK_SECTOR_SZ  512
 #define BLANK_TRACK_SZ  (256 + BLANK_SPT * BLANK_SECTOR_SZ)   /* 4864 */
 
+bool disk_ensure_dsk_extension(char *path, size_t capacity) {
+    static const char suffix[] = ".dsk";
+    size_t len;
+
+    if (!path || capacity == 0 || path[0] == '\0')
+        return false;
+
+    len = strlen(path);
+    if (len >= sizeof(suffix) - 1) {
+        const char *tail = path + len - (sizeof(suffix) - 1);
+        if (tail[0] == '.' &&
+            (tail[1] == 'd' || tail[1] == 'D') &&
+            (tail[2] == 's' || tail[2] == 'S') &&
+            (tail[3] == 'k' || tail[3] == 'K'))
+            return true;
+    }
+
+    if (len >= capacity || capacity - len < sizeof(suffix))
+        return false;
+
+    memcpy(path + len, suffix, sizeof(suffix));
+    return true;
+}
+
 int disk_create_blank(const char *path) {
     const int TRACKS     = BLANK_TRACKS;
     const int SPT        = BLANK_SPT;
