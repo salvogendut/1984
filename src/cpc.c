@@ -1264,15 +1264,15 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
-    /* A connected real deck is exclusive with the mounted CDT. Keep the
-     * image paused so disabling real cassette resumes it at the same pulse. */
-    bool real_tape = real_tape_enabled(&cpc->real_tape);
-    if (!real_tape)
+    /* INPUT replaces the virtual tape source. OUTPUT keeps the CDT connected
+     * so its tape signal can be routed to the selected host destination. */
+    bool real_input = real_tape_mode_has_input(cpc->real_tape.mode);
+    if (!real_input)
         tape_step(&cpc->tape, cycles);
     ppi_set_tape_level(&cpc->ppi,
         real_tape_input_active(&cpc->real_tape)
             ? real_tape_input_level(&cpc->real_tape)
-            : (real_tape ? 0 : tape_level(&cpc->tape)));
+            : (real_input ? 0 : tape_level(&cpc->tape)));
     fdc_tick(&cpc->fdc, cycles);
     /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
      * frame end so AY register writes take effect at their CPU-cycle time;
@@ -1283,14 +1283,19 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (real_tape_input_active(&cpc->real_tape))
             ppi_set_tape_level(&cpc->ppi,
                                real_tape_input_level(&cpc->real_tape));
+        bool cdt_audio = !real_input &&
+                         cpc->tape.present && cpc->tape.motor;
+        if (cdt_audio &&
+            real_tape_mode_has_output(cpc->real_tape.mode))
+            real_tape_output_sample(
+                &cpc->real_tape, tape_level(&cpc->tape));
         if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
             s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
             psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
             int t = 0;
-            if (real_tape && (cpc->ppi.port_c & 0x10))
+            if (real_input && (cpc->ppi.port_c & 0x10))
                 t = real_tape_monitor_sample(&cpc->real_tape);
-            else if (!real_tape &&
-                     cpc->tape.present && cpc->tape.motor)
+            else if (cdt_audio)
                 t = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
             if (t) {
                 int vl = (int)dst[0] + t;

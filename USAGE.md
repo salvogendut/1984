@@ -163,40 +163,49 @@ On the **CPC 464** the tape is always wired (the deck is built in). On the **664
 
 ### Real cassette deck
 
-Physical cassette I/O is an experimental **Tinker** feature. Enable **General
--> Tinker**, then open **Advanced -> Real Cassette**. With Tinker disabled the
-saved settings remain in the configuration, but 1984 closes the recording and
-playback devices and no live cassette signal reaches the CPC. On a CPC 664 or
-6128, **General -> External Tape** must also be enabled.
+Real cassette I/O is an experimental **Tinker** feature. Enable **General ->
+Tinker**, then open **Advanced -> Real Cassette**. With Tinker disabled the
+saved settings remain in the configuration, but 1984 closes its cassette host
+audio streams. On a CPC 664 or 6128, **General -> External Tape** must also be
+enabled.
 
-The real-cassette panel provides four modes:
+The panel provides three modes. There is no combined mode:
 
 | Mode | Signal path |
 |------|-------------|
-| `off` | No host cassette audio devices are opened |
-| `load` | Cassette EAR/line output -> host recording device -> CPC |
-| `save` | CPC cassette output -> host playback device -> cassette MIC/line input |
-| `both` | Open both paths |
+| `OFF` | Real cassette I/O is disconnected |
+| `INPUT: System to CPC Deck` | Host recording device or WAV source -> CPC cassette input |
+| `OUTPUT: CPC Deck to System` | Mounted CDT waveform -> selected host destination |
 
-Choose an input/output device with Left, Right, or Enter. Delete restores the
-system default. **Input gain** ranges from 25% to 400%; use the live **Input
-signal** percentage and HIGH/LOW indication to confirm that pulses are
-reaching the decoder. **Output level** ranges from 0% to 100%; start low when
-feeding a recorder's microphone input, which is more sensitive than line
-input.
+Choose the **Input device** with Left, Right, or Enter; Delete restores the
+system default. **Input gain** ranges from 25% to 400%. The live **Input
+signal** percentage and HIGH/LOW state confirm that pulses are reaching the
+decoder.
 
-For loading, connect the deck's EAR or line output to the selected input,
-start PLAY, then issue the CPC load command. For saving, connect the selected
-output to the deck's MIC or line input, start RECORD+PLAY, then issue the CPC
-save command. Deck transport remains manual.
+The **Output** row selects `File` or `Device`. The following row changes with
+that selection:
 
-While real cassette is enabled, **Media -> Tape** selects its input source.
-With no WAV mounted it reports `System Audio` and uses the recording device
-chosen in the real-cassette panel. Press Enter to choose a WAV file; it is
-converted to 44.1 kHz mono internally and advances while the CPC cassette
-motor is on. Press Delete to eject the WAV and return immediately to
-`System Audio`. In either case the mounted CDT decoder is paused and
-becomes available again when real cassette mode is turned off.
+- **Output file** opens a save dialog and remembers a `.wav` destination. It
+  does not start recording by itself.
+- **Output device** cycles through SDL playback devices; Delete restores the
+  system default. In OUTPUT mode the CDT waveform is streamed to this device
+  automatically.
+
+**Output level** controls the CDT waveform amplitude sent to either
+destination and ranges from 0% to 100%. Start low when a playback device feeds
+a recorder's microphone input, which is more sensitive than line input.
+
+In INPUT mode, **Media -> Tape** selects the cassette input source. With no WAV
+mounted it reports `System Audio` and uses the selected recording device.
+Press Enter to choose a WAV file; it is converted to 44.1 kHz mono internally
+and advances while the CPC cassette motor is on. Press Delete to eject it and
+return immediately to `System Audio`. INPUT is exclusive with CDT, so a
+mounted CDT is paused until INPUT is disabled.
+
+In OUTPUT mode, **Media -> Tape** uses the normal virtual deck and accepts
+`.cdt` files only. The CDT remains connected to the CPC, advances normally
+with the motor, and remains audible through the emulator while its tape
+waveform is also routed to the selected output destination.
 
 The **Visual Monitor** and **Audible Monitor** rows control System Audio
 monitoring independently; both are enabled by default and Delete restores that
@@ -207,11 +216,13 @@ stereo output at a conservative level while the motor is on, so it is heard
 locally, in audio captures, and through Web GUI audio. Motor gating avoids
 continuously feeding a microphone back to the speakers.
 
-**Capture input WAV** records the unmodified incoming 44.1 kHz mono 16-bit
-signal for diagnostics or archival. Press Enter to select a destination and
-Enter again to stop. Capture is available for `System Audio`, not while a
-WAV source is mounted. This first implementation does not reconstruct a CDT
-file from the recording.
+**Capture to file** is a session-only toggle and is always disabled at
+startup. It is available when **Output** is `File` and an Output file has been
+selected. In INPUT mode it copies the unmodified System Audio stream as
+44.1 kHz mono 16-bit PCM; it is unavailable while a WAV source is mounted. In
+OUTPUT mode it records the mounted CDT's tape waveform while the motor is
+running. Turning the toggle off finalizes the WAV header. This does not
+reconstruct a CDT file from recorded System Audio.
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
 

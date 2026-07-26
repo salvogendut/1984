@@ -77,13 +77,13 @@ audio is mixed into the AY output. The 464 deck is built in, while 664/6128
 use the External Tape setting.
 
 Experimental real-cassette I/O is available under **Advanced > Real
-Cassette** when **Tinker** is enabled. It can load from a deck through a
-selected host recording device or a WAV source selected in Media, save CPC
-output through a selected playback device, show System Audio input as a live
-translucent waveform, monitor it through the CPC audio while the tape motor is
-running, and capture the incoming signal as WAV. The visual and audible
-monitors can be switched independently. Disabling Tinker closes both host audio
-devices.
+Cassette** when **Tinker** is enabled. INPUT mode feeds the CPC deck from a
+selected host recording device or a WAV source selected in Media. OUTPUT mode
+plays a mounted CDT to either a selected host playback device or a WAV file.
+When File is selected, the session-only **Capture to file** toggle records the
+CDT waveform in OUTPUT mode or copies the System Audio stream in INPUT mode.
+The live translucent waveform and audible monitor can be switched
+independently. Disabling Tinker closes all real-cassette host audio streams.
 
 On Linux, **F10** can pause the guest and mount active FAT card images from M4,
 SYMBiFACE IDE, and Albireo on the host. Pressing F10 again unmounts, syncs, and

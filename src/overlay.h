@@ -34,7 +34,7 @@ typedef enum {
     DIALOG_VIDEO_CAPTURE = 11,
     DIALOG_PRINTER_DIR   = 12,
     DIALOG_DISK_NEW      = 13,  /* save-as: create a blank .dsk */
-    DIALOG_REAL_TAPE_WAV = 14,
+    DIALOG_REAL_TAPE_OUTPUT_FILE = 14,
     DIALOG_REAL_TAPE_SOURCE_WAV = 15
 } DialogKind;
 

@@ -16,13 +16,18 @@
 
 typedef enum {
     REAL_TAPE_OFF = 0,
-    REAL_TAPE_LOAD,
-    REAL_TAPE_SAVE,
-    REAL_TAPE_BOTH,
+    REAL_TAPE_INPUT,
+    REAL_TAPE_OUTPUT,
 } RealTapeMode;
+
+typedef enum {
+    REAL_TAPE_TARGET_FILE = 0,
+    REAL_TAPE_TARGET_DEVICE,
+} RealTapeOutputTarget;
 
 typedef struct {
     RealTapeMode mode;
+    RealTapeOutputTarget output_target;
     SDL_AudioStream *input_stream;
     SDL_AudioStream *output_stream;
     char input_device[REAL_TAPE_DEVICE_NAME_MAX];
@@ -67,16 +72,16 @@ void real_tape_reset(RealTape *rt);
 
 bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                          const char *input_device,
+                         RealTapeOutputTarget output_target,
                          const char *output_device,
                          int input_gain, int output_level,
                          bool audible_monitor, bool visual_monitor);
 void real_tape_pump(RealTape *rt);
 void real_tape_sample(RealTape *rt, u8 ppi_port_c);
+void real_tape_output_sample(RealTape *rt, u8 tape_level);
 void real_tape_flush_output(RealTape *rt);
 
 bool real_tape_input_active(const RealTape *rt);
-bool real_tape_output_active(const RealTape *rt);
-bool real_tape_enabled(const RealTape *rt);
 bool real_tape_connected_input_active(const RealTape *rt);
 bool real_tape_visual_monitor_enabled(const RealTape *rt);
 u8 real_tape_input_level(const RealTape *rt);
@@ -97,9 +102,14 @@ const char *real_tape_mode_name(RealTapeMode mode);
 bool real_tape_mode_parse(const char *text, RealTapeMode *mode);
 bool real_tape_mode_has_input(RealTapeMode mode);
 bool real_tape_mode_has_output(RealTapeMode mode);
+const char *real_tape_output_target_name(RealTapeOutputTarget target);
+bool real_tape_output_target_parse(const char *text,
+                                   RealTapeOutputTarget *target);
 
-bool real_tape_cycle_device(bool recording, const char *current, int direction,
-                            char *next, size_t next_size);
+bool real_tape_cycle_input_device(const char *current, int direction,
+                                  char *next, size_t next_size);
+bool real_tape_cycle_output_device(const char *current, int direction,
+                                   char *next, size_t next_size);
 void real_tape_device_label(const char *configured,
                             char *label, size_t label_size);
 

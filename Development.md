@@ -27,7 +27,7 @@ Each source file maps to one hardware component:
 | `src/ch376.c` / `ch376.h` | Albireo CH376 USB host controller — ports 0xFE80/0xFE81, file-system command set backed by `src/fat.c`; mutually exclusive with M4 (shared 0xFExx decode) |
 | `src/usifac.c` / `usifac.h` | USIfAC II RS232 serial interface — ports 0xFBD0..0xFBDF, PTY or TCP host backend polled once per frame, split RX/TX LED |
 | `src/tape.c` / `tape.h` | Cassette / .cdt (TZX) tape decoder — drives PPI Port B bit 7, motor from PPI Port C bit 4, audio mixed into PSG output |
-| `src/real_tape.c` / `real_tape.h` | Tinker-gated physical cassette backend — SDL recording/playback devices, audio-to-PPI signal conditioning, CPC tape output, and input WAV capture |
+| `src/real_tape.c` / `real_tape.h` | Tinker-gated real cassette backend — SDL recording/playback devices, audio-to-PPI signal conditioning, and CDT/System Audio routing to device or WAV |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -489,29 +489,33 @@ goes to SDL. This is the loading-screech sound players expect.
 
 **Model wiring.** On the 464 the deck is built in, so the tape is always wired when `cfg.tape` is non-empty. The 664 and 6128 have no built-in deck — a `cfg.external_tape` toggle (General → External Tape, row only visible on disk machines) controls whether the cassette is virtually plugged into the tape port. Both the boot path and the cold-boot path in `main.c` consult this when calling `tape_load`. Toggling `external_tape` or changing the tape image triggers a cold boot.
 
-### Physical cassette backend (`src/real_tape.c`)
+### Real cassette backend (`src/real_tape.c`)
 
-The live backend is deliberately gated by `cfg.tinker`. Its mode and device
-names may remain persisted while Tinker is off, but both startup and live
+The backend is deliberately gated by `cfg.tinker`. Its mode, destination, and
+device names may remain persisted while Tinker is off, but both startup and live
 overlay application pass `REAL_TAPE_OFF` to `real_tape_configure()`, closing
 all host streams. A 664/6128 additionally requires `cfg.external_tape`; the
 464 is connected because its deck circuitry is built in.
 
-SDL recording and playback streams expose an application-side format of
-44.1 kHz mono signed 16-bit PCM. `real_tape_pump()` drains host capture into a
-4096-sample ring once per emulator loop. `cpc_advance_bus()` consumes one
-sample at the same cadence as PSG generation, so a live input drives PPI Port
-B bit 7 at emulated audio time. Any enabled real-cassette mode makes the
-backend exclusive: the mounted CDT decoder is paused and resumes at the same
-pulse after real cassette mode is turned off.
+The persisted modes are `off`, `input`, and `output`; legacy `load`, `save`,
+and `both` values are accepted as `input`, `output`, and `input`
+respectively. A legacy `save` configuration without an explicit output target
+keeps its playback-device behavior. SDL recording and playback streams expose
+an application-side format of 44.1 kHz mono signed 16-bit PCM.
+`real_tape_pump()` drains host capture into a 4096-sample ring once per loop.
+`cpc_advance_bus()` consumes one sample at the same cadence as PSG generation,
+so INPUT drives PPI Port B bit 7 at emulated audio time. Only INPUT is
+exclusive with the virtual CDT decoder; OUTPUT deliberately leaves the CDT
+running.
 
-Media -> Tape becomes the real-cassette input-source selector while the
-backend is enabled. An empty `real_tape_wav` uses the configured SDL recording
-device (`System Audio`). A selected WAV is loaded with `SDL_LoadWAV`,
-converted with `SDL_ConvertAudioSamples` to the backend format, and consumed
-at emulated audio cadence only while PPI Port C bit 4 (motor) is high. Delete
-ejects the WAV and `overlay_apply_real_tape()` reopens the System Audio input
-device.
+In INPUT mode Media -> Tape becomes the real-cassette input-source selector.
+An empty `real_tape_wav` uses the configured SDL recording device (`System
+Audio`). A selected WAV is loaded with `SDL_LoadWAV`, converted with
+`SDL_ConvertAudioSamples` to the backend format, and consumed at emulated
+audio cadence only while PPI Port C bit 4 (motor) is high. Delete ejects the
+WAV and `overlay_apply_real_tape()` reopens the System Audio input device. In
+OUTPUT mode Media -> Tape instead retains the normal CDT picker and rejects
+non-CDT paths.
 
 The input path removes sound-card DC bias with a slow adaptive estimate, then
 uses Schmitt thresholds to turn the centred waveform into stable HIGH/LOW
@@ -528,19 +532,26 @@ PPI Port C bit 4 (motor) is active and
 `cpc_advance_bus()`, local SDL playback, WAV recording, and the Web GUI audio
 sink all receive the same monitored signal. Motor gating prevents a connected
 microphone from being monitored continuously. The output path samples PPI
-Port C bit 5 (cassette data) while bit 4 is active and queues the selected
-amplitude to the SDL playback stream at frame end.
+Port C bit 4 for motor state and takes the current CDT level at audio cadence.
+`real_tape_output_sample()` converts that level to signed PCM using
+`real_tape_output_level`, and `real_tape_flush_output()` sends each completed
+buffer to the selected destination. `real_tape_output_target=device` opens the
+configured SDL playback device; `file` leaves playback closed and uses the WAV
+capture handle when the user enables Capture to file.
 
 Both monitor settings default to true for compatibility with configurations
 created before the toggles existed. `real_tape_configure()` copies them into
 the live backend so changes made in the Real Cassette panel take effect
 immediately without reopening an unchanged audio device.
 
-The panel can write raw System Audio input to a standard 44-byte-header
-WAV file (44.1 kHz, mono, signed 16-bit). The header sizes are finalised when
-capture stops. Capture is disabled while a WAV source is mounted. Pulse
-decoding and CDT reconstruction are intentionally outside this first backend
-phase.
+The panel stores a WAV destination separately from capture state. Capture is a
+session-only toggle and never starts from persisted configuration. With INPUT
+and System Audio it writes the raw incoming samples; with OUTPUT it writes the
+CDT waveform buffered by `real_tape_output_sample()`. Both produce a standard
+44-byte-header WAV file (44.1 kHz, mono, signed 16-bit), with sizes finalised
+when capture stops. File capture is unavailable for a mounted input WAV or
+while the Device destination is selected. Pulse decoding and CDT
+reconstruction from System Audio remain outside this backend.
 
 ---
 

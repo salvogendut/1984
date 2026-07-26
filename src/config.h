@@ -154,7 +154,9 @@ typedef struct {
      * are opened until the Advanced tab is enabled again. */
     RealTapeMode real_tape_mode;
     char real_tape_input_device[REAL_TAPE_DEVICE_NAME_MAX];
+    RealTapeOutputTarget real_tape_output_target;
     char real_tape_output_device[REAL_TAPE_DEVICE_NAME_MAX];
+    char real_tape_output_file[CONFIG_PATH_MAX];
     char real_tape_wav[CONFIG_PATH_MAX];
     int  real_tape_input_gain;    /* 25..400 percent */
     int  real_tape_output_level;  /* 0..100 percent of full scale */
