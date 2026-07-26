@@ -754,7 +754,9 @@ int main(int argc, char *argv[]) {
     }
     if (!real_tape_configure(&cpc.real_tape, real_tape_mode,
             cfg.real_tape_input_device, cfg.real_tape_output_device,
-            cfg.real_tape_input_gain, cfg.real_tape_output_level)) {
+            cfg.real_tape_input_gain, cfg.real_tape_output_level,
+            cfg.real_tape_audible_monitor,
+            cfg.real_tape_visual_monitor)) {
         notify_post("Real cassette unavailable: %s",
                     real_tape_error(&cpc.real_tape));
     }

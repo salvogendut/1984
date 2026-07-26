@@ -183,6 +183,8 @@ void config_defaults(Config *cfg) {
     cfg->real_tape_wav[0] = '\0';
     cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
     cfg->real_tape_output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
+    cfg->real_tape_audible_monitor = true;
+    cfg->real_tape_visual_monitor = true;
     cfg->notifications   = NOTIFY_MODE_SCREEN;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
@@ -377,6 +379,9 @@ static void config_create_default(const char *path) {
         "real_tape_wav=\n"
         "real_tape_input_gain=100\n"
         "real_tape_output_level=50\n"
+        "# System Audio monitors can be switched independently.\n"
+        "real_tape_audible_monitor=true\n"
+        "real_tape_visual_monitor=true\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
@@ -695,6 +700,14 @@ int config_load_from(Config *cfg, const char *path_override) {
                 int v = atoi(val);
                 if (v >= 0 && v <= 100) cfg->real_tape_output_level = v;
                 else { fprintf(stderr, "1984.conf:%d: real_tape_output_level must be 0..100\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_audible_monitor")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->real_tape_audible_monitor = b;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_audible_monitor must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_visual_monitor")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->real_tape_visual_monitor = b;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_visual_monitor must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "advanced")) {
             if (!strcmp(key, "tinker")) {
@@ -893,7 +906,9 @@ int config_save(const Config *cfg) {
         "real_tape_output_device=%s\n"
         "real_tape_wav=%s\n"
         "real_tape_input_gain=%d\n"
-        "real_tape_output_level=%d\n\n"
+        "real_tape_output_level=%d\n"
+        "real_tape_audible_monitor=%s\n"
+        "real_tape_visual_monitor=%s\n\n"
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
@@ -956,6 +971,8 @@ int config_save(const Config *cfg) {
         cfg->real_tape_wav,
         cfg->real_tape_input_gain,
         cfg->real_tape_output_level,
+        cfg->real_tape_audible_monitor ? "true" : "false",
+        cfg->real_tape_visual_monitor ? "true" : "false",
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
         cfg->gif_width,

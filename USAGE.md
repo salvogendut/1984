@@ -198,13 +198,14 @@ motor is on. Press Delete to eject the WAV and return immediately to
 `System Audio`. In either case the mounted CDT decoder is paused and
 becomes available again when real cassette mode is turned off.
 
-While `System Audio` is active, a translucent oscilloscope panel at the
-bottom of the emulator shows the DC-corrected, gain-adjusted signal that
-reaches the cassette decoder. The panel also reports input level and cassette
-motor state. While the motor is on, that same signal is mixed into the CPC
-stereo output at a conservative monitor level, so it is audible locally, in
-audio captures, and through Web GUI audio. Monitoring stops with the motor to
-avoid continuously feeding a microphone back to the speakers.
+The **Visual Monitor** and **Audible Monitor** rows control System Audio
+monitoring independently; both are enabled by default and Delete restores that
+default. Visual Monitor displays a translucent oscilloscope panel at the bottom
+of the emulator with the DC-corrected, gain-adjusted decoder signal, input
+level, and cassette motor state. Audible Monitor mixes that signal into the CPC
+stereo output at a conservative level while the motor is on, so it is heard
+locally, in audio captures, and through Web GUI audio. Motor gating avoids
+continuously feeding a microphone back to the speakers.
 
 **Capture input WAV** records the unmodified incoming 44.1 kHz mono 16-bit
 signal for diagnostics or archival. Press Enter to select a destination and

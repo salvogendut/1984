@@ -31,6 +31,8 @@ typedef struct {
     char active_output[REAL_TAPE_DEVICE_NAME_MAX];
     int input_gain;
     int output_level;
+    bool audible_monitor;
+    bool visual_monitor;
 
     s16 input_ring[4096];
     size_t input_head;
@@ -66,7 +68,8 @@ void real_tape_reset(RealTape *rt);
 bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                          const char *input_device,
                          const char *output_device,
-                         int input_gain, int output_level);
+                         int input_gain, int output_level,
+                         bool audible_monitor, bool visual_monitor);
 void real_tape_pump(RealTape *rt);
 void real_tape_sample(RealTape *rt, u8 ppi_port_c);
 void real_tape_flush_output(RealTape *rt);
@@ -75,6 +78,7 @@ bool real_tape_input_active(const RealTape *rt);
 bool real_tape_output_active(const RealTape *rt);
 bool real_tape_enabled(const RealTape *rt);
 bool real_tape_connected_input_active(const RealTape *rt);
+bool real_tape_visual_monitor_enabled(const RealTape *rt);
 u8 real_tape_input_level(const RealTape *rt);
 int real_tape_signal_percent(const RealTape *rt);
 int real_tape_buffered_ms(const RealTape *rt);

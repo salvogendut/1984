@@ -158,6 +158,8 @@ typedef struct {
     char real_tape_wav[CONFIG_PATH_MAX];
     int  real_tape_input_gain;    /* 25..400 percent */
     int  real_tape_output_level;  /* 0..100 percent of full scale */
+    bool real_tape_audible_monitor;
+    bool real_tape_visual_monitor;
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */

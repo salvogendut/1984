@@ -519,15 +519,22 @@ pulses. User gain is applied before thresholding. The filter also exposes the
 centred PCM value consumed by the decoder. `RealTape` retains the latest 4096
 values in a visualization-only ring; the overlay copies that history without
 touching the cassette queue and renders it as a translucent bottom scope while
-System Audio is selected.
+System Audio is selected and `real_tape_visual_monitor=true`. Collection is
+also skipped while that setting is false.
 
 The centred System Audio input PCM is mixed into both PSG channels at 35% while
-PPI Port C bit 4 (motor) is active. Because this happens in
+PPI Port C bit 4 (motor) is active and
+`real_tape_audible_monitor=true`. Because this happens in
 `cpc_advance_bus()`, local SDL playback, WAV recording, and the Web GUI audio
 sink all receive the same monitored signal. Motor gating prevents a connected
 microphone from being monitored continuously. The output path samples PPI
 Port C bit 5 (cassette data) while bit 4 is active and queues the selected
 amplitude to the SDL playback stream at frame end.
+
+Both monitor settings default to true for compatibility with configurations
+created before the toggles existed. `real_tape_configure()` copies them into
+the live backend so changes made in the Real Cassette panel take effect
+immediately without reopening an unchanged audio device.
 
 The panel can write raw System Audio input to a standard 44-byte-header
 WAV file (44.1 kHz, mono, signed 16-bit). The header sizes are finalised when

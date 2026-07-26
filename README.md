@@ -81,8 +81,9 @@ Cassette** when **Tinker** is enabled. It can load from a deck through a
 selected host recording device or a WAV source selected in Media, save CPC
 output through a selected playback device, show System Audio input as a live
 translucent waveform, monitor it through the CPC audio while the tape motor is
-running, and capture the incoming signal as WAV. Disabling Tinker closes both
-host audio devices.
+running, and capture the incoming signal as WAV. The visual and audible
+monitors can be switched independently. Disabling Tinker closes both host audio
+devices.
 
 On Linux, **F10** can pause the guest and mount active FAT card images from M4,
 SYMBiFACE IDE, and Albireo on the host. Pressing F10 again unmounts, syncs, and

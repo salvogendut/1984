@@ -123,6 +123,8 @@ void real_tape_init(RealTape *rt) {
     memset(rt, 0, sizeof(*rt));
     rt->input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
     rt->output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
+    rt->audible_monitor = true;
+    rt->visual_monitor = true;
     snprintf(rt->input_device, sizeof(rt->input_device), "default");
     snprintf(rt->output_device, sizeof(rt->output_device), "default");
     tape_signal_init(&rt->input_filter);
@@ -179,7 +181,8 @@ void real_tape_reset(RealTape *rt) {
 bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                          const char *input_device,
                          const char *output_device,
-                         int input_gain, int output_level) {
+                         int input_gain, int output_level,
+                         bool audible_monitor, bool visual_monitor) {
     if (!rt) return false;
     const char *input = default_device(input_device) ? "default" : input_device;
     const char *output = default_device(output_device) ? "default" : output_device;
@@ -189,6 +192,7 @@ bool real_tape_configure(RealTape *rt, RealTapeMode mode,
         (!rt->input_stream || strcmp(rt->input_device, input));
     bool reopen_output = real_tape_mode_has_output(mode) &&
         (!rt->output_stream || strcmp(rt->output_device, output));
+    bool visual_changed = rt->visual_monitor != visual_monitor;
 
     rt->error[0] = '\0';
     rt->mode = mode;
@@ -196,6 +200,12 @@ bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                      input_gain > 400 ? 400 : input_gain;
     rt->output_level = output_level < 0 ? 0 :
                        output_level > 100 ? 100 : output_level;
+    rt->audible_monitor = audible_monitor;
+    rt->visual_monitor = visual_monitor;
+    if (visual_changed) {
+        rt->waveform_head = 0;
+        rt->waveform_count = 0;
+    }
 
     if (!real_tape_mode_has_input(mode)) {
         real_tape_record_stop(rt);
@@ -328,7 +338,7 @@ void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
             rt->input_underruns++;
         }
     }
-    if (real_tape_connected_input_active(rt))
+    if (rt->visual_monitor && real_tape_connected_input_active(rt))
         waveform_push(rt, rt->monitor_pcm);
 
     if (real_tape_output_active(rt) &&
@@ -371,6 +381,10 @@ bool real_tape_connected_input_active(const RealTape *rt) {
            !real_tape_source_loaded(rt) && rt->input_stream;
 }
 
+bool real_tape_visual_monitor_enabled(const RealTape *rt) {
+    return rt && rt->visual_monitor;
+}
+
 u8 real_tape_input_level(const RealTape *rt) {
     return rt ? rt->input_level : 0;
 }
@@ -388,7 +402,9 @@ const char *real_tape_error(const RealTape *rt) {
 }
 
 s16 real_tape_monitor_sample(const RealTape *rt) {
-    if (!real_tape_connected_input_active(rt)) return 0;
+    if (!rt || !rt->audible_monitor ||
+        !real_tape_connected_input_active(rt))
+        return 0;
     return (s16)((int)rt->monitor_pcm *
                  REAL_TAPE_MONITOR_LEVEL_PERCENT / 100);
 }

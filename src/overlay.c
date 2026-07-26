@@ -33,7 +33,7 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 #define BROWSER_VISIBLE_ROWS 16
 #define BROWSER_ROW_H 16
-#define REAL_TAPE_ROWS 7
+#define REAL_TAPE_ROWS 9
 
 typedef struct OverlayBrowserEntry {
     char *name;
@@ -114,7 +114,9 @@ static bool overlay_apply_real_tape(Overlay *ov) {
         ov->cfg->real_tape_input_device,
         ov->cfg->real_tape_output_device,
         ov->cfg->real_tape_input_gain,
-        ov->cfg->real_tape_output_level);
+        ov->cfg->real_tape_output_level,
+        ov->cfg->real_tape_audible_monitor,
+        ov->cfg->real_tape_visual_monitor);
     if (!ok)
         notify_post("Real cassette unavailable: %s",
                     real_tape_error(&ov->cpc->real_tape));
@@ -1110,6 +1112,19 @@ static void real_tape_item_text(const Overlay *ov, int row,
         *readonly = true;
         break;
     case 4: {
+        snprintf(lbl, lsz, "Audible Monitor");
+        snprintf(val, vsz, "%s",
+                 ov->cfg->real_tape_audible_monitor
+                     ? "enabled" : "disabled");
+        break;
+    }
+    case 5:
+        snprintf(lbl, lsz, "Visual Monitor");
+        snprintf(val, vsz, "%s",
+                 ov->cfg->real_tape_visual_monitor
+                     ? "enabled" : "disabled");
+        break;
+    case 6: {
         char device[REAL_TAPE_DEVICE_NAME_MAX];
         snprintf(lbl, lsz, "Output device");
         real_tape_device_label(ov->cfg->real_tape_output_device,
@@ -1117,11 +1132,11 @@ static void real_tape_item_text(const Overlay *ov, int row,
         trunc_path(device, val, vsz);
         break;
     }
-    case 5:
+    case 7:
         snprintf(lbl, lsz, "Output level");
         snprintf(val, vsz, "%d%%", ov->cfg->real_tape_output_level);
         break;
-    case 6:
+    case 8:
         snprintf(lbl, lsz, "Capture input WAV");
         if (rt && real_tape_recording(rt)) {
             char path[REAL_TAPE_PATH_MAX];
@@ -2274,6 +2289,22 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
     case 3:
         break;
     case 4:
+        if (reset)
+            ov->cfg->real_tape_audible_monitor = true;
+        else
+            ov->cfg->real_tape_audible_monitor =
+                !ov->cfg->real_tape_audible_monitor;
+        changed = true;
+        break;
+    case 5:
+        if (reset)
+            ov->cfg->real_tape_visual_monitor = true;
+        else
+            ov->cfg->real_tape_visual_monitor =
+                !ov->cfg->real_tape_visual_monitor;
+        changed = true;
+        break;
+    case 6:
         if (reset) {
             snprintf(ov->cfg->real_tape_output_device,
                      sizeof(ov->cfg->real_tape_output_device), "default");
@@ -2287,7 +2318,7 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
         }
         changed = true;
         break;
-    case 5:
+    case 7:
         if (reset) {
             ov->cfg->real_tape_output_level =
                 REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
@@ -2301,7 +2332,7 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
         }
         changed = true;
         break;
-    case 6:
+    case 8:
         if (ov->cpc && real_tape_recording(&ov->cpc->real_tape)) {
             real_tape_record_stop(&ov->cpc->real_tape);
             notify_post("Real cassette WAV capture stopped");
@@ -2830,7 +2861,9 @@ static void render_file_browser(const Overlay *ov, SDL_Renderer *r,
 void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r) {
     if (!ov || !ov->cpc || !r) return;
     const RealTape *rt = &ov->cpc->real_tape;
-    if (!real_tape_connected_input_active(rt)) return;
+    if (!real_tape_connected_input_active(rt) ||
+        !real_tape_visual_monitor_enabled(rt))
+        return;
 
     int rw, rh;
     if (!SDL_GetRenderOutputSize(r, &rw, &rh)) return;
