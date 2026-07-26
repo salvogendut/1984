@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -O2
 CPPFLAGS ?=
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal
 
 .PHONY: all check clean
 
@@ -36,6 +36,10 @@ test-gifcap: test_gifcap.c ../src/gifcap.c ../src/gifcap.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_gifcap.c ../src/gifcap.c -o $@
 
+test-tape-signal: test_tape_signal.c ../src/tape.c ../src/tape.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_tape_signal.c ../src/tape.c -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -44,6 +48,7 @@ check: $(TESTS)
 	./test-mem
 	./test-disk
 	./test-gifcap
+	./test-tape-signal
 
 clean:
 	rm -f $(TESTS)

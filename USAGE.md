@@ -161,6 +161,41 @@ directory or select a DSK, Backspace/Left to move up, and Escape to cancel.
 
 On the **CPC 464** the tape is always wired (the deck is built in). On the **664 and 6128** there's no built-in deck, so an **External Tape** toggle appears in the General tab (between Roms Board and OS ROM, only visible on disk machines); enable it to virtually plug the cassette deck into the tape port. Toggling triggers a cold boot so the firmware re-probes.
 
+### Real cassette deck
+
+Physical cassette I/O is an experimental **Tinker** feature. Enable **General
+-> Tinker**, then open **Advanced -> Real Cassette**. With Tinker disabled the
+saved settings remain in the configuration, but 1984 closes the recording and
+playback devices and no live cassette signal reaches the CPC. On a CPC 664 or
+6128, **General -> External Tape** must also be enabled.
+
+The real-cassette panel provides four modes:
+
+| Mode | Signal path |
+|------|-------------|
+| `off` | No host cassette audio devices are opened |
+| `load` | Cassette EAR/line output -> host recording device -> CPC |
+| `save` | CPC cassette output -> host playback device -> cassette MIC/line input |
+| `both` | Open both paths |
+
+Choose an input/output device with Left, Right, or Enter. Delete restores the
+system default. **Input gain** ranges from 25% to 400%; use the live **Input
+signal** percentage and HIGH/LOW indication to confirm that pulses are
+reaching the decoder. **Output level** ranges from 0% to 100%; start low when
+feeding a recorder's microphone input, which is more sensitive than line
+input.
+
+For loading, connect the deck's EAR or line output to the selected input,
+start PLAY, then issue the CPC load command. For saving, connect the selected
+output to the deck's MIC or line input, start RECORD+PLAY, then issue the CPC
+save command. Deck transport remains manual. A live input takes priority over
+any mounted CDT image.
+
+**Capture input WAV** records the unmodified incoming 44.1 kHz mono 16-bit
+signal for diagnostics or archival. Press Enter to select a destination and
+Enter again to stop. This first implementation does not reconstruct a CDT
+file from the recording.
+
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
 
 **Roms Board** (General → Roms Board): controls generic, user-managed expansion ROM slots. When enabled (the default), non-empty untagged `slot_N=` entries in `1984.conf` are loaded and the Extensions → ROM Slots sub-panel is available. When disabled, those paths remain saved but are not mapped into the CPC. The change triggers a cold boot.

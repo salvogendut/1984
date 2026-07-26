@@ -53,6 +53,16 @@ typedef struct {
     u16     sync_table[2];
 } Tape;
 
+/* Converts AC-coupled host audio into the CPC cassette input bit. The
+ * adaptive DC estimate removes sound-card bias, while the Schmitt thresholds
+ * reject low-level noise without changing pulse timing. */
+typedef struct {
+    s32  dc_q16;
+    int  peak;
+    bool initialized;
+    bool high;
+} TapeSignalFilter;
+
 void tape_init(Tape *t);
 bool tape_load(Tape *t, const char *path);    /* false on I/O error */
 void tape_eject(Tape *t);
@@ -67,3 +77,7 @@ void tape_step(Tape *t, int cycles);
 
 /* 0x00 or 0x80 — OR into PPI Port B during read. */
 u8   tape_level(const Tape *t);
+
+void tape_signal_init(TapeSignalFilter *f);
+u8   tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent);
+int  tape_signal_peak_percent(const TapeSignalFilter *f);

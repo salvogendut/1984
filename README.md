@@ -76,6 +76,12 @@ common standard, turbo, pure-tone, pulse, pure-data, and pause blocks; tape
 audio is mixed into the AY output. The 464 deck is built in, while 664/6128
 use the External Tape setting.
 
+Experimental real-cassette I/O is available under **Advanced > Real
+Cassette** when **Tinker** is enabled. It can load from a deck through a
+selected host recording device, save CPC output through a selected playback
+device, show input level, and capture the incoming signal as WAV. Disabling
+Tinker closes both host audio devices.
+
 On Linux, **F10** can pause the guest and mount active FAT card images from M4,
 SYMBiFACE IDE, and Albireo on the host. Pressing F10 again unmounts, syncs, and
 cold-boots the CPC so guest filesystem caches cannot overwrite host changes.

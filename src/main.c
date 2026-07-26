@@ -741,6 +741,15 @@ int main(int argc, char *argv[]) {
     SD_LOG("cpc_init OK");
     notify_init();
     notify_set_mode(cfg.notifications);
+    if (!real_tape_configure(&cpc.real_tape,
+            cfg.tinker &&
+                (cpc.model == MODEL_464 || cfg.external_tape)
+                    ? cfg.real_tape_mode : REAL_TAPE_OFF,
+            cfg.real_tape_input_device, cfg.real_tape_output_device,
+            cfg.real_tape_input_gain, cfg.real_tape_output_level)) {
+        notify_post("Real cassette unavailable: %s",
+                    real_tape_error(&cpc.real_tape));
+    }
     net4cpc_tap_sync(&cfg, tap_dev_arg);
     apply_led_enables(&cfg);
 
@@ -1298,6 +1307,7 @@ int main(int argc, char *argv[]) {
         perryfi_poll(&cpc.perryfi);
         webgui_poll();
         printer_tick(&cpc.printer);
+        real_tape_pump(&cpc.real_tape);
         int emulated_cycles = cpc_frame(&cpc);
         Uint64 emulated_frame_ns = cpc_cycles_to_ns(&cpc, emulated_cycles);
         if (cpc.paused)

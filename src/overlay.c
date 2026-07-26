@@ -33,6 +33,7 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 #define BROWSER_VISIBLE_ROWS 16
 #define BROWSER_ROW_H 16
+#define REAL_TAPE_ROWS 7
 
 typedef struct OverlayBrowserEntry {
     char *name;
@@ -48,7 +49,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 20 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 21 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 9;
@@ -76,6 +77,23 @@ static void overlay_apply_crt(Overlay *ov) {
                     ov->cfg->crt_scanlines, ov->cfg->crt_brightness,
                     ov->cfg->crt_contrast, ov->cfg->crt_red,
                     ov->cfg->crt_green, ov->cfg->crt_blue);
+}
+
+static bool overlay_apply_real_tape(Overlay *ov) {
+    if (!ov->cpc) return true;
+    bool connected = ov->cfg->model == MODEL_464 ||
+                     ov->cfg->external_tape;
+    bool ok = real_tape_configure(&ov->cpc->real_tape,
+        ov->cfg->tinker && connected
+            ? ov->cfg->real_tape_mode : REAL_TAPE_OFF,
+        ov->cfg->real_tape_input_device,
+        ov->cfg->real_tape_output_device,
+        ov->cfg->real_tape_input_gain,
+        ov->cfg->real_tape_output_level);
+    if (!ok)
+        notify_post("Real cassette unavailable: %s",
+                    real_tape_error(&ov->cpc->real_tape));
+    return ok;
 }
 
 static int cycle_crt_percent(int v, int lo, int hi) {
@@ -990,6 +1008,11 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "off (port %d)", ov->cfg->web_port);
             break;
         case 19:
+            snprintf(lbl, lsz, "Real Cassette");
+            snprintf(val, vsz, "%s  [Enter=settings]",
+                     real_tape_mode_name(ov->cfg->real_tape_mode));
+            break;
+        case 20:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -999,6 +1022,85 @@ static void item_text(const Overlay *ov, int row,
 
     default:
         break;
+    }
+}
+
+static void real_tape_item_text(const Overlay *ov, int row,
+                                char *lbl, size_t lsz,
+                                char *val, size_t vsz,
+                                bool *readonly) {
+    const RealTape *rt = ov->cpc ? &ov->cpc->real_tape : NULL;
+    *readonly = false;
+    switch (row) {
+    case 0:
+        snprintf(lbl, lsz, "Mode");
+        switch (ov->cfg->real_tape_mode) {
+        case REAL_TAPE_LOAD: snprintf(val, vsz, "load: deck -> CPC"); break;
+        case REAL_TAPE_SAVE: snprintf(val, vsz, "save: CPC -> deck"); break;
+        case REAL_TAPE_BOTH: snprintf(val, vsz, "both directions"); break;
+        default:             snprintf(val, vsz, "off"); break;
+        }
+        break;
+    case 1: {
+        char device[REAL_TAPE_DEVICE_NAME_MAX];
+        snprintf(lbl, lsz, "Input device");
+        real_tape_device_label(ov->cfg->real_tape_input_device,
+                               device, sizeof(device));
+        trunc_path(device, val, vsz);
+        break;
+    }
+    case 2:
+        snprintf(lbl, lsz, "Input gain");
+        snprintf(val, vsz, "%d%%", ov->cfg->real_tape_input_gain);
+        break;
+    case 3:
+        snprintf(lbl, lsz, "Input signal");
+        if (!real_tape_mode_has_input(ov->cfg->real_tape_mode)) {
+            snprintf(val, vsz, "[load input is off]");
+        } else if (!rt || !real_tape_input_active(rt)) {
+            snprintf(val, vsz, "[input unavailable]");
+        } else {
+            snprintf(val, vsz, "%d%%  %s  buffer %d ms",
+                     real_tape_signal_percent(rt),
+                     real_tape_input_level(rt) ? "HIGH" : "LOW",
+                     real_tape_buffered_ms(rt));
+        }
+        *readonly = true;
+        break;
+    case 4: {
+        char device[REAL_TAPE_DEVICE_NAME_MAX];
+        snprintf(lbl, lsz, "Output device");
+        real_tape_device_label(ov->cfg->real_tape_output_device,
+                               device, sizeof(device));
+        trunc_path(device, val, vsz);
+        break;
+    }
+    case 5:
+        snprintf(lbl, lsz, "Output level");
+        snprintf(val, vsz, "%d%%", ov->cfg->real_tape_output_level);
+        break;
+    case 6:
+        snprintf(lbl, lsz, "Capture input WAV");
+        if (rt && real_tape_recording(rt)) {
+            char path[REAL_TAPE_PATH_MAX];
+            snprintf(path, sizeof(path), "%s", real_tape_record_path(rt));
+            trunc_path(basename(path), val, vsz);
+        } else if (!real_tape_mode_has_input(ov->cfg->real_tape_mode)) {
+            snprintf(val, vsz, "[requires load or both mode]");
+            *readonly = true;
+        } else {
+            snprintf(val, vsz, "[Enter=start]");
+        }
+        break;
+    }
+}
+
+static RealTapeMode cycle_real_tape_mode(RealTapeMode mode) {
+    switch (mode) {
+    case REAL_TAPE_OFF:  return REAL_TAPE_LOAD;
+    case REAL_TAPE_LOAD: return REAL_TAPE_SAVE;
+    case REAL_TAPE_SAVE: return REAL_TAPE_BOTH;
+    default:             return REAL_TAPE_OFF;
     }
 }
 
@@ -1061,6 +1163,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                 ov->cfg->memory_kb = 128;
             else if (next != MODEL_6128 && ov->cfg->memory_kb != 64)
                 ov->cfg->memory_kb = 64;
+            overlay_apply_real_tape(ov);
             ov->dirty = true;
             break;
         }
@@ -1092,6 +1195,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
         case 4:
             /* External Tape — only reachable from this menu on the 6128. */
             ov->cfg->external_tape = !ov->cfg->external_tape;
+            overlay_apply_real_tape(ov);
             ov->dirty = true;
             break;
         case 5: {
@@ -1120,6 +1224,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
         }
         case 7:
             ov->cfg->tinker = !ov->cfg->tinker;
+            overlay_apply_real_tape(ov);
             /* Don't leave the cursor parked on a tab that just disappeared. */
             if (!ov->cfg->tinker && ov->section == OV_TINKER) {
                 ov->section = OV_GENERAL;
@@ -1702,6 +1807,10 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             }
             ov->dirty = true;
             break;
+        case 19:
+            ov->state = OV_STATE_REAL_TAPE;
+            ov->real_tape_row = 0;
+            break;
         }
         break;
 
@@ -1939,6 +2048,19 @@ void overlay_tick(Overlay *ov) {
             videocap_start(path, ov->cfg->gif_width, ov->cfg->gif_fps,
                            ov->cfg->gif_ffmpeg);
         }
+    } else if (ov->dialog_kind == DIALOG_REAL_TAPE_WAV) {
+        if (ov->cpc && ov->dialog_path[0]) {
+            char path[REAL_TAPE_PATH_MAX];
+            snprintf(path, sizeof(path), "%s", ov->dialog_path);
+            if (!real_tape_ensure_wav_extension(path, sizeof(path))) {
+                notify_post("Real cassette WAV path is empty or too long");
+            } else if (real_tape_record_start(&ov->cpc->real_tape, path)) {
+                notify_post("Recording real cassette input to WAV");
+            } else {
+                notify_post("Cannot record real cassette: %s",
+                            real_tape_error(&ov->cpc->real_tape));
+            }
+        }
     } else if (ov->dialog_kind == DIALOG_M4_IMAGE) {
         /* User picked an SD card image — enable M4, load its ROM, and seed
          * the M4 board's config buffer from the ROM defaults.
@@ -1989,6 +2111,138 @@ void overlay_tick(Overlay *ov) {
      * DIALOG_M4_IMAGE → cfg.m4). Same effect as the call in
      * overlay_handle_event after activate_item. */
     overlay_check_board_changes(ov);
+}
+
+static void real_tape_open_wav_dialog(Overlay *ov) {
+    if (!ov->cpc || !real_tape_input_active(&ov->cpc->real_tape)) {
+        notify_post("Real cassette input is not active");
+        return;
+    }
+    ov->dialog_kind = DIALOG_REAL_TAPE_WAV;
+    ov->dialog_ready = false;
+    static const SDL_DialogFileFilter wav_filters[] = {
+        { "WAV audio", "wav;WAV" },
+        { "All files", "*" },
+    };
+    SDL_ShowSaveFileDialog(overlay_file_callback, ov,
+        ov->cpc->display.window, wav_filters, 2,
+        ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
+}
+
+static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
+    if (ev->type != SDL_EVENT_KEY_DOWN) return true;
+    SDL_Scancode sc = ev->key.scancode;
+
+    if (sc == SDL_SCANCODE_ESCAPE) {
+        ov->state = OV_STATE_MENU;
+        return true;
+    }
+    if (sc == SDL_SCANCODE_UP) {
+        ov->real_tape_row =
+            (ov->real_tape_row + REAL_TAPE_ROWS - 1) % REAL_TAPE_ROWS;
+        return true;
+    }
+    if (sc == SDL_SCANCODE_DOWN) {
+        ov->real_tape_row = (ov->real_tape_row + 1) % REAL_TAPE_ROWS;
+        return true;
+    }
+
+    bool activate = sc == SDL_SCANCODE_RETURN ||
+                    sc == SDL_SCANCODE_KP_ENTER;
+    bool reset = sc == SDL_SCANCODE_DELETE ||
+                 sc == SDL_SCANCODE_BACKSPACE;
+    int direction = sc == SDL_SCANCODE_LEFT ? -1 :
+                    sc == SDL_SCANCODE_RIGHT ? 1 : 0;
+    if (!activate && !reset && !direction) return true;
+
+    bool changed = false;
+    switch (ov->real_tape_row) {
+    case 0:
+        if (activate)
+            ov->cfg->real_tape_mode =
+                cycle_real_tape_mode(ov->cfg->real_tape_mode);
+        else if (reset)
+            ov->cfg->real_tape_mode = REAL_TAPE_OFF;
+        else
+            ov->cfg->real_tape_mode = direction > 0
+                ? cycle_real_tape_mode(ov->cfg->real_tape_mode)
+                : (ov->cfg->real_tape_mode == REAL_TAPE_OFF
+                    ? REAL_TAPE_BOTH
+                    : (RealTapeMode)(ov->cfg->real_tape_mode - 1));
+        changed = true;
+        break;
+    case 1:
+        if (reset) {
+            snprintf(ov->cfg->real_tape_input_device,
+                     sizeof(ov->cfg->real_tape_input_device), "default");
+        } else if (activate || direction) {
+            char next[REAL_TAPE_DEVICE_NAME_MAX];
+            real_tape_cycle_device(true, ov->cfg->real_tape_input_device,
+                                   direction < 0 ? -1 : 1,
+                                   next, sizeof(next));
+            snprintf(ov->cfg->real_tape_input_device,
+                     sizeof(ov->cfg->real_tape_input_device), "%s", next);
+        }
+        changed = true;
+        break;
+    case 2:
+        if (reset) {
+            ov->cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
+        } else {
+            int step = direction < 0 ? -25 : 25;
+            ov->cfg->real_tape_input_gain += step;
+            if (ov->cfg->real_tape_input_gain > 400)
+                ov->cfg->real_tape_input_gain = 25;
+            if (ov->cfg->real_tape_input_gain < 25)
+                ov->cfg->real_tape_input_gain = 400;
+        }
+        changed = true;
+        break;
+    case 3:
+        break;
+    case 4:
+        if (reset) {
+            snprintf(ov->cfg->real_tape_output_device,
+                     sizeof(ov->cfg->real_tape_output_device), "default");
+        } else if (activate || direction) {
+            char next[REAL_TAPE_DEVICE_NAME_MAX];
+            real_tape_cycle_device(false, ov->cfg->real_tape_output_device,
+                                   direction < 0 ? -1 : 1,
+                                   next, sizeof(next));
+            snprintf(ov->cfg->real_tape_output_device,
+                     sizeof(ov->cfg->real_tape_output_device), "%s", next);
+        }
+        changed = true;
+        break;
+    case 5:
+        if (reset) {
+            ov->cfg->real_tape_output_level =
+                REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
+        } else {
+            int step = direction < 0 ? -5 : 5;
+            ov->cfg->real_tape_output_level += step;
+            if (ov->cfg->real_tape_output_level > 100)
+                ov->cfg->real_tape_output_level = 0;
+            if (ov->cfg->real_tape_output_level < 0)
+                ov->cfg->real_tape_output_level = 100;
+        }
+        changed = true;
+        break;
+    case 6:
+        if (ov->cpc && real_tape_recording(&ov->cpc->real_tape)) {
+            real_tape_record_stop(&ov->cpc->real_tape);
+            notify_post("Real cassette WAV capture stopped");
+        } else if (activate) {
+            real_tape_open_wav_dialog(ov);
+        }
+        break;
+    }
+
+    if (changed) {
+        overlay_apply_real_tape(ov);
+        ov->dirty = true;
+    }
+    return true;
 }
 
 bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
@@ -2053,6 +2307,9 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
 
     if (!ov->visible) return false;
 
+    if (ov->state == OV_STATE_REAL_TAPE)
+        return handle_real_tape_event(ov, ev);
+
     if (ov->state == OV_STATE_FILE_BROWSER) {
         browser_handle_key(ov, ev->key.key);
         return true;
@@ -2104,6 +2361,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         case SDL_SCANCODE_ESCAPE:
             *ov->cfg    = ov->saved;  /* revert */
             overlay_apply_crt(ov);
+            overlay_apply_real_tape(ov);
             ov->dirty   = false;
             ov->visible = false;
             break;
@@ -2578,6 +2836,59 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                 }
                 #undef BOARDS_X
             }
+        }
+        SDL_SetRenderScale(r, 1.0f, 1.0f);
+        return;
+    }
+
+    /* ---- Physical cassette sub-panel (reachable only from Tinker) ---- */
+    if (ov->state == OV_STATE_REAL_TAPE) {
+        fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
+        draw_text(r, DROP_PAD, 4,
+                  "Real Cassette  Esc=back  Enter=change  Del=default",
+                  180, 180, 220);
+        SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_RenderLine(r, 0, BAR_H - 1, lw, BAR_H - 1);
+
+        for (int i = 0; i < REAL_TAPE_ROWS; i++) {
+            float iy = BAR_H + 2.0f + i * ITEM_H;
+            bool selected = i == ov->real_tape_row;
+            if (selected)
+                fill_rect(r, 0, iy, lw, ITEM_H, 70, 90, 200, 255);
+
+            char lbl[48] = "";
+            char val[64] = "";
+            bool readonly;
+            real_tape_item_text(ov, i, lbl, sizeof(lbl),
+                                val, sizeof(val), &readonly);
+            float ty = iy + (ITEM_H - FONT_H) / 2.0f;
+            draw_text(r, DROP_PAD, ty, lbl, 220, 220, 240);
+            draw_text(r, VAL_X, ty, val,
+                      readonly ? 120 : 255,
+                      readonly ? 150 : 200,
+                      readonly ? 165 : 50);
+        }
+
+        float help_y = BAR_H + 2.0f + REAL_TAPE_ROWS * ITEM_H + 10.0f;
+        draw_text(r, DROP_PAD, help_y,
+                  "LOAD: cassette EAR/line out -> selected input",
+                  150, 190, 230);
+        draw_text(r, DROP_PAD, help_y + 16.0f,
+                  "SAVE: selected output -> cassette MIC/line in",
+                  150, 190, 230);
+        draw_text(r, DROP_PAD, help_y + 32.0f,
+                  "Start PLAY or RECORD+PLAY on the deck before the CPC command.",
+                  150, 190, 230);
+        if (ov->cfg->model != MODEL_464 && !ov->cfg->external_tape) {
+            draw_text(r, DROP_PAD, help_y + 52.0f,
+                      "Disconnected: enable General -> External Tape.",
+                      255, 180, 80);
+        } else if (ov->cpc && real_tape_error(&ov->cpc->real_tape)[0]) {
+            char error[64];
+            trunc_path(real_tape_error(&ov->cpc->real_tape),
+                       error, sizeof(error));
+            draw_text(r, DROP_PAD, help_y + 52.0f, error, 255, 120, 120);
         }
         SDL_SetRenderScale(r, 1.0f, 1.0f);
         return;

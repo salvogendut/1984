@@ -11,6 +11,7 @@
 
 #define TAPE_LEVEL_LOW   0x00
 #define TAPE_LEVEL_HIGH  0x80
+#define TAPE_SIGNAL_THRESHOLD 768
 
 /* Little-endian unaligned readers (CDT is x86-byte-order). */
 static u16 rd16(const u8 *p) { return (u16)p[0] | ((u16)p[1] << 8); }
@@ -341,3 +342,43 @@ void tape_step(Tape *t, int cycles) {
 }
 
 u8 tape_level(const Tape *t) { return t->level; }
+
+void tape_signal_init(TapeSignalFilter *f) {
+    memset(f, 0, sizeof(*f));
+}
+
+u8 tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent) {
+    if (!f->initialized) {
+        f->dc_q16 = (s32)sample * 65536;
+        f->initialized = true;
+        return TAPE_LEVEL_LOW;
+    }
+
+    /* About 46 ms at 44.1 kHz: slow enough to preserve cassette pulses,
+     * fast enough to follow the DC bias of inexpensive USB sound devices. */
+    int64_t target = (int64_t)sample * 65536;
+    f->dc_q16 += (s32)((target - f->dc_q16) / 2048);
+
+    int centered = (int)sample - (f->dc_q16 >> 16);
+    int scaled = centered * gain_percent / 100;
+    if (scaled > 32767) scaled = 32767;
+    if (scaled < -32768) scaled = -32768;
+
+    int magnitude = scaled < 0 ? -scaled : scaled;
+    if (f->peak > 0)
+        f->peak -= (f->peak + 1023) / 1024;
+    if (magnitude > f->peak)
+        f->peak = magnitude;
+
+    if (!f->high && scaled >= TAPE_SIGNAL_THRESHOLD)
+        f->high = true;
+    else if (f->high && scaled <= -TAPE_SIGNAL_THRESHOLD)
+        f->high = false;
+
+    return f->high ? TAPE_LEVEL_HIGH : TAPE_LEVEL_LOW;
+}
+
+int tape_signal_peak_percent(const TapeSignalFilter *f) {
+    int percent = f->peak * 100 / 32767;
+    return percent > 100 ? 100 : percent;
+}

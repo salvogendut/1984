@@ -175,6 +175,13 @@ void config_defaults(Config *cfg) {
     cfg->perryfi = false;
     cfg->audio_volume    = 80;
     cfg->audio_stereo_sep = 0;
+    cfg->real_tape_mode = REAL_TAPE_OFF;
+    snprintf(cfg->real_tape_input_device,
+             sizeof(cfg->real_tape_input_device), "default");
+    snprintf(cfg->real_tape_output_device,
+             sizeof(cfg->real_tape_output_device), "default");
+    cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
+    cfg->real_tape_output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
     cfg->notifications   = NOTIFY_MODE_SCREEN;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
@@ -358,6 +365,14 @@ static void config_create_default(const char *path) {
         "# Stereo separation 0..255 — 0=mono, 255=full Caprice32 ABC panning\n"
         "# (channel A left, B centre, C right)\n"
         "audio_stereo_sep=0\n"
+        "# Real cassette audio is available only when tinker=true. Mode is\n"
+        "# off, load (deck -> CPC), save (CPC -> deck), or both. Device names\n"
+        "# are selected from the Advanced -> Real Cassette panel.\n"
+        "real_tape_mode=off\n"
+        "real_tape_input_device=default\n"
+        "real_tape_output_device=default\n"
+        "real_tape_input_gain=100\n"
+        "real_tape_output_level=50\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
@@ -653,6 +668,26 @@ int config_load_from(Config *cfg, const char *path_override) {
                 int v = atoi(val);
                 if (v >= 0 && v <= 255) cfg->audio_stereo_sep = v;
                 else { fprintf(stderr, "1984.conf:%d: audio_stereo_sep must be 0..255\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_mode")) {
+                RealTapeMode mode;
+                if (real_tape_mode_parse(val, &mode)) cfg->real_tape_mode = mode;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_mode must be off/load/save/both\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_input_device")) {
+                snprintf(cfg->real_tape_input_device,
+                         sizeof(cfg->real_tape_input_device), "%s",
+                         val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_output_device")) {
+                snprintf(cfg->real_tape_output_device,
+                         sizeof(cfg->real_tape_output_device), "%s",
+                         val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_input_gain")) {
+                int v = atoi(val);
+                if (v >= 25 && v <= 400) cfg->real_tape_input_gain = v;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_input_gain must be 25..400\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_output_level")) {
+                int v = atoi(val);
+                if (v >= 0 && v <= 100) cfg->real_tape_output_level = v;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_output_level must be 0..100\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "advanced")) {
             if (!strcmp(key, "tinker")) {
@@ -845,7 +880,12 @@ int config_save(const Config *cfg) {
         "monochrome=%s\n\n"
         "[audio]\n"
         "audio_volume=%d\n"
-        "audio_stereo_sep=%d\n\n"
+        "audio_stereo_sep=%d\n"
+        "real_tape_mode=%s\n"
+        "real_tape_input_device=%s\n"
+        "real_tape_output_device=%s\n"
+        "real_tape_input_gain=%d\n"
+        "real_tape_output_level=%d\n\n"
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
@@ -902,6 +942,11 @@ int config_save(const Config *cfg) {
         mono_to_str(cfg->monochrome),
         cfg->audio_volume,
         cfg->audio_stereo_sep,
+        real_tape_mode_name(cfg->real_tape_mode),
+        cfg->real_tape_input_device,
+        cfg->real_tape_output_device,
+        cfg->real_tape_input_gain,
+        cfg->real_tape_output_level,
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
         cfg->gif_width,

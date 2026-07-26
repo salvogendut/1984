@@ -131,18 +131,18 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) src/1984-cpc.$(OBJEXT) \
 	src/1984-printer.$(OBJEXT) src/1984-screen_text.$(OBJEXT) \
 	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
 	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
-	src/1984-fat.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
-	src/1984-usifac.$(OBJEXT) src/1984-perryfi.$(OBJEXT) \
-	src/1984-symbols.$(OBJEXT) src/1984-gifcap.$(OBJEXT) \
-	src/1984-ffmpeg_gif.$(OBJEXT) src/1984-webmcap.$(OBJEXT) \
-	src/1984-webgui.$(OBJEXT) src/1984-websvc.$(OBJEXT) \
-	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
-	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
-	src/1984-symbos_trace.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
-	src/1984-n4c_stack.$(OBJEXT) src/1984-notify.$(OBJEXT) \
-	src/1984-pilot.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
-	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
-	src/1984-z80.$(OBJEXT)
+	src/1984-fat.$(OBJEXT) src/1984-real_tape.$(OBJEXT) \
+	src/1984-ch376.$(OBJEXT) src/1984-usifac.$(OBJEXT) \
+	src/1984-perryfi.$(OBJEXT) src/1984-symbols.$(OBJEXT) \
+	src/1984-gifcap.$(OBJEXT) src/1984-ffmpeg_gif.$(OBJEXT) \
+	src/1984-webmcap.$(OBJEXT) src/1984-webgui.$(OBJEXT) \
+	src/1984-websvc.$(OBJEXT) src/1984-host_mount.$(OBJEXT) \
+	src/1984-leds.$(OBJEXT) src/1984-m4.$(OBJEXT) \
+	src/1984-symbnet.$(OBJEXT) src/1984-symbos_trace.$(OBJEXT) \
+	src/1984-mouse.$(OBJEXT) src/1984-n4c_stack.$(OBJEXT) \
+	src/1984-notify.$(OBJEXT) src/1984-pilot.$(OBJEXT) \
+	src/1984-snapshot.$(OBJEXT) src/1984-tap.$(OBJEXT) \
+	src/1984-tape.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -179,8 +179,8 @@ am__depfiles_remade = src/$(DEPDIR)/1984-amx.Po \
 	src/$(DEPDIR)/1984-overlay.Po src/$(DEPDIR)/1984-paste.Po \
 	src/$(DEPDIR)/1984-perryfi.Po src/$(DEPDIR)/1984-pilot.Po \
 	src/$(DEPDIR)/1984-ppi.Po src/$(DEPDIR)/1984-printer.Po \
-	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-rtc.Po \
-	src/$(DEPDIR)/1984-screen_text.Po \
+	src/$(DEPDIR)/1984-psg.Po src/$(DEPDIR)/1984-real_tape.Po \
+	src/$(DEPDIR)/1984-rtc.Po src/$(DEPDIR)/1984-screen_text.Po \
 	src/$(DEPDIR)/1984-snapshot.Po src/$(DEPDIR)/1984-symbnet.Po \
 	src/$(DEPDIR)/1984-symbols.Po \
 	src/$(DEPDIR)/1984-symbos_trace.Po src/$(DEPDIR)/1984-tap.Po \
@@ -342,7 +342,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PROG_GIT_COMMIT = 02a2407
+PROG_GIT_COMMIT = d3d795a
 SDL3_CFLAGS = 
 SDL3_LIBS = -lSDL3
 SET_MAKE = 
@@ -434,6 +434,7 @@ dist_man1_MANS = 1984.1
 	src/rtc.c \
 	src/ide.c \
 	src/fat.c \
+	src/real_tape.c \
 	src/ch376.c \
 	src/usifac.c \
 	src/perryfi.c \
@@ -496,6 +497,7 @@ noinst_HEADERS = \
 	src/printer.h \
 	src/psg.h \
 	src/rtc.h \
+	src/real_tape.h \
 	src/screen_text.h \
 	src/shutter_wav.h \
 	src/snapshot.h \
@@ -706,6 +708,8 @@ src/1984-ide.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-fat.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-real_tape.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-ch376.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-usifac.$(OBJEXT): src/$(am__dirstamp) \
@@ -795,6 +799,7 @@ include src/$(DEPDIR)/1984-pilot.Po # am--include-marker
 include src/$(DEPDIR)/1984-ppi.Po # am--include-marker
 include src/$(DEPDIR)/1984-printer.Po # am--include-marker
 include src/$(DEPDIR)/1984-psg.Po # am--include-marker
+include src/$(DEPDIR)/1984-real_tape.Po # am--include-marker
 include src/$(DEPDIR)/1984-rtc.Po # am--include-marker
 include src/$(DEPDIR)/1984-screen_text.Po # am--include-marker
 include src/$(DEPDIR)/1984-snapshot.Po # am--include-marker
@@ -1181,6 +1186,20 @@ src/1984-fat.obj: src/fat.c
 #	$(AM_V_CC)source='src/fat.c' object='src/1984-fat.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-fat.obj `if test -f 'src/fat.c'; then $(CYGPATH_W) 'src/fat.c'; else $(CYGPATH_W) '$(srcdir)/src/fat.c'; fi`
+
+src/1984-real_tape.o: src/real_tape.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-real_tape.o -MD -MP -MF src/$(DEPDIR)/1984-real_tape.Tpo -c -o src/1984-real_tape.o `test -f 'src/real_tape.c' || echo '$(srcdir)/'`src/real_tape.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-real_tape.Tpo src/$(DEPDIR)/1984-real_tape.Po
+#	$(AM_V_CC)source='src/real_tape.c' object='src/1984-real_tape.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-real_tape.o `test -f 'src/real_tape.c' || echo '$(srcdir)/'`src/real_tape.c
+
+src/1984-real_tape.obj: src/real_tape.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-real_tape.obj -MD -MP -MF src/$(DEPDIR)/1984-real_tape.Tpo -c -o src/1984-real_tape.obj `if test -f 'src/real_tape.c'; then $(CYGPATH_W) 'src/real_tape.c'; else $(CYGPATH_W) '$(srcdir)/src/real_tape.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-real_tape.Tpo src/$(DEPDIR)/1984-real_tape.Po
+#	$(AM_V_CC)source='src/real_tape.c' object='src/1984-real_tape.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-real_tape.obj `if test -f 'src/real_tape.c'; then $(CYGPATH_W) 'src/real_tape.c'; else $(CYGPATH_W) '$(srcdir)/src/real_tape.c'; fi`
 
 src/1984-ch376.o: src/ch376.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-ch376.o -MD -MP -MF src/$(DEPDIR)/1984-ch376.Tpo -c -o src/1984-ch376.o `test -f 'src/ch376.c' || echo '$(srcdir)/'`src/ch376.c
@@ -2078,6 +2097,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-printer.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
+	-rm -f src/$(DEPDIR)/1984-real_tape.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po
 	-rm -f src/$(DEPDIR)/1984-snapshot.Po
@@ -2177,6 +2197,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-ppi.Po
 	-rm -f src/$(DEPDIR)/1984-printer.Po
 	-rm -f src/$(DEPDIR)/1984-psg.Po
+	-rm -f src/$(DEPDIR)/1984-real_tape.Po
 	-rm -f src/$(DEPDIR)/1984-rtc.Po
 	-rm -f src/$(DEPDIR)/1984-screen_text.Po
 	-rm -f src/$(DEPDIR)/1984-snapshot.Po
