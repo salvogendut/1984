@@ -501,7 +501,17 @@ SDL recording and playback streams expose an application-side format of
 44.1 kHz mono signed 16-bit PCM. `real_tape_pump()` drains host capture into a
 4096-sample ring once per emulator loop. `cpc_advance_bus()` consumes one
 sample at the same cadence as PSG generation, so a live input drives PPI Port
-B bit 7 at emulated audio time and takes priority over a mounted CDT.
+B bit 7 at emulated audio time. Any enabled real-cassette mode makes the
+backend exclusive: the mounted CDT decoder is paused and resumes at the same
+pulse after real cassette mode is turned off.
+
+Media -> Tape becomes the real-cassette input-source selector while the
+backend is enabled. An empty `real_tape_wav` uses the configured SDL recording
+device (`Connected Input`). A selected WAV is loaded with `SDL_LoadWAV`,
+converted with `SDL_ConvertAudioSamples` to the backend format, and consumed
+at emulated audio cadence only while PPI Port C bit 4 (motor) is high. Delete
+ejects the WAV and `overlay_apply_real_tape()` reopens the connected input
+device.
 
 The input path removes sound-card DC bias with a slow adaptive estimate, then
 uses Schmitt thresholds to turn the centred waveform into stable HIGH/LOW
@@ -509,10 +519,11 @@ pulses. User gain is applied before thresholding. The output path samples PPI
 Port C bit 5 (cassette data) while bit 4 (motor) is active and queues the
 selected amplitude to the SDL playback stream at frame end.
 
-The panel can write raw captured input to a standard 44-byte-header WAV file
-(44.1 kHz, mono, signed 16-bit). The header sizes are finalised when capture
-stops. Pulse decoding and CDT reconstruction are intentionally outside this
-first backend phase.
+The panel can write raw connected-device input to a standard 44-byte-header
+WAV file (44.1 kHz, mono, signed 16-bit). The header sizes are finalised when
+capture stops. Capture is disabled while a WAV source is mounted. Pulse
+decoding and CDT reconstruction are intentionally outside this first backend
+phase.
 
 ---
 

@@ -1264,13 +1264,15 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
-    /* A live deck takes priority over a mounted CDT image. Its 44.1 kHz
-     * samples update the same PPI input bit further below. */
-    tape_step(&cpc->tape, cycles);
+    /* A connected real deck is exclusive with the mounted CDT. Keep the
+     * image paused so disabling real cassette resumes it at the same pulse. */
+    bool real_tape = real_tape_enabled(&cpc->real_tape);
+    if (!real_tape)
+        tape_step(&cpc->tape, cycles);
     ppi_set_tape_level(&cpc->ppi,
         real_tape_input_active(&cpc->real_tape)
             ? real_tape_input_level(&cpc->real_tape)
-            : tape_level(&cpc->tape));
+            : (real_tape ? 0 : tape_level(&cpc->tape)));
     fdc_tick(&cpc->fdc, cycles);
     /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
      * frame end so AY register writes take effect at their CPU-cycle time;
@@ -1284,7 +1286,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
             s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
             psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
-            if (!real_tape_input_active(&cpc->real_tape) &&
+            if (!real_tape &&
                 cpc->tape.present && cpc->tape.motor) {
                 int t  = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
                 int vl = (int)dst[0] + t;

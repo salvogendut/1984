@@ -741,10 +741,18 @@ int main(int argc, char *argv[]) {
     SD_LOG("cpc_init OK");
     notify_init();
     notify_set_mode(cfg.notifications);
-    if (!real_tape_configure(&cpc.real_tape,
-            cfg.tinker &&
-                (cpc.model == MODEL_464 || cfg.external_tape)
-                    ? cfg.real_tape_mode : REAL_TAPE_OFF,
+    RealTapeMode real_tape_mode =
+        cfg.tinker && (cpc.model == MODEL_464 || cfg.external_tape)
+            ? cfg.real_tape_mode : REAL_TAPE_OFF;
+    if (real_tape_mode_has_input(real_tape_mode) &&
+        cfg.real_tape_wav[0] &&
+        !real_tape_source_load_wav(&cpc.real_tape,
+                                   cfg.real_tape_wav)) {
+        notify_post("Cannot load cassette WAV: %s",
+                    real_tape_error(&cpc.real_tape));
+        cfg.real_tape_wav[0] = '\0';
+    }
+    if (!real_tape_configure(&cpc.real_tape, real_tape_mode,
             cfg.real_tape_input_device, cfg.real_tape_output_device,
             cfg.real_tape_input_gain, cfg.real_tape_output_level)) {
         notify_post("Real cassette unavailable: %s",

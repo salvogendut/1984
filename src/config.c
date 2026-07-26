@@ -180,6 +180,7 @@ void config_defaults(Config *cfg) {
              sizeof(cfg->real_tape_input_device), "default");
     snprintf(cfg->real_tape_output_device,
              sizeof(cfg->real_tape_output_device), "default");
+    cfg->real_tape_wav[0] = '\0';
     cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
     cfg->real_tape_output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
     cfg->notifications   = NOTIFY_MODE_SCREEN;
@@ -371,6 +372,9 @@ static void config_create_default(const char *path) {
         "real_tape_mode=off\n"
         "real_tape_input_device=default\n"
         "real_tape_output_device=default\n"
+        "# Optional WAV source selected from Media -> Tape. Empty uses the\n"
+        "# connected recording input selected above.\n"
+        "real_tape_wav=\n"
         "real_tape_input_gain=100\n"
         "real_tape_output_level=50\n"
         "\n"
@@ -680,6 +684,9 @@ int config_load_from(Config *cfg, const char *path_override) {
                 snprintf(cfg->real_tape_output_device,
                          sizeof(cfg->real_tape_output_device), "%s",
                          val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_wav")) {
+                snprintf(cfg->real_tape_wav,
+                         sizeof(cfg->real_tape_wav), "%s", val);
             } else if (!strcmp(key, "real_tape_input_gain")) {
                 int v = atoi(val);
                 if (v >= 25 && v <= 400) cfg->real_tape_input_gain = v;
@@ -884,6 +891,7 @@ int config_save(const Config *cfg) {
         "real_tape_mode=%s\n"
         "real_tape_input_device=%s\n"
         "real_tape_output_device=%s\n"
+        "real_tape_wav=%s\n"
         "real_tape_input_gain=%d\n"
         "real_tape_output_level=%d\n\n"
         "[advanced]\n"
@@ -945,6 +953,7 @@ int config_save(const Config *cfg) {
         real_tape_mode_name(cfg->real_tape_mode),
         cfg->real_tape_input_device,
         cfg->real_tape_output_device,
+        cfg->real_tape_wav,
         cfg->real_tape_input_gain,
         cfg->real_tape_output_level,
         cfg->tinker     ? "true" : "false",

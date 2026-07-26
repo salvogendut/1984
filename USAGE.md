@@ -188,12 +188,20 @@ input.
 For loading, connect the deck's EAR or line output to the selected input,
 start PLAY, then issue the CPC load command. For saving, connect the selected
 output to the deck's MIC or line input, start RECORD+PLAY, then issue the CPC
-save command. Deck transport remains manual. A live input takes priority over
-any mounted CDT image.
+save command. Deck transport remains manual.
+
+While real cassette is enabled, **Media -> Tape** selects its input source.
+With no WAV mounted it reports `Connected Input` and uses the recording device
+chosen in the real-cassette panel. Press Enter to choose a WAV file; it is
+converted to 44.1 kHz mono internally and advances while the CPC cassette
+motor is on. Press Delete to eject the WAV and return immediately to
+`Connected Input`. In either case the mounted CDT decoder is paused and
+becomes available again when real cassette mode is turned off.
 
 **Capture input WAV** records the unmodified incoming 44.1 kHz mono 16-bit
 signal for diagnostics or archival. Press Enter to select a destination and
-Enter again to stop. This first implementation does not reconstruct a CDT
+Enter again to stop. Capture is available for `Connected Input`, not while a
+WAV source is mounted. This first implementation does not reconstruct a CDT
 file from the recording.
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.

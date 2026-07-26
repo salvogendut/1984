@@ -39,6 +39,11 @@ typedef struct {
     TapeSignalFilter input_filter;
     u8 input_level;
 
+    s16 *source_samples;
+    size_t source_sample_count;
+    size_t source_sample_pos;
+    char source_path[REAL_TAPE_PATH_MAX];
+
     s16 output_frame[8192];
     int output_frame_count;
 
@@ -63,10 +68,17 @@ void real_tape_flush_output(RealTape *rt);
 
 bool real_tape_input_active(const RealTape *rt);
 bool real_tape_output_active(const RealTape *rt);
+bool real_tape_enabled(const RealTape *rt);
 u8 real_tape_input_level(const RealTape *rt);
 int real_tape_signal_percent(const RealTape *rt);
 int real_tape_buffered_ms(const RealTape *rt);
 const char *real_tape_error(const RealTape *rt);
+
+bool real_tape_source_load_wav(RealTape *rt, const char *path);
+void real_tape_source_eject(RealTape *rt);
+bool real_tape_source_loaded(const RealTape *rt);
+const char *real_tape_source_path(const RealTape *rt);
+int real_tape_source_progress(const RealTape *rt);
 
 const char *real_tape_mode_name(RealTapeMode mode);
 bool real_tape_mode_parse(const char *text, RealTapeMode *mode);
