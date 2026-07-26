@@ -681,7 +681,7 @@ static void item_text(const Overlay *ov, int row,
                     snprintf(val, vsz, "WAV: %s", name);
                 } else {
                     snprintf(val, vsz,
-                             "Connected Input  Enter=load WAV");
+                             "System Audio  Enter=load WAV");
                 }
             } else if (ov->cfg->tape[0]) {
                 char tmp[CONFIG_PATH_MAX];
@@ -2680,7 +2680,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         if (ov->cpc)
                             real_tape_source_eject(&ov->cpc->real_tape);
                         overlay_apply_real_tape(ov);
-                        notify_post("Cassette input source: Connected Input");
+                        notify_post("Cassette source: System Audio");
                         ov->dirty = true;
                     }
                 } else if (ov->cfg->tape[0]) {
@@ -2825,6 +2825,86 @@ static void render_file_browser(const Overlay *ov, SDL_Renderer *r,
               180, 185, 200);
 }
 
+#define REAL_TAPE_SCOPE_MAX_POINTS 1024
+
+void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r) {
+    if (!ov || !ov->cpc || !r) return;
+    const RealTape *rt = &ov->cpc->real_tape;
+    if (!real_tape_connected_input_active(rt)) return;
+
+    int rw, rh;
+    if (!SDL_GetRenderOutputSize(r, &rw, &rh)) return;
+    float lw = rw / SCALE;
+    float lh = rh / SCALE;
+    const float margin = 10.0f;
+    const float bottom_inset = 38.0f;
+    const float panel_h = 58.0f;
+    float panel_w = lw - margin * 2.0f;
+    float panel_y = lh - bottom_inset - panel_h;
+    if (panel_w < 80.0f || panel_y < margin) return;
+
+    SDL_SetRenderScale(r, SCALE, SCALE);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+    SDL_FRect panel = { margin, panel_y, panel_w, panel_h };
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 180);
+    SDL_RenderFillRect(r, &panel);
+    SDL_SetRenderDrawColor(r, 255, 220, 120, 120);
+    SDL_RenderRect(r, &panel);
+
+    char status[64];
+    snprintf(status, sizeof(status),
+             "SYSTEM AUDIO  LEVEL %d%%  MOTOR %s",
+             real_tape_signal_percent(rt),
+             (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+    SDL_SetRenderDrawColor(r, 255, 220, 120, 255);
+    SDL_RenderDebugText(r, margin + 6.0f, panel_y + 5.0f, status);
+
+    const float plot_x = margin + 6.0f;
+    const float plot_y = panel_y + 19.0f;
+    const float plot_w = panel_w - 12.0f;
+    const float plot_h = panel_h - 25.0f;
+    const float center_y = plot_y + plot_h * 0.5f;
+    SDL_SetRenderDrawColor(r, 130, 145, 170, 100);
+    SDL_RenderLine(r, plot_x, center_y, plot_x + plot_w, center_y);
+
+    s16 samples[REAL_TAPE_WAVEFORM_SAMPLES];
+    size_t sample_count = real_tape_waveform_copy(
+        rt, samples, SDL_arraysize(samples));
+    int point_count = (int)plot_w;
+    if (point_count > REAL_TAPE_SCOPE_MAX_POINTS)
+        point_count = REAL_TAPE_SCOPE_MAX_POINTS;
+    if ((size_t)point_count > sample_count)
+        point_count = (int)sample_count;
+
+    if (point_count >= 2) {
+        SDL_FPoint points[REAL_TAPE_SCOPE_MAX_POINTS];
+        float amplitude = plot_h * 0.5f - 2.0f;
+        for (int i = 0; i < point_count; i++) {
+            size_t first = (size_t)i * sample_count
+                         / (size_t)point_count;
+            size_t end = (size_t)(i + 1) * sample_count
+                       / (size_t)point_count;
+            if (end <= first) end = first + 1;
+            int64_t sum = 0;
+            for (size_t j = first; j < end; j++)
+                sum += samples[j];
+            float sample = (float)(sum / (int64_t)(end - first));
+            float x = plot_x + (float)i * plot_w
+                    / (float)(point_count - 1);
+            float y = center_y - sample * amplitude / 32768.0f;
+            if (y < plot_y) y = plot_y;
+            if (y > plot_y + plot_h) y = plot_y + plot_h;
+            points[i] = (SDL_FPoint){ x, y };
+        }
+        SDL_SetRenderDrawColor(r, 255, 220, 120, 235);
+        SDL_RenderLines(r, points, point_count);
+    }
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    SDL_SetRenderScale(r, 1.0f, 1.0f);
+}
+
 void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     if (!ov->visible) return;
 
@@ -2965,7 +3045,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                   "Start PLAY or RECORD+PLAY on the deck before the CPC command.",
                   150, 190, 230);
         draw_text(r, DROP_PAD, help_y + 48.0f,
-                  "Media -> Tape: Enter=WAV source, Del=Connected Input",
+                  "Media -> Tape: Enter=WAV source, Del=System Audio",
                   150, 190, 230);
         if (ov->cfg->model != MODEL_464 && !ov->cfg->external_tape) {
             draw_text(r, DROP_PAD, help_y + 68.0f,

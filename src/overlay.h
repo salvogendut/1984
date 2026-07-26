@@ -104,6 +104,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev);
 
 /* Draw the overlay on top of the current renderer frame (before display_flip). */
 void overlay_render(const Overlay *ov, SDL_Renderer *r);
+void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r);
 
 /* Call once per frame to process any pending file-dialog results. */
 void overlay_tick(Overlay *ov);

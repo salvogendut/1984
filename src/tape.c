@@ -350,6 +350,7 @@ void tape_signal_init(TapeSignalFilter *f) {
 u8 tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent) {
     if (!f->initialized) {
         f->dc_q16 = (s32)sample * 65536;
+        f->pcm = 0;
         f->initialized = true;
         return TAPE_LEVEL_LOW;
     }
@@ -363,6 +364,7 @@ u8 tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent) {
     int scaled = centered * gain_percent / 100;
     if (scaled > 32767) scaled = 32767;
     if (scaled < -32768) scaled = -32768;
+    f->pcm = (s16)scaled;
 
     int magnitude = scaled < 0 ? -scaled : scaled;
     if (f->peak > 0)
@@ -381,4 +383,8 @@ u8 tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent) {
 int tape_signal_peak_percent(const TapeSignalFilter *f) {
     int percent = f->peak * 100 / 32767;
     return percent > 100 ? 100 : percent;
+}
+
+s16 tape_signal_pcm(const TapeSignalFilter *f) {
+    return f ? f->pcm : 0;
 }

@@ -373,7 +373,7 @@ static void config_create_default(const char *path) {
         "real_tape_input_device=default\n"
         "real_tape_output_device=default\n"
         "# Optional WAV source selected from Media -> Tape. Empty uses the\n"
-        "# connected recording input selected above.\n"
+        "# System Audio recording input selected above.\n"
         "real_tape_wav=\n"
         "real_tape_input_gain=100\n"
         "real_tape_output_level=50\n"

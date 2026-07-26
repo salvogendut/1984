@@ -10,6 +10,7 @@
 #define REAL_TAPE_DEVICE_NAME_MAX 256
 #define REAL_TAPE_PATH_MAX 512
 #define REAL_TAPE_SAMPLE_RATE 44100
+#define REAL_TAPE_WAVEFORM_SAMPLES 4096
 #define REAL_TAPE_INPUT_GAIN_DEFAULT 100
 #define REAL_TAPE_OUTPUT_LEVEL_DEFAULT 50
 
@@ -38,6 +39,10 @@ typedef struct {
     unsigned input_overruns;
     TapeSignalFilter input_filter;
     u8 input_level;
+    s16 monitor_pcm;
+    s16 waveform_ring[REAL_TAPE_WAVEFORM_SAMPLES];
+    size_t waveform_head;
+    size_t waveform_count;
 
     s16 *source_samples;
     size_t source_sample_count;
@@ -69,10 +74,14 @@ void real_tape_flush_output(RealTape *rt);
 bool real_tape_input_active(const RealTape *rt);
 bool real_tape_output_active(const RealTape *rt);
 bool real_tape_enabled(const RealTape *rt);
+bool real_tape_connected_input_active(const RealTape *rt);
 u8 real_tape_input_level(const RealTape *rt);
 int real_tape_signal_percent(const RealTape *rt);
 int real_tape_buffered_ms(const RealTape *rt);
 const char *real_tape_error(const RealTape *rt);
+s16 real_tape_monitor_sample(const RealTape *rt);
+size_t real_tape_waveform_copy(const RealTape *rt, s16 *samples,
+                               size_t capacity);
 
 bool real_tape_source_load_wav(RealTape *rt, const char *path);
 void real_tape_source_eject(RealTape *rt);

@@ -507,19 +507,29 @@ pulse after real cassette mode is turned off.
 
 Media -> Tape becomes the real-cassette input-source selector while the
 backend is enabled. An empty `real_tape_wav` uses the configured SDL recording
-device (`Connected Input`). A selected WAV is loaded with `SDL_LoadWAV`,
+device (`System Audio`). A selected WAV is loaded with `SDL_LoadWAV`,
 converted with `SDL_ConvertAudioSamples` to the backend format, and consumed
 at emulated audio cadence only while PPI Port C bit 4 (motor) is high. Delete
-ejects the WAV and `overlay_apply_real_tape()` reopens the connected input
+ejects the WAV and `overlay_apply_real_tape()` reopens the System Audio input
 device.
 
 The input path removes sound-card DC bias with a slow adaptive estimate, then
 uses Schmitt thresholds to turn the centred waveform into stable HIGH/LOW
-pulses. User gain is applied before thresholding. The output path samples PPI
-Port C bit 5 (cassette data) while bit 4 (motor) is active and queues the
-selected amplitude to the SDL playback stream at frame end.
+pulses. User gain is applied before thresholding. The filter also exposes the
+centred PCM value consumed by the decoder. `RealTape` retains the latest 4096
+values in a visualization-only ring; the overlay copies that history without
+touching the cassette queue and renders it as a translucent bottom scope while
+System Audio is selected.
 
-The panel can write raw connected-device input to a standard 44-byte-header
+The centred System Audio input PCM is mixed into both PSG channels at 35% while
+PPI Port C bit 4 (motor) is active. Because this happens in
+`cpc_advance_bus()`, local SDL playback, WAV recording, and the Web GUI audio
+sink all receive the same monitored signal. Motor gating prevents a connected
+microphone from being monitored continuously. The output path samples PPI
+Port C bit 5 (cassette data) while bit 4 is active and queues the selected
+amplitude to the SDL playback stream at frame end.
+
+The panel can write raw System Audio input to a standard 44-byte-header
 WAV file (44.1 kHz, mono, signed 16-bit). The header sizes are finalised when
 capture stops. Capture is disabled while a WAV source is mounted. Pulse
 decoding and CDT reconstruction are intentionally outside this first backend

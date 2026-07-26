@@ -16,6 +16,7 @@ static void test_dc_offset_is_removed(void) {
     for (int i = 0; i < 5000; i++)
         CHECK(tape_signal_sample(&f, 12000, 100) == 0x00);
     CHECK(tape_signal_peak_percent(&f) == 0);
+    CHECK(tape_signal_pcm(&f) == 0);
 }
 
 static void test_full_level_edges(void) {
@@ -23,7 +24,9 @@ static void test_full_level_edges(void) {
     tape_signal_init(&f);
     CHECK(tape_signal_sample(&f, 0, 100) == 0x00);
     CHECK(tape_signal_sample(&f, 3000, 100) == 0x80);
+    CHECK(tape_signal_pcm(&f) > 2900);
     CHECK(tape_signal_sample(&f, -3000, 100) == 0x00);
+    CHECK(tape_signal_pcm(&f) < -2900);
     CHECK(tape_signal_peak_percent(&f) > 0);
     CHECK(tape_signal_peak_percent(&f) <= 100);
 }
@@ -40,7 +43,9 @@ static void test_noise_rejection_and_gain(void) {
     tape_signal_init(&f);
     CHECK(tape_signal_sample(&f, 0, 400) == 0x00);
     CHECK(tape_signal_sample(&f, 300, 400) == 0x80);
+    CHECK(tape_signal_pcm(&f) > 1100);
     CHECK(tape_signal_sample(&f, -300, 400) == 0x00);
+    CHECK(tape_signal_pcm(&f) < -1100);
 }
 
 int main(void) {

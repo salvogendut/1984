@@ -1286,9 +1286,13 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
             s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
             psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
-            if (!real_tape &&
-                cpc->tape.present && cpc->tape.motor) {
-                int t  = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+            int t = 0;
+            if (real_tape && (cpc->ppi.port_c & 0x10))
+                t = real_tape_monitor_sample(&cpc->real_tape);
+            else if (!real_tape &&
+                     cpc->tape.present && cpc->tape.motor)
+                t = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+            if (t) {
                 int vl = (int)dst[0] + t;
                 int vr = (int)dst[1] + t;
                 if (vl >  32767) vl =  32767; else if (vl < -32768) vl = -32768;

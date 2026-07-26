@@ -1381,6 +1381,7 @@ int main(int argc, char *argv[]) {
         }
         prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
+        overlay_render_real_tape_scope(&overlay, cpc.display.renderer);
         notify_tick((int)((emulated_frame_ns + 500000ULL) / 1000000ULL));
         if (cpc.paused)
             display_draw_paused_label(&cpc.display);

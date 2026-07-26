@@ -191,16 +191,24 @@ output to the deck's MIC or line input, start RECORD+PLAY, then issue the CPC
 save command. Deck transport remains manual.
 
 While real cassette is enabled, **Media -> Tape** selects its input source.
-With no WAV mounted it reports `Connected Input` and uses the recording device
+With no WAV mounted it reports `System Audio` and uses the recording device
 chosen in the real-cassette panel. Press Enter to choose a WAV file; it is
 converted to 44.1 kHz mono internally and advances while the CPC cassette
 motor is on. Press Delete to eject the WAV and return immediately to
-`Connected Input`. In either case the mounted CDT decoder is paused and
+`System Audio`. In either case the mounted CDT decoder is paused and
 becomes available again when real cassette mode is turned off.
+
+While `System Audio` is active, a translucent oscilloscope panel at the
+bottom of the emulator shows the DC-corrected, gain-adjusted signal that
+reaches the cassette decoder. The panel also reports input level and cassette
+motor state. While the motor is on, that same signal is mixed into the CPC
+stereo output at a conservative monitor level, so it is audible locally, in
+audio captures, and through Web GUI audio. Monitoring stops with the motor to
+avoid continuously feeding a microphone back to the speakers.
 
 **Capture input WAV** records the unmodified incoming 44.1 kHz mono 16-bit
 signal for diagnostics or archival. Press Enter to select a destination and
-Enter again to stop. Capture is available for `Connected Input`, not while a
+Enter again to stop. Capture is available for `System Audio`, not while a
 WAV source is mounted. This first implementation does not reconstruct a CDT
 file from the recording.
 

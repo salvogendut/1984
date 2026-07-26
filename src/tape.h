@@ -59,6 +59,7 @@ typedef struct {
 typedef struct {
     s32  dc_q16;
     int  peak;
+    s16  pcm;
     bool initialized;
     bool high;
 } TapeSignalFilter;
@@ -81,3 +82,4 @@ u8   tape_level(const Tape *t);
 void tape_signal_init(TapeSignalFilter *f);
 u8   tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent);
 int  tape_signal_peak_percent(const TapeSignalFilter *f);
+s16  tape_signal_pcm(const TapeSignalFilter *f);

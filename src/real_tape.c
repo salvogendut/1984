@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define REAL_TAPE_MONITOR_LEVEL_PERCENT 35
+
 static bool default_device(const char *name) {
     return !name || !name[0] || !strcmp(name, "default");
 }
@@ -40,6 +42,24 @@ static void set_error(RealTape *rt, const char *side, const char *detail) {
     snprintf(rt->error, sizeof(rt->error), "%s: %s",
              side, detail && detail[0] ? detail : "unknown audio error");
     fprintf(stderr, "[real-tape] %s\n", rt->error);
+}
+
+static void clear_input_visual(RealTape *rt) {
+    rt->monitor_pcm = 0;
+    rt->waveform_head = 0;
+    rt->waveform_count = 0;
+}
+
+static void waveform_push(RealTape *rt, s16 sample) {
+    if (rt->waveform_count == REAL_TAPE_WAVEFORM_SAMPLES) {
+        rt->waveform_head =
+            (rt->waveform_head + 1) % REAL_TAPE_WAVEFORM_SAMPLES;
+        rt->waveform_count--;
+    }
+    size_t tail = (rt->waveform_head + rt->waveform_count)
+                % REAL_TAPE_WAVEFORM_SAMPLES;
+    rt->waveform_ring[tail] = sample;
+    rt->waveform_count++;
 }
 
 static SDL_AudioDeviceID resolve_device(bool recording, const char *name,
@@ -150,6 +170,7 @@ void real_tape_reset(RealTape *rt) {
     rt->output_frame_count = 0;
     rt->input_level = 0;
     rt->source_sample_pos = 0;
+    clear_input_visual(rt);
     tape_signal_init(&rt->input_filter);
     if (rt->input_stream) SDL_ClearAudioStream(rt->input_stream);
     if (rt->output_stream) SDL_ClearAudioStream(rt->output_stream);
@@ -185,6 +206,7 @@ bool real_tape_configure(RealTape *rt, RealTapeMode mode,
         rt->input_head = 0;
         rt->input_count = 0;
         rt->input_level = 0;
+        clear_input_visual(rt);
         tape_signal_init(&rt->input_filter);
     } else if (!use_device_input) {
         real_tape_record_stop(rt);
@@ -193,11 +215,13 @@ bool real_tape_configure(RealTape *rt, RealTapeMode mode,
         rt->active_input[0] = '\0';
         rt->input_head = 0;
         rt->input_count = 0;
+        clear_input_visual(rt);
     } else if (reopen_input) {
         if (rt->input_stream) SDL_DestroyAudioStream(rt->input_stream);
         rt->input_stream = NULL;
         rt->input_head = 0;
         rt->input_count = 0;
+        clear_input_visual(rt);
         tape_signal_init(&rt->input_filter);
         rt->input_stream = open_stream(rt, true, input,
                                        rt->active_input,
@@ -280,6 +304,7 @@ void real_tape_pump(RealTape *rt) {
 }
 
 void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
+    rt->monitor_pcm = 0;
     if (real_tape_mode_has_input(rt->mode) &&
         real_tape_source_loaded(rt)) {
         if ((ppi_port_c & 0x10) &&
@@ -298,10 +323,13 @@ void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
             rt->input_count--;
             rt->input_level = tape_signal_sample(&rt->input_filter, sample,
                                                   rt->input_gain);
+            rt->monitor_pcm = tape_signal_pcm(&rt->input_filter);
         } else {
             rt->input_underruns++;
         }
     }
+    if (real_tape_connected_input_active(rt))
+        waveform_push(rt, rt->monitor_pcm);
 
     if (real_tape_output_active(rt) &&
         rt->output_frame_count < (int)SDL_arraysize(rt->output_frame)) {
@@ -338,6 +366,11 @@ bool real_tape_enabled(const RealTape *rt) {
     return rt && rt->mode != REAL_TAPE_OFF;
 }
 
+bool real_tape_connected_input_active(const RealTape *rt) {
+    return rt && real_tape_mode_has_input(rt->mode) &&
+           !real_tape_source_loaded(rt) && rt->input_stream;
+}
+
 u8 real_tape_input_level(const RealTape *rt) {
     return rt ? rt->input_level : 0;
 }
@@ -352,6 +385,29 @@ int real_tape_buffered_ms(const RealTape *rt) {
 
 const char *real_tape_error(const RealTape *rt) {
     return rt && rt->error[0] ? rt->error : "";
+}
+
+s16 real_tape_monitor_sample(const RealTape *rt) {
+    if (!real_tape_connected_input_active(rt)) return 0;
+    return (s16)((int)rt->monitor_pcm *
+                 REAL_TAPE_MONITOR_LEVEL_PERCENT / 100);
+}
+
+size_t real_tape_waveform_copy(const RealTape *rt, s16 *samples,
+                               size_t capacity) {
+    if (!rt || !samples || capacity == 0) return 0;
+    size_t count = rt->waveform_count;
+    size_t skip = 0;
+    if (count > capacity) {
+        skip = count - capacity;
+        count = capacity;
+    }
+    for (size_t i = 0; i < count; i++) {
+        size_t index = (rt->waveform_head + skip + i)
+                     % REAL_TAPE_WAVEFORM_SAMPLES;
+        samples[i] = rt->waveform_ring[index];
+    }
+    return count;
 }
 
 bool real_tape_source_load_wav(RealTape *rt, const char *path) {
@@ -400,6 +456,7 @@ bool real_tape_source_load_wav(RealTape *rt, const char *path) {
     rt->input_head = 0;
     rt->input_count = 0;
     rt->input_level = 0;
+    clear_input_visual(rt);
     tape_signal_init(&rt->input_filter);
     if (rt->input_stream) SDL_ClearAudioStream(rt->input_stream);
     snprintf(rt->source_path, sizeof(rt->source_path), "%s", path);
@@ -419,6 +476,7 @@ void real_tape_source_eject(RealTape *rt) {
     rt->input_head = 0;
     rt->input_count = 0;
     rt->input_level = 0;
+    clear_input_visual(rt);
     tape_signal_init(&rt->input_filter);
     if (rt->input_stream) SDL_ClearAudioStream(rt->input_stream);
 }
