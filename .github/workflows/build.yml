@@ -97,12 +97,20 @@ jobs:
           path: dist/
 
   macos:
-    name: macOS (Apple Silicon)
-    runs-on: macos-latest
+    name: macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
-        run: brew install autoconf automake pkg-config sdl3 cairo
+        run: brew install autoconf automake pkg-config sdl3 cairo dylibbundler
       - name: Configure
         run: |
           autoreconf -iv
@@ -111,6 +119,20 @@ jobs:
         run: make -j$(sysctl -n hw.logicalcpu)
       - name: Test
         run: make -C tests check
+      - name: Package app bundle
+        run: |
+          version="$(sed -n 's/^PACKAGE_VERSION = //p' Makefile)"
+          sh packaging/macos/package.sh ./1984 dist/1984.app "$version"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            dist/1984.app/Contents/MacOS/1984 \
+            --config=/dev/null --exit-after=100
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/1984.app "dist/1984-macos-${{ matrix.arch }}.zip"
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1984-macos-${{ matrix.arch }}
+          path: dist/1984-macos-${{ matrix.arch }}.zip
 
   flatpak:
     name: Flatpak (x86_64)
@@ -168,6 +190,12 @@ jobs:
 
           # Windows: zip the full bundle (exe + DLLs + roms)
           (cd artifacts/1984-windows-x86_64 && zip -r "../../assets/1984-${tag}-windows-x86_64.zip" .)
+
+          # macOS: self-contained app bundles for Apple Silicon and Intel.
+          cp artifacts/1984-macos-arm64/1984-macos-arm64.zip \
+             "assets/1984-${tag}-macos-arm64.zip"
+          cp artifacts/1984-macos-x86_64/1984-macos-x86_64.zip \
+             "assets/1984-${tag}-macos-x86_64.zip"
 
           # Flatpak: single-file bundle, installable with `flatpak install`
           cp artifacts/1984-flatpak-x86_64/1984.flatpak "assets/1984-${tag}-x86_64.flatpak"
