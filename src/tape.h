@@ -12,15 +12,17 @@
  *
  * Supported CDT block types: 0x10 standard speed data, 0x11 turbo
  * loading data, 0x12 pure tone, 0x13 pulse sequence, 0x14 pure data,
- * 0x20 pause. Metadata blocks 0x21/22/30/31/32/33/34/5A are skipped.
- * Unknown blocks fall back to a generic skip; if that overshoots the
- * decoder simply hits TAPE_END and the tape stops. */
+ * 0x15 direct recording, 0x20 pause. Metadata blocks
+ * 0x21/22/30/31/32/33/34/5A are skipped. Unknown blocks fall back to a
+ * generic skip; if that overshoots the decoder simply hits TAPE_END and
+ * the tape stops. */
 
 typedef enum {
     TAPE_END = 0,
     TAPE_PILOT,
     TAPE_SYNC,
     TAPE_DATA,
+    TAPE_DIRECT,
     TAPE_PAUSE,
 } TapeStage;
 
@@ -53,6 +55,17 @@ typedef struct {
     u16     sync_table[2];
 } Tape;
 
+/* Converts AC-coupled host audio into the CPC cassette input bit. The
+ * adaptive DC estimate removes sound-card bias, while the Schmitt thresholds
+ * reject low-level noise without changing pulse timing. */
+typedef struct {
+    s32  dc_q16;
+    int  peak;
+    s16  pcm;
+    bool initialized;
+    bool high;
+} TapeSignalFilter;
+
 void tape_init(Tape *t);
 bool tape_load(Tape *t, const char *path);    /* false on I/O error */
 void tape_eject(Tape *t);
@@ -67,3 +80,8 @@ void tape_step(Tape *t, int cycles);
 
 /* 0x00 or 0x80 — OR into PPI Port B during read. */
 u8   tape_level(const Tape *t);
+
+void tape_signal_init(TapeSignalFilter *f);
+u8   tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent);
+int  tape_signal_peak_percent(const TapeSignalFilter *f);
+s16  tape_signal_pcm(const TapeSignalFilter *f);

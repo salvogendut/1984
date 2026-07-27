@@ -149,6 +149,20 @@ typedef struct {
     int  audio_stereo_sep;    /* 0..255: 0 = mono, 255 = full Caprice32
                                * ABC panning (A left, B centre, C right);
                                * default 0 (mono) */
+    /* Real cassette host audio is intentionally gated by tinker below.
+     * Persisting a non-off mode is harmless while tinker=false: no devices
+     * are opened until the Advanced tab is enabled again. */
+    RealTapeMode real_tape_mode;
+    char real_tape_input_device[REAL_TAPE_DEVICE_NAME_MAX];
+    RealTapeOutputSource real_tape_output_source;
+    RealTapeOutputTarget real_tape_output_target;
+    char real_tape_output_device[REAL_TAPE_DEVICE_NAME_MAX];
+    char real_tape_output_file[CONFIG_PATH_MAX];
+    char real_tape_wav[CONFIG_PATH_MAX];
+    int  real_tape_input_gain;    /* 25..400 percent */
+    int  real_tape_output_level;  /* 0..100 percent of full scale */
+    bool real_tape_audible_monitor;
+    bool real_tape_visual_monitor;
 
     /* [advanced] */
     bool tinker;             /* enable Advanced overlay tab with low-level toggles */

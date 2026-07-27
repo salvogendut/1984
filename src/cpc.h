@@ -22,6 +22,7 @@
 #include "usifac.h"
 #include "perryfi.h"
 #include "tape.h"
+#include "real_tape.h"
 #include "printer.h"
 
 typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
@@ -72,6 +73,7 @@ typedef struct {
                                   data port when its present flag is set)   */
     Printer    printer;        /* Centronics @ 0xEFxx (Cairo → PDF host sink) */
     Tape       tape;           /* cassette / .cdt image */
+    RealTape   real_tape;      /* host audio cassette deck, Tinker-gated */
     /* PSG + cassette audio generated inside the Z80 step loop at audio rate.
      * This preserves AY volume-register sample players: writes affect only
      * the samples after the corresponding CPU cycles have elapsed. */

@@ -175,6 +175,19 @@ void config_defaults(Config *cfg) {
     cfg->perryfi = false;
     cfg->audio_volume    = 80;
     cfg->audio_stereo_sep = 0;
+    cfg->real_tape_mode = REAL_TAPE_OFF;
+    snprintf(cfg->real_tape_input_device,
+             sizeof(cfg->real_tape_input_device), "default");
+    cfg->real_tape_output_source = REAL_TAPE_OUTPUT_SOURCE_CDT;
+    cfg->real_tape_output_target = REAL_TAPE_TARGET_FILE;
+    snprintf(cfg->real_tape_output_device,
+             sizeof(cfg->real_tape_output_device), "default");
+    cfg->real_tape_output_file[0] = '\0';
+    cfg->real_tape_wav[0] = '\0';
+    cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
+    cfg->real_tape_output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
+    cfg->real_tape_audible_monitor = true;
+    cfg->real_tape_visual_monitor = true;
     cfg->notifications   = NOTIFY_MODE_SCREEN;
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
@@ -358,6 +371,28 @@ static void config_create_default(const char *path) {
         "# Stereo separation 0..255 — 0=mono, 255=full Caprice32 ABC panning\n"
         "# (channel A left, B centre, C right)\n"
         "audio_stereo_sep=0\n"
+        "# Real cassette audio is available only when tinker=true. Mode is\n"
+        "# off, input (System -> CPC deck), or output (CPC deck -> System).\n"
+        "# The input device is selected in Advanced -> Real Cassette.\n"
+        "real_tape_mode=off\n"
+        "real_tape_input_device=default\n"
+        "# OUTPUT source: cdt plays the mounted virtual tape; cpc_save\n"
+        "# emits the CPC cassette write line used by SAVE commands.\n"
+        "real_tape_output_source=cdt\n"
+        "# Output destination: file or device. File capture/conversion is\n"
+        "# enabled for the current session with the panel toggle. The file\n"
+        "# is CDT for INPUT+WAV conversion and WAV for other routes.\n"
+        "real_tape_output_target=file\n"
+        "real_tape_output_device=default\n"
+        "real_tape_output_file=\n"
+        "# Optional WAV source selected from Media -> Tape. Empty uses the\n"
+        "# System Audio recording input selected above.\n"
+        "real_tape_wav=\n"
+        "real_tape_input_gain=100\n"
+        "real_tape_output_level=50\n"
+        "# Source audible/visual monitors can be switched independently.\n"
+        "real_tape_audible_monitor=true\n"
+        "real_tape_visual_monitor=true\n"
         "\n"
         "[advanced]\n"
         "# Enable the Advanced overlay tab with low-level toggles\n"
@@ -417,6 +452,9 @@ int config_load_from(Config *cfg, const char *path_override) {
     char section[64] = "";
     int  lineno = 0;
     int  rc = 0;
+    bool legacy_real_tape_save = false;
+    bool real_tape_output_source_seen = false;
+    bool real_tape_output_target_seen = false;
 
     while (fgets(line, sizeof(line), f)) {
         lineno++;
@@ -653,6 +691,65 @@ int config_load_from(Config *cfg, const char *path_override) {
                 int v = atoi(val);
                 if (v >= 0 && v <= 255) cfg->audio_stereo_sep = v;
                 else { fprintf(stderr, "1984.conf:%d: audio_stereo_sep must be 0..255\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_mode")) {
+                RealTapeMode mode;
+                if (real_tape_mode_parse(val, &mode)) {
+                    cfg->real_tape_mode = mode;
+                    legacy_real_tape_save = !SDL_strcasecmp(val, "save");
+                }
+                else { fprintf(stderr, "1984.conf:%d: real_tape_mode must be off/input/output\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_input_device")) {
+                snprintf(cfg->real_tape_input_device,
+                         sizeof(cfg->real_tape_input_device), "%s",
+                         val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_output_source")) {
+                RealTapeOutputSource source;
+                if (real_tape_output_source_parse(val, &source)) {
+                    cfg->real_tape_output_source = source;
+                    real_tape_output_source_seen = true;
+                } else {
+                    fprintf(stderr,
+                            "1984.conf:%d: real_tape_output_source must be cdt/cpc_save\n",
+                            lineno);
+                    rc = -1;
+                }
+            } else if (!strcmp(key, "real_tape_output_target")) {
+                RealTapeOutputTarget target;
+                if (real_tape_output_target_parse(val, &target)) {
+                    cfg->real_tape_output_target = target;
+                    real_tape_output_target_seen = true;
+                } else {
+                    fprintf(stderr,
+                            "1984.conf:%d: real_tape_output_target must be file/device\n",
+                            lineno);
+                    rc = -1;
+                }
+            } else if (!strcmp(key, "real_tape_output_file")) {
+                expand_path(val, cfg->real_tape_output_file,
+                            sizeof(cfg->real_tape_output_file));
+            } else if (!strcmp(key, "real_tape_output_device")) {
+                snprintf(cfg->real_tape_output_device,
+                         sizeof(cfg->real_tape_output_device), "%s",
+                         val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_wav")) {
+                snprintf(cfg->real_tape_wav,
+                         sizeof(cfg->real_tape_wav), "%s", val);
+            } else if (!strcmp(key, "real_tape_input_gain")) {
+                int v = atoi(val);
+                if (v >= 25 && v <= 400) cfg->real_tape_input_gain = v;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_input_gain must be 25..400\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_output_level")) {
+                int v = atoi(val);
+                if (v >= 0 && v <= 100) cfg->real_tape_output_level = v;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_output_level must be 0..100\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_audible_monitor")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->real_tape_audible_monitor = b;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_audible_monitor must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "real_tape_visual_monitor")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->real_tape_visual_monitor = b;
+                else { fprintf(stderr, "1984.conf:%d: real_tape_visual_monitor must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "advanced")) {
             if (!strcmp(key, "tinker")) {
@@ -704,6 +801,14 @@ int config_load_from(Config *cfg, const char *path_override) {
     }
 
     fclose(f);
+
+    if (legacy_real_tape_save) {
+        if (!real_tape_output_source_seen)
+            cfg->real_tape_output_source =
+                REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+        if (!real_tape_output_target_seen)
+            cfg->real_tape_output_target = REAL_TAPE_TARGET_DEVICE;
+    }
 
     /* Restore defaults for any fields left invalid/empty by a corrupt config */
     if (!cfg->rom_os[0])
@@ -845,7 +950,18 @@ int config_save(const Config *cfg) {
         "monochrome=%s\n\n"
         "[audio]\n"
         "audio_volume=%d\n"
-        "audio_stereo_sep=%d\n\n"
+        "audio_stereo_sep=%d\n"
+        "real_tape_mode=%s\n"
+        "real_tape_input_device=%s\n"
+        "real_tape_output_source=%s\n"
+        "real_tape_output_target=%s\n"
+        "real_tape_output_device=%s\n"
+        "real_tape_output_file=%s\n"
+        "real_tape_wav=%s\n"
+        "real_tape_input_gain=%d\n"
+        "real_tape_output_level=%d\n"
+        "real_tape_audible_monitor=%s\n"
+        "real_tape_visual_monitor=%s\n\n"
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
@@ -902,6 +1018,17 @@ int config_save(const Config *cfg) {
         mono_to_str(cfg->monochrome),
         cfg->audio_volume,
         cfg->audio_stereo_sep,
+        real_tape_mode_name(cfg->real_tape_mode),
+        cfg->real_tape_input_device,
+        real_tape_output_source_name(cfg->real_tape_output_source),
+        real_tape_output_target_name(cfg->real_tape_output_target),
+        cfg->real_tape_output_device,
+        cfg->real_tape_output_file,
+        cfg->real_tape_wav,
+        cfg->real_tape_input_gain,
+        cfg->real_tape_output_level,
+        cfg->real_tape_audible_monitor ? "true" : "false",
+        cfg->real_tape_visual_monitor ? "true" : "false",
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
         cfg->gif_width,

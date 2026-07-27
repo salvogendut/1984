@@ -356,7 +356,13 @@ FFmpeg GIF optimization, USIfAC mode (PTY /
 TCP), USIfAC PTY link (stable host-side symlink alias for the
 randomised
 .IR /dev/pts/N
-slave), the
+slave), real cassette INPUT/OUTPUT modes, host input device, fixed WAV-file
+input, selectable CPC-deck CDT or CPC SAVE output source, selectable file or
+playback-device output, gain, level, independently switchable visual and
+audible source monitors, WAV remaining time, session-only WAV capture, and
+WAV-to-CDT direct-recording conversion under
+.BR "Real Cassette" ,
+the
 .B Monochrome
 phosphor tint (off, green, amber, white), and the
 .B Web GUI
@@ -365,12 +371,15 @@ toggle (start/stop the embedded HTTP server described under
 The Advanced tab is
 hidden unless
 .B tinker=true
-is set in the config.
+is set in the config. Real Cassette is therefore Tinker-gated: disabling
+Tinker closes its host audio streams. CPC 664 and 6128 models also require
+.B External Tape
+in General.
 .SH CONFIGURATION FILE
 .I ~/.config/1984/1984.conf
 is a small INI-style file with sections
 .BR [machine] ", " [roms] ", " [expansion_roms] ", "
-.BR [storage] ", " [hardware] ", " [printer] ", " [display] ", and " [advanced] .
+.BR [storage] ", " [hardware] ", " [printer] ", " [display] ", " [audio] ", and " [advanced] .
 A self-documented default is written on first run; the overlay
 edits it in place. Per-board ROM groupings are stored under
 .BI [board: NAME ]

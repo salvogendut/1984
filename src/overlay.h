@@ -15,7 +15,8 @@ typedef enum {
     OV_STATE_MENU     = 0,   /* normal navigation */
     OV_STATE_CONFIRM  = 1,   /* "save changes?" prompt */
     OV_STATE_ROMSLOTS = 2,   /* ROM slots sub-panel */
-    OV_STATE_FILE_BROWSER = 3
+    OV_STATE_FILE_BROWSER = 3,
+    OV_STATE_REAL_TAPE = 4   /* Tinker-gated physical cassette controls */
 } OvState;
 
 typedef enum {
@@ -32,7 +33,10 @@ typedef enum {
     DIALOG_SNAPSHOT_SAVE = 10,
     DIALOG_VIDEO_CAPTURE = 11,
     DIALOG_PRINTER_DIR   = 12,
-    DIALOG_DISK_NEW      = 13   /* save-as: create a blank .dsk */
+    DIALOG_DISK_NEW      = 13,  /* save-as: create a blank .dsk */
+    DIALOG_REAL_TAPE_OUTPUT_FILE = 14,
+    DIALOG_REAL_TAPE_SOURCE_WAV = 15,
+    DIALOG_REAL_TAPE_OUTPUT_CDT = 16
 } DialogKind;
 
 struct OverlayBrowserEntry;
@@ -65,6 +69,7 @@ typedef struct {
     int          browser_entry_capacity;
     int          browser_row;
     int          browser_scroll;
+    int          real_tape_row;
     /* ROM slots sub-panel state */
     int          romslot_row;    /* selected slot 0-31 */
     int          romslot_scroll; /* index of first visible slot */
@@ -100,6 +105,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev);
 
 /* Draw the overlay on top of the current renderer frame (before display_flip). */
 void overlay_render(const Overlay *ov, SDL_Renderer *r);
+void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r);
 
 /* Call once per frame to process any pending file-dialog results. */
 void overlay_tick(Overlay *ov);

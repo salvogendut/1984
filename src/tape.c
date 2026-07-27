@@ -11,6 +11,7 @@
 
 #define TAPE_LEVEL_LOW   0x00
 #define TAPE_LEVEL_HIGH  0x80
+#define TAPE_SIGNAL_THRESHOLD 768
 
 /* Little-endian unaligned readers (CDT is x86-byte-order). */
 static u16 rd16(const u8 *p) { return (u16)p[0] | ((u16)p[1] << 8); }
@@ -37,6 +38,20 @@ static bool read_data_bit(Tape *t) {
     t->data_bits--;
     t->pulse_cycles = bit ? t->one_pulse_cycles : t->zero_pulse_cycles;
     t->pulse_count = 2;   /* two pulses per data bit */
+    return true;
+}
+
+static bool read_direct_sample(Tape *t) {
+    if (!t->data_bits) return false;
+    if (!t->bits_to_shift) {
+        t->data_byte = *t->data_p++;
+        t->bits_to_shift = 8;
+    }
+    t->level = (t->data_byte & 0x80)
+        ? TAPE_LEVEL_HIGH : TAPE_LEVEL_LOW;
+    t->data_byte <<= 1;
+    t->bits_to_shift--;
+    t->data_bits--;
     return true;
 }
 
@@ -92,6 +107,30 @@ static bool next_block(Tape *t) {
             t->cycles_until_next += (int)t->pulse_cycles;
             return true;
 
+        case 0x15: { /* direct recording */
+            size_t remaining = (size_t)(t->block_end - t->block);
+            if (remaining < 9) {
+                t->block = t->block_end;
+                break;
+            }
+            u32 bytes = rd24(t->block + 0x06);
+            u8 used_bits = *(t->block + 0x05);
+            if (!bytes || used_bits < 1 || used_bits > 8 ||
+                (size_t)bytes > remaining - 9) {
+                t->block = t->block_end;
+                break;
+            }
+            t->stage = TAPE_DIRECT;
+            t->pulse_cycles = CYCLE_SCALE(rd16(t->block + 0x01));
+            if (!t->pulse_cycles) t->pulse_cycles = 1;
+            t->data_bits = (bytes - 1) * 8u + used_bits;
+            t->data_p = t->block + 0x09;
+            t->bits_to_shift = 0;
+            read_direct_sample(t);
+            t->cycles_until_next += (int)t->pulse_cycles;
+            return true;
+        }
+
         case 0x20: /* pause */
             if (rd16(t->block + 0x01)) {
                 t->stage = TAPE_PAUSE;
@@ -132,6 +171,7 @@ static void block_done(Tape *t) {
     case 0x12: t->block += 4 + 1; break;
     case 0x13: t->block += *(t->block + 0x01) * 2 + 1 + 1; break;
     case 0x14: t->block += rd24(t->block + 0x01 + 0x07) + 0x0A + 1; break;
+    case 0x15: t->block += rd24(t->block + 0x06) + 9; break;
     case 0x20: t->block += 2 + 1; break;
     default:   t->block = t->block_end; break;
     }
@@ -245,6 +285,25 @@ static void update_level(Tape *t) {
         }
         break;
 
+    case TAPE_DIRECT:
+        if (read_direct_sample(t)) {
+            t->cycles_until_next += (int)t->pulse_cycles;
+            break;
+        }
+        {
+            u32 pause_ms = rd16(t->block + 0x03);
+            if (pause_ms) {
+                t->stage = TAPE_PAUSE;
+                t->pulse_cycles = MS_TO_CYCLES(1);
+                t->cycles_until_next += (int)t->pulse_cycles;
+                t->pulse_cycles = MS_TO_CYCLES(pause_ms - 1);
+                t->pulse_count = 2;
+            } else {
+                block_done(t);
+            }
+        }
+        break;
+
     case TAPE_PAUSE:
         t->level = TAPE_LEVEL_LOW;
         if (--t->pulse_count > 0) {
@@ -341,3 +400,49 @@ void tape_step(Tape *t, int cycles) {
 }
 
 u8 tape_level(const Tape *t) { return t->level; }
+
+void tape_signal_init(TapeSignalFilter *f) {
+    memset(f, 0, sizeof(*f));
+}
+
+u8 tape_signal_sample(TapeSignalFilter *f, s16 sample, int gain_percent) {
+    if (!f->initialized) {
+        f->dc_q16 = (s32)sample * 65536;
+        f->pcm = 0;
+        f->initialized = true;
+        return TAPE_LEVEL_LOW;
+    }
+
+    /* About 46 ms at 44.1 kHz: slow enough to preserve cassette pulses,
+     * fast enough to follow the DC bias of inexpensive USB sound devices. */
+    int64_t target = (int64_t)sample * 65536;
+    f->dc_q16 += (s32)((target - f->dc_q16) / 2048);
+
+    int centered = (int)sample - (f->dc_q16 >> 16);
+    int scaled = centered * gain_percent / 100;
+    if (scaled > 32767) scaled = 32767;
+    if (scaled < -32768) scaled = -32768;
+    f->pcm = (s16)scaled;
+
+    int magnitude = scaled < 0 ? -scaled : scaled;
+    if (f->peak > 0)
+        f->peak -= (f->peak + 1023) / 1024;
+    if (magnitude > f->peak)
+        f->peak = magnitude;
+
+    if (!f->high && scaled >= TAPE_SIGNAL_THRESHOLD)
+        f->high = true;
+    else if (f->high && scaled <= -TAPE_SIGNAL_THRESHOLD)
+        f->high = false;
+
+    return f->high ? TAPE_LEVEL_HIGH : TAPE_LEVEL_LOW;
+}
+
+int tape_signal_peak_percent(const TapeSignalFilter *f) {
+    int percent = f->peak * 100 / 32767;
+    return percent > 100 ? 100 : percent;
+}
+
+s16 tape_signal_pcm(const TapeSignalFilter *f) {
+    return f ? f->pcm : 0;
+}

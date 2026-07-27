@@ -823,6 +823,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     ch376_init(&cpc->ch376_b);
     cpc->ch376_b.tag = "albireo-b";
     tape_init(&cpc->tape);
+    real_tape_init(&cpc->real_tape);
     printer_init(&cpc->printer);
     net4cpc_reset();
 
@@ -995,6 +996,7 @@ void cpc_reset(CPC *cpc) {
     cpc->cycle_debt = 0;
     cpc->audio_frame_pos = 0;
     cpc->audio_sample_cycles = 0;
+    real_tape_reset(&cpc->real_tape);
 }
 
 void cpc_destroy(CPC *cpc) {
@@ -1005,6 +1007,7 @@ void cpc_destroy(CPC *cpc) {
     ch376_close(&cpc->ch376);
     ch376_close(&cpc->ch376_b);
     tape_eject(&cpc->tape);
+    real_tape_shutdown(&cpc->real_tape);
     display_destroy(&cpc->display);
 }
 
@@ -1261,20 +1264,55 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
-    /* Tape (no-op when no tape loaded / motor off) */
-    tape_step(&cpc->tape, cycles);
-    ppi_set_tape_level(&cpc->ppi, tape_level(&cpc->tape));
+    /* INPUT and CPC SAVE output pause the virtual tape. CDT output keeps it
+     * connected so the decoded waveform reaches both the CPC and host. */
+    bool real_input = real_tape_mode_has_input(cpc->real_tape.mode);
+    bool cpc_save_output =
+        real_tape_mode_has_output(cpc->real_tape.mode) &&
+        cpc->real_tape.output_source ==
+            REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+    bool virtual_tape_connected = !real_input && !cpc_save_output;
+    if (virtual_tape_connected)
+        tape_step(&cpc->tape, cycles);
+    ppi_set_tape_level(&cpc->ppi,
+        real_tape_input_active(&cpc->real_tape)
+            ? real_tape_input_level(&cpc->real_tape)
+            : (virtual_tape_connected
+                ? tape_level(&cpc->tape) : 0));
     fdc_tick(&cpc->fdc, cycles);
     /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
      * frame end so AY register writes take effect at their CPU-cycle time;
      * this is required for volume-register sample playback. */
     cpc->audio_sample_cycles += cycles * AUDIO_SAMPLE_RATE;
     while (cpc->audio_sample_cycles >= cpc->cpu_clk_hz) {
+        real_tape_sample(&cpc->real_tape, cpc->ppi.port_c);
+        if (real_tape_input_active(&cpc->real_tape))
+            ppi_set_tape_level(&cpc->ppi,
+                               real_tape_input_level(&cpc->real_tape));
+        bool cdt_audio = virtual_tape_connected &&
+                         cpc->tape.present && cpc->tape.motor;
+        if (cdt_audio &&
+            real_tape_mode_has_output(cpc->real_tape.mode) &&
+            cpc->real_tape.output_source ==
+                REAL_TAPE_OUTPUT_SOURCE_CDT)
+            real_tape_output_sample(
+                &cpc->real_tape, tape_level(&cpc->tape));
         if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
             s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
             psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
-            if (cpc->tape.present && cpc->tape.motor) {
-                int t  = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+            int t = 0;
+            if (real_input && (cpc->ppi.port_c & 0x10))
+                t = real_tape_monitor_sample(&cpc->real_tape);
+            else if (cpc_save_output &&
+                     (cpc->ppi.port_c & 0x10) &&
+                     real_tape_audible_monitor_enabled(
+                         &cpc->real_tape))
+                t = (cpc->ppi.port_c & 0x20) ? 2500 : -2500;
+            else if (cdt_audio &&
+                     (!real_tape_mode_has_output(cpc->real_tape.mode) ||
+                      real_tape_audible_monitor_enabled(&cpc->real_tape)))
+                t = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
+            if (t) {
                 int vl = (int)dst[0] + t;
                 int vr = (int)dst[1] + t;
                 if (vl >  32767) vl =  32767; else if (vl < -32768) vl = -32768;
@@ -1889,6 +1927,7 @@ int cpc_frame(CPC *cpc) {
         }
     }
     cpc->audio_frame_pos = 0;
+    real_tape_flush_output(&cpc->real_tape);
     if (stop_early)
         cpc->audio_sample_cycles = 0;
     return done;

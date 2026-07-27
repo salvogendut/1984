@@ -2,7 +2,10 @@ CC ?= cc
 CFLAGS ?= -O2
 CPPFLAGS ?=
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap
+SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
+SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
+
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape
 
 .PHONY: all check clean
 
@@ -36,6 +39,14 @@ test-gifcap: test_gifcap.c ../src/gifcap.c ../src/gifcap.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_gifcap.c ../src/gifcap.c -o $@
 
+test-tape-signal: test_tape_signal.c ../src/tape.c ../src/tape.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_tape_signal.c ../src/tape.c -o $@
+
+test-real-tape: test_real_tape.c ../src/real_tape.c ../src/real_tape.h ../src/tape.c ../src/tape.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_real_tape.c ../src/real_tape.c ../src/tape.c $(SDL3_LIBS) -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -44,6 +55,8 @@ check: $(TESTS)
 	./test-mem
 	./test-disk
 	./test-gifcap
+	./test-tape-signal
+	./test-real-tape
 
 clean:
 	rm -f $(TESTS)

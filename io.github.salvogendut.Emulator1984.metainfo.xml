@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.18" date="2026-07-27">
+      <description>
+        <p>Adds Tinker-gated real cassette INPUT and OUTPUT routing through host audio devices, WAV files, mounted CDT images, and the CPC SAVE write line. Audible and visual monitors can be controlled independently, WAV playback reports remaining time, and session capture supports WAV output and interoperable WAV-to-CDT direct recording.</p>
+      </description>
+    </release>
     <release version="0.4.17" date="2026-07-24">
       <description>
         <p>New blank disk images now receive the .dsk extension automatically. The F10 footer hint accurately identifies host card browsing and is shown only when the required host-mount support is available.</p>

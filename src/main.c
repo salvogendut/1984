@@ -741,6 +741,27 @@ int main(int argc, char *argv[]) {
     SD_LOG("cpc_init OK");
     notify_init();
     notify_set_mode(cfg.notifications);
+    RealTapeMode real_tape_mode =
+        cfg.tinker && (cpc.model == MODEL_464 || cfg.external_tape)
+            ? cfg.real_tape_mode : REAL_TAPE_OFF;
+    if (real_tape_mode_has_input(real_tape_mode) &&
+        cfg.real_tape_wav[0] &&
+        !real_tape_source_load_wav(&cpc.real_tape,
+                                   cfg.real_tape_wav)) {
+        notify_post("Cannot load cassette WAV: %s",
+                    real_tape_error(&cpc.real_tape));
+        cfg.real_tape_wav[0] = '\0';
+    }
+    if (!real_tape_configure(&cpc.real_tape, real_tape_mode,
+            cfg.real_tape_input_device,
+            cfg.real_tape_output_source,
+            cfg.real_tape_output_target, cfg.real_tape_output_device,
+            cfg.real_tape_input_gain, cfg.real_tape_output_level,
+            cfg.real_tape_audible_monitor,
+            cfg.real_tape_visual_monitor)) {
+        notify_post("Real cassette unavailable: %s",
+                    real_tape_error(&cpc.real_tape));
+    }
     net4cpc_tap_sync(&cfg, tap_dev_arg);
     apply_led_enables(&cfg);
 
@@ -1298,6 +1319,7 @@ int main(int argc, char *argv[]) {
         perryfi_poll(&cpc.perryfi);
         webgui_poll();
         printer_tick(&cpc.printer);
+        real_tape_pump(&cpc.real_tape);
         int emulated_cycles = cpc_frame(&cpc);
         Uint64 emulated_frame_ns = cpc_cycles_to_ns(&cpc, emulated_cycles);
         if (cpc.paused)
@@ -1363,6 +1385,7 @@ int main(int argc, char *argv[]) {
         }
         prev_paused = cpc.paused;
         overlay_render(&overlay, cpc.display.renderer);
+        overlay_render_real_tape_scope(&overlay, cpc.display.renderer);
         notify_tick((int)((emulated_frame_ns + 500000ULL) / 1000000ULL));
         if (cpc.paused)
             display_draw_paused_label(&cpc.display);
