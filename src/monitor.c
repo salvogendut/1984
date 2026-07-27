@@ -1,4 +1,8 @@
 #ifndef _WIN32
+/* _XOPEN_SOURCE hides Darwin's BSD interfaces unless this is requested. */
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE 1
+#endif
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 /* See usifac.c / issue #203: the BSDs hide the Bxxxx baud constants behind
  * __BSD_VISIBLE, which _XOPEN_SOURCE turns off. */

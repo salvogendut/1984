@@ -4,6 +4,11 @@
 #define _NETBSD_SOURCE 1
 #endif
 
+/* _XOPEN_SOURCE hides Darwin's BSD interfaces unless this is requested. */
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE 1
+#endif
+
 #define _XOPEN_SOURCE 600   /* posix_openpt, grantpt, unlockpt, ptsname */
 #define _DEFAULT_SOURCE     /* cfmakeraw */
 /* See usifac.c / issue #203: the BSDs hide cfmakeraw behind __BSD_VISIBLE,

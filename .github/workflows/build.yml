@@ -96,6 +96,22 @@ jobs:
           name: 1984-windows-x86_64
           path: dist/
 
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: brew install autoconf automake pkg-config sdl3 cairo
+      - name: Configure
+        run: |
+          autoreconf -iv
+          ./configure
+      - name: Build
+        run: make -j$(sysctl -n hw.logicalcpu)
+      - name: Test
+        run: make -C tests check
+
   flatpak:
     name: Flatpak (x86_64)
     # Slow (~15 min); skip on PRs (the manifest builds branch:main, so a PR
@@ -126,7 +142,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [linux, windows, flatpak]
+    needs: [linux, windows, macos, flatpak]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
