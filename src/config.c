@@ -178,6 +178,7 @@ void config_defaults(Config *cfg) {
     cfg->real_tape_mode = REAL_TAPE_OFF;
     snprintf(cfg->real_tape_input_device,
              sizeof(cfg->real_tape_input_device), "default");
+    cfg->real_tape_output_source = REAL_TAPE_OUTPUT_SOURCE_CDT;
     cfg->real_tape_output_target = REAL_TAPE_TARGET_FILE;
     snprintf(cfg->real_tape_output_device,
              sizeof(cfg->real_tape_output_device), "default");
@@ -375,8 +376,12 @@ static void config_create_default(const char *path) {
         "# The input device is selected in Advanced -> Real Cassette.\n"
         "real_tape_mode=off\n"
         "real_tape_input_device=default\n"
-        "# Output destination: file or device. File capture is enabled for\n"
-        "# the current session with the Capture to file panel toggle.\n"
+        "# OUTPUT source: cdt plays the mounted virtual tape; cpc_save\n"
+        "# emits the CPC cassette write line used by SAVE commands.\n"
+        "real_tape_output_source=cdt\n"
+        "# Output destination: file or device. File capture/conversion is\n"
+        "# enabled for the current session with the panel toggle. The file\n"
+        "# is CDT for INPUT+WAV conversion and WAV for other routes.\n"
         "real_tape_output_target=file\n"
         "real_tape_output_device=default\n"
         "real_tape_output_file=\n"
@@ -385,7 +390,7 @@ static void config_create_default(const char *path) {
         "real_tape_wav=\n"
         "real_tape_input_gain=100\n"
         "real_tape_output_level=50\n"
-        "# System Audio monitors can be switched independently.\n"
+        "# Source audible/visual monitors can be switched independently.\n"
         "real_tape_audible_monitor=true\n"
         "real_tape_visual_monitor=true\n"
         "\n"
@@ -448,6 +453,7 @@ int config_load_from(Config *cfg, const char *path_override) {
     int  lineno = 0;
     int  rc = 0;
     bool legacy_real_tape_save = false;
+    bool real_tape_output_source_seen = false;
     bool real_tape_output_target_seen = false;
 
     while (fgets(line, sizeof(line), f)) {
@@ -696,6 +702,17 @@ int config_load_from(Config *cfg, const char *path_override) {
                 snprintf(cfg->real_tape_input_device,
                          sizeof(cfg->real_tape_input_device), "%s",
                          val[0] ? val : "default");
+            } else if (!strcmp(key, "real_tape_output_source")) {
+                RealTapeOutputSource source;
+                if (real_tape_output_source_parse(val, &source)) {
+                    cfg->real_tape_output_source = source;
+                    real_tape_output_source_seen = true;
+                } else {
+                    fprintf(stderr,
+                            "1984.conf:%d: real_tape_output_source must be cdt/cpc_save\n",
+                            lineno);
+                    rc = -1;
+                }
             } else if (!strcmp(key, "real_tape_output_target")) {
                 RealTapeOutputTarget target;
                 if (real_tape_output_target_parse(val, &target)) {
@@ -785,8 +802,13 @@ int config_load_from(Config *cfg, const char *path_override) {
 
     fclose(f);
 
-    if (legacy_real_tape_save && !real_tape_output_target_seen)
-        cfg->real_tape_output_target = REAL_TAPE_TARGET_DEVICE;
+    if (legacy_real_tape_save) {
+        if (!real_tape_output_source_seen)
+            cfg->real_tape_output_source =
+                REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+        if (!real_tape_output_target_seen)
+            cfg->real_tape_output_target = REAL_TAPE_TARGET_DEVICE;
+    }
 
     /* Restore defaults for any fields left invalid/empty by a corrupt config */
     if (!cfg->rom_os[0])
@@ -931,6 +953,7 @@ int config_save(const Config *cfg) {
         "audio_stereo_sep=%d\n"
         "real_tape_mode=%s\n"
         "real_tape_input_device=%s\n"
+        "real_tape_output_source=%s\n"
         "real_tape_output_target=%s\n"
         "real_tape_output_device=%s\n"
         "real_tape_output_file=%s\n"
@@ -997,6 +1020,7 @@ int config_save(const Config *cfg) {
         cfg->audio_stereo_sep,
         real_tape_mode_name(cfg->real_tape_mode),
         cfg->real_tape_input_device,
+        real_tape_output_source_name(cfg->real_tape_output_source),
         real_tape_output_target_name(cfg->real_tape_output_target),
         cfg->real_tape_output_device,
         cfg->real_tape_output_file,

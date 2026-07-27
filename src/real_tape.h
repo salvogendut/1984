@@ -21,12 +21,24 @@ typedef enum {
 } RealTapeMode;
 
 typedef enum {
+    REAL_TAPE_OUTPUT_SOURCE_CDT = 0,
+    REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE,
+} RealTapeOutputSource;
+
+typedef enum {
     REAL_TAPE_TARGET_FILE = 0,
     REAL_TAPE_TARGET_DEVICE,
 } RealTapeOutputTarget;
 
+typedef enum {
+    REAL_TAPE_CAPTURE_NONE = 0,
+    REAL_TAPE_CAPTURE_WAV,
+    REAL_TAPE_CAPTURE_CDT,
+} RealTapeCaptureFormat;
+
 typedef struct {
     RealTapeMode mode;
+    RealTapeOutputSource output_source;
     RealTapeOutputTarget output_target;
     SDL_AudioStream *input_stream;
     SDL_AudioStream *output_stream;
@@ -59,9 +71,13 @@ typedef struct {
     s16 output_frame[8192];
     int output_frame_count;
 
-    FILE *wav;
-    char wav_path[REAL_TAPE_PATH_MAX];
-    u32 wav_bytes;
+    FILE *capture;
+    RealTapeCaptureFormat capture_format;
+    char capture_path[REAL_TAPE_PATH_MAX];
+    u32 capture_bytes;
+    u8 cdt_byte;
+    u8 cdt_bits;
+    bool cdt_block_started;
 
     char error[256];
 } RealTape;
@@ -72,6 +88,7 @@ void real_tape_reset(RealTape *rt);
 
 bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                          const char *input_device,
+                         RealTapeOutputSource output_source,
                          RealTapeOutputTarget output_target,
                          const char *output_device,
                          int input_gain, int output_level,
@@ -83,6 +100,7 @@ void real_tape_flush_output(RealTape *rt);
 
 bool real_tape_input_active(const RealTape *rt);
 bool real_tape_connected_input_active(const RealTape *rt);
+bool real_tape_audible_monitor_enabled(const RealTape *rt);
 bool real_tape_visual_monitor_enabled(const RealTape *rt);
 u8 real_tape_input_level(const RealTape *rt);
 int real_tape_signal_percent(const RealTape *rt);
@@ -97,11 +115,15 @@ void real_tape_source_eject(RealTape *rt);
 bool real_tape_source_loaded(const RealTape *rt);
 const char *real_tape_source_path(const RealTape *rt);
 int real_tape_source_progress(const RealTape *rt);
+u32 real_tape_source_remaining_seconds(const RealTape *rt);
 
 const char *real_tape_mode_name(RealTapeMode mode);
 bool real_tape_mode_parse(const char *text, RealTapeMode *mode);
 bool real_tape_mode_has_input(RealTapeMode mode);
 bool real_tape_mode_has_output(RealTapeMode mode);
+const char *real_tape_output_source_name(RealTapeOutputSource source);
+bool real_tape_output_source_parse(const char *text,
+                                   RealTapeOutputSource *source);
 const char *real_tape_output_target_name(RealTapeOutputTarget target);
 bool real_tape_output_target_parse(const char *text,
                                    RealTapeOutputTarget *target);
@@ -118,3 +140,4 @@ void real_tape_record_stop(RealTape *rt);
 bool real_tape_recording(const RealTape *rt);
 const char *real_tape_record_path(const RealTape *rt);
 bool real_tape_ensure_wav_extension(char *path, size_t size);
+bool real_tape_ensure_cdt_extension(char *path, size_t size);

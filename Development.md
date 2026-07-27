@@ -27,7 +27,7 @@ Each source file maps to one hardware component:
 | `src/ch376.c` / `ch376.h` | Albireo CH376 USB host controller — ports 0xFE80/0xFE81, file-system command set backed by `src/fat.c`; mutually exclusive with M4 (shared 0xFExx decode) |
 | `src/usifac.c` / `usifac.h` | USIfAC II RS232 serial interface — ports 0xFBD0..0xFBDF, PTY or TCP host backend polled once per frame, split RX/TX LED |
 | `src/tape.c` / `tape.h` | Cassette / .cdt (TZX) tape decoder — drives PPI Port B bit 7, motor from PPI Port C bit 4, audio mixed into PSG output |
-| `src/real_tape.c` / `real_tape.h` | Tinker-gated real cassette backend — SDL recording/playback devices, audio-to-PPI signal conditioning, and CDT/System Audio routing to device or WAV |
+| `src/real_tape.c` / `real_tape.h` | Tinker-gated real cassette backend — SDL recording/playback devices, audio-to-PPI signal conditioning, WAV/CDT conversion, and cassette routing |
 | `src/cpc.c` / `cpc.h` | Top-level machine — bus wiring, frame execution, pixel rendering, reset |
 | `src/config.c` / `config.h` | INI config file — load/save `~/.config/1984/1984.conf`, first-run creation, model defaults |
 | `src/overlay.c` / `overlay.h` | SDL3 in-app options overlay — tabbed menu, dirty tracking, save-on-close prompt |
@@ -473,11 +473,11 @@ A minimal **DHCPv4 server** lives in `n4c_stack.c::dhcp_try_handle()`, hooked fr
 
 CDT (TZX) decoder, ported in compact form from Caprice32's `tape.cpp`. Drives the PPI Port B bit 7 (cassette data input) from the loaded image while the motor is on.
 
-**Block dispatch.** `tape_load()` reads the whole file into memory; if the first 8 bytes are the `"ZXTape!\x1A"` signature the block stream is taken to start at offset 10 (signature + version word), otherwise at byte 0. `next_block()` walks the stream, dispatching on the block-type byte: `0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x20` pause. Metadata-only blocks (`0x21`, `0x22`, `0x30`–`0x34`, `0x5A`) are skipped past. Unknown block types fall back to a generic skip using the "extension rule" — a 4-byte length immediately after the type byte tells the decoder how many bytes to jump.
+**Block dispatch.** `tape_load()` reads the whole file into memory; if the first 8 bytes are the `"ZXTape!\x1A"` signature the block stream is taken to start at offset 10 (signature + version word), otherwise at byte 0. `next_block()` walks the stream, dispatching on the block-type byte: `0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x15` direct recording, `0x20` pause. Metadata-only blocks (`0x21`, `0x22`, `0x30`–`0x34`, `0x5A`) are skipped past. Unknown block types fall back to a generic skip using the "extension rule" — a 4-byte length immediately after the type byte tells the decoder how many bytes to jump.
 
 **Pulse cycle scaling.** TZX timings are expressed in Spectrum 3.5 MHz T-states. The CPC runs at 4 MHz, so a `CYCLE_SCALE()` macro multiplies by 40/35. A separate `MS_TO_CYCLES()` converts milliseconds (used for pause blocks) into CPU cycles at 4 MHz / kHz.
 
-**State machine.** `update_level()` runs per "tape tick" — the decoder maintains a `cycles_until_next` countdown driven by the Z80 step loop. Each call flips the cassette line level (`switch_level()`) and either re-arms with the next pulse-pair cycle count or advances to the next stage (pilot → sync → data → pause → next block). Data bits are pulled MSB-first from the block payload; each bit is two pulses, the cycle count picked from `zero_pulse_cycles` or `one_pulse_cycles` per the bit value.
+**State machine.** `update_level()` runs per "tape tick" — the decoder maintains a `cycles_until_next` countdown driven by the Z80 step loop. Each call flips the cassette line level (`switch_level()`) and either re-arms with the next pulse-pair cycle count or advances to the next stage (pilot → sync → data → pause → next block). Data bits are pulled MSB-first from the block payload; each bit is two pulses, the cycle count picked from `zero_pulse_cycles` or `one_pulse_cycles` per the bit value. Direct-recording bits instead set the line level directly for one sample period.
 
 **Z80 step integration.** `cpc_frame()` calls `tape_step(&cpc->tape, t)` after every `z80_step` with the instruction's T-state count. `tape_step` subtracts that from `cycles_until_next` and, when it goes non-positive, runs `update_level()`. The motor (PPI Port C bit 4) gates the whole thing — when the motor is off the call is a no-op, and the level holds whatever it was last set to.
 
@@ -499,13 +499,15 @@ all host streams. A 664/6128 additionally requires `cfg.external_tape`; the
 
 The persisted modes are `off`, `input`, and `output`; legacy `load`, `save`,
 and `both` values are accepted as `input`, `output`, and `input`
-respectively. A legacy `save` configuration without an explicit output target
-keeps its playback-device behavior. SDL recording and playback streams expose
-an application-side format of 44.1 kHz mono signed 16-bit PCM.
+respectively. `real_tape_output_source` selects `cdt` (the default) or
+`cpc_save`. A legacy `save` configuration selects the CPC SAVE source and,
+without an explicit output target, keeps its playback-device behavior. SDL
+recording and playback streams expose an application-side format of 44.1 kHz
+mono signed 16-bit PCM.
 `real_tape_pump()` drains host capture into a 4096-sample ring once per loop.
 `cpc_advance_bus()` consumes one sample at the same cadence as PSG generation,
-so INPUT drives PPI Port B bit 7 at emulated audio time. Only INPUT is
-exclusive with the virtual CDT decoder; OUTPUT deliberately leaves the CDT
+so INPUT drives PPI Port B bit 7 at emulated audio time. INPUT and CPC SAVE
+output pause the virtual CDT decoder; CDT output deliberately leaves it
 running.
 
 In INPUT mode Media -> Tape becomes the real-cassette input-source selector.
@@ -513,45 +515,70 @@ An empty `real_tape_wav` uses the configured SDL recording device (`System
 Audio`). A selected WAV is loaded with `SDL_LoadWAV`, converted with
 `SDL_ConvertAudioSamples` to the backend format, and consumed at emulated
 audio cadence only while PPI Port C bit 4 (motor) is high. Delete ejects the
-WAV and `overlay_apply_real_tape()` reopens the System Audio input device. In
-OUTPUT mode Media -> Tape instead retains the normal CDT picker and rejects
-non-CDT paths.
+WAV and `overlay_apply_real_tape()` reopens the System Audio input device.
+While selected, the panel presents the WAV as the read-only `WAV file` input
+device and no host recording device is opened. A File destination selects CDT
+conversion; a Device destination opens the configured SDL playback device and
+receives level-scaled source PCM. In OUTPUT mode Media -> Tape instead retains
+the normal CDT picker and rejects non-CDT paths. The panel's Source row selects
+the mounted `CPC deck tape` or `CPC SAVE output`; no host recording device is
+opened in OUTPUT mode. The latter samples PPI Port C bit 5 while motor bit 4
+is set, restoring the original physical-recorder path without restoring a
+full-duplex mode.
 
 The input path removes sound-card DC bias with a slow adaptive estimate, then
 uses Schmitt thresholds to turn the centred waveform into stable HIGH/LOW
 pulses. User gain is applied before thresholding. The filter also exposes the
 centred PCM value consumed by the decoder. `RealTape` retains the latest 4096
 values in a visualization-only ring; the overlay copies that history without
-touching the cassette queue and renders it as a translucent bottom scope while
-System Audio is selected and `real_tape_visual_monitor=true`. Collection is
-also skipped while that setting is false.
+touching the cassette queue. In INPUT mode the ring receives the active System
+Audio or WAV decoder signal. In OUTPUT mode it receives the level-scaled CDT
+or CPC SAVE waveform even when neither WAV capture nor device output is
+active. The
+translucent bottom scope identifies the active source and is shown only while
+`real_tape_visual_monitor=true`; collection is skipped while that setting is
+false. For a WAV source, `real_tape_source_remaining_seconds()` derives and
+displays the remaining time from the converted sample count and current
+position.
 
-The centred System Audio input PCM is mixed into both PSG channels at 35% while
-PPI Port C bit 4 (motor) is active and
-`real_tape_audible_monitor=true`. Because this happens in
-`cpc_advance_bus()`, local SDL playback, WAV recording, and the Web GUI audio
-sink all receive the same monitored signal. Motor gating prevents a connected
-microphone from being monitored continuously. The output path samples PPI
-Port C bit 4 for motor state and takes the current CDT level at audio cadence.
+The centred active INPUT PCM, whether from System Audio or a WAV file, is mixed
+into both PSG channels at 35% while PPI Port C bit 4 (motor) is active and
+`real_tape_audible_monitor=true`. In OUTPUT mode the same setting gates the
+normal local CDT loading sound or CPC SAVE monitor and defaults to enabled.
+Because this happens in `cpc_advance_bus()`, local SDL playback, WAV recording,
+and the Web GUI audio sink all receive the same monitored signal. Motor gating
+prevents a connected microphone from being monitored continuously. The output
+path samples PPI Port C bit 4 for motor state and takes either the current CDT
+level or PPI Port C bit 5 at audio cadence.
 `real_tape_output_sample()` converts that level to signed PCM using
 `real_tape_output_level`, and `real_tape_flush_output()` sends each completed
 buffer to the selected destination. `real_tape_output_target=device` opens the
 configured SDL playback device; `file` leaves playback closed and uses the WAV
-capture handle when the user enables Capture to file.
+capture handle when the user enables Capture to file. INPUT with a WAV source
+is the exception: Device receives the original source PCM scaled by
+`real_tape_output_level`, while File selects CDT conversion and makes Output
+level read-only.
 
 Both monitor settings default to true for compatibility with configurations
 created before the toggles existed. `real_tape_configure()` copies them into
 the live backend so changes made in the Real Cassette panel take effect
 immediately without reopening an unchanged audio device.
 
-The panel stores a WAV destination separately from capture state. Capture is a
+The panel stores an output path separately from capture state. Capture is a
 session-only toggle and never starts from persisted configuration. With INPUT
 and System Audio it writes the raw incoming samples; with OUTPUT it writes the
-CDT waveform buffered by `real_tape_output_sample()`. Both produce a standard
-44-byte-header WAV file (44.1 kHz, mono, signed 16-bit), with sizes finalised
-when capture stops. File capture is unavailable for a mounted input WAV or
-while the Device destination is selected. Pulse decoding and CDT
-reconstruction from System Audio remain outside this backend.
+selected CDT or CPC SAVE waveform buffered by `real_tape_output_sample()`.
+Both produce a standard 44-byte-header WAV file (44.1 kHz, mono, signed
+16-bit), with sizes finalised when capture stops.
+
+With INPUT and a mounted WAV, File output instead writes a TZX/CDT
+direct-recording block (`0x15`). Each gain-adjusted Schmitt-filter result is
+packed as one HIGH/LOW sample at the TZX-preferred 44.1 kHz timing of 79
+Spectrum T-states. The writer patches the final used-bit count and 24-bit data
+length when conversion stops; reaching the end of the WAV finalizes it
+automatically. `tape.c` decodes block `0x15`, so files produced by this route
+can be loaded back through Media -> Tape. System Audio remains WAV-only rather
+than attempting live pulse-to-CDT reconstruction.
 
 ---
 

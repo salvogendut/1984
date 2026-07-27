@@ -1264,15 +1264,21 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
-    /* INPUT replaces the virtual tape source. OUTPUT keeps the CDT connected
-     * so its tape signal can be routed to the selected host destination. */
+    /* INPUT and CPC SAVE output pause the virtual tape. CDT output keeps it
+     * connected so the decoded waveform reaches both the CPC and host. */
     bool real_input = real_tape_mode_has_input(cpc->real_tape.mode);
-    if (!real_input)
+    bool cpc_save_output =
+        real_tape_mode_has_output(cpc->real_tape.mode) &&
+        cpc->real_tape.output_source ==
+            REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+    bool virtual_tape_connected = !real_input && !cpc_save_output;
+    if (virtual_tape_connected)
         tape_step(&cpc->tape, cycles);
     ppi_set_tape_level(&cpc->ppi,
         real_tape_input_active(&cpc->real_tape)
             ? real_tape_input_level(&cpc->real_tape)
-            : (real_input ? 0 : tape_level(&cpc->tape)));
+            : (virtual_tape_connected
+                ? tape_level(&cpc->tape) : 0));
     fdc_tick(&cpc->fdc, cycles);
     /* Audio sampling at 44.1 kHz. PSG rendering lives here rather than at
      * frame end so AY register writes take effect at their CPU-cycle time;
@@ -1283,10 +1289,12 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (real_tape_input_active(&cpc->real_tape))
             ppi_set_tape_level(&cpc->ppi,
                                real_tape_input_level(&cpc->real_tape));
-        bool cdt_audio = !real_input &&
+        bool cdt_audio = virtual_tape_connected &&
                          cpc->tape.present && cpc->tape.motor;
         if (cdt_audio &&
-            real_tape_mode_has_output(cpc->real_tape.mode))
+            real_tape_mode_has_output(cpc->real_tape.mode) &&
+            cpc->real_tape.output_source ==
+                REAL_TAPE_OUTPUT_SOURCE_CDT)
             real_tape_output_sample(
                 &cpc->real_tape, tape_level(&cpc->tape));
         if (cpc->audio_frame_pos < CPC_AUDIO_FRAME_CAPACITY) {
@@ -1295,7 +1303,14 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             int t = 0;
             if (real_input && (cpc->ppi.port_c & 0x10))
                 t = real_tape_monitor_sample(&cpc->real_tape);
-            else if (cdt_audio)
+            else if (cpc_save_output &&
+                     (cpc->ppi.port_c & 0x10) &&
+                     real_tape_audible_monitor_enabled(
+                         &cpc->real_tape))
+                t = (cpc->ppi.port_c & 0x20) ? 2500 : -2500;
+            else if (cdt_audio &&
+                     (!real_tape_mode_has_output(cpc->real_tape.mode) ||
+                      real_tape_audible_monitor_enabled(&cpc->real_tape)))
                 t = (tape_level(&cpc->tape) & 0x80) ? 2500 : -2500;
             if (t) {
                 int vl = (int)dst[0] + t;

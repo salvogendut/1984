@@ -157,7 +157,7 @@ directory or select a DSK, Backspace/Left to move up, and Escape to cancel.
 
 **CPC 464 and DD1:** on the 464, the Media tab drives are greyed out by default. Enable **DD1** in the Extensions tab to activate the DDI-1 floppy interface — this enables drive access and loads AMSDOS into ROM slot 7. On the **664 and 6128** the FDC and AMSDOS are built in: drives are always enabled and the DD1 row reads "N/A (built-in FDC)".
 
-**Tape** (Media → Tape): selects a `.cdt` (TZX) cassette image. The decoder supports the common TZX block types (`0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x20` pause) plus the metadata blocks (`0x21`–`0x34`, `0x5A`) which are skipped. Pulse timings are scaled from Spectrum 3.5 MHz to CPC 4 MHz (40/35 ratio). The cassette data line is OR'd into PPI Port B bit 7; PPI Port C bit 4 acts as the motor enable. While the motor is on, the level is also sampled at audio rate (~90 cycles/sample at 4 MHz / 44.1 kHz) and mixed into the PSG output at ±2500 amplitude — you hear the loading screech exactly as on real hardware.
+**Tape** (Media → Tape): selects a `.cdt` (TZX) cassette image. The decoder supports the common TZX block types (`0x10` standard speed data, `0x11` turbo data, `0x12` pure tone, `0x13` pulse sequence, `0x14` pure data, `0x15` direct recording, `0x20` pause) plus the metadata blocks (`0x21`–`0x34`, `0x5A`) which are skipped. Pulse timings are scaled from Spectrum 3.5 MHz to CPC 4 MHz (40/35 ratio). The cassette data line is OR'd into PPI Port B bit 7; PPI Port C bit 4 acts as the motor enable. While the motor is on, the level is also sampled at audio rate (~90 cycles/sample at 4 MHz / 44.1 kHz) and mixed into the PSG output at ±2500 amplitude — you hear the loading screech exactly as on real hardware.
 
 On the **CPC 464** the tape is always wired (the deck is built in). On the **664 and 6128** there's no built-in deck, so an **External Tape** toggle appears in the General tab (between Roms Board and OS ROM, only visible on disk machines); enable it to virtually plug the cassette deck into the tape port. Toggling triggers a cold boot so the firmware re-probes.
 
@@ -175,25 +175,35 @@ The panel provides three modes. There is no combined mode:
 |------|-------------|
 | `OFF` | Real cassette I/O is disconnected |
 | `INPUT: System to CPC Deck` | Host recording device or WAV source -> CPC cassette input |
-| `OUTPUT: CPC Deck to System` | Mounted CDT waveform -> selected host destination |
+| `OUTPUT: CPC Deck to System` | Mounted CDT or CPC SAVE waveform -> selected host destination |
 
-Choose the **Input device** with Left, Right, or Enter; Delete restores the
-system default. **Input gain** ranges from 25% to 400%. The live **Input
-signal** percentage and HIGH/LOW state confirm that pulses are reaching the
-decoder.
+In INPUT mode with System Audio selected, choose the **Input device** with
+Left, Right, or Enter; Delete restores the system default. When Media -> Tape
+contains a WAV, Input device instead reads **WAV file** and is read-only.
+**Input gain** ranges from 25% to 400%, and the live **Input signal**
+percentage and HIGH/LOW state confirm that pulses are reaching the decoder.
+In OUTPUT mode that row becomes **Source** and selects either **CPC deck
+tape** (the default) or **CPC SAVE output**. Delete restores CPC deck tape.
+The source-format row is read-only, and the signal row reports the selected
+digital level and motor state.
 
 The **Output** row selects `File` or `Device`. The following row changes with
 that selection:
 
-- **Output file** opens a save dialog and remembers a `.wav` destination. It
-  does not start recording by itself.
+- **Output file** opens a save dialog and remembers a destination. With a WAV
+  mounted in INPUT mode it accepts `.cdt` and converts the played WAV signal
+  into a CDT direct-recording block. In every other route it accepts `.wav`.
+  Selecting a path does not start capture or conversion by itself.
 - **Output device** cycles through SDL playback devices; Delete restores the
-  system default. In OUTPUT mode the CDT waveform is streamed to this device
-  automatically.
+  system default. In OUTPUT mode the selected CDT or CPC SAVE waveform is
+  streamed to this device automatically. In INPUT mode with a WAV mounted,
+  the WAV PCM is streamed to the selected device while the CPC motor is on.
 
-**Output level** controls the CDT waveform amplitude sent to either
-destination and ranges from 0% to 100%. Start low when a playback device feeds
-a recorder's microphone input, which is more sensitive than line input.
+**Output level** ranges from 0% to 100%. It controls the selected OUTPUT
+waveform amplitude and WAV PCM sent to a device in INPUT mode. It is greyed
+out for WAV-to-CDT file conversion because CDT stores HIGH/LOW states, not PCM
+amplitude. Start low when a playback device feeds a recorder's microphone
+input, which is more sensitive than line input.
 
 In INPUT mode, **Media -> Tape** selects the cassette input source. With no WAV
 mounted it reports `System Audio` and uses the selected recording device.
@@ -202,27 +212,40 @@ and advances while the CPC cassette motor is on. Press Delete to eject it and
 return immediately to `System Audio`. INPUT is exclusive with CDT, so a
 mounted CDT is paused until INPUT is disabled.
 
-In OUTPUT mode, **Media -> Tape** uses the normal virtual deck and accepts
-`.cdt` files only. The CDT remains connected to the CPC, advances normally
-with the motor, and remains audible through the emulator while its tape
-waveform is also routed to the selected output destination.
+In OUTPUT mode with **CPC deck tape** selected, **Media -> Tape** uses the
+normal virtual deck and accepts `.cdt` files only. The CDT remains connected
+to the CPC, advances normally with the motor, and remains audible through the
+emulator while its tape waveform is also routed to the selected destination.
 
-The **Visual Monitor** and **Audible Monitor** rows control System Audio
-monitoring independently; both are enabled by default and Delete restores that
-default. Visual Monitor displays a translucent oscilloscope panel at the bottom
-of the emulator with the DC-corrected, gain-adjusted decoder signal, input
-level, and cassette motor state. Audible Monitor mixes that signal into the CPC
-stereo output at a conservative level while the motor is on, so it is heard
-locally, in audio captures, and through Web GUI audio. Motor gating avoids
-continuously feeding a microphone back to the speakers.
+With **CPC SAVE output** selected, the virtual CDT is paused and the source is
+PPI Port C bit 5 while the CPC cassette motor (bit 4) is on. Choose a playback
+device, connect that host output to a physical recorder's MIC or line input,
+start RECORD+PLAY, then issue the CPC `SAVE` command. Selecting File and
+enabling Capture to file records the same CPC-generated signal as WAV.
+
+The **Visual Monitor** and **Audible Monitor** rows control source monitoring
+independently; both are enabled by default and Delete restores that default.
+In INPUT mode they monitor the DC-corrected, gain-adjusted System Audio or WAV
+signal. In OUTPUT mode they monitor the selected CDT or CPC SAVE waveform.
+Visual Monitor displays a translucent oscilloscope panel at the bottom of the
+emulator with the source level and cassette motor state. For a WAV source it
+also shows the remaining playback time. Audible Monitor mixes the source into
+the CPC stereo output while the motor is on, so it is heard locally, in audio
+captures, and through Web GUI audio. OUTPUT therefore retains the normal
+CDT audibility and can monitor a CPC SAVE unless Audible Monitor is explicitly
+disabled. Motor gating avoids continuously feeding a microphone back to the
+speakers.
 
 **Capture to file** is a session-only toggle and is always disabled at
 startup. It is available when **Output** is `File` and an Output file has been
 selected. In INPUT mode it copies the unmodified System Audio stream as
-44.1 kHz mono 16-bit PCM; it is unavailable while a WAV source is mounted. In
-OUTPUT mode it records the mounted CDT's tape waveform while the motor is
-running. Turning the toggle off finalizes the WAV header. This does not
-reconstruct a CDT file from recorded System Audio.
+44.1 kHz mono 16-bit PCM when no WAV is mounted. With a WAV source it instead
+thresholds the gain-adjusted signal into a `.cdt` direct-recording block as
+the CPC motor consumes it; conversion stops and finalizes automatically at
+the end of the WAV. In OUTPUT mode it records the selected CDT or CPC SAVE
+waveform while the motor is running. Turning the toggle off finalizes an active
+file. System Audio capture remains WAV-only and does not reconstruct CDT
+blocks.
 
 **MX4** (General → MX4): toggles the CPC's MX4 expansion connector. When `enabled` (the default), expansion peripherals on the Extensions tab are available; when `disabled`, every extension I/O port (`0xFDxx`, `0xFExx`, `0xFFxx`) returns `0xFF` as if nothing were plugged in, and the Extensions tab is hidden from the overlay. The toggle triggers a cold boot on save so the CPC firmware re-probes the bus. Useful for testing whether a guest application depends on a peripheral, or running an OS that misbehaves when it sees one.
 

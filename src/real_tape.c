@@ -6,6 +6,8 @@
 #include <string.h>
 
 #define REAL_TAPE_MONITOR_LEVEL_PERCENT 35
+#define REAL_TAPE_CDT_TSTATES_PER_SAMPLE 79
+#define REAL_TAPE_CDT_MAX_DATA_BYTES 0xFFFFFFu
 
 static bool default_device(const char *name) {
     return !name || !name[0] || !strcmp(name, "default");
@@ -39,6 +41,24 @@ bool real_tape_mode_parse(const char *text, RealTapeMode *mode) {
              !SDL_strcasecmp(text, "save"))
         *mode = REAL_TAPE_OUTPUT;
     else return false;
+    return true;
+}
+
+const char *real_tape_output_source_name(RealTapeOutputSource source) {
+    return source == REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE
+        ? "cpc_save" : "cdt";
+}
+
+bool real_tape_output_source_parse(const char *text,
+                                   RealTapeOutputSource *source) {
+    if (!text || !source) return false;
+    if (!SDL_strcasecmp(text, "cdt"))
+        *source = REAL_TAPE_OUTPUT_SOURCE_CDT;
+    else if (!SDL_strcasecmp(text, "cpc_save") ||
+             !SDL_strcasecmp(text, "cpc"))
+        *source = REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+    else
+        return false;
     return true;
 }
 
@@ -143,6 +163,7 @@ void real_tape_init(RealTape *rt) {
     memset(rt, 0, sizeof(*rt));
     rt->input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
     rt->output_level = REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
+    rt->output_source = REAL_TAPE_OUTPUT_SOURCE_CDT;
     rt->output_target = REAL_TAPE_TARGET_FILE;
     rt->audible_monitor = true;
     rt->visual_monitor = true;
@@ -153,47 +174,128 @@ void real_tape_init(RealTape *rt) {
 
 static bool append_wav_samples(RealTape *rt, const s16 *samples,
                                size_t count) {
-    if (!rt->wav || count == 0) return true;
+    if (!rt->capture ||
+        rt->capture_format != REAL_TAPE_CAPTURE_WAV ||
+        count == 0)
+        return true;
     size_t bytes = count * sizeof(samples[0]);
-    if (bytes > UINT32_MAX - rt->wav_bytes) {
+    if (bytes > UINT32_MAX - rt->capture_bytes) {
         set_error(rt, "WAV capture", "file reached the 4 GB WAV limit");
         return false;
     }
-    if (fwrite(samples, sizeof(samples[0]), count, rt->wav) != count) {
+    if (fwrite(samples, sizeof(samples[0]), count, rt->capture) != count) {
         set_error(rt, "WAV capture", "write failed");
         return false;
     }
-    rt->wav_bytes += (u32)bytes;
+    rt->capture_bytes += (u32)bytes;
     return true;
 }
 
-void real_tape_record_stop(RealTape *rt) {
-    if (!rt || !rt->wav) return;
+static bool start_cdt_direct_block(RealTape *rt) {
+    static const u8 header[9] = {
+        0x15,
+        REAL_TAPE_CDT_TSTATES_PER_SAMPLE, 0,
+        0, 0,       /* no pause after the converted stream */
+        8,          /* patched if the final byte is partial */
+        0, 0, 0,    /* patched with the packed data length */
+    };
+    if (fwrite(header, 1, sizeof(header), rt->capture) != sizeof(header)) {
+        set_error(rt, "CDT conversion", "cannot write direct-recording block");
+        return false;
+    }
+    rt->cdt_block_started = true;
+    return true;
+}
 
-    if (rt->output_frame_count > 0) {
+static bool write_cdt_byte(RealTape *rt, u8 byte) {
+    if (rt->capture_bytes >= REAL_TAPE_CDT_MAX_DATA_BYTES) {
+        set_error(rt, "CDT conversion",
+                  "direct-recording block reached its 16 MB limit");
+        return false;
+    }
+    if (fwrite(&byte, 1, 1, rt->capture) != 1) {
+        set_error(rt, "CDT conversion", "write failed");
+        return false;
+    }
+    rt->capture_bytes++;
+    return true;
+}
+
+static bool append_cdt_sample(RealTape *rt, u8 tape_level) {
+    if (!rt->capture || rt->capture_format != REAL_TAPE_CAPTURE_CDT)
+        return true;
+    if (!rt->cdt_block_started && !start_cdt_direct_block(rt))
+        return false;
+    if (!rt->cdt_bits &&
+        rt->capture_bytes >= REAL_TAPE_CDT_MAX_DATA_BYTES) {
+        set_error(rt, "CDT conversion",
+                  "direct-recording block reached its 16 MB limit");
+        return false;
+    }
+
+    rt->cdt_byte = (u8)((rt->cdt_byte << 1) |
+                         ((tape_level & 0x80) ? 1 : 0));
+    rt->cdt_bits++;
+    if (rt->cdt_bits < 8) return true;
+
+    u8 byte = rt->cdt_byte;
+    rt->cdt_byte = 0;
+    rt->cdt_bits = 0;
+    return write_cdt_byte(rt, byte);
+}
+
+void real_tape_record_stop(RealTape *rt) {
+    if (!rt || !rt->capture) return;
+
+    RealTapeCaptureFormat format = rt->capture_format;
+    if (format == REAL_TAPE_CAPTURE_WAV && rt->output_frame_count > 0) {
         int count = rt->output_frame_count;
         rt->output_frame_count = 0;
         append_wav_samples(rt, rt->output_frame, (size_t)count);
     }
-    if (fseek(rt->wav, 4, SEEK_SET) == 0) {
-        u32 riff_size = rt->wav_bytes + 36;
-        u8 b[4] = {
-            (u8)riff_size, (u8)(riff_size >> 8),
-            (u8)(riff_size >> 16), (u8)(riff_size >> 24)
-        };
-        fwrite(b, 1, sizeof(b), rt->wav);
+
+    if (format == REAL_TAPE_CAPTURE_WAV) {
+        if (fseek(rt->capture, 4, SEEK_SET) == 0) {
+            u32 riff_size = rt->capture_bytes + 36;
+            u8 b[4] = {
+                (u8)riff_size, (u8)(riff_size >> 8),
+                (u8)(riff_size >> 16), (u8)(riff_size >> 24)
+            };
+            fwrite(b, 1, sizeof(b), rt->capture);
+        }
+        if (fseek(rt->capture, 40, SEEK_SET) == 0) {
+            u8 b[4] = {
+                (u8)rt->capture_bytes, (u8)(rt->capture_bytes >> 8),
+                (u8)(rt->capture_bytes >> 16),
+                (u8)(rt->capture_bytes >> 24)
+            };
+            fwrite(b, 1, sizeof(b), rt->capture);
+        }
+    } else if (format == REAL_TAPE_CAPTURE_CDT &&
+               rt->cdt_block_started) {
+        u8 used_bits = rt->cdt_bits ? rt->cdt_bits : 8;
+        if (rt->cdt_bits) {
+            u8 byte = (u8)(rt->cdt_byte << (8 - rt->cdt_bits));
+            write_cdt_byte(rt, byte);
+        }
+        if (fseek(rt->capture, 15, SEEK_SET) == 0)
+            fwrite(&used_bits, 1, 1, rt->capture);
+        if (fseek(rt->capture, 16, SEEK_SET) == 0) {
+            u8 b[3] = {
+                (u8)rt->capture_bytes,
+                (u8)(rt->capture_bytes >> 8),
+                (u8)(rt->capture_bytes >> 16)
+            };
+            fwrite(b, 1, sizeof(b), rt->capture);
+        }
     }
-    if (fseek(rt->wav, 40, SEEK_SET) == 0) {
-        u8 b[4] = {
-            (u8)rt->wav_bytes, (u8)(rt->wav_bytes >> 8),
-            (u8)(rt->wav_bytes >> 16), (u8)(rt->wav_bytes >> 24)
-        };
-        fwrite(b, 1, sizeof(b), rt->wav);
-    }
-    fclose(rt->wav);
-    rt->wav = NULL;
-    fprintf(stderr, "[real-tape] WAV stopped (%u bytes PCM): %s\n",
-            rt->wav_bytes, rt->wav_path);
+
+    fclose(rt->capture);
+    rt->capture = NULL;
+    rt->capture_format = REAL_TAPE_CAPTURE_NONE;
+    fprintf(stderr, "[real-tape] %s stopped (%u data bytes): %s\n",
+            format == REAL_TAPE_CAPTURE_CDT ? "CDT conversion" : "WAV capture",
+            rt->capture_bytes, rt->capture_path);
 }
 
 void real_tape_shutdown(RealTape *rt) {
@@ -222,6 +324,7 @@ void real_tape_reset(RealTape *rt) {
 
 bool real_tape_configure(RealTape *rt, RealTapeMode mode,
                          const char *input_device,
+                         RealTapeOutputSource output_source,
                          RealTapeOutputTarget output_target,
                          const char *output_device,
                          int input_gain, int output_level,
@@ -231,23 +334,28 @@ bool real_tape_configure(RealTape *rt, RealTapeMode mode,
     const char *output =
         default_device(output_device) ? "default" : output_device;
     bool mode_changed = rt->mode != mode;
+    bool source_changed = rt->output_source != output_source;
     bool target_changed = rt->output_target != output_target;
     bool use_device_input = real_tape_mode_has_input(mode) &&
                             !real_tape_source_loaded(rt);
     bool reopen_input = use_device_input &&
         (!rt->input_stream || strcmp(rt->input_device, input));
-    bool use_device_output = real_tape_mode_has_output(mode) &&
-                             output_target == REAL_TAPE_TARGET_DEVICE;
+    bool use_device_output =
+        output_target == REAL_TAPE_TARGET_DEVICE &&
+        (real_tape_mode_has_output(mode) ||
+         (real_tape_mode_has_input(mode) &&
+          real_tape_source_loaded(rt)));
     bool reopen_output = use_device_output &&
         (!rt->output_stream || strcmp(rt->output_device, output));
     bool visual_changed = rt->visual_monitor != visual_monitor;
 
     rt->error[0] = '\0';
-    if (mode_changed || target_changed)
+    if (mode_changed || source_changed || target_changed)
         real_tape_record_stop(rt);
-    if (mode_changed || target_changed || reopen_output)
+    if (mode_changed || source_changed || target_changed || reopen_output)
         real_tape_flush_output(rt);
     rt->mode = mode;
+    rt->output_source = output_source;
     rt->output_target = output_target;
     rt->input_gain = input_gain < 25 ? 25 :
                      input_gain > 400 ? 400 : input_gain;
@@ -337,7 +445,9 @@ void real_tape_pump(RealTape *rt) {
         if (got == 0) break;
 
         size_t count = (size_t)got / sizeof(samples[0]);
-        if (rt->wav && !append_wav_samples(rt, samples, count))
+        if (rt->capture &&
+            rt->capture_format == REAL_TAPE_CAPTURE_WAV &&
+            !append_wav_samples(rt, samples, count))
             real_tape_record_stop(rt);
 
         for (size_t i = 0; i < count; i++) {
@@ -358,6 +468,13 @@ void real_tape_pump(RealTape *rt) {
 
 void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
     rt->monitor_pcm = 0;
+    /* CPC cassette motor is Port C bit 4; bit 5 is its write-data line. */
+    if (real_tape_mode_has_output(rt->mode) &&
+        rt->output_source == REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE &&
+        (ppi_port_c & 0x10)) {
+        real_tape_output_sample(
+            rt, (ppi_port_c & 0x20) ? 0x80 : 0x00);
+    }
     if (real_tape_mode_has_input(rt->mode) &&
         real_tape_source_loaded(rt)) {
         if ((ppi_port_c & 0x10) &&
@@ -365,6 +482,26 @@ void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
             s16 sample = rt->source_samples[rt->source_sample_pos++];
             rt->input_level = tape_signal_sample(&rt->input_filter, sample,
                                                   rt->input_gain);
+            rt->monitor_pcm = tape_signal_pcm(&rt->input_filter);
+
+            if (rt->output_target == REAL_TAPE_TARGET_DEVICE &&
+                rt->output_stream) {
+                int scaled = (int)sample * rt->output_level / 100;
+                if (rt->output_frame_count ==
+                    (int)SDL_arraysize(rt->output_frame))
+                    real_tape_flush_output(rt);
+                if (rt->output_stream)
+                    rt->output_frame[rt->output_frame_count++] =
+                        (s16)scaled;
+            }
+
+            bool cdt_ok = append_cdt_sample(rt, rt->input_level);
+            bool source_finished =
+                rt->source_sample_pos >= rt->source_sample_count;
+            if (!cdt_ok ||
+                (source_finished &&
+                 rt->capture_format == REAL_TAPE_CAPTURE_CDT))
+                real_tape_record_stop(rt);
         } else {
             rt->input_level = 0;
         }
@@ -381,21 +518,26 @@ void real_tape_sample(RealTape *rt, u8 ppi_port_c) {
             rt->input_underruns++;
         }
     }
-    if (rt->visual_monitor && real_tape_connected_input_active(rt))
+    if (rt->visual_monitor && real_tape_input_active(rt))
         waveform_push(rt, rt->monitor_pcm);
 }
 
 void real_tape_output_sample(RealTape *rt, u8 tape_level) {
-    if (!rt || !real_tape_mode_has_output(rt->mode) ||
-        (!rt->wav && !rt->output_stream))
+    if (!rt || !real_tape_mode_has_output(rt->mode))
+        return;
+
+    int amplitude = rt->output_level * 32767 / 100;
+    s16 sample = (s16)((tape_level & 0x80) ? amplitude : -amplitude);
+    if (rt->visual_monitor)
+        waveform_push(rt, sample);
+
+    if (!rt->capture && !rt->output_stream)
         return;
     if (rt->output_frame_count == (int)SDL_arraysize(rt->output_frame))
         real_tape_flush_output(rt);
-    if (!rt->wav && !rt->output_stream) return;
+    if (!rt->capture && !rt->output_stream) return;
 
-    int amplitude = rt->output_level * 32767 / 100;
-    rt->output_frame[rt->output_frame_count++] =
-        (s16)((tape_level & 0x80) ? amplitude : -amplitude);
+    rt->output_frame[rt->output_frame_count++] = sample;
 }
 
 void real_tape_flush_output(RealTape *rt) {
@@ -409,7 +551,9 @@ void real_tape_flush_output(RealTape *rt) {
                                     rt->output_frame, bytes))
             set_error(rt, "output stream", SDL_GetError());
     }
-    if (rt->wav && real_tape_mode_has_output(rt->mode) &&
+    if (rt->capture &&
+        rt->capture_format == REAL_TAPE_CAPTURE_WAV &&
+        real_tape_mode_has_output(rt->mode) &&
         !append_wav_samples(rt, rt->output_frame, (size_t)count))
         real_tape_record_stop(rt);
 }
@@ -422,6 +566,10 @@ bool real_tape_input_active(const RealTape *rt) {
 bool real_tape_connected_input_active(const RealTape *rt) {
     return rt && real_tape_mode_has_input(rt->mode) &&
            !real_tape_source_loaded(rt) && rt->input_stream;
+}
+
+bool real_tape_audible_monitor_enabled(const RealTape *rt) {
+    return rt && rt->audible_monitor;
 }
 
 bool real_tape_visual_monitor_enabled(const RealTape *rt) {
@@ -446,7 +594,7 @@ const char *real_tape_error(const RealTape *rt) {
 
 s16 real_tape_monitor_sample(const RealTape *rt) {
     if (!rt || !rt->audible_monitor ||
-        !real_tape_connected_input_active(rt))
+        !real_tape_input_active(rt))
         return 0;
     return (s16)((int)rt->monitor_pcm *
                  REAL_TAPE_MONITOR_LEVEL_PERCENT / 100);
@@ -527,6 +675,8 @@ bool real_tape_source_load_wav(RealTape *rt, const char *path) {
 
 void real_tape_source_eject(RealTape *rt) {
     if (!rt) return;
+    real_tape_record_stop(rt);
+    real_tape_flush_output(rt);
     SDL_free(rt->source_samples);
     rt->source_samples = NULL;
     rt->source_sample_count = 0;
@@ -551,6 +701,17 @@ const char *real_tape_source_path(const RealTape *rt) {
 int real_tape_source_progress(const RealTape *rt) {
     if (!real_tape_source_loaded(rt)) return 0;
     return (int)(rt->source_sample_pos * 100 / rt->source_sample_count);
+}
+
+u32 real_tape_source_remaining_seconds(const RealTape *rt) {
+    if (!real_tape_source_loaded(rt) ||
+        rt->source_sample_pos >= rt->source_sample_count)
+        return 0;
+    size_t remaining =
+        rt->source_sample_count - rt->source_sample_pos;
+    size_t seconds = remaining / REAL_TAPE_SAMPLE_RATE;
+    if (remaining % REAL_TAPE_SAMPLE_RATE) seconds++;
+    return seconds > UINT32_MAX ? UINT32_MAX : (u32)seconds;
 }
 
 static bool cycle_device(bool recording, const char *current, int direction,
@@ -621,23 +782,41 @@ static bool write_wav_header(FILE *f) {
     return fwrite(header, 1, sizeof(header), f) == sizeof(header);
 }
 
+static bool write_cdt_header(FILE *f) {
+    static const u8 header[10] = {
+        'Z','X','T','a','p','e','!',0x1A, 1, 20
+    };
+    return fwrite(header, 1, sizeof(header), f) == sizeof(header);
+}
+
+static bool path_has_extension(const char *path, const char *extension) {
+    if (!path || !path[0]) return false;
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    const char *base = path;
+    if (slash && slash + 1 > base) base = slash + 1;
+    if (backslash && backslash + 1 > base) base = backslash + 1;
+    const char *dot = strrchr(base, '.');
+    return dot && !SDL_strcasecmp(dot, extension);
+}
+
 bool real_tape_record_start(RealTape *rt, const char *path) {
     if (!rt) return false;
+    bool convert_to_cdt =
+        real_tape_mode_has_input(rt->mode) &&
+        real_tape_source_loaded(rt);
+    const char *operation =
+        convert_to_cdt ? "CDT conversion" : "WAV capture";
     if (!path || !path[0]) {
-        set_error(rt, "WAV capture", "output file is not selected");
+        set_error(rt, operation, "output file is not selected");
         return false;
     }
     if (rt->output_target != REAL_TAPE_TARGET_FILE) {
-        set_error(rt, "WAV capture", "select File as the output target");
+        set_error(rt, operation, "select File as the output target");
         return false;
     }
     if (real_tape_mode_has_input(rt->mode)) {
-        if (real_tape_source_loaded(rt)) {
-            set_error(rt, "WAV capture",
-                      "capture is available for System Audio only");
-            return false;
-        }
-        if (!real_tape_connected_input_active(rt)) {
+        if (!convert_to_cdt && !real_tape_connected_input_active(rt)) {
             set_error(rt, "WAV capture", "System Audio input is not active");
             return false;
         }
@@ -645,46 +824,74 @@ bool real_tape_record_start(RealTape *rt, const char *path) {
         set_error(rt, "WAV capture", "select INPUT or OUTPUT mode first");
         return false;
     }
+    if (convert_to_cdt && !path_has_extension(path, ".cdt")) {
+        set_error(rt, "CDT conversion", "output file must use .cdt");
+        return false;
+    }
+    if (!convert_to_cdt && !path_has_extension(path, ".wav")) {
+        set_error(rt, "WAV capture", "output file must use .wav");
+        return false;
+    }
+
     real_tape_record_stop(rt);
-    rt->wav = fopen(path, "wb");
-    if (!rt->wav) {
-        set_error(rt, "WAV capture", "cannot open output file");
+    rt->capture = fopen(path, "wb");
+    if (!rt->capture) {
+        set_error(rt, operation, "cannot open output file");
         return false;
     }
-    if (!write_wav_header(rt->wav)) {
-        set_error(rt, "WAV capture", "cannot write WAV header");
-        fclose(rt->wav);
-        rt->wav = NULL;
+    bool header_ok = convert_to_cdt
+        ? write_cdt_header(rt->capture)
+        : write_wav_header(rt->capture);
+    if (!header_ok) {
+        set_error(rt, operation, "cannot write file header");
+        fclose(rt->capture);
+        rt->capture = NULL;
         return false;
     }
-    snprintf(rt->wav_path, sizeof(rt->wav_path), "%s", path);
-    rt->wav_bytes = 0;
+    rt->capture_format = convert_to_cdt
+        ? REAL_TAPE_CAPTURE_CDT : REAL_TAPE_CAPTURE_WAV;
+    snprintf(rt->capture_path, sizeof(rt->capture_path), "%s", path);
+    rt->capture_bytes = 0;
+    rt->cdt_byte = 0;
+    rt->cdt_bits = 0;
+    rt->cdt_block_started = false;
     rt->output_frame_count = 0;
     rt->error[0] = '\0';
-    fprintf(stderr, "[real-tape] recording %s 44100 Hz mono s16 -> %s\n",
-            real_tape_mode_name(rt->mode), path);
+    if (convert_to_cdt) {
+        fprintf(stderr,
+                "[real-tape] converting WAV to CDT direct recording -> %s\n",
+                path);
+    } else {
+        fprintf(stderr,
+                "[real-tape] recording %s 44100 Hz mono s16 -> %s\n",
+                real_tape_mode_name(rt->mode), path);
+    }
     return true;
 }
 
 bool real_tape_recording(const RealTape *rt) {
-    return rt && rt->wav;
+    return rt && rt->capture;
 }
 
 const char *real_tape_record_path(const RealTape *rt) {
-    return rt ? rt->wav_path : "";
+    return rt ? rt->capture_path : "";
+}
+
+static bool ensure_extension(char *path, size_t size,
+                             const char *extension) {
+    if (!path || !path[0] || size == 0) return false;
+    if (path_has_extension(path, extension)) return true;
+    size_t len = strlen(path);
+    size_t extension_len = strlen(extension);
+    if (len + extension_len >= size) return false;
+    memcpy(path + len, extension, extension_len + 1);
+    return true;
 }
 
 bool real_tape_ensure_wav_extension(char *path, size_t size) {
-    if (!path || !path[0] || size == 0) return false;
-    const char *slash = strrchr(path, '/');
-    const char *backslash = strrchr(path, '\\');
-    const char *base = path;
-    if (slash && slash + 1 > base) base = slash + 1;
-    if (backslash && backslash + 1 > base) base = backslash + 1;
-    const char *dot = strrchr(base, '.');
-    if (dot && !SDL_strcasecmp(dot, ".wav")) return true;
-    size_t len = strlen(path);
-    if (len + 4 >= size) return false;
-    memcpy(path + len, ".wav", 5);
-    return true;
+    return ensure_extension(path, size, ".wav");
+}
+
+bool real_tape_ensure_cdt_extension(char *path, size_t size) {
+    return ensure_extension(path, size, ".cdt");
 }

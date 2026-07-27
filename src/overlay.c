@@ -90,6 +90,33 @@ static bool overlay_real_tape_input_selected(const Overlay *ov) {
            real_tape_mode_has_input(ov->cfg->real_tape_mode);
 }
 
+static bool overlay_real_tape_wav_selected(const Overlay *ov) {
+    return real_tape_mode_has_input(ov->cfg->real_tape_mode) &&
+           ov->cfg->real_tape_wav[0];
+}
+
+static bool overlay_real_tape_wav_to_cdt(const Overlay *ov) {
+    return overlay_real_tape_wav_selected(ov) &&
+           ov->cfg->real_tape_output_target == REAL_TAPE_TARGET_FILE;
+}
+
+static bool overlay_real_tape_cpc_save_output(const Overlay *ov) {
+    return real_tape_mode_has_output(ov->cfg->real_tape_mode) &&
+           ov->cfg->real_tape_output_source ==
+               REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+}
+
+static bool path_has_extension(const char *path, const char *extension) {
+    if (!path || !path[0]) return false;
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    const char *base = path;
+    if (slash && slash + 1 > base) base = slash + 1;
+    if (backslash && backslash + 1 > base) base = backslash + 1;
+    const char *dot = strrchr(base, '.');
+    return dot && !SDL_strcasecmp(dot, extension);
+}
+
 static bool overlay_apply_real_tape(Overlay *ov) {
     if (!ov->cpc) return true;
     RealTape *rt = &ov->cpc->real_tape;
@@ -117,6 +144,7 @@ static bool overlay_apply_real_tape(Overlay *ov) {
         connected
             ? ov->cfg->real_tape_mode : REAL_TAPE_OFF,
         ov->cfg->real_tape_input_device,
+        ov->cfg->real_tape_output_source,
         ov->cfg->real_tape_output_target,
         ov->cfg->real_tape_output_device,
         ov->cfg->real_tape_input_gain,
@@ -1095,29 +1123,71 @@ static void real_tape_item_text(const Overlay *ov, int row,
         }
         break;
     case 1: {
-        char device[REAL_TAPE_DEVICE_NAME_MAX];
-        snprintf(lbl, lsz, "Input device");
-        real_tape_device_label(ov->cfg->real_tape_input_device,
-                               device, sizeof(device));
-        trunc_path(device, val, vsz);
+        if (real_tape_mode_has_output(ov->cfg->real_tape_mode)) {
+            snprintf(lbl, lsz, "Source");
+            snprintf(val, vsz, "%s",
+                     overlay_real_tape_cpc_save_output(ov)
+                         ? "CPC SAVE output" : "CPC deck tape");
+        } else if (overlay_real_tape_wav_selected(ov)) {
+            snprintf(lbl, lsz, "Input device");
+            snprintf(val, vsz, "WAV file");
+            *readonly = true;
+        } else {
+            char device[REAL_TAPE_DEVICE_NAME_MAX];
+            snprintf(lbl, lsz, "Input device");
+            real_tape_device_label(ov->cfg->real_tape_input_device,
+                                   device, sizeof(device));
+            trunc_path(device, val, vsz);
+        }
         break;
     }
     case 2:
-        snprintf(lbl, lsz, "Input gain");
-        snprintf(val, vsz, "%d%%", ov->cfg->real_tape_input_gain);
+        if (real_tape_mode_has_output(ov->cfg->real_tape_mode)) {
+            snprintf(lbl, lsz, "Source format");
+            snprintf(val, vsz, "%s",
+                     overlay_real_tape_cpc_save_output(ov)
+                         ? "[CPC digital write line]"
+                         : "[fixed CDT waveform]");
+            *readonly = true;
+        } else {
+            snprintf(lbl, lsz, "Input gain");
+            snprintf(val, vsz, "%d%%", ov->cfg->real_tape_input_gain);
+        }
         break;
     case 3:
-        snprintf(lbl, lsz, "Input signal");
-        if (!real_tape_mode_has_input(ov->cfg->real_tape_mode)) {
+        if (real_tape_mode_has_output(ov->cfg->real_tape_mode)) {
+            snprintf(lbl, lsz, "Source signal");
+            if (overlay_real_tape_cpc_save_output(ov)) {
+                if (!ov->cpc) {
+                    snprintf(val, vsz, "[CPC unavailable]");
+                } else {
+                    snprintf(val, vsz, "%s  motor %s",
+                             (ov->cpc->ppi.port_c & 0x20)
+                                 ? "HIGH" : "LOW",
+                             (ov->cpc->ppi.port_c & 0x10)
+                                 ? "ON" : "OFF");
+                }
+            } else if (!ov->cpc || !ov->cpc->tape.present) {
+                snprintf(val, vsz, "[load CDT in Media]");
+            } else {
+                snprintf(val, vsz, "%s  motor %s",
+                         tape_level(&ov->cpc->tape) ? "HIGH" : "LOW",
+                         ov->cpc->tape.motor ? "ON" : "OFF");
+            }
+        } else if (!real_tape_mode_has_input(ov->cfg->real_tape_mode)) {
+            snprintf(lbl, lsz, "Input signal");
             snprintf(val, vsz, "[INPUT mode is off]");
         } else if (!rt || !real_tape_input_active(rt)) {
+            snprintf(lbl, lsz, "Input signal");
             snprintf(val, vsz, "[input unavailable]");
         } else if (real_tape_source_loaded(rt)) {
+            snprintf(lbl, lsz, "Input signal");
             snprintf(val, vsz, "%d%%  %s  WAV %d%%",
                      real_tape_signal_percent(rt),
                      real_tape_input_level(rt) ? "HIGH" : "LOW",
                      real_tape_source_progress(rt));
         } else {
+            snprintf(lbl, lsz, "Input signal");
             snprintf(val, vsz, "%d%%  %s  buffer %d ms",
                      real_tape_signal_percent(rt),
                      real_tape_input_level(rt) ? "HIGH" : "LOW",
@@ -1154,20 +1224,31 @@ static void real_tape_item_text(const Overlay *ov, int row,
                                    device, sizeof(device));
             trunc_path(device, val, vsz);
         } else {
-            snprintf(lbl, lsz, "Output file");
-            if (ov->cfg->real_tape_output_file[0]) {
+            bool cdt = overlay_real_tape_wav_to_cdt(ov);
+            snprintf(lbl, lsz, "%s",
+                     cdt ? "Output file (FAT CDT)" : "Output file");
+            if (path_has_extension(
+                    ov->cfg->real_tape_output_file,
+                    cdt ? ".cdt" : ".wav")) {
                 char path[CONFIG_PATH_MAX];
                 snprintf(path, sizeof(path), "%s",
                          ov->cfg->real_tape_output_file);
                 trunc_path(basename(path), val, vsz);
             } else {
-                snprintf(val, vsz, "[Enter=select WAV]");
+                snprintf(val, vsz, "[Enter=select %s]",
+                         cdt ? "CDT" : "WAV");
             }
         }
         break;
     case 8:
         snprintf(lbl, lsz, "Output level");
-        snprintf(val, vsz, "%d%%", ov->cfg->real_tape_output_level);
+        if (overlay_real_tape_wav_to_cdt(ov)) {
+            snprintf(val, vsz, "[device output only]");
+            *readonly = true;
+        } else {
+            snprintf(val, vsz, "%d%%",
+                     ov->cfg->real_tape_output_level);
+        }
         break;
     case 9:
         snprintf(lbl, lsz, "Capture to file");
@@ -1184,15 +1265,17 @@ static void real_tape_item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "[Output is Device]");
             *readonly = true;
         } else if (real_tape_mode_has_input(ov->cfg->real_tape_mode) &&
-                   rt && real_tape_source_loaded(rt)) {
-            snprintf(val, vsz, "[System Audio only]");
-            *readonly = true;
-        } else if (real_tape_mode_has_input(ov->cfg->real_tape_mode) &&
-                   (!rt || !real_tape_connected_input_active(rt))) {
+                   (!rt || (!real_tape_source_loaded(rt) &&
+                            !real_tape_connected_input_active(rt)))) {
             snprintf(val, vsz, "[input unavailable]");
             *readonly = true;
-        } else if (!ov->cfg->real_tape_output_file[0]) {
-            snprintf(val, vsz, "[select Output file]");
+        } else if (!path_has_extension(
+                       ov->cfg->real_tape_output_file,
+                       overlay_real_tape_wav_to_cdt(ov)
+                           ? ".cdt" : ".wav")) {
+            snprintf(val, vsz, "[select Output %s]",
+                     overlay_real_tape_wav_to_cdt(ov)
+                         ? "CDT" : "WAV");
             *readonly = true;
         } else {
             snprintf(val, vsz, "disabled");
@@ -2183,12 +2266,19 @@ void overlay_tick(Overlay *ov) {
             videocap_start(path, ov->cfg->gif_width, ov->cfg->gif_fps,
                            ov->cfg->gif_ffmpeg);
         }
-    } else if (ov->dialog_kind == DIALOG_REAL_TAPE_OUTPUT_FILE) {
+    } else if (ov->dialog_kind == DIALOG_REAL_TAPE_OUTPUT_FILE ||
+               ov->dialog_kind == DIALOG_REAL_TAPE_OUTPUT_CDT) {
         if (ov->dialog_path[0]) {
             char path[CONFIG_PATH_MAX];
+            bool cdt =
+                ov->dialog_kind == DIALOG_REAL_TAPE_OUTPUT_CDT;
             snprintf(path, sizeof(path), "%s", ov->dialog_path);
-            if (!real_tape_ensure_wav_extension(path, sizeof(path))) {
-                notify_post("Real cassette WAV path is empty or too long");
+            bool extension_ok = cdt
+                ? real_tape_ensure_cdt_extension(path, sizeof(path))
+                : real_tape_ensure_wav_extension(path, sizeof(path));
+            if (!extension_ok) {
+                notify_post("Real cassette %s path is empty or too long",
+                            cdt ? "CDT" : "WAV");
             } else {
                 if (ov->cpc &&
                     real_tape_recording(&ov->cpc->real_tape))
@@ -2196,7 +2286,8 @@ void overlay_tick(Overlay *ov) {
                 snprintf(ov->cfg->real_tape_output_file,
                          sizeof(ov->cfg->real_tape_output_file),
                          "%s", path);
-                notify_post("Real cassette output WAV selected");
+                notify_post("Real cassette output %s selected",
+                            cdt ? "CDT" : "WAV");
                 ov->dirty = true;
             }
         }
@@ -2268,14 +2359,22 @@ void overlay_tick(Overlay *ov) {
 }
 
 static void real_tape_open_output_file_dialog(Overlay *ov) {
-    ov->dialog_kind = DIALOG_REAL_TAPE_OUTPUT_FILE;
     ov->dialog_ready = false;
     static const SDL_DialogFileFilter wav_filters[] = {
         { "WAV audio", "wav;WAV" },
         { "All files", "*" },
     };
+    static const SDL_DialogFileFilter cdt_filters[] = {
+        { "CDT tape images", "cdt;CDT" },
+        { "All files", "*" },
+    };
+    bool cdt = overlay_real_tape_wav_to_cdt(ov);
+    ov->dialog_kind = cdt
+        ? DIALOG_REAL_TAPE_OUTPUT_CDT
+        : DIALOG_REAL_TAPE_OUTPUT_FILE;
     SDL_ShowSaveFileDialog(overlay_file_callback, ov,
-        ov->cpc ? ov->cpc->display.window : NULL, wav_filters, 2,
+        ov->cpc ? ov->cpc->display.window : NULL,
+        cdt ? cdt_filters : wav_filters, 2,
         ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
 }
 
@@ -2320,6 +2419,22 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
         changed = true;
         break;
     case 1:
+        if (real_tape_mode_has_output(ov->cfg->real_tape_mode)) {
+            if (reset) {
+                ov->cfg->real_tape_output_source =
+                    REAL_TAPE_OUTPUT_SOURCE_CDT;
+            } else {
+                ov->cfg->real_tape_output_source =
+                    ov->cfg->real_tape_output_source ==
+                            REAL_TAPE_OUTPUT_SOURCE_CDT
+                        ? REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE
+                        : REAL_TAPE_OUTPUT_SOURCE_CDT;
+            }
+            changed = true;
+            break;
+        }
+        if (overlay_real_tape_wav_selected(ov))
+            break;
         if (reset) {
             snprintf(ov->cfg->real_tape_input_device,
                      sizeof(ov->cfg->real_tape_input_device), "default");
@@ -2334,6 +2449,8 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
         changed = true;
         break;
     case 2:
+        if (real_tape_mode_has_output(ov->cfg->real_tape_mode))
+            break;
         if (reset) {
             ov->cfg->real_tape_input_gain = REAL_TAPE_INPUT_GAIN_DEFAULT;
         } else {
@@ -2404,6 +2521,8 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
         }
         break;
     case 8:
+        if (overlay_real_tape_wav_to_cdt(ov))
+            break;
         if (reset) {
             ov->cfg->real_tape_output_level =
                 REAL_TAPE_OUTPUT_LEVEL_DEFAULT;
@@ -2432,7 +2551,10 @@ static bool handle_real_tape_event(Overlay *ov, const SDL_Event *ev) {
             } else if (real_tape_record_start(
                            &ov->cpc->real_tape,
                            ov->cfg->real_tape_output_file)) {
-                notify_post("Real cassette capture enabled");
+                notify_post("%s enabled",
+                    overlay_real_tape_wav_to_cdt(ov)
+                        ? "WAV-to-CDT conversion"
+                        : "Real cassette capture");
             } else {
                 notify_post("Cannot enable cassette capture: %s",
                             real_tape_error(&ov->cpc->real_tape));
@@ -2958,9 +3080,18 @@ static void render_file_browser(const Overlay *ov, SDL_Renderer *r,
 #define REAL_TAPE_SCOPE_MAX_POINTS 1024
 
 void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r) {
-    if (!ov || !ov->cpc || !r) return;
+    if (!ov || !ov->cpc || !r || ov->visible) return;
     const RealTape *rt = &ov->cpc->real_tape;
-    if (!real_tape_connected_input_active(rt) ||
+    bool tape_input = real_tape_input_active(rt);
+    bool deck_output = real_tape_mode_has_output(rt->mode) &&
+                       rt->output_source ==
+                           REAL_TAPE_OUTPUT_SOURCE_CDT &&
+                       ov->cpc->tape.present;
+    bool cpc_save_output =
+        real_tape_mode_has_output(rt->mode) &&
+        rt->output_source ==
+            REAL_TAPE_OUTPUT_SOURCE_CPC_SAVE;
+    if ((!tape_input && !deck_output && !cpc_save_output) ||
         !real_tape_visual_monitor_enabled(rt))
         return;
 
@@ -2985,10 +3116,41 @@ void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r) {
     SDL_RenderRect(r, &panel);
 
     char status[64];
-    snprintf(status, sizeof(status),
-             "SYSTEM AUDIO  LEVEL %d%%  MOTOR %s",
-             real_tape_signal_percent(rt),
-             (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+    if (cpc_save_output) {
+        snprintf(status, sizeof(status),
+                 "CPC SAVE  %s  LEVEL %d%%  MOTOR %s",
+                 (ov->cpc->ppi.port_c & 0x20) ? "HIGH" : "LOW",
+                 rt->output_level,
+                 (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+    } else if (deck_output) {
+        snprintf(status, sizeof(status),
+                 "CPC DECK TAPE  LEVEL %d%%  MOTOR %s",
+                 rt->output_level,
+                 ov->cpc->tape.motor ? "ON" : "OFF");
+    } else if (real_tape_source_loaded(rt)) {
+        u32 remaining = real_tape_source_remaining_seconds(rt);
+        u32 hours = remaining / 3600;
+        u32 minutes = (remaining / 60) % 60;
+        u32 seconds = remaining % 60;
+        if (hours) {
+            snprintf(status, sizeof(status),
+                     "WAV FILE  LEFT %u:%02u:%02u  LEVEL %d%%  MOTOR %s",
+                     hours, minutes, seconds,
+                     real_tape_signal_percent(rt),
+                     (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+        } else {
+            snprintf(status, sizeof(status),
+                     "WAV FILE  LEFT %02u:%02u  LEVEL %d%%  MOTOR %s",
+                     minutes, seconds,
+                     real_tape_signal_percent(rt),
+                     (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+        }
+    } else {
+        snprintf(status, sizeof(status),
+                 "SYSTEM AUDIO  LEVEL %d%%  MOTOR %s",
+                 real_tape_signal_percent(rt),
+                 (ov->cpc->ppi.port_c & 0x10) ? "ON" : "OFF");
+    }
     SDL_SetRenderDrawColor(r, 255, 220, 120, 255);
     SDL_RenderDebugText(r, margin + 6.0f, panel_y + 5.0f, status);
 
@@ -3171,7 +3333,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                   "INPUT: System Audio or WAV -> CPC deck",
                   150, 190, 230);
         draw_text(r, DROP_PAD, help_y + 16.0f,
-                  "OUTPUT: mounted CDT -> selected File or Device",
+                  "OUTPUT: mounted CDT or CPC SAVE -> File or Device",
                   150, 190, 230);
         draw_text(r, DROP_PAD, help_y + 32.0f,
                   "Capture to file is session-only and starts disabled.",
@@ -3179,7 +3341,9 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         draw_text(r, DROP_PAD, help_y + 48.0f,
                   real_tape_mode_has_input(ov->cfg->real_tape_mode)
                       ? "Media -> Tape: Enter=WAV source, Del=System Audio"
-                      : "Media -> Tape: Enter=load CDT, Del=eject",
+                      : overlay_real_tape_cpc_save_output(ov)
+                          ? "Media -> Tape: mounted CDT is paused"
+                          : "Media -> Tape: Enter=load CDT, Del=eject",
                   150, 190, 230);
         if (ov->cfg->model != MODEL_464 && !ov->cfg->external_tape) {
             draw_text(r, DROP_PAD, help_y + 68.0f,

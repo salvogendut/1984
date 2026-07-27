@@ -12,15 +12,17 @@
  *
  * Supported CDT block types: 0x10 standard speed data, 0x11 turbo
  * loading data, 0x12 pure tone, 0x13 pulse sequence, 0x14 pure data,
- * 0x20 pause. Metadata blocks 0x21/22/30/31/32/33/34/5A are skipped.
- * Unknown blocks fall back to a generic skip; if that overshoots the
- * decoder simply hits TAPE_END and the tape stops. */
+ * 0x15 direct recording, 0x20 pause. Metadata blocks
+ * 0x21/22/30/31/32/33/34/5A are skipped. Unknown blocks fall back to a
+ * generic skip; if that overshoots the decoder simply hits TAPE_END and
+ * the tape stops. */
 
 typedef enum {
     TAPE_END = 0,
     TAPE_PILOT,
     TAPE_SYNC,
     TAPE_DATA,
+    TAPE_DIRECT,
     TAPE_PAUSE,
 } TapeStage;
 

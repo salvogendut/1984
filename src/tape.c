@@ -41,6 +41,20 @@ static bool read_data_bit(Tape *t) {
     return true;
 }
 
+static bool read_direct_sample(Tape *t) {
+    if (!t->data_bits) return false;
+    if (!t->bits_to_shift) {
+        t->data_byte = *t->data_p++;
+        t->bits_to_shift = 8;
+    }
+    t->level = (t->data_byte & 0x80)
+        ? TAPE_LEVEL_HIGH : TAPE_LEVEL_LOW;
+    t->data_byte <<= 1;
+    t->bits_to_shift--;
+    t->data_bits--;
+    return true;
+}
+
 /* Advance to the next block; returns true if a playable block was set
  * up, false if we ran off the end. */
 static bool next_block(Tape *t) {
@@ -93,6 +107,30 @@ static bool next_block(Tape *t) {
             t->cycles_until_next += (int)t->pulse_cycles;
             return true;
 
+        case 0x15: { /* direct recording */
+            size_t remaining = (size_t)(t->block_end - t->block);
+            if (remaining < 9) {
+                t->block = t->block_end;
+                break;
+            }
+            u32 bytes = rd24(t->block + 0x06);
+            u8 used_bits = *(t->block + 0x05);
+            if (!bytes || used_bits < 1 || used_bits > 8 ||
+                (size_t)bytes > remaining - 9) {
+                t->block = t->block_end;
+                break;
+            }
+            t->stage = TAPE_DIRECT;
+            t->pulse_cycles = CYCLE_SCALE(rd16(t->block + 0x01));
+            if (!t->pulse_cycles) t->pulse_cycles = 1;
+            t->data_bits = (bytes - 1) * 8u + used_bits;
+            t->data_p = t->block + 0x09;
+            t->bits_to_shift = 0;
+            read_direct_sample(t);
+            t->cycles_until_next += (int)t->pulse_cycles;
+            return true;
+        }
+
         case 0x20: /* pause */
             if (rd16(t->block + 0x01)) {
                 t->stage = TAPE_PAUSE;
@@ -133,6 +171,7 @@ static void block_done(Tape *t) {
     case 0x12: t->block += 4 + 1; break;
     case 0x13: t->block += *(t->block + 0x01) * 2 + 1 + 1; break;
     case 0x14: t->block += rd24(t->block + 0x01 + 0x07) + 0x0A + 1; break;
+    case 0x15: t->block += rd24(t->block + 0x06) + 9; break;
     case 0x20: t->block += 2 + 1; break;
     default:   t->block = t->block_end; break;
     }
@@ -240,6 +279,25 @@ static void update_level(Tape *t) {
                 t->cycles_until_next += (int)t->pulse_cycles;
                 t->pulse_cycles = MS_TO_CYCLES(pause_ms - 1);
                 t->pulse_count  = 2;
+            } else {
+                block_done(t);
+            }
+        }
+        break;
+
+    case TAPE_DIRECT:
+        if (read_direct_sample(t)) {
+            t->cycles_until_next += (int)t->pulse_cycles;
+            break;
+        }
+        {
+            u32 pause_ms = rd16(t->block + 0x03);
+            if (pause_ms) {
+                t->stage = TAPE_PAUSE;
+                t->pulse_cycles = MS_TO_CYCLES(1);
+                t->cycles_until_next += (int)t->pulse_cycles;
+                t->pulse_cycles = MS_TO_CYCLES(pause_ms - 1);
+                t->pulse_count = 2;
             } else {
                 block_done(t);
             }
