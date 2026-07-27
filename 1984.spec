@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.17
+Version:        0.4.18
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -102,6 +102,12 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_6128.ROM
 
 %changelog
+* Mon Jul 27 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.18-1
+- Add Tinker-gated real cassette INPUT and OUTPUT routing through host audio
+  devices, WAV files, mounted CDT images, and the CPC SAVE write line.
+- Add independent audible and visual monitors, WAV remaining time, session
+  capture, WAV-to-CDT direct recording, and CDT block 0x15 playback.
+
 * Fri Jul 24 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.17-1
 - Append the .dsk extension automatically when creating blank disk images.
 - Describe F10 as host card browsing and show its footer hint only when the
