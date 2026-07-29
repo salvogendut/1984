@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd
 
 .PHONY: all check clean
 
@@ -47,6 +47,10 @@ test-real-tape: test_real_tape.c ../src/real_tape.c ../src/real_tape.h ../src/ta
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_real_tape.c ../src/real_tape.c ../src/tape.c $(SDL3_LIBS) -o $@
 
+test-kbd: test_kbd.c ../src/kbd.c ../src/kbd.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_kbd.c ../src/kbd.c -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -57,6 +61,7 @@ check: $(TESTS)
 	./test-gifcap
 	./test-tape-signal
 	./test-real-tape
+	./test-kbd
 
 clean:
 	rm -f $(TESTS)

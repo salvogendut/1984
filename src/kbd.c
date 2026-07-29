@@ -71,8 +71,8 @@ static const KeyMap keymap[] = {
     { SDL_SCANCODE_MINUS,     3, 1 },
     { SDL_SCANCODE_GRAVE,     3, 2 }, /* @ on CPC */
     { SDL_SCANCODE_P,         3, 3 },
-    { SDL_SCANCODE_SEMICOLON, 3, 4 },
-    { SDL_SCANCODE_APOSTROPHE,3, 5 }, /* : on CPC */
+    { SDL_SCANCODE_APOSTROPHE, 3, 4 }, /* ; on CPC */
+    { SDL_SCANCODE_SEMICOLON, 3, 5 }, /* : on CPC */
     { SDL_SCANCODE_SLASH,     3, 6 },
     { SDL_SCANCODE_PERIOD,    3, 7 },
     /* Row 4: 0 9 O I L K M , */
