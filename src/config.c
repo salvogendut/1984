@@ -1,5 +1,6 @@
 #include "config.h"
 #include "m4.h"
+#include <SDL3/SDL_filesystem.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,12 +107,13 @@ int config_websvc_dir(char *out, size_t sz) {
  * Priority:
  *   1. ~/.config/1984/roms/<file>      — user override
  *   2. $(pkgdatadir)/roms/<file>       — system install (from autotools)
- *   3. ./roms/<file>                   — dev tree / cwd fallback
+ *   3. <application base>/roms/<file>  — app bundle / executable directory
+ *   4. ./roms/<file>                   — dev tree / cwd fallback
  * The first path that exists is returned; otherwise the user-config path
  * (so a "file not found" error names the location the user is expected
  * to populate). */
 static void rom_cfg_path(const char *file, char *out, size_t size) {
-    char user[512], system_[512];
+    char user[512], system_[512], app_[512];
     char cdir[CONFIG_PATH_MAX];
 
     user[0] = '\0';
@@ -131,6 +133,14 @@ static void rom_cfg_path(const char *file, char *out, size_t size) {
 #else
     (void)system_;
 #endif
+    const char *base = SDL_GetBasePath();
+    if (base && base[0]) {
+        snprintf(app_, sizeof(app_), "%sroms/%s", base, file);
+        if (access(app_, R_OK) == 0) {
+            snprintf(out, size, "%s", app_);
+            return;
+        }
+    }
     if (access("roms", R_OK) == 0) {
         char dev_[512];
         snprintf(dev_, sizeof(dev_), "roms/%s", file);

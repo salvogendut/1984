@@ -197,11 +197,14 @@ Cairo is optional (`./configure --without-cairo` disables PDF capture), and
 `ffmpeg` is optional for WebM recording. The required CPC firmware, M4ROM, and
 Amstrad Diagnostics ROMs are bundled in `roms/`.
 
-Tagged releases publish a Linux x86_64 binary, Fedora RPM, Windows x86_64 zip,
-and Flatpak bundle on the
+Tagged releases publish a Linux x86_64 binary, Fedora RPM, Windows x86_64 ZIP,
+macOS application bundles for Apple Silicon and Intel, and a Flatpak bundle on the
 [GitHub Releases page](https://github.com/salvogendut/1984/releases). Pushes to
-`main` also produce workflow artifacts. Linux and Windows are built in CI;
-source builds are maintained for macOS, FreeBSD, NetBSD, OpenBSD, and Haiku.
+`main` also produce workflow artifacts. Linux, Windows, and macOS are built in
+CI; source builds are maintained for FreeBSD, NetBSD, OpenBSD, and Haiku.
+The macOS bundles are currently ad-hoc signed rather than Developer ID
+notarized, so the first launch may require right-clicking the app and selecting
+**Open**.
 See [INSTALL.md](INSTALL.md) and [docs/FLATPAK.md](docs/FLATPAK.md).
 
 ## Keyboard shortcuts
