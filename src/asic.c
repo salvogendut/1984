@@ -373,22 +373,16 @@ AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
 }
 
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
-                            u8 vertical_sync_pos, u32 *pixels) {
+                            u32 *pixels) {
     int sprite_row[ASIC_SPRITE_COUNT];
     unsigned beam_y = (((unsigned)vcc & 0x3F) << 3) | (vlc & 7);
-    int border_width = 64 + (asic->extend_border ? 16 : 0);
-    int border_height = 40 + 8 * (30 - (int)vertical_sync_pos);
 
-    /* Sprite coordinates ignore CRTC display enable, but the visible Plus
-     * monitor window still clips the outer coordinate range. These limits
-     * match Caprice32, including SSCR's 16-pixel horizontal displacement. */
-    if ((int)beam_y <= border_height ||
-            (int)beam_y >= border_height + 200)
-        return;
-
-    /* Sprite coordinates are compared directly with CRTC counters. This is
-     * deliberately done while the beam is drawing: Plus software can change
-     * sprite data and attributes several times within one frame. */
+    /* Sprite coordinates are compared directly with CRTC counters while the
+     * beam is drawing: Plus software can change sprite data and attributes
+     * several times within one frame. There is no vertical clip here — the
+     * caller only invokes this for scanlines the monitor beam actually draws,
+     * and CRTC-counter based sprites may legitimately sit in the bottom
+     * border on overscan screens (e.g. GNG's 248-line mode). */
     for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
         int mx = asic->sprite_mag_x[id];
         int my = asic->sprite_mag_y[id];
@@ -399,11 +393,13 @@ void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
 
     /* Sprite X coordinates use the 640-pixel (mode 2) clock. A CRTC
      * character therefore spans 16 coordinates in this output buffer.
-     * Sprite 0 has highest priority, so the first opaque sprite wins. */
+     * Caprice32 clips sprites to this same 640-column window after
+     * translating its frame border; do the equivalent in the counter space
+     * sprites draw in. Sprite 0 has highest priority, so the first opaque
+     * sprite wins. */
     unsigned beam_x = ((unsigned)hcc * 16) & 0x3FF;
     for (int x = 0; x < 16; x++, beam_x = (beam_x + 1) & 0x3FF) {
-        if ((int)beam_x <= border_width ||
-                (int)beam_x >= border_width + 640)
+        if ((int)beam_x <= 0 || (int)beam_x >= 640)
             continue;
         for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
             int mx = asic->sprite_mag_x[id];

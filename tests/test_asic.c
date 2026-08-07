@@ -301,7 +301,6 @@ static void test_dma_pause_cadence(void) {
 static void test_sprite_beam_composition(void) {
     Asic asic = {0};
     u32 pixels[16];
-    const u8 vertical_sync_pos = 30;
 
     for (int i = 0; i < 16; i++)
         pixels[i] = 0x010203;
@@ -314,7 +313,7 @@ static void test_sprite_beam_composition(void) {
     asic.sprite[0][0][0] = 1;
     asic.sprite[0][1][0] = 2;
 
-    asic_draw_sprites_char(&asic, 5, 6, 0, vertical_sync_pos, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 0, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
     assert(pixels[2] == 0x010203);
@@ -326,7 +325,7 @@ static void test_sprite_beam_composition(void) {
     pixels[0] = pixels[1] = 0;
     asic.sprite_x[1] = 80;
     asic.sprite_y[1] = 48;
-    asic_draw_sprites_char(&asic, 5, 6, 0, vertical_sync_pos, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 0, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
 
@@ -334,13 +333,13 @@ static void test_sprite_beam_composition(void) {
     asic.sprite_x[0] = 0x3FF;
     asic.sprite[0][1][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 0, 6, 0, vertical_sync_pos, pixels);
+    asic_draw_sprites_char(&asic, 0, 6, 0, pixels);
     assert(pixels[0] == 0);
 
     /* Each CRTC character advances 16 sprite-coordinate pixels. */
     asic.sprite_x[0] = 96;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 6, 6, 0, vertical_sync_pos, pixels);
+    asic_draw_sprites_char(&asic, 6, 6, 0, pixels);
     assert(pixels[0] == 0x112233);
 
     /* Sprite Y comparison is nine-bit: (VCC[5:0] << 3) | VLC[2:0]. */
@@ -348,12 +347,14 @@ static void test_sprite_beam_composition(void) {
     asic.sprite_y[0] = 51;
     asic.sprite[0][0][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 5, 6, 3, vertical_sync_pos, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 3, pixels);
     assert(pixels[0] == 0x112233);
 
+    /* There is no vertical clip: rows below the 200-line window draw as long
+     * as the beam reaches them (overscan modes such as GNG's 248-line one). */
     asic.sprite_y[0] = 259;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 5, 32, 3, 3, pixels);
+    asic_draw_sprites_char(&asic, 5, 32, 3, pixels);
     assert(pixels[0] == 0x112233);
 }
 
@@ -366,43 +367,43 @@ static void test_sprite_monitor_clipping(void) {
     asic.sprite_mag_y[0] = 1;
     asic.sprite[0][0][0] = 1;
 
-    /* With R7=30 the normal visible window is X=65..703, Y=41..239. */
+    /* Sprite coordinates are compared with the CRTC counters, so the
+     * visible window is the standard 200-line screen in counter space:
+     * X=1..639, Y=1..199. A sprite at X=64 lands fully inside. */
     asic.sprite_x[0] = 64;
     asic.sprite_y[0] = 48;
-    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
-    assert(pixels[0] == 0);
+    asic_draw_sprites_char(&asic, 4, 6, 0, pixels);
+    assert(pixels[0] == 0x112233);
 
-    asic.sprite_x[0] = 65;
-    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
+    /* The single beam_x=0 subpixel of column zero is the only clipped
+     * pixel at the left edge; the sprite still enters from X=1. */
+    asic.sprite_x[0] = 1;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 0, 6, 0, pixels);
     assert(pixels[0] == 0);
     assert(pixels[1] == 0x112233);
 
+    /* Beyond the 640-column window is clipped. */
+    asic.sprite_x[0] = 640;
     memset(pixels, 0, sizeof(pixels));
-    asic.sprite_x[0] = 704;
-    asic_draw_sprites_char(&asic, 44, 6, 0, 30, pixels);
+    asic_draw_sprites_char(&asic, 40, 6, 0, pixels);
     assert(pixels[0] == 0);
 
-    /* SSCR extend-border shifts both horizontal clip edges by 16 pixels. */
-    asic.extend_border = true;
-    asic.sprite_x[0] = 65;
-    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
-    assert(pixels[1] == 0);
-
-    asic.extend_border = false;
-    asic.sprite_x[0] = 80;
-    asic.sprite_y[0] = 40;
+    /* Vertical extent is not clipped: sprites may draw in the lower border. */
+    asic.sprite_x[0] = 64;
+    asic.sprite_y[0] = 0;
     memset(pixels, 0, sizeof(pixels));
-    asic_draw_sprites_char(&asic, 5, 5, 0, 30, pixels);
-    assert(pixels[0] == 0);
-
-    asic.sprite_y[0] = 41;
-    asic_draw_sprites_char(&asic, 5, 5, 1, 30, pixels);
+    asic_draw_sprites_char(&asic, 4, 0, 0, pixels);
     assert(pixels[0] == 0x112233);
 
-    asic.sprite_y[0] = 240;
-    pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 5, 30, 0, 30, pixels);
-    assert(pixels[0] == 0);
+    asic.sprite_y[0] = 199;
+    asic_draw_sprites_char(&asic, 4, 24, 7, pixels);
+    assert(pixels[0] == 0x112233);
+
+    asic.sprite_y[0] = 200;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 4, 25, 0, pixels);
+    assert(pixels[0] == 0x112233);
 }
 
 int main(void) {
