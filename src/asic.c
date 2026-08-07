@@ -314,6 +314,15 @@ void asic_apply_split(Asic *asic, const CRTC *crtc) {
      * another split later in the same frame. */
     asic->split_ma_started = crtc->ma & 0x3FFF;
     asic->split_ma_base = asic->split_pending_base;
+
+    /* SSA is the absolute row base for the scanline after the split. If that
+     * line crosses the SSCR fine-scroll wrap, video_position() will advance
+     * by R1; compensate the translation baseline so it still resolves to
+     * SSA. Hardware gives the split load priority over the row advance. */
+    unsigned row_height = (unsigned)crtc->reg[9] + 1;
+    unsigned rows = (crtc->vlc + asic->vscroll) / row_height;
+    asic->split_ma_base = (u16)((asic->split_ma_base -
+                                 rows * crtc->reg[1]) & 0x3FFF);
     asic->split_pending = false;
     asic->split_active = true;
 }

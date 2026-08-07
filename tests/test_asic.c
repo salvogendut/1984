@@ -94,6 +94,33 @@ static void test_raster_split_and_dma(void) {
     asic_new_frame(&asic);
     assert(asic_video_ma(&asic, 0x3093) == 0x3093);
 
+    /* A split address overrides the fine-scroll row advance. Its first
+     * displayed scanline must begin at SSA even when RA+SSCR wraps R9. */
+    Asic wrap_asic = {
+        .split_pending_base = 0x1234,
+        .split_pending = true,
+        .vscroll = 2,
+    };
+    CRTC wrap_crtc;
+    crtc_init(&wrap_crtc);
+    wrap_crtc.reg[1] = 49;
+    wrap_crtc.reg[9] = 7;
+    wrap_crtc.ma = 0x3040;
+    wrap_crtc.vlc = 6;
+    asic_apply_split(&wrap_asic, &wrap_crtc);
+    AsicVideoPosition split_pos = asic_video_position(
+        &wrap_asic, wrap_crtc.ma, wrap_crtc.vlc,
+        wrap_crtc.reg[9], wrap_crtc.reg[1]);
+    assert(split_pos.ma == 0x1234);
+    assert(split_pos.raster == 0);
+    split_pos = asic_video_position(&wrap_asic, wrap_crtc.ma, 7, 7, 49);
+    assert(split_pos.ma == 0x1234);
+    assert(split_pos.raster == 1);
+    split_pos = asic_video_position(
+        &wrap_asic, wrap_crtc.ma + 49, 0, 7, 49);
+    assert(split_pos.ma == 0x1234);
+    assert(split_pos.raster == 2);
+
     /* Fine vertical scroll wraps into a row whose width comes from R1.
      * Sonic GX uses 49 characters, so a firmware-width constant corrupts
      * the wrapped scanlines into displaced horizontal strips. */
