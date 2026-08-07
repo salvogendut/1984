@@ -140,7 +140,10 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
 }
 
 static void dma_store_status(Asic *asic, Mem *mem) {
-    u8 status = asic->raster_interrupt ? 0x80 : 0;
+    /* DCSR bit 7 reports the source of the last interrupt acknowledge; it is
+     * not the live programmable-raster request.  IM1 handlers use this latch
+     * to distinguish raster and DMA interrupts after the request is cleared. */
+    u8 status = asic->raster_acknowledged ? 0x80 : 0;
     for (int i = 0; i < ASIC_DMA_CHANNELS; i++) {
         AsicDmaChannel *channel = &asic->dma[i];
         mem->plus_registers[0x2C00 + i * 4] = channel->source & 0xFF;
@@ -229,7 +232,12 @@ void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
     if ((u8)crtc->hcc != irq_hcc)
         return;
 
-    u8 line = (u8)(((crtc->vcc & 0x1F) << 3) | (crtc->vlc & 7));
+    /* PRI/SSSL contain a five-bit character-row comparator. The live CRTC
+     * counter is wider; rows 32 and above do not wrap around and match rows
+     * 0..31. */
+    if (crtc->vcc >= 32)
+        return;
+    u8 line = (u8)((crtc->vcc << 3) | (crtc->vlc & 7));
     if (line == asic->raster_line) {
         asic->raster_interrupt = true;
         ga->interrupt_pending = true;
@@ -262,14 +270,18 @@ u8 asic_irq_vector(const Asic *asic) {
 void asic_irq_ack(Asic *asic, Mem *mem, GateArray *ga) {
     if (asic->raster_interrupt) {
         asic->raster_interrupt = false;
+        asic->raster_acknowledged = true;
         ga_irq_ack(ga);
-    } else if (!(asic->interrupt_vector & 1)) {
+    } else {
+        asic->raster_acknowledged = false;
         /* DMA priority is channel 2, then 1, then 0. With IVR bit 0 clear,
          * the acknowledged channel is automatically removed from DCSR. */
-        for (int i = ASIC_DMA_CHANNELS - 1; i >= 0; i--) {
-            if (asic->dma[i].interrupt) {
-                asic->dma[i].interrupt = false;
-                break;
+        if (!(asic->interrupt_vector & 1)) {
+            for (int i = ASIC_DMA_CHANNELS - 1; i >= 0; i--) {
+                if (asic->dma[i].interrupt) {
+                    asic->dma[i].interrupt = false;
+                    break;
+                }
             }
         }
     }
@@ -286,16 +298,20 @@ void asic_latch_split(Asic *asic, const CRTC *crtc, u16 previous_vcc,
                       u16 previous_vlc, bool new_scanline) {
     u16 vcc = new_scanline ? previous_vcc : crtc->vcc;
     u16 vlc = new_scanline ? previous_vlc : crtc->vlc;
-    u8 line = (u8)(((vcc & 0x1F) << 3) | (vlc & 7));
+    if (vcc >= 32)
+        return;
+    u8 line = (u8)((vcc << 3) | (vlc & 7));
     if (!asic->split_line || line != asic->split_line)
         return;
 
-    /* Normally SSA is sampled when HCC reaches R1. On the final raster of
-     * the frame it is sampled at the R0 match instead. Software may rewrite
-     * SSA during the rest of the line to prepare another split. */
+    /* Normally SSA is sampled when HCC reaches R1. Software may also program
+     * SSSL while its comparator line is already active; if R1 has passed,
+     * sample SSA at the end of that line. An R1 sample keeps priority so
+     * later writes can prepare another split without changing this one. On
+     * the final raster of the frame only the end-of-line sample is valid. */
     bool final_raster = vcc == crtc->reg[4] && vlc == crtc->reg[9];
-    bool latch = final_raster ? new_scanline
-                              : (!new_scanline &&
+    bool latch = new_scanline ? (final_raster || !asic->split_pending)
+                              : (!final_raster &&
                                  crtc->hcc == crtc->reg[1]);
     if (!latch)
         return;

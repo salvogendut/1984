@@ -65,6 +65,7 @@ typedef struct {
     Mem        mem;
     GateArray  ga;
     CRTC       crtc;
+    CrtcType   crtc_type;     /* configured type, or AUTO for model default */
     PPI        ppi;
     PSG        psg;
     Keyboard   kbd;
@@ -197,6 +198,7 @@ void audiocap_write(const s16 *samples, int frames, int sample_rate);
 
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
               const char *rom_basic, const char *cartridge, int scale);
+void cpc_set_crtc_type(CPC *cpc, CrtcType type);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);

@@ -10,6 +10,12 @@ on the command line:
 ./1984 --464plus --cartridge=/path/to/game.cpr
 ```
 
+The CRTC can be selected under **Advanced > CRTC type**, in the configuration
+file with `crtc=auto|type0|type1|type2|type3`, or on the command line with
+`--crtc=TYPE`. `Auto` selects Type 3 for Plus machines, Type 1 for the CPC
+6128, and Type 0 for the CPC 464/664. Pressing Delete on the Advanced entry
+restores `Auto`.
+
 The CPR reader accepts sparse and out-of-order `cb00` through `cb31` chunks.
 The Plus memory path implements the system-cartridge lower and upper ROM
 layout, RMR2 bank selection, and the ASIC register page at `0x4000-0x7fff`.
@@ -27,9 +33,9 @@ The initial ASIC implementation includes:
   and stop;
 - Plus-aware 64 KB/128 KB, cassette, and floppy model defaults.
 
-Caprice32 is the general behavioral reference. The v4 system cartridge, 1942,
-Robocop 2, and Sonic GX are current smoke/regression cartridges. Sonic GX also
-exercises hardware behavior that Caprice32 does not currently implement,
-including ASIC IM2 interrupt vectors. Exact Plus CRTC type-3 edge cases remain
-fidelity work; the normal CPC CRTC path is intentionally used for the current
-Plus profile because it boots the system cartridge reliably.
+Caprice32 is the general behavioral reference, with Sugarbox used where its
+Plus behavior is more complete. The v4 system cartridge, 1942, Robocop 2,
+Sonic GX, and the Ghosts 'n Goblins preview are current smoke/regression
+cartridges. Sonic GX also exercises ASIC IM2 interrupt vectors. Exact CRTC
+edge cases and snapshot serialization of internal ASIC state remain fidelity
+work.

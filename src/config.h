@@ -22,6 +22,7 @@ typedef struct {
     /* [machine] */
     CpcModel model;
     int      memory_kb;     /* 64, 128, 256, 512, or 576 */
+    CrtcType crtc_type;     /* auto or explicit Type 0..3 */
     FallbackInput fallback_input;   /* primary host input: joystick | amx_mouse */
 
     /* [roms] */
@@ -203,6 +204,8 @@ int config_load_from(Config *cfg, const char *path_override);
 
 /* Fill cfg with compiled-in defaults. */
 void config_defaults(Config *cfg);
+bool config_parse_crtc_type(const char *value, CrtcType *type);
+const char *config_crtc_type_name(CrtcType type);
 
 /* Write current cfg back to ~/.config/1984/1984.conf. */
 int config_save(const Config *cfg);

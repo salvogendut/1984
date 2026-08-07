@@ -58,6 +58,18 @@ static void test_raster_split_and_dma(void) {
     crtc.hcc++;
     asic_raster_tick(&asic, &crtc, &mem, &ga);
     assert(ga.interrupt_pending);
+    assert(mem.plus_registers[0x2C0F] == 0x00);
+    asic_irq_ack(&asic, &mem, &ga);
+    assert(!asic.raster_interrupt);
+    assert(mem.plus_registers[0x2C0F] == 0x80);
+
+    /* The live VCC is six bits wide. Its rows 32..63 must not wrap into the
+     * five-bit PRI comparator and generate a second interrupt. */
+    ga.interrupt_pending = false;
+    crtc.vcc = 32;
+    crtc.vlc = 3;
+    asic_raster_tick(&asic, &crtc, &mem, &ga);
+    assert(!ga.interrupt_pending);
 
     asic_register_write(&asic, &ga, &mem, 0x6801, 3);
     asic_register_write(&asic, &ga, &mem, 0x6802, 0x12);
@@ -93,6 +105,46 @@ static void test_raster_split_and_dma(void) {
     assert(asic_video_ma(&asic, 0x3093) == 0x2343);
     asic_new_frame(&asic);
     assert(asic_video_ma(&asic, 0x3093) == 0x3093);
+
+    /* A program may set SSSL after R1 while the selected line is already
+     * active. The Plus still applies that split at the end of the line. */
+    Asic late_asic = {0};
+    CRTC late_crtc;
+    crtc_init(&late_crtc);
+    late_crtc.reg[1] = 34;
+    late_crtc.reg[4] = 38;
+    late_crtc.reg[9] = 7;
+    late_crtc.hcc = 59;
+    late_crtc.vcc = 12;
+    late_crtc.vlc = 0;
+    asic_register_write(&late_asic, &ga, &mem, 0x6801, 0x60);
+    asic_register_write(&late_asic, &ga, &mem, 0x6802, 0x11);
+    asic_register_write(&late_asic, &ga, &mem, 0x6803, 0x79);
+    asic_latch_split(&late_asic, &late_crtc, 12, 0, false);
+    assert(!late_asic.split_pending);
+    late_crtc.hcc = 0;
+    late_crtc.vlc = 1;
+    asic_latch_split(&late_asic, &late_crtc, 12, 0, true);
+    assert(late_asic.split_pending);
+    assert(late_asic.split_pending_base == 0x1179);
+
+    /* Likewise, VCC 34/RA 2 must not alias the split programmed for line
+     * 0x12 (VCC 2/RA 2). */
+    Asic compare_asic = {0};
+    CRTC compare_crtc;
+    crtc_init(&compare_crtc);
+    compare_crtc.reg[1] = 34;
+    compare_crtc.hcc = 34;
+    compare_crtc.vcc = 34;
+    compare_crtc.vlc = 2;
+    asic_register_write(&compare_asic, &ga, &mem, 0x6801, 0x12);
+    asic_register_write(&compare_asic, &ga, &mem, 0x6802, 0x20);
+    asic_register_write(&compare_asic, &ga, &mem, 0x6803, 0x00);
+    asic_latch_split(&compare_asic, &compare_crtc, 34, 2, false);
+    assert(!compare_asic.split_pending);
+    compare_crtc.vcc = 2;
+    asic_latch_split(&compare_asic, &compare_crtc, 2, 2, false);
+    assert(compare_asic.split_pending);
 
     /* A split address overrides the fine-scroll row advance. Its first
      * displayed scanline must begin at SSA even when RA+SSCR wraps R9. */
@@ -183,12 +235,14 @@ static void test_vectored_interrupts(void) {
     asic_irq_ack(&asic, &mem, &ga);
     assert(!asic.raster_interrupt);
     assert(ga.interrupt_counter == 8);
+    assert(mem.plus_registers[0x2C0F] == 0xE0);
 
     /* IVR bit 0 leaves a DMA request asserted until DCSR acknowledges it. */
     asic_register_write(&asic, &ga, &mem, 0x6805, 0xA1);
     asic_irq_ack(&asic, &mem, &ga);
     assert(asic.dma[1].interrupt);
     assert(ga.interrupt_pending);
+    assert((mem.plus_registers[0x2C0F] & 0x80) == 0);
     asic_register_write(&asic, &ga, &mem, 0x6C0F, 0x20);
     assert(!asic.dma[1].interrupt);
 }

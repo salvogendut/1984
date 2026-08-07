@@ -49,7 +49,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 21 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 22 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
@@ -210,6 +210,7 @@ static bool reset_tinker_item(Overlay *ov) {
     int old_gif_width = ov->cfg->gif_width;
     int old_gif_fps = ov->cfg->gif_fps;
     bool old_gif_ffmpeg = ov->cfg->gif_ffmpeg;
+    CrtcType old_crtc_type = ov->cfg->crtc_type;
 
     switch (tinker_logical_row(ov, ov->row)) {
     case -6:
@@ -248,6 +249,9 @@ static bool reset_tinker_item(Overlay *ov) {
     case 10:
         ov->cfg->gif_ffmpeg = false;
         break;
+    case 20:
+        ov->cfg->crtc_type = CRTC_TYPE_AUTO;
+        break;
     default:
         return false;
     }
@@ -261,10 +265,13 @@ static bool reset_tinker_item(Overlay *ov) {
                        old_blue != ov->cfg->crt_blue;
     bool changed = crt_changed || old_gif_width != ov->cfg->gif_width ||
                    old_gif_fps != ov->cfg->gif_fps ||
-                   old_gif_ffmpeg != ov->cfg->gif_ffmpeg;
+                   old_gif_ffmpeg != ov->cfg->gif_ffmpeg ||
+                   old_crtc_type != ov->cfg->crtc_type;
     if (changed) {
         if (crt_changed)
             overlay_apply_crt(ov);
+        if (old_crtc_type != ov->cfg->crtc_type && ov->cpc)
+            cpc_set_crtc_type(ov->cpc, ov->cfg->crtc_type);
         ov->dirty = true;
     }
     return true;
@@ -1119,6 +1126,17 @@ static void item_text(const Overlay *ov, int row,
                              ? "OUTPUT" : "OFF");
             break;
         case 20:
+            snprintf(lbl, lsz, "CRTC type");
+            if (ov->cfg->crtc_type == CRTC_TYPE_AUTO) {
+                if (ov->cpc)
+                    snprintf(val, vsz, "Auto (Type %d)", ov->cpc->crtc.type);
+                else
+                    snprintf(val, vsz, "Auto");
+            } else {
+                snprintf(val, vsz, "Type %d", ov->cfg->crtc_type);
+            }
+            break;
+        case 21:
             snprintf(lbl, lsz, "Version");
             snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
             *readonly = true;
@@ -2063,6 +2081,18 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
         case 19:
             ov->state = OV_STATE_REAL_TAPE;
             ov->real_tape_row = 0;
+            break;
+        case 20:
+            switch (ov->cfg->crtc_type) {
+            case CRTC_TYPE_AUTO: ov->cfg->crtc_type = CRTC_TYPE_0; break;
+            case CRTC_TYPE_0:    ov->cfg->crtc_type = CRTC_TYPE_1; break;
+            case CRTC_TYPE_1:    ov->cfg->crtc_type = CRTC_TYPE_2; break;
+            case CRTC_TYPE_2:    ov->cfg->crtc_type = CRTC_TYPE_3; break;
+            default:             ov->cfg->crtc_type = CRTC_TYPE_AUTO; break;
+            }
+            if (ov->cpc)
+                cpc_set_crtc_type(ov->cpc, ov->cfg->crtc_type);
+            ov->dirty = true;
             break;
         }
         break;

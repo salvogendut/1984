@@ -11,6 +11,7 @@
 #define CRTC_NUM_REGS 18
 
 typedef enum {
+    CRTC_TYPE_AUTO = -1,  /* resolve from the selected CPC model */
     CRTC_TYPE_0 = 0,   /* HD6845S */
     CRTC_TYPE_1 = 1,   /* UM6845R */
     CRTC_TYPE_2 = 2,   /* MC6845 */

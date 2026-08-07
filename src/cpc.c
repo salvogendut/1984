@@ -789,17 +789,20 @@ static CrtcType default_crtc_type(CpcModel model) {
         return CRTC_TYPE_1;
     case MODEL_464_PLUS:
     case MODEL_6128_PLUS:
-        /* The Plus ASIC contains a 6845-compatible core, but our current
-         * TYPE_3 read/timing model is not complete enough for the v4 system
-         * cartridge. Caprice32's default Plus profile follows Type 0 timing;
-         * use that proven path until the remaining TYPE_3 differences have
-         * dedicated conformance tests. */
-        return CRTC_TYPE_0;
+        return CRTC_TYPE_3;
     case MODEL_464:
     case MODEL_664:
     default:
         return CRTC_TYPE_0;
     }
+}
+
+void cpc_set_crtc_type(CPC *cpc, CrtcType type) {
+    if (type < CRTC_TYPE_AUTO || type > CRTC_TYPE_3)
+        type = CRTC_TYPE_AUTO;
+    cpc->crtc_type = type;
+    crtc_set_type(&cpc->crtc,
+                  type == CRTC_TYPE_AUTO ? default_crtc_type(cpc->model) : type);
 }
 
 /* Forward decl — definition lives near cpc_frame() with the rest of
@@ -869,7 +872,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
     ga_init(&cpc->ga);
     asic_reset(&cpc->asic, &cpc->ga);
     crtc_init(&cpc->crtc);
-    crtc_set_type(&cpc->crtc, default_crtc_type(model));
+    cpc_set_crtc_type(cpc, CRTC_TYPE_AUTO);
     cpc_monitor_reset(cpc);
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
@@ -934,6 +937,7 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
                  cfg->cartridge, cfg->scale) < 0)
         return -1;
 
+    cpc_set_crtc_type(cpc, cfg->crtc_type);
     ga_set_monochrome(&cpc->ga, cfg->monochrome);
     psg_set_volume(&cpc->psg, cfg->audio_volume);
     psg_set_stereo(&cpc->psg, cfg->audio_stereo_sep);
@@ -1042,7 +1046,7 @@ void cpc_reset(CPC *cpc) {
     ga_init(&cpc->ga);
     asic_reset(&cpc->asic, &cpc->ga);
     crtc_init(&cpc->crtc);
-    crtc_set_type(&cpc->crtc, default_crtc_type(cpc->model));
+    cpc_set_crtc_type(cpc, cpc->crtc_type);
     ppi_init(&cpc->ppi);
     psg_reset(&cpc->psg);
     kbd_init(&cpc->kbd);

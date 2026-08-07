@@ -43,6 +43,7 @@ typedef struct {
     bool extend_border;
     u8 interrupt_vector;
     bool raster_interrupt;
+    bool raster_acknowledged;
     u16 scanline;
 
     AsicDmaChannel dma[ASIC_DMA_CHANNELS];

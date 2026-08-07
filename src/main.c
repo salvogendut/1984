@@ -366,6 +366,7 @@ static void usage(const char *prog, int code) {
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --464plus           Boot as CPC 464 Plus (overrides config)\n"
         "  --6128plus          Boot as CPC 6128 Plus (overrides config)\n"
+        "  --crtc=TYPE         CRTC type: auto, type0, type1, type2 or type3\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
         "  --config=PATH       Use PATH as the config file instead of ~/.config/1984/1984.conf\n"
@@ -489,6 +490,8 @@ int main(int argc, char *argv[]) {
     PilotTarget pilot_target0    = PILOT_MOUSE;  /* --pilot=mouse|joystick */
     bool        pilot_reply_stderr = false;    /* --pilot-replies-stderr */
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
+    CrtcType    crtc_override    = CRTC_TYPE_AUTO;
+    bool        crtc_override_set = false;
     bool        dd1_override     = false;
     int         memory_override  = 0;             /* 0 = no override */
 
@@ -547,6 +550,14 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_464_PLUS;
         } else if (strcmp(argv[i], "--6128plus") == 0) {
             model_override = MODEL_6128_PLUS;
+        } else if (strncmp(argv[i], "--crtc=", 7) == 0 && argv[i][7] != '\0') {
+            if (!config_parse_crtc_type(argv[i] + 7, &crtc_override)) {
+                fprintf(stderr,
+                        "%s: --crtc must be auto, type0, type1, type2 or type3\n",
+                        argv[0]);
+                return 2;
+            }
+            crtc_override_set = true;
         } else if (strcmp(argv[i], "--dd1") == 0) {
             dd1_override = true;
         } else if (strncmp(argv[i], "--memory=", 9) == 0 && argv[i][9] != '\0') {
@@ -700,6 +711,8 @@ int main(int argc, char *argv[]) {
 
     if (model_override != (CpcModel)-1)
         config_set_model(&cfg, model_override);
+    if (crtc_override_set)
+        cfg.crtc_type = crtc_override;
     if (memory_override)
         cfg.memory_kb = memory_override;
     if (dd1_override)
