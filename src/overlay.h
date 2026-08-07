@@ -16,7 +16,8 @@ typedef enum {
     OV_STATE_CONFIRM  = 1,   /* "save changes?" prompt */
     OV_STATE_ROMSLOTS = 2,   /* ROM slots sub-panel */
     OV_STATE_FILE_BROWSER = 3,
-    OV_STATE_REAL_TAPE = 4   /* Tinker-gated physical cassette controls */
+    OV_STATE_REAL_TAPE = 4,  /* Tinker-gated physical cassette controls */
+    OV_STATE_ABOUT    = 5    /* About dialog with an OK button */
 } OvState;
 
 typedef enum {

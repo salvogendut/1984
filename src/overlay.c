@@ -35,6 +35,27 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define BROWSER_ROW_H 16
 #define REAL_TAPE_ROWS 10
 
+#define ABOUT_TEXT "1984 Amstrad CPC emulator (c) 2026 salvogendut"
+
+typedef struct {
+    float x, y, w, h;               /* outer dialog box */
+    float ok_x, ok_y, ok_w, ok_h;   /* OK button */
+} AboutRects;
+
+/* About dialog geometry in logical pixels. Shared by the renderer and the
+ * mouse hit-test so the OK button is detected exactly where it is drawn. */
+static void about_rects(float lw, float lh, AboutRects *a) {
+    float tw = strlen(ABOUT_TEXT) * FONT_W;
+    a->w = tw + 24;
+    a->h = FONT_H + 6 + (FONT_H + 8) + 16;
+    a->x = (lw - a->w) / 2.0f;
+    a->y = (lh - a->h) / 2.0f;
+    a->ok_w = 2 * FONT_W + 16;
+    a->ok_h = FONT_H + 8;
+    a->ok_x = a->x + (a->w - a->ok_w) / 2.0f;
+    a->ok_y = a->y + 8 + FONT_H + 6;
+}
+
 typedef struct OverlayBrowserEntry {
     char *name;
     bool  directory;
@@ -54,7 +75,9 @@ static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 22 };
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
         int rows = cpc_model_has_builtin_tape(ov->cfg->model) ? 8 : 9;
-        return rows - (cpc_model_is_plus(ov->cfg->model) ? 1 : 0);
+        /* Plus hides the OS ROM row; every model gets the About row at
+         * the very bottom. */
+        return rows - (cpc_model_is_plus(ov->cfg->model) ? 1 : 0) + 1;
     }
     if (s == OV_STORAGE && cpc_model_is_plus(ov->cfg->model)) return 4;
     if (s == OV_TINKER && ov->cfg->real_crt) return sec_row_count[s] + 6;
@@ -700,6 +723,9 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Fallback Input");
             snprintf(val, vsz, "%s",
                 ov->cfg->fallback_input == FALLBACK_AMX_MOUSE ? "AMX Mouse" : "Joystick");
+            break;
+        case 9:
+            snprintf(lbl, lsz, "About");
             break;
         }
         break;
@@ -1495,6 +1521,9 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                 amx_reset(&ov->cpc->amx, &ov->cpc->kbd);
             }
             ov->dirty = true;
+            break;
+        case 9:
+            ov->state = OV_STATE_ABOUT;
             break;
         }
         break;
@@ -2690,6 +2719,22 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         return true;
     }
 
+    /* About dialog: clicking its OK button closes it (Enter/Esc also work). */
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ov->visible &&
+        ov->state == OV_STATE_ABOUT && ev->button.button == SDL_BUTTON_LEFT) {
+        int ww = 0, wh = 0;
+        if (ov->cpc)
+            SDL_GetWindowSize(ov->cpc->display.window, &ww, &wh);
+        float lw = ww / SCALE, lh = wh / SCALE;
+        AboutRects a;
+        about_rects(lw, lh, &a);
+        float mx = ev->button.x / SCALE, my = ev->button.y / SCALE;
+        if (mx >= a.ok_x && mx < a.ok_x + a.ok_w &&
+            my >= a.ok_y && my < a.ok_y + a.ok_h)
+            ov->state = OV_STATE_MENU;
+        return true;
+    }
+
     if (ev->type != SDL_EVENT_KEY_DOWN) return false;
 
     SDL_Scancode sc = ev->key.scancode;
@@ -2767,6 +2812,20 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             overlay_apply_real_tape(ov);
             ov->dirty   = false;
             ov->visible = false;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    /* ---- About dialog ---- */
+    if (ov->state == OV_STATE_ABOUT) {
+        switch (sc) {
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_ESCAPE:
+            ov->state = OV_STATE_MENU;
             break;
         default:
             break;
@@ -3545,6 +3604,29 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                   line1, 255, 255, 255);
         draw_text(r, bx + (box_w - l2w) / 2.0f, by + 6 + FONT_H + 8,
                   line2, 200, 200, 100);
+    }
+
+    /* ---- About dialog ---- */
+    if (ov->state == OV_STATE_ABOUT) {
+        /* Dim everything behind the dialog */
+        fill_rect(r, 0, 0, lw, lh, 0, 0, 0, 140);
+
+        AboutRects a;
+        about_rects(lw, lh, &a);
+
+        fill_rect(r, a.x, a.y, a.w, a.h, 25, 25, 60, 255);
+        draw_rect_outline(r, a.x, a.y, a.w, a.h, 70, 90, 200);
+
+        int tw = strlen(ABOUT_TEXT) * FONT_W;
+        draw_text(r, a.x + (a.w - tw) / 2.0f, a.y + 8,
+                  ABOUT_TEXT, 255, 255, 255);
+
+        /* OK button — closes the dialog when clicked (or Enter/Esc). */
+        fill_rect(r, a.ok_x, a.ok_y, a.ok_w, a.ok_h, 50, 60, 120, 255);
+        draw_rect_outline(r, a.ok_x, a.ok_y, a.ok_w, a.ok_h, 120, 140, 220);
+        int ok_tw = 2 * FONT_W;
+        draw_text(r, a.ok_x + (a.ok_w - ok_tw) / 2.0f, a.ok_y + 4,
+                  "OK", 255, 255, 255);
     }
 
     SDL_SetRenderScale(r, 1.0f, 1.0f);
