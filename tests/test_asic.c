@@ -33,6 +33,11 @@ static void test_palette_and_sprite_registers(void) {
     assert(asic.sprite_y[0] == 0x156);
     assert(asic.sprite_mag_x[0] == 4);
     assert(asic.sprite_mag_y[0] == 4);
+
+    /* Offsets 4-7 all alias the write-only magnification register. */
+    asic_register_write(&asic, &ga, &mem, 0x6007, 0x06);
+    assert(asic.sprite_mag_x[0] == 1);
+    assert(asic.sprite_mag_y[0] == 2);
 }
 
 static void test_raster_split_and_dma(void) {
@@ -57,8 +62,52 @@ static void test_raster_split_and_dma(void) {
     asic_register_write(&asic, &ga, &mem, 0x6801, 3);
     asic_register_write(&asic, &ga, &mem, 0x6802, 0x12);
     asic_register_write(&asic, &ga, &mem, 0x6803, 0x34);
-    asic_apply_split(&asic, &crtc, 0, 3);
-    assert(crtc.ma == 0x1234);
+    crtc.ma = 0x3010;
+    crtc.ma_row_start = 0x3000;
+    crtc.ma_next_row = 0x3040;
+    crtc.reg[1] = 40;
+    crtc.hcc = 40;
+    crtc.vcc = 0;
+    crtc.vlc = 3;
+    asic_latch_split(&asic, &crtc, 0, 3, false);
+    asic_register_write(&asic, &ga, &mem, 0x6802, 0x3A);
+    asic_register_write(&asic, &ga, &mem, 0x6803, 0xBC);
+    crtc.ma = 0x3040;
+    asic_apply_split(&asic, &crtc);
+    assert(crtc.ma == 0x3040);
+    assert(crtc.ma_row_start == 0x3000);
+    assert(crtc.ma_next_row == 0x3040);
+    assert(asic_video_ma(&asic, 0x3040) == 0x1234);
+    assert(asic_video_ma(&asic, 0x3045) == 0x1239);
+
+    /* A later split is based on the unmodified CRTC address, not on the
+     * previously translated video address. */
+    asic_register_write(&asic, &ga, &mem, 0x6801, 4);
+    asic_register_write(&asic, &ga, &mem, 0x6802, 0x23);
+    asic_register_write(&asic, &ga, &mem, 0x6803, 0x40);
+    crtc.vlc = 4;
+    asic_latch_split(&asic, &crtc, 0, 4, false);
+    crtc.ma = 0x3090;
+    asic_apply_split(&asic, &crtc);
+    assert(asic_video_ma(&asic, 0x3090) == 0x2340);
+    assert(asic_video_ma(&asic, 0x3093) == 0x2343);
+    asic_new_frame(&asic);
+    assert(asic_video_ma(&asic, 0x3093) == 0x3093);
+
+    /* Fine vertical scroll wraps into a row whose width comes from R1.
+     * Sonic GX uses 49 characters, so a firmware-width constant corrupts
+     * the wrapped scanlines into displaced horizontal strips. */
+    asic.vscroll = 2;
+    AsicVideoPosition pos = asic_video_position(&asic, 0x3005, 4, 7, 49);
+    assert(pos.ma == 0x3005);
+    assert(pos.raster == 6);
+    pos = asic_video_position(&asic, 0x3005, 7, 7, 49);
+    assert(pos.ma == 0x3036);
+    assert(pos.raster == 1);
+    asic.vscroll = 6;
+    pos = asic_video_position(&asic, 0x3005, 3, 3, 49);
+    assert(pos.ma == 0x3067);
+    assert(pos.raster == 1);
 
     /* A programmable raster replaces legacy GA IRQ requests, but the GA
      * counter itself continues running and wrapping. */
@@ -182,9 +231,9 @@ static void test_sprite_beam_composition(void) {
     asic.sprite[0][1][0] = 2;
 
     asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
-    assert(pixels[0] == 0x112233 && pixels[1] == 0x112233);
-    assert(pixels[2] == 0x445566 && pixels[3] == 0x445566);
-    assert(pixels[4] == 0x010203);
+    assert(pixels[0] == 0x112233);
+    assert(pixels[1] == 0x445566);
+    assert(pixels[2] == 0x010203);
 
     /* Lower sprite numbers have priority; pen zero remains transparent. */
     asic.sprite_mag_x[1] = 1;
@@ -192,22 +241,34 @@ static void test_sprite_beam_composition(void) {
     asic.sprite[1][0][0] = 2;
     pixels[0] = pixels[1] = 0;
     asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
-    assert(pixels[0] == 0x112233 && pixels[1] == 0x112233);
+    assert(pixels[0] == 0x112233);
+    assert(pixels[1] == 0x445566);
 
     /* Coordinates wrap, allowing a sprite to begin just left of X=0. */
     asic.sprite_x[0] = 0x3FF;
     asic.sprite[0][1][0] = 1;
     pixels[0] = pixels[1] = 0;
     asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
-    assert(pixels[0] == 0x112233 && pixels[1] == 0x112233);
+    assert(pixels[0] == 0x112233);
 
-    /* Vertical comparison is (VCC[4:0] << 3) | VLC[2:0]. */
+    /* Each CRTC character advances 16 sprite-coordinate pixels. */
+    asic.sprite_x[0] = 16;
+    pixels[0] = 0;
+    asic_draw_sprites_char(&asic, 1, 0, 0, pixels);
+    assert(pixels[0] == 0x112233);
+
+    /* Sprite Y comparison is nine-bit: (VCC[5:0] << 3) | VLC[2:0]. */
     asic.sprite_x[0] = 0;
     asic.sprite_y[0] = 19;
     asic.sprite[0][0][0] = 1;
     pixels[0] = pixels[1] = 0;
     asic_draw_sprites_char(&asic, 0, 2, 3, pixels);
-    assert(pixels[0] == 0x112233 && pixels[1] == 0x112233);
+    assert(pixels[0] == 0x112233);
+
+    asic.sprite_y[0] = 259;
+    pixels[0] = 0;
+    asic_draw_sprites_char(&asic, 0, 32, 3, pixels);
+    assert(pixels[0] == 0x112233);
 }
 
 int main(void) {

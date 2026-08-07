@@ -1402,8 +1402,12 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         bool new_crtc_frame = crtc_new_frame(&cpc->crtc);
         bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
-        if (cpc_model_is_plus(cpc->model))
+        if (cpc_model_is_plus(cpc->model)) {
             asic_raster_tick(&cpc->asic, &cpc->crtc, &cpc->mem, &cpc->ga);
+            asic_latch_split(&cpc->asic, &cpc->crtc,
+                             cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
+                             new_crtc_line);
+        }
 
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
         if (!new_hsync && cpc->prev_hsync) {
@@ -1432,18 +1436,16 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
                 u16 video_ma = cpc->crtc_pre_ma;
                 u8 video_ra = cpc->crtc_pre_ra & 7;
+                if (cpc_model_is_plus(cpc->model)) {
+                    AsicVideoPosition pos = asic_video_position(
+                        &cpc->asic, video_ma, cpc->crtc_pre_ra,
+                        cpc->crtc.reg[9], cpc->crtc.reg[1]);
+                    video_ma = pos.ma;
+                    video_ra = pos.raster;
+                }
                 u16 bank = (video_ma >> 12) & 3;
                 u16 col  = video_ma & 0x3FF;
                 u16 addr = (u16)((bank << 14) | ((video_ra & 7) << 11) | (col << 1));
-                if (cpc_model_is_plus(cpc->model) && cpc->asic.vscroll) {
-                    unsigned scrolled = cpc->crtc_pre_ra + cpc->asic.vscroll;
-                    if (scrolled <= cpc->crtc.reg[9]) {
-                        addr = (u16)(addr + cpc->asic.vscroll * 0x0800);
-                    } else {
-                        addr = (u16)(addr + 80 -
-                            (cpc->crtc.reg[9] + 1 - cpc->asic.vscroll) * 0x0800);
-                    }
-                }
                 if (cpc_model_is_plus(cpc->model)) {
                     render_char_plus(row, px, &cpc->ga, &cpc->mem, addr,
                                      cpc->asic.hscroll);
@@ -1479,9 +1481,13 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
          * An 8-bit HCC wrap after a missed R0 comparator is not a newscan. */
         if (new_crtc_frame && cpc_model_is_plus(cpc->model))
             asic_new_frame(&cpc->asic);
-        if (new_crtc_line && cpc_model_is_plus(cpc->model))
-            asic_apply_split(&cpc->asic, &cpc->crtc, cpc->crtc_pre_vcc,
-                             cpc->crtc_pre_ra);
+        if (new_crtc_line && cpc_model_is_plus(cpc->model)) {
+            asic_apply_split(&cpc->asic, &cpc->crtc);
+            /* R1=0 compares at the start of the new line, after any split
+             * pending from the line that just ended has taken effect. */
+            asic_latch_split(&cpc->asic, &cpc->crtc,
+                             cpc->crtc.vcc, cpc->crtc.vlc, false);
+        }
         if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync)) {
             display_upload(&cpc->display);
         }

@@ -33,6 +33,11 @@ typedef struct {
     u8 raster_line;
     u8 split_line;
     u16 split_address;
+    u16 split_pending_base;
+    u16 split_ma_started;
+    u16 split_ma_base;
+    bool split_pending;
+    bool split_active;
     u8 hscroll;
     u8 vscroll;
     bool extend_border;
@@ -42,6 +47,11 @@ typedef struct {
 
     AsicDmaChannel dma[ASIC_DMA_CHANNELS];
 } Asic;
+
+typedef struct {
+    u16 ma;
+    u8 raster;
+} AsicVideoPosition;
 
 void asic_reset(Asic *asic, GateArray *ga);
 void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
@@ -53,6 +63,12 @@ bool asic_irq_pending(const Asic *asic);
 u8 asic_irq_vector(const Asic *asic);
 void asic_irq_ack(Asic *asic, Mem *mem, GateArray *ga);
 void asic_clear_raster_irq(Asic *asic, Mem *mem);
-void asic_apply_split(const Asic *asic, CRTC *crtc, u16 vcc, u16 vlc);
+void asic_latch_split(Asic *asic, const CRTC *crtc, u16 previous_vcc,
+                      u16 previous_vlc, bool new_scanline);
+void asic_apply_split(Asic *asic, const CRTC *crtc);
+u16 asic_video_ma(const Asic *asic, u16 crtc_ma);
+AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
+                                      u8 crtc_raster, u8 max_raster,
+                                      u8 chars_per_row);
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
                             u32 *pixels);

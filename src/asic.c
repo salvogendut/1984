@@ -66,12 +66,13 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
             asic->sprite_y[id] = (asic->sprite_y[id] & 0x00FF) | ((u16)value << 8);
             mem->plus_registers[off + 4] = value;
             break;
-        case 4:
+        case 4: case 5: case 6: case 7:
+            /* A1-A0 are not decoded for magnification writes:
+             * all four trailing offsets select the same register. Reads
+             * still mirror X/Y through plus_registers, populated above. */
             asic->sprite_mag_x[id] = decode_magnification(value >> 2);
             asic->sprite_mag_y[id] = decode_magnification(value);
             return; /* magnification is write-only */
-        default:
-            break;
         }
         mem->plus_registers[off] = value;
         return;
@@ -238,6 +239,7 @@ void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
 
 void asic_new_frame(Asic *asic) {
     asic->scanline = 0;
+    asic->split_active = false;
 }
 
 bool asic_irq_pending(const Asic *asic) {
@@ -280,19 +282,75 @@ void asic_clear_raster_irq(Asic *asic, Mem *mem) {
     dma_store_status(asic, mem);
 }
 
-void asic_apply_split(const Asic *asic, CRTC *crtc, u16 vcc, u16 vlc) {
+void asic_latch_split(Asic *asic, const CRTC *crtc, u16 previous_vcc,
+                      u16 previous_vlc, bool new_scanline) {
+    u16 vcc = new_scanline ? previous_vcc : crtc->vcc;
+    u16 vlc = new_scanline ? previous_vlc : crtc->vlc;
     u8 line = (u8)(((vcc & 0x1F) << 3) | (vlc & 7));
     if (!asic->split_line || line != asic->split_line)
         return;
-    crtc->ma = asic->split_address & 0x3FFF;
-    crtc->ma_row_start = crtc->ma;
-    crtc->ma_next_row = crtc->ma;
+
+    /* Normally SSA is sampled when HCC reaches R1. On the final raster of
+     * the frame it is sampled at the R0 match instead. Software may rewrite
+     * SSA during the rest of the line to prepare another split. */
+    bool final_raster = vcc == crtc->reg[4] && vlc == crtc->reg[9];
+    bool latch = final_raster ? new_scanline
+                              : (!new_scanline &&
+                                 crtc->hcc == crtc->reg[1]);
+    if (!latch)
+        return;
+
+    asic->split_pending_base = asic->split_address & 0x3FFF;
+    asic->split_pending = true;
+}
+
+void asic_apply_split(Asic *asic, const CRTC *crtc) {
+    if (!asic->split_pending)
+        return;
+
+    /* The Plus ASIC does not reload the CRTC's internal MA counters. It
+     * translates the video address from the MA present at the split to SSA.
+     * Keeping the CRTC running independently matters when software programs
+     * another split later in the same frame. */
+    asic->split_ma_started = crtc->ma & 0x3FFF;
+    asic->split_ma_base = asic->split_pending_base;
+    asic->split_pending = false;
+    asic->split_active = true;
+}
+
+u16 asic_video_ma(const Asic *asic, u16 crtc_ma) {
+    if (!asic->split_active)
+        return crtc_ma & 0x3FFF;
+    return (u16)((crtc_ma - asic->split_ma_started +
+                  asic->split_ma_base) & 0x3FFF);
+}
+
+AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
+                                      u8 crtc_raster, u8 max_raster,
+                                      u8 chars_per_row) {
+    AsicVideoPosition pos = {
+        .ma = asic_video_ma(asic, crtc_ma),
+        .raster = crtc_raster & 7,
+    };
+    unsigned scrolled = crtc_raster + asic->vscroll;
+    unsigned row_height = (unsigned)max_raster + 1;
+
+    /* SSCR advances the raster presented to the video address generator.
+     * Crossing R9 therefore selects the next CRTC row, whose width is R1
+     * characters. It is not necessarily the 40-character firmware width. */
+    if (scrolled >= row_height) {
+        unsigned rows = scrolled / row_height;
+        pos.ma = (u16)((pos.ma + rows * chars_per_row) & 0x3FFF);
+        scrolled %= row_height;
+    }
+    pos.raster = (u8)(scrolled & 7);
+    return pos;
 }
 
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
                             u32 *pixels) {
     int sprite_row[ASIC_SPRITE_COUNT];
-    unsigned beam_y = (((unsigned)vcc & 0x1F) << 3) | (vlc & 7);
+    unsigned beam_y = (((unsigned)vcc & 0x3F) << 3) | (vlc & 7);
 
     /* Sprite coordinates are compared directly with CRTC counters. This is
      * deliberately done while the beam is drawing: Plus software can change
@@ -305,10 +363,11 @@ void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
             ? (int)(rel_y / (unsigned)my) : -1;
     }
 
-    /* One ASIC X coordinate is half a mode-2 output pixel pair. Sprite 0 has
-     * highest priority, so the first opaque sprite at a coordinate wins. */
-    unsigned beam_x = ((unsigned)hcc * 8) & 0x3FF;
-    for (int x = 0; x < 8; x++, beam_x = (beam_x + 1) & 0x3FF) {
+    /* Sprite X coordinates use the 640-pixel (mode 2) clock. A CRTC
+     * character therefore spans 16 coordinates in this output buffer.
+     * Sprite 0 has highest priority, so the first opaque sprite wins. */
+    unsigned beam_x = ((unsigned)hcc * 16) & 0x3FF;
+    for (int x = 0; x < 16; x++, beam_x = (beam_x + 1) & 0x3FF) {
         for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
             int mx = asic->sprite_mag_x[id];
             if (sprite_row[id] < 0)
@@ -319,9 +378,7 @@ void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
             u8 pen = asic->sprite[id][rel_x / (unsigned)mx]
                                   [sprite_row[id]] & 0x0F;
             if (pen) {
-                u32 colour = asic->palette[16 + pen];
-                pixels[x * 2] = colour;
-                pixels[x * 2 + 1] = colour;
+                pixels[x] = asic->palette[16 + pen];
                 break;
             }
         }
