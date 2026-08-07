@@ -95,6 +95,7 @@ void crtc_recompute_state(CRTC *c) {
     c->v_display = c->reg[6] != 0 && c->vcc < c->reg[6];
     c->display_enable = c->h_display && c->v_display;
     c->new_scanline = false;
+    c->new_frame = false;
     c->mode_latch = false;
 }
 
@@ -156,6 +157,7 @@ u8 crtc_read_status(CRTC *c) {
 
 void crtc_tick(CRTC *c) {
     c->new_scanline = false;
+    c->new_frame = false;
     c->mode_latch = false;
 
     u8 old_hcc = (u8)c->hcc;
@@ -230,6 +232,7 @@ void crtc_tick(CRTC *c) {
                 c->vac = 0;
                 c->vcc = 0;
                 c->vlc = 0;
+                c->new_frame = true;
                 c->ma_row_start = crtc_start_addr(c);
                 c->ma_next_row = c->ma_row_start;
                 c->v_display = c->reg[6] != 0;
@@ -251,6 +254,7 @@ void crtc_tick(CRTC *c) {
                     c->vac = 0;
                 } else {
                     c->vcc = 0;
+                    c->new_frame = true;
                     c->ma_row_start = crtc_start_addr(c);
                     c->ma_next_row = c->ma_row_start;
                     c->v_display = c->reg[6] != 0;
@@ -258,6 +262,7 @@ void crtc_tick(CRTC *c) {
             } else {
                 c->vcc = (c->vcc + 1) & 0x7F;
                 if (c->vcc == 0) {
+                    c->new_frame = true;
                     c->ma_row_start = crtc_start_addr(c);
                     c->ma_next_row = c->ma_row_start;
                     c->v_display = c->reg[6] != 0;

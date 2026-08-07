@@ -45,6 +45,7 @@ typedef struct {
     bool line_last_frame;  /* C4 == R4 && C9 == R9 latched near C0=0 */
     bool r7_match;         /* C4 == R7 already matched for this character row */
     bool new_scanline;     /* one-tick R0 comparator event */
+    bool new_frame;        /* one-tick vertical counter restart event */
     bool mode_latch;       /* one-tick GA mode-latch event */
     bool mode_latched_this_hsync;
 } CRTC;
@@ -64,4 +65,5 @@ static inline bool crtc_hsync(CRTC *c)      { return c->hsync; }
 static inline bool crtc_vsync(CRTC *c)      { return c->vsync; }
 static inline bool crtc_de(CRTC *c)         { return c->display_enable; }
 static inline bool crtc_new_scanline(CRTC *c) { return c->new_scanline; }
+static inline bool crtc_new_frame(CRTC *c)    { return c->new_frame; }
 static inline bool crtc_mode_latch(CRTC *c) { return c->mode_latch; }

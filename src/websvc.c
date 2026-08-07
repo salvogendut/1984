@@ -718,7 +718,7 @@ static bool mount_disk_bytes(Session *s, int drive, const void *data, size_t len
  * only let the upload affect non-path settings. */
 static void preserve_host_paths(Config *cfg, const Config *cur) {
 #define KEEP(field) memcpy(cfg->field, cur->field, sizeof(cfg->field))
-    KEEP(rom_os); KEEP(rom_basic); KEEP(rom_amsdos);
+    KEEP(rom_os); KEEP(rom_basic); KEEP(rom_amsdos); KEEP(cartridge);
     KEEP(rom_ext); KEEP(rom_ext_boards);
     KEEP(board_m4_slot); KEEP(board_albireo_slot); KEEP(board_cyboard_slot);
     KEEP(board_m4_image); KEEP(board_albireo_image); KEEP(board_cyboard_image);

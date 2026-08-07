@@ -19,6 +19,24 @@ static void test_default_type_is_um6845r(void) {
     assert(crtc.type == CRTC_TYPE_1);
 }
 
+static void test_new_frame_event(void) {
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.reg[0] = 3;
+    crtc.reg[4] = 0;
+    crtc.reg[5] = 0;
+    crtc.reg[9] = 0;
+    crtc.line_last_raster = true;
+    crtc.line_last_frame = true;
+    crtc.hcc = 3;
+
+    crtc_tick(&crtc);
+    assert(crtc.new_scanline);
+    assert(crtc.new_frame);
+    crtc_tick(&crtc);
+    assert(!crtc.new_frame);
+}
+
 static void test_type_specific_register_readback(void) {
     CRTC crtc;
     crtc_init(&crtc);
@@ -682,6 +700,7 @@ static void test_r7_match_does_not_retrigger_until_vcc_changes(void) {
 
 int main(void) {
     test_default_type_is_um6845r();
+    test_new_frame_event();
     test_type_specific_register_readback();
     test_type_specific_status_port();
     test_register_write_masks();

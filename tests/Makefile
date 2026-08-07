@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic
 
 .PHONY: all check clean
 
@@ -27,9 +27,9 @@ test-psg: test_psg.c ../src/psg.c ../src/psg.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_psg.c ../src/psg.c -o $@
 
-test-mem: test_mem.c ../src/mem.c ../src/mem.h
+test-mem: test_mem.c ../src/mem.c ../src/mem.h ../src/cartridge.c ../src/cartridge.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
-		test_mem.c ../src/mem.c -o $@
+		test_mem.c ../src/mem.c ../src/cartridge.c -o $@
 
 test-disk: test_disk.c ../src/disk.c ../src/disk.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
@@ -51,6 +51,15 @@ test-kbd: test_kbd.c ../src/kbd.c ../src/kbd.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_kbd.c ../src/kbd.c -o $@
 
+test-cartridge: test_cartridge.c ../src/cartridge.c ../src/cartridge.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_cartridge.c ../src/cartridge.c -o $@
+
+test-asic: test_asic.c ../src/asic.c ../src/asic.h ../src/mem.c ../src/cartridge.c ../src/gate_array.c ../src/psg.c ../src/crtc.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_asic.c ../src/asic.c ../src/mem.c ../src/cartridge.c \
+		../src/gate_array.c ../src/psg.c ../src/crtc.c -lm -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -62,6 +71,8 @@ check: $(TESTS)
 	./test-tape-signal
 	./test-real-tape
 	./test-kbd
+	./test-cartridge
+	./test-asic
 
 clean:
 	rm -f $(TESTS)

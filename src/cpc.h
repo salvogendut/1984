@@ -24,8 +24,32 @@
 #include "tape.h"
 #include "real_tape.h"
 #include "printer.h"
+#include "asic.h"
 
-typedef enum { MODEL_464, MODEL_664, MODEL_6128 } CpcModel;
+typedef enum {
+    MODEL_464,
+    MODEL_664,
+    MODEL_6128,
+    MODEL_6128_PLUS,  /* SNA model value 3, matching Caprice32 */
+    MODEL_464_PLUS    /* internal extension; SNA stores this as Plus/3 */
+} CpcModel;
+
+static inline bool cpc_model_is_plus(CpcModel model) {
+    return model == MODEL_464_PLUS || model == MODEL_6128_PLUS;
+}
+
+static inline bool cpc_model_is_128k(CpcModel model) {
+    return model == MODEL_6128 || model == MODEL_6128_PLUS;
+}
+
+static inline bool cpc_model_has_builtin_fdc(CpcModel model) {
+    return model == MODEL_664 || model == MODEL_6128 ||
+           model == MODEL_6128_PLUS;
+}
+
+static inline bool cpc_model_has_builtin_tape(CpcModel model) {
+    return model == MODEL_464 || model == MODEL_464_PLUS;
+}
 
 #define CPC_AUDIO_SAMPLE_RATE     44100
 #define CPC_AUDIO_SAMPLES_FRAME   (CPC_AUDIO_SAMPLE_RATE / 50)
@@ -74,6 +98,9 @@ typedef struct {
     Printer    printer;        /* Centronics @ 0xEFxx (Cairo → PDF host sink) */
     Tape       tape;           /* cassette / .cdt image */
     RealTape   real_tape;      /* host audio cassette deck, Tinker-gated */
+    Asic       asic;           /* CPC Plus enhanced gate array */
+    bool       asic_locked;    /* CPC Plus ASIC register-access lock */
+    u8         asic_lock_pos;
     /* PSG + cassette audio generated inside the Z80 step loop at audio rate.
      * This preserves AY volume-register sample players: writes affect only
      * the samples after the corresponding CPU cycles have elapsed. */
@@ -166,7 +193,8 @@ void audiocap_stop(void);
 bool audiocap_active(void);
 void audiocap_write(const s16 *samples, int frames, int sample_rate);
 
-int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale);
+int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
+              const char *rom_basic, const char *cartridge, int scale);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);

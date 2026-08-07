@@ -52,9 +52,22 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
 static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 21 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
-    if (s == OV_GENERAL && ov->cfg->model != MODEL_464) return 9;
+    if (s == OV_GENERAL) {
+        int rows = cpc_model_has_builtin_tape(ov->cfg->model) ? 8 : 9;
+        return rows - (cpc_model_is_plus(ov->cfg->model) ? 1 : 0);
+    }
+    if (s == OV_STORAGE && cpc_model_is_plus(ov->cfg->model)) return 4;
     if (s == OV_TINKER && ov->cfg->real_crt) return sec_row_count[s] + 6;
     return sec_row_count[s];
+}
+
+static int general_logical_row(const Overlay *ov, int row) {
+    int logical = row;
+    if (cpc_model_has_builtin_tape(ov->cfg->model) && logical >= 4)
+        logical++;
+    if (cpc_model_is_plus(ov->cfg->model) && logical >= 5)
+        logical++;
+    return logical;
 }
 
 static int tinker_logical_row(const Overlay *ov, int row) {
@@ -82,7 +95,7 @@ static void overlay_apply_crt(Overlay *ov) {
 static bool overlay_real_tape_connected(const Overlay *ov) {
     return ov->cfg->tinker &&
            ov->cfg->real_tape_mode != REAL_TAPE_OFF &&
-           (ov->cfg->model == MODEL_464 || ov->cfg->external_tape);
+           (cpc_model_has_builtin_tape(ov->cfg->model) || ov->cfg->external_tape);
 }
 
 static bool overlay_real_tape_input_selected(const Overlay *ov) {
@@ -294,7 +307,7 @@ static void trunc_path(const char *path, char *out, size_t sz) {
 
 /* True when floppy drives are accessible (664/6128 always; 464 only with DD1) */
 static bool floppy_accessible(const Overlay *ov) {
-    return ov->cfg->model != MODEL_464 || ov->cfg->dd1;
+    return cpc_model_has_builtin_fdc(ov->cfg->model) || ov->cfg->dd1;
 }
 
 static bool path_separator(char c) {
@@ -621,19 +634,20 @@ static void item_text(const Overlay *ov, int row,
     switch (ov->section) {
 
     case OV_GENERAL: {
-        bool has_external_tape_row = (ov->cfg->model != MODEL_464);
         /* On disk machines (664/6128) the rows are: Model, Memory, MX4,
          * Roms Board, External Tape, OS ROM, BASIC ROM, Tinker. On 464 the
          * External Tape row is hidden (464 has a built-in deck — always
          * available); subsequent rows shift up by one. */
-        int logical = row;
-        if (!has_external_tape_row && row >= 4) logical = row + 1;
+        int logical = general_logical_row(ov, row);
         switch (logical) {
         case 0:
             snprintf(lbl, lsz, "Model");
             snprintf(val, vsz, "%s",
                 ov->cfg->model == MODEL_464 ? "CPC 464" :
-                (ov->cfg->model == MODEL_664 ? "CPC 664" : "CPC 6128"));
+                ov->cfg->model == MODEL_664 ? "CPC 664" :
+                ov->cfg->model == MODEL_6128 ? "CPC 6128" :
+                ov->cfg->model == MODEL_464_PLUS ? "CPC 464 Plus" :
+                                                   "CPC 6128 Plus");
             break;
         case 1:
             snprintf(lbl, lsz, "Memory");
@@ -660,9 +674,15 @@ static void item_text(const Overlay *ov, int row,
         }
         case 6: {
             char tmp[CONFIG_PATH_MAX];
-            snprintf(lbl, lsz, "BASIC ROM");
-            snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_basic);
-            trunc_path(basename(tmp), val, vsz);
+            if (cpc_model_is_plus(ov->cfg->model)) {
+                snprintf(lbl, lsz, "ASIC");
+                snprintf(val, vsz, "Plus hardware");
+                *readonly = true;
+            } else {
+                snprintf(lbl, lsz, "BASIC ROM");
+                snprintf(tmp, sizeof(tmp), "%s", ov->cfg->rom_basic);
+                trunc_path(basename(tmp), val, vsz);
+            }
             break;
         }
         case 7:
@@ -727,6 +747,16 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[empty]  Enter=load");
             }
             break;
+        case 3: {
+            char tmp[CONFIG_PATH_MAX];
+            snprintf(lbl, lsz, "Cartridge");
+            snprintf(tmp, sizeof(tmp), "%s", ov->cfg->cartridge);
+            if (tmp[0])
+                trunc_path(basename(tmp), val, vsz);
+            else
+                snprintf(val, vsz, "[empty]  Enter=load");
+            break;
+        }
         }
         break;
     }
@@ -769,7 +799,7 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 4:
             snprintf(lbl, lsz, "DD1");
-            if (ov->cfg->model != MODEL_464) {
+            if (cpc_model_has_builtin_fdc(ov->cfg->model)) {
                 snprintf(val, vsz, "N/A (built-in FDC)");
                 *readonly = true;
             } else {
@@ -1343,21 +1373,21 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
     switch (ov->section) {
 
     case OV_GENERAL: {
-        bool has_external_tape_row = (ov->cfg->model != MODEL_464);
-        int logical = ov->row;
-        if (!has_external_tape_row && ov->row >= 4) logical = ov->row + 1;
+        int logical = general_logical_row(ov, ov->row);
         switch (logical) {
         case 0: {
             CpcModel next;
             switch (ov->cfg->model) {
                 case MODEL_464:  next = MODEL_664;  break;
                 case MODEL_664:  next = MODEL_6128; break;
+                case MODEL_6128: next = MODEL_464_PLUS; break;
+                case MODEL_464_PLUS: next = MODEL_6128_PLUS; break;
                 default:         next = MODEL_464;  break;
             }
             config_set_model(ov->cfg, next);
-            if (next == MODEL_6128 && ov->cfg->memory_kb < 128)
+            if (cpc_model_is_128k(next) && ov->cfg->memory_kb < 128)
                 ov->cfg->memory_kb = 128;
-            else if (next != MODEL_6128 && ov->cfg->memory_kb != 64)
+            else if (!cpc_model_is_128k(next) && ov->cfg->memory_kb != 64)
                 ov->cfg->memory_kb = 64;
             overlay_apply_real_tape(ov);
             ov->dirty = true;
@@ -1367,7 +1397,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             /* Memory — cycle through valid sizes for the current model. */
             static const int sizes[] = { 64, 128, 256, 512, 576, 768, 1024 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
-            int min_idx = (ov->cfg->model == MODEL_6128) ? 1 : 0;
+            int min_idx = cpc_model_is_128k(ov->cfg->model) ? 1 : 0;
             int cur = min_idx;
             for (int i = min_idx; i < n; i++)
                 if (sizes[i] == ov->cfg->memory_kb) { cur = i; break; }
@@ -1403,10 +1433,12 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             };
             SDL_ShowOpenFileDialog(overlay_file_callback, ov,
                 ov->cpc ? ov->cpc->display.window : NULL,
-                rom_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
+                rom_filters, 2,
+                ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
             break;
         }
         case 6: {
+            if (cpc_model_is_plus(ov->cfg->model)) break;
             ov->dialog_kind  = DIALOG_BASIC_ROM;
             ov->dialog_ready = false;
             static const SDL_DialogFileFilter rom_filters[] = {
@@ -1482,6 +1514,17 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                 wav_filters, 2,
                 ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL,
                 false);
+        } else if (ov->row == 3 && cpc_model_is_plus(ov->cfg->model)) {
+            ov->dialog_kind = DIALOG_CARTRIDGE;
+            ov->dialog_ready = false;
+            static const SDL_DialogFileFilter cpr_filters[] = {
+                { "CPC Plus cartridges", "cpr;CPR" },
+                { "All files",           "*"       },
+            };
+            SDL_ShowOpenFileDialog(overlay_file_callback, ov,
+                ov->cpc ? ov->cpc->display.window : NULL,
+                cpr_filters, 2,
+                ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL, false);
         }
         break;
 
@@ -1583,7 +1626,7 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->dirty = true;
             break;
         case 4:
-            if (ov->cfg->model == MODEL_464) {
+            if (!cpc_model_has_builtin_fdc(ov->cfg->model)) {
                 config_apply_dd1(ov->cfg, !ov->cfg->dd1);
                 if (ov->cpc) {
                     if (ov->cfg->dd1)
@@ -2214,6 +2257,10 @@ void overlay_tick(Overlay *ov) {
          * by the rom_basic change reloads it via cpc_init/mem_load_rom. */
         ov->needs_cold_boot = true;
         ov->dirty = true;
+    } else if (ov->dialog_kind == DIALOG_CARTRIDGE) {
+        snprintf(ov->cfg->cartridge, CONFIG_PATH_MAX, "%s", ov->dialog_path);
+        ov->needs_cold_boot = true;
+        ov->dirty = true;
     } else if (ov->dialog_kind == DIALOG_IDE) {
         snprintf(ov->cfg->ide_image, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         /* Also stash in the cyboard board template so the next enable
@@ -2669,6 +2716,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                         strcmp(ov->cfg->albireo_image, ov->saved.albireo_image) ||
                         strcmp(ov->cfg->rom_os,    ov->saved.rom_os)     ||
                         strcmp(ov->cfg->rom_basic, ov->saved.rom_basic) ||
+                        strcmp(ov->cfg->cartridge, ov->saved.cartridge) ||
                         (ov->cfg->external_tape != ov->saved.external_tape) ||
                         strcmp(ov->cfg->tape, ov->saved.tape);
             if (!boot) {
@@ -3345,7 +3393,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                           ? "Media -> Tape: mounted CDT is paused"
                           : "Media -> Tape: Enter=load CDT, Del=eject",
                   150, 190, 230);
-        if (ov->cfg->model != MODEL_464 && !ov->cfg->external_tape) {
+        if (!cpc_model_has_builtin_tape(ov->cfg->model) && !ov->cfg->external_tape) {
             draw_text(r, DROP_PAD, help_y + 68.0f,
                       "Disconnected: enable General -> External Tape.",
                       255, 180, 80);

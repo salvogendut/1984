@@ -28,6 +28,7 @@ typedef struct {
     char rom_os[CONFIG_PATH_MAX];
     char rom_basic[CONFIG_PATH_MAX];
     char rom_amsdos[CONFIG_PATH_MAX];
+    char cartridge[CONFIG_PATH_MAX];   /* CPC Plus RIFF CPR system/game cartridge */
 
     /* [expansion_roms] — slot_0 … slot_31 */
     char rom_ext[ROM_EXT_COUNT][CONFIG_PATH_MAX];
@@ -243,5 +244,6 @@ int config_apply_boards(Config *cfg);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(CpcModel model, char *out, size_t sz);
+void config_default_cartridge(char *out, size_t sz);
 void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);

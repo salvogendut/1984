@@ -1,5 +1,6 @@
 #include "mem.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Read a 16 KB ROM image into `dest`, transparently skipping a 128-byte
@@ -33,6 +34,10 @@ void mem_init(Mem *m) {
     m->m4_snapshot_rom_stub[0x000] = 0x06;  /* M4_ROM_SLOT in m4.h — must match where M4ROM.ROM loads */
     m->m4_snapshot_rom_stub[0x100] = 0x4D;  /* 'M' — start of "MV - SNA" */
     m->lower_rom_override = NULL;
+    cartridge_init(&m->cartridge);
+    m->plus = false;
+    memset(m->plus_registers, 0, sizeof(m->plus_registers));
+    mem_plus_reset_mapping(m);
 }
 
 int mem_load_os(Mem *m, const char *path) {
@@ -56,7 +61,75 @@ int mem_load_rom(Mem *m, const char *os_path, const char *basic_path) {
     read_rom_image(f, m->rom_basic);
     fclose(f);
 
+    m->plus = false;
+    mem_plus_reset_mapping(m);
+
     return 0;
+}
+
+int mem_load_cartridge(Mem *m, const char *path) {
+    Cartridge *loaded = malloc(sizeof(*loaded));
+    if (!loaded) {
+        fprintf(stderr, "Cannot allocate CPR cartridge buffer\n");
+        return -1;
+    }
+    if (cartridge_load(loaded, path) < 0) {
+        free(loaded);
+        return -1;
+    }
+    if (!cartridge_page_present(loaded, 0)) {
+        fprintf(stderr, "Cartridge has no boot page cb00: %s\n", path);
+        free(loaded);
+        return -1;
+    }
+
+    m->cartridge = *loaded;
+    free(loaded);
+    m->plus = true;
+    mem_plus_reset_mapping(m);
+
+    /* Existing OCR and firmware helpers consume these buffers directly.
+     * Keep them coherent with the standard Plus system-cartridge layout. */
+    memset(m->rom_os, 0xFF, sizeof(m->rom_os));
+    memset(m->rom_basic, 0xFF, sizeof(m->rom_basic));
+    memset(m->rom_amsdos, 0xFF, sizeof(m->rom_amsdos));
+    m->amsdos_present = false;
+    memcpy(m->rom_os, cartridge_page(&m->cartridge, 0), ROM_OS_SIZE);
+    if (cartridge_page_present(&m->cartridge, 1))
+        memcpy(m->rom_basic, cartridge_page(&m->cartridge, 1), ROM_BASIC_SIZE);
+    if (cartridge_page_present(&m->cartridge, 3)) {
+        memcpy(m->rom_amsdos, cartridge_page(&m->cartridge, 3), ROM_BASIC_SIZE);
+        m->amsdos_present = true;
+    }
+    return 0;
+}
+
+void mem_plus_reset_mapping(Mem *m) {
+    m->plus_lower_bank = 0;
+    m->plus_lower_page = 0;
+    m->plus_register_page = false;
+    m->upper_rom_select = m->plus ? 1 : 0;
+}
+
+void mem_plus_set_rmr2(Mem *m, u8 value) {
+    if (!m->plus) return;
+    u8 bank = (value >> 3) & 0x03;
+    m->plus_register_page = bank == 3;
+    m->plus_lower_bank = m->plus_register_page ? 0 : bank;
+    m->plus_lower_page = value & 0x07;
+}
+
+void mem_plus_select_upper_rom(Mem *m, u8 value) {
+    if (!m->plus) {
+        m->upper_rom_select = value;
+        return;
+    }
+    if (value == 7)
+        m->upper_rom_select = 3;
+    else if (value >= 128)
+        m->upper_rom_select = value & 31;
+    else
+        m->upper_rom_select = 1;
 }
 
 int mem_load_amsdos(Mem *m, const char *path) {
@@ -158,8 +231,19 @@ static inline u8 read_ram(const Mem *m, u32 off) {
 }
 
 u8 mem_read(Mem *m, u16 addr) {
-    /* Lower ROM overlay */
-    if (addr < 0x4000 && m->lower_rom_enabled) {
+    if (m->plus && m->plus_register_page && addr >= 0x4000 && addr < 0x8000)
+        return m->plus_registers[addr - 0x4000];
+
+    if (m->plus && m->lower_rom_enabled &&
+            (addr >> 14) == m->plus_lower_bank) {
+        const u8 *page = cartridge_page(&m->cartridge, m->plus_lower_page);
+        return page ? page[addr & 0x3FFF] : 0xFF;
+    }
+
+    /* Classic CPC lower ROM overlay. On Plus machines RMR2 moves the
+     * cartridge overlay to plus_lower_bank; it must not remain duplicated
+     * at 0x0000 when another bank is selected. */
+    if (!m->plus && addr < 0x4000 && m->lower_rom_enabled) {
         if (m->lower_rom_override)
             return m->lower_rom_override[addr];
         return m->rom_os[addr];
@@ -169,6 +253,11 @@ u8 mem_read(Mem *m, u16 addr) {
      * even when banking is active (writes still go to banked RAM). */
     if (addr >= 0xC000 && m->upper_rom_enabled) {
         u8 slot = m->upper_rom_select;
+        if (m->plus) {
+            const u8 *page = cartridge_page(&m->cartridge, slot);
+            if (!page) page = cartridge_page(&m->cartridge, 1);
+            return page ? page[addr - 0xC000] : 0xFF;
+        }
         if (slot < ROM_EXT_COUNT && m->rom_ext_present[slot])
             return m->rom_ext[slot][addr - 0xC000];
         if (slot == 0)
@@ -188,7 +277,7 @@ u8 mem_read(Mem *m, u16 addr) {
     return m->ram[addr];
 }
 
-u8 mem_read_video(Mem *m, u16 addr) {
+u8 mem_read_video(const Mem *m, u16 addr) {
     /* CPC video hardware is hardwired to the base 64 KB of physical RAM.
      * GA banking only re-routes CPU address decoding; the video scanning
      * circuit always reads from the unbanked physical address.
@@ -197,7 +286,16 @@ u8 mem_read_video(Mem *m, u16 addr) {
     return m->ram[(u32)addr];
 }
 
+u8 mem_read_dma(Mem *m, u16 addr) {
+    u32 off = m->ram_bank ? banked_ram_offset(m, addr) : (u32)addr;
+    return read_ram(m, off);
+}
+
 void mem_write(Mem *m, u16 addr, u8 val) {
+    if (m->plus && m->plus_register_page && addr >= 0x4000 && addr < 0x8000) {
+        m->plus_registers[addr - 0x4000] = val;
+        return;
+    }
     /* Writes always go to RAM at the banked page; ROM overlay never intercepts writes */
     u32 off = m->ram_bank ? banked_ram_offset(m, addr) : (u32)addr;
     if (off < (u32)m->ram_size)
