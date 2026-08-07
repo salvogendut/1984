@@ -171,6 +171,29 @@ static void test_ddcb_prefix_uses_indexed_bit_timing(void) {
     assert(cpu.pc == 4);
 }
 
+static void test_im2_uses_device_vector(void) {
+    TestBus test = {0};
+    Z80Bus bus = make_bus(&test);
+    Z80 cpu;
+    z80_init(&cpu);
+    cpu.pc = 0x1234;
+    cpu.sp = 0x9000;
+    cpu.i = 0xB8;
+    cpu.im = 2;
+    cpu.iff1 = true;
+    test.mem[0xB800] = 0x3F;
+    test.mem[0xB801] = 0x83;
+    test.mem[0xB8FF] = 0xAD;
+    test.mem[0xB900] = 0xDE;
+
+    z80_interrupt(&cpu, 0x00);
+    assert(z80_step(&cpu, &bus) == 28);
+    assert(cpu.pc == 0x833F);
+    assert(cpu.sp == 0x8FFE);
+    assert(test.mem[0x8FFE] == 0x34);
+    assert(test.mem[0x8FFF] == 0x12);
+}
+
 int main(void) {
     test_out_c_r_is_split_12_plus_4();
     test_outi_is_split_16_plus_4();
@@ -179,5 +202,6 @@ int main(void) {
     test_fd_register_ops_include_prefix_cycles();
     test_fd_ld_sp_iy_includes_prefix_cycles();
     test_ddcb_prefix_uses_indexed_bit_timing();
+    test_im2_uses_device_vector();
     return 0;
 }

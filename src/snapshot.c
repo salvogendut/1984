@@ -283,7 +283,8 @@ int snapshot_save(CPC *cpc, const char *path) {
 
     u16 ram_kb = (u16)(cpc->mem.ram_size / 1024);
     put16(&hdr[0x6B], ram_kb);
-    hdr[SNA_CPC_MODEL] = (u8)cpc->model;
+    hdr[SNA_CPC_MODEL] = cpc_model_is_plus(cpc->model)
+                       ? (u8)MODEL_6128_PLUS : (u8)cpc->model;
 
     hdr[SNA_V3_CRTC_TYPE] = (u8)cpc->crtc.type;
     put16(&hdr[SNA_V3_CRTC_ADDR], cpc->crtc.ma_row_start & 0x3FFF);

@@ -5,6 +5,8 @@ dist_man1_MANS = 1984.1
 
 1984_SOURCES = \
 	src/config.c \
+	src/cartridge.c \
+	src/asic.c \
 	src/cpc.c \
 	src/monitor.c \
 	src/net4cpc.c \
@@ -55,6 +57,8 @@ dist_man1_MANS = 1984.1
 
 noinst_HEADERS = \
 	src/amx.h \
+	src/asic.h \
+	src/cartridge.h \
 	src/ch376.h \
 	src/compat_win.h \
 	src/config.h \
@@ -148,7 +152,8 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/OS_464.ROM \
                  roms/OS_664.ROM \
                  roms/OS_6128.ROM \
-                 roms/AmstradDiagLower.rom
+                 roms/AmstradDiagLower.rom \
+                 roms/system.cpr
 
 # Desktop integration: .desktop launcher, AppStream metainfo, hicolor icons.
 desktopdir         = $(datadir)/applications
@@ -176,4 +181,4 @@ dist_icon512_DATA  = icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 # Makefile alternative, project docs).
 EXTRA_DIST = Makefile LICENSE Development.md USAGE.md icons/1984.rc icons/1984.ico \
 	src/webgui_page.html scripts/gen_webgui_page.sh \
-	packaging/1984-web.service.in
+	packaging/1984-web.service.in docs/CPC-Plus.md

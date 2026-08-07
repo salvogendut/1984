@@ -29,6 +29,7 @@ typedef struct {
     u8   im;           /* interrupt mode 0/1/2 */
     bool halted;
     bool pending_irq;
+    u8   irq_vector;   /* byte supplied by the interrupting device */
     /* Set true by z80_step in the cycle it ACCEPTS a maskable interrupt
      * (so the caller can ack the IRQ source, e.g. clear GA bit 5).
      * Caller is expected to consume by clearing back to false. */
@@ -78,7 +79,7 @@ typedef struct {
 void z80_init(Z80 *cpu);
 void z80_reset(Z80 *cpu);
 int  z80_step(Z80 *cpu, Z80Bus *bus);   /* Execute one instruction; returns T-states */
-void z80_interrupt(Z80 *cpu);           /* Assert maskable interrupt */
+void z80_interrupt(Z80 *cpu, u8 vector); /* Assert maskable interrupt */
 void z80_nmi(Z80 *cpu);
 
 /* Optional pre-execution hook for RST #10 (the SymbOS message-send vector).

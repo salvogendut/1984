@@ -1,12 +1,12 @@
-.TH 1984 1 "June 2026" "1984 0.4.9" "User Commands"
+.TH 1984 1 "August 2026" "1984 0.4.18" "User Commands"
 .SH NAME
-1984 \- Amstrad CPC 464/664/6128 emulator
+1984 \- Amstrad CPC and CPC Plus emulator
 .SH SYNOPSIS
 .B 1984
 .RI [ OPTIONS ]
 .SH DESCRIPTION
 .B 1984
-is a cycle-stepped Amstrad CPC 464/664/6128 emulator written in C
+is a cycle-stepped Amstrad CPC 464/664/6128 and 464 Plus/6128 Plus emulator written in C
 with SDL3. It boots commercial games, BASIC, AMSDOS, CP/M 2.2 and
 CP/M Plus disk images, and a wide range of expansion hardware
 (M4 board, Albireo USB host, SYMBiFACE II / Cyboard, Net4CPC
@@ -34,6 +34,12 @@ Boot as CPC 664 (overrides config).
 .TP
 .B --6128
 Boot as CPC 6128 (overrides config).
+.TP
+.B --464plus
+Boot as CPC 464 Plus using the configured CPR cartridge (overrides config).
+.TP
+.B --6128plus
+Boot as CPC 6128 Plus using the configured CPR cartridge (overrides config).
 .TP
 .B --dd1
 Enable the DDI-1 floppy interface on the CPC 464 (overrides config).
@@ -64,6 +70,9 @@ without an XDG portal or another native dialog provider.
 .TP
 .BI --rom-os= PATH
 Replace the OS (lower) ROM image.
+.TP
+.BI --cartridge= PATH
+Load a CPC Plus cartridge in RIFF CPR format.
 .TP
 .BI --rom-slot= N:PATH
 Load a ROM image into upper ROM slot
@@ -328,11 +337,12 @@ Press
 to open the in-emulator settings overlay. Four tabs are available:
 .TP
 .B General
-Model (464 / 664 / 6128), RAM size, MX4 expansion bus, Roms Board,
-DDI-1.
+Model (464 / 664 / 6128 / 464 Plus / 6128 Plus), RAM size, MX4 expansion
+bus, Roms Board, and DDI-1.
 .TP
 .B Media
-Floppy drives A and B, cassette tape, external tape toggle (CPC 6128).
+Floppy drives A and B, cassette tape, external tape toggle (CPC 6128), and
+the active CPR cartridge on Plus models.
 Enter on a floppy drive uses the platform dialog, Shift+Enter opens the
 built-in browser, and native-dialog errors fall back automatically.
 .TP

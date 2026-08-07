@@ -22,12 +22,14 @@ typedef struct {
     /* [machine] */
     CpcModel model;
     int      memory_kb;     /* 64, 128, 256, 512, or 576 */
+    CrtcType crtc_type;     /* auto or explicit Type 0..3 */
     FallbackInput fallback_input;   /* primary host input: joystick | amx_mouse */
 
     /* [roms] */
     char rom_os[CONFIG_PATH_MAX];
     char rom_basic[CONFIG_PATH_MAX];
     char rom_amsdos[CONFIG_PATH_MAX];
+    char cartridge[CONFIG_PATH_MAX];   /* CPC Plus RIFF CPR system/game cartridge */
 
     /* [expansion_roms] — slot_0 … slot_31 */
     char rom_ext[ROM_EXT_COUNT][CONFIG_PATH_MAX];
@@ -202,6 +204,8 @@ int config_load_from(Config *cfg, const char *path_override);
 
 /* Fill cfg with compiled-in defaults. */
 void config_defaults(Config *cfg);
+bool config_parse_crtc_type(const char *value, CrtcType *type);
+const char *config_crtc_type_name(CrtcType type);
 
 /* Write current cfg back to ~/.config/1984/1984.conf. */
 int config_save(const Config *cfg);
@@ -243,5 +247,6 @@ int config_apply_boards(Config *cfg);
 void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(CpcModel model, char *out, size_t sz);
+void config_default_cartridge(char *out, size_t sz);
 void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);

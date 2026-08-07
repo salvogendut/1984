@@ -35,6 +35,34 @@ static const char *config_home_env(void) {
     return NULL;
 }
 
+bool config_parse_crtc_type(const char *value, CrtcType *type) {
+    if (!value || !type)
+        return false;
+    if (!strcasecmp(value, "auto"))
+        *type = CRTC_TYPE_AUTO;
+    else if (!strcasecmp(value, "type0") || !strcmp(value, "0"))
+        *type = CRTC_TYPE_0;
+    else if (!strcasecmp(value, "type1") || !strcmp(value, "1"))
+        *type = CRTC_TYPE_1;
+    else if (!strcasecmp(value, "type2") || !strcmp(value, "2"))
+        *type = CRTC_TYPE_2;
+    else if (!strcasecmp(value, "type3") || !strcmp(value, "3"))
+        *type = CRTC_TYPE_3;
+    else
+        return false;
+    return true;
+}
+
+const char *config_crtc_type_name(CrtcType type) {
+    switch (type) {
+    case CRTC_TYPE_0: return "type0";
+    case CRTC_TYPE_1: return "type1";
+    case CRTC_TYPE_2: return "type2";
+    case CRTC_TYPE_3: return "type3";
+    default:          return "auto";
+    }
+}
+
 /* Write the per-user 1984 config directory (no trailing slash, no
  * filename) into out[sz]. Returns 0 on success, -1 if no usable env
  * var is set. When `make_dirs` is true, creates intermediate
@@ -102,6 +130,7 @@ int config_websvc_dir(char *out, size_t sz) {
 #define ROM_FILE_AMSDOS_664  "AMSDOS_664.ROM"
 #define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
+#define ROM_FILE_PLUS_SYSTEM "system.cpr"
 
 /* Build a path to a bundled ROM file.
  * Priority:
@@ -158,6 +187,7 @@ static void rom_cfg_path(const char *file, char *out, size_t size) {
 void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->scale     = 1;
+    cfg->crtc_type = CRTC_TYPE_AUTO;
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
@@ -269,10 +299,12 @@ static void config_create_default(const char *path) {
      * was hard-coded to paths under ~/.config/1984/roms/ — fine if the
      * user has put ROMs there, broken on a fresh RPM install where the
      * ROMs live under the system data dir. */
-    char os_path[CONFIG_PATH_MAX], basic_path[CONFIG_PATH_MAX], amsdos_path[CONFIG_PATH_MAX];
+    char os_path[CONFIG_PATH_MAX], basic_path[CONFIG_PATH_MAX];
+    char amsdos_path[CONFIG_PATH_MAX], cartridge_path[CONFIG_PATH_MAX];
     rom_cfg_path(ROM_FILE_OS_6128,    os_path,     sizeof(os_path));
     rom_cfg_path(ROM_FILE_BASIC_6128, basic_path,  sizeof(basic_path));
     rom_cfg_path(ROM_FILE_AMSDOS,     amsdos_path, sizeof(amsdos_path));
+    rom_cfg_path(ROM_FILE_PLUS_SYSTEM, cartridge_path, sizeof(cartridge_path));
 
     FILE *f = fopen(path, "w");
     if (!f) {
@@ -285,10 +317,12 @@ static void config_create_default(const char *path) {
         "# Edit and restart the emulator for changes to take effect.\n"
         "\n"
         "[machine]\n"
-        "# CPC model: 464, 664 or 6128\n"
+        "# CPC model: 464, 664, 6128, 464plus or 6128plus\n"
         "model=6128\n"
         "# RAM size in KB: 64 (CPC 464/664) or 128+ (CPC 6128)\n"
         "memory=128\n"
+        "# CRTC implementation: auto, type0, type1, type2 or type3\n"
+        "crtc=auto\n"
         "# Primary host input: joystick or amx_mouse\n"
         "fallback_input=joystick\n"
         "\n"
@@ -297,8 +331,10 @@ static void config_create_default(const char *path) {
         "os=%s\n"
         "basic=%s\n"
         "amsdos=%s\n"
+        "# CPC Plus system/game cartridge in RIFF CPR format\n"
+        "cartridge=%s\n"
         "\n",
-        os_path, basic_path, amsdos_path);
+        os_path, basic_path, amsdos_path, cartridge_path);
 
     fprintf(f, "%s",
         "[expansion_roms]\n"
@@ -488,9 +524,13 @@ int config_load_from(Config *cfg, const char *path_override) {
 
         if (!strcmp(section, "machine")) {
             if (!strcmp(key, "model")) {
-                if (!strcmp(val, "464"))       cfg->model = MODEL_464;
-                else if (!strcmp(val, "664"))  cfg->model = MODEL_664;
-                else if (!strcmp(val, "6128")) cfg->model = MODEL_6128;
+                if (!strcmp(val, "464"))       config_set_model(cfg, MODEL_464);
+                else if (!strcmp(val, "664"))  config_set_model(cfg, MODEL_664);
+                else if (!strcmp(val, "6128")) config_set_model(cfg, MODEL_6128);
+                else if (!strcasecmp(val, "464plus") || !strcmp(val, "464+"))
+                    config_set_model(cfg, MODEL_464_PLUS);
+                else if (!strcasecmp(val, "6128plus") || !strcmp(val, "6128+"))
+                    config_set_model(cfg, MODEL_6128_PLUS);
                 else { fprintf(stderr, "1984.conf:%d: unknown model '%s', using default\n", lineno, val); }
             } else if (!strcmp(key, "memory")) {
                 int kb = atoi(val);
@@ -498,6 +538,10 @@ int config_load_from(Config *cfg, const char *path_override) {
                         || kb == 768 || kb == 1024)
                     cfg->memory_kb = kb;
                 else { fprintf(stderr, "1984.conf:%d: invalid memory '%s', using default (%d KB)\n", lineno, val, cfg->memory_kb); }
+            } else if (!strcmp(key, "crtc")) {
+                CrtcType type;
+                if (config_parse_crtc_type(val, &type)) cfg->crtc_type = type;
+                else { fprintf(stderr, "1984.conf:%d: crtc must be auto/type0/type1/type2/type3\n", lineno); rc = -1; }
             } else if (!strcmp(key, "fallback_input")) {
                 FallbackInput fi;
                 if (parse_fallback(val, &fi)) cfg->fallback_input = fi;
@@ -510,6 +554,8 @@ int config_load_from(Config *cfg, const char *path_override) {
                 expand_path(val, cfg->rom_basic, sizeof(cfg->rom_basic));
             else if (!strcmp(key, "amsdos"))
                 expand_path(val, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
+            else if (!strcmp(key, "cartridge"))
+                expand_path(val, cfg->cartridge, sizeof(cfg->cartridge));
         } else if (!strcmp(section, "expansion_roms")) {
             if (strncmp(key, "slot_", 5) == 0) {
                 int slot = atoi(key + 5);
@@ -825,6 +871,8 @@ int config_load_from(Config *cfg, const char *path_override) {
         config_default_os(cfg->model, cfg->rom_os, sizeof(cfg->rom_os));
     if (!cfg->rom_basic[0])
         config_default_basic(cfg->model, cfg->rom_basic, sizeof(cfg->rom_basic));
+    if (!cfg->cartridge[0])
+        config_default_cartridge(cfg->cartridge, sizeof(cfg->cartridge));
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
 
@@ -862,18 +910,24 @@ int config_save(const Config *cfg) {
         "[machine]\n"
         "model=%s\n"
         "memory=%d\n"
+        "crtc=%s\n"
         "fallback_input=%s\n\n"
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n"
-        "amsdos=%s\n",
+        "amsdos=%s\n"
+        "cartridge=%s\n",
         cfg->model == MODEL_464 ? "464" :
-            (cfg->model == MODEL_664 ? "664" : "6128"),
+        cfg->model == MODEL_664 ? "664" :
+        cfg->model == MODEL_6128 ? "6128" :
+        cfg->model == MODEL_464_PLUS ? "464plus" : "6128plus",
         cfg->memory_kb,
+        config_crtc_type_name(cfg->crtc_type),
         fallback_to_str(cfg->fallback_input),
         cfg->rom_os,
         cfg->rom_basic,
-        cfg->rom_amsdos);
+        cfg->rom_amsdos,
+        cfg->cartridge);
 
     fprintf(f, "\n[expansion_roms]\n");
     for (int i = 0; i < ROM_EXT_COUNT; i++) {
@@ -1070,12 +1124,20 @@ void config_set_model(Config *cfg, CpcModel model) {
         rom_cfg_path(ROM_FILE_OS_664,     cfg->rom_os,     sizeof(cfg->rom_os));
         rom_cfg_path(ROM_FILE_BASIC_664,  cfg->rom_basic,  sizeof(cfg->rom_basic));
         rom_cfg_path(ROM_FILE_AMSDOS_664, cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
-    } else {
+    } else if (model == MODEL_6128) {
         cfg->memory_kb = 128;
         cfg->dd1       = false;      /* 6128 has built-in FDC; DD1 not applicable */
         rom_cfg_path(ROM_FILE_OS_6128,    cfg->rom_os,     sizeof(cfg->rom_os));
         rom_cfg_path(ROM_FILE_BASIC_6128, cfg->rom_basic,  sizeof(cfg->rom_basic));
         rom_cfg_path(ROM_FILE_AMSDOS,     cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
+    } else {
+        cfg->memory_kb = model == MODEL_464_PLUS ? 64 : 128;
+        cfg->dd1 = false;
+        cfg->rom_os[0] = '\0';
+        cfg->rom_basic[0] = '\0';
+        cfg->rom_amsdos[0] = '\0';
+        if (!cfg->cartridge[0])
+            config_default_cartridge(cfg->cartridge, sizeof(cfg->cartridge));
     }
 }
 
@@ -1104,6 +1166,10 @@ void config_default_basic(CpcModel model, char *out, size_t sz) {
 void config_default_amsdos(CpcModel model, char *out, size_t sz) {
     rom_cfg_path(model == MODEL_664 ? ROM_FILE_AMSDOS_664 : ROM_FILE_AMSDOS,
                  out, sz);
+}
+
+void config_default_cartridge(char *out, size_t sz) {
+    rom_cfg_path(ROM_FILE_PLUS_SYSTEM, out, sz);
 }
 
 void config_default_m4rom(char *out, size_t sz) {

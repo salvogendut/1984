@@ -36,7 +36,8 @@ typedef enum {
     DIALOG_DISK_NEW      = 13,  /* save-as: create a blank .dsk */
     DIALOG_REAL_TAPE_OUTPUT_FILE = 14,
     DIALOG_REAL_TAPE_SOURCE_WAV = 15,
-    DIALOG_REAL_TAPE_OUTPUT_CDT = 16
+    DIALOG_REAL_TAPE_OUTPUT_CDT = 16,
+    DIALOG_CARTRIDGE = 17
 } DialogKind;
 
 struct OverlayBrowserEntry;

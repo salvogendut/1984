@@ -2,20 +2,22 @@
 
 ![1984](1984.png)
 
-1984 is a cycle-stepped Amstrad CPC 464, 664, and 6128 emulator written in C
-using SDL3. It aims to run ordinary CPC software and timing-sensitive programs
-while also modelling modern storage, networking, and input expansions.
+1984 is a cycle-stepped Amstrad CPC 464, 664, 6128, 464 Plus, and 6128 Plus
+emulator written in C using SDL3. It aims to run ordinary CPC software and
+timing-sensitive programs while also modelling modern storage, networking,
+and input expansions.
 
 ## Current status
 
-All three models boot their bundled firmware to Locomotive BASIC. Disk and
-tape software, commercial games, and a growing set of timing-sensitive demos
-run; Bomb Jack and Batman Forever are among the current CRTC/audio regression
-targets.
+All five models boot their bundled firmware or system cartridge. Disk, tape,
+and CPR software, commercial games, and a growing set of timing-sensitive
+demos run; Bomb Jack and Batman Forever are among the current CRTC/audio
+regression targets.
 
 | Workload | Current result |
 |----------|----------------|
 | Locomotive BASIC and AMSDOS | Working on CPC 464, 664, and 6128, with DDI-1 available for the 464 |
+| CPC Plus cartridges | 464 Plus and 6128 Plus boot the bundled v4 system CPR and standalone RIFF CPR software |
 | HDCPM / CP/M Plus | Boots from SYMBiFACE II/Cyboard IDE images with CP/M drives, ramdisk, ZCPR, and RTC time |
 | SymbOS with M4 | Boots with the unmodified M4 network daemon; time, Telnet, and HTTP applications work |
 | SymbOS with Cyboard | Boots with Net4CPC, RTC, IDE storage, and SYMBiFACE mouse |
@@ -38,13 +40,15 @@ See [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md) and
 
 ## Core emulation
 
-- CPC 464, 664, and 6128 model defaults, including the correct firmware,
-  memory, floppy, and cassette configuration.
+- CPC 464, 664, 6128, 464 Plus, and 6128 Plus model defaults, including the
+  correct firmware or cartridge, memory, floppy, and cassette configuration.
 - Cycle-stepped Z80 with documented and commonly used undocumented opcodes,
   interrupt timing, and memory contention.
 - MC6845 CRTC, Gate Array, 8255 PPI, overscan, split screens, hybrid display
   modes, mid-frame CRTC changes, and all 32 hardware colours.
 - AY-3-8912 tone, noise, envelope, and sampled-audio playback.
+- Plus ASIC cartridge banking, register lock/mapping, 12-bit palette, hardware
+  sprites, soft scroll, raster/split controls, and PSG DMA playback.
 - RAM configurations from 64 KB through 1 MB using DK'TRONICS and Yarek/RAM7
   banking.
 - A 32-slot expansion ROM board, automatic removal of AMSDOS headers from ROM
@@ -63,6 +67,10 @@ slots, while board-tagged driver ROMs follow their active MX4 device. Enable
 floppy controller. Sector writes and FORMAT TRACK operations are persisted to
 the mounted image. The Media tab can also create a blank 40-track CPC DATA
 disk.
+
+The Plus models boot RIFF CPR cartridges. Select the model in General and the
+cartridge in Media, or use `--464plus` / `--6128plus` with
+`--cartridge=PATH`.
 
 Drive A and B use the platform file picker by default. **Shift+Enter** opens
 the built-in keyboard-driven DSK browser, and 1984 falls back to it

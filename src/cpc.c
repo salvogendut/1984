@@ -246,7 +246,16 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
 }
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
-    mem_write(&cpc->mem, addr, val);
+    if (cpc_model_is_plus(cpc->model) && cpc->mem.plus_register_page &&
+            addr >= 0x4000 && addr < 0x8000) {
+        asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
+        if (!asic_irq_pending(&cpc->asic)) {
+            cpc->ga.interrupt_pending = false;
+            cpc->cpu.pending_irq = false;
+        }
+    } else {
+        mem_write(&cpc->mem, addr, val);
+    }
     /* Master gate: when no trace env is set, skip every debug hook
      * below. ~1 cycle's worth of branch on the hot path when off. */
     trace_check_master();
@@ -440,6 +449,36 @@ static u8 bus_io_read(void *ctx, u16 port) {
     return result;
 }
 
+static void plus_asic_lock_write(CPC *cpc, u8 val) {
+    static const u8 sequence[] = {
+        0x00, 0x00, 0xFF, 0x77, 0xB3, 0x51, 0xA8, 0xD4,
+        0x62, 0x39, 0x9C, 0x46, 0x2B, 0x15, 0x8A, 0xCD
+    };
+    const u8 length = (u8)sizeof(sequence);
+    u8 pos = cpc->asic_lock_pos;
+
+    /* The sequence can begin only after a non-zero synchronising write.
+     * This state machine follows the Plus ASIC rather than treating the
+     * byte string as an ordinary substring. */
+    if (pos == 0) {
+        if (val != 0) cpc->asic_lock_pos = 1;
+        return;
+    }
+    if (pos < length) {
+        bool matched = val == sequence[pos];
+        pos++;
+        if (!matched) {
+            if (pos == length) cpc->asic_locked = true;
+            pos = val == 0 ? 2 : 1;
+        }
+        cpc->asic_lock_pos = pos;
+        return;
+    }
+
+    cpc->asic_locked = false;
+    cpc->asic_lock_pos = val == 0 ? 0 : 1;
+}
+
 static void bus_io_write(void *ctx, u16 port, u8 val) {
     CPC *cpc = ctx;
     u8 hi = port >> 8;
@@ -455,6 +494,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
 
     /* Gate Array: A15=0, A14=1 → 0x7Fxx */
     if (!(hi & 0x80) && (hi & 0x40)) {
+        if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked &&
+                (val & 0xE0) == 0xA0) {
+            mem_plus_set_rmr2(&cpc->mem, val);
+            return;
+        }
         if (cpc_trace_palette && cpc_frame_count > 520 && (val & 0xC0) == 0x40)
             fprintf(stderr, "[f%04d ga] pen=%02X col=%02X\n",
                     cpc_frame_count, cpc->ga.selected_pen, val & 0x1F);
@@ -469,8 +513,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
             fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
                     cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
         /* Interrupt reset also cancels a request already latched by the CPU. */
-        if ((val & 0xC0) == 0x80 && (val & 0x10))
+        if ((val & 0xC0) == 0x80 && (val & 0x10)) {
             cpc->cpu.pending_irq = false;
+            if (cpc_model_is_plus(cpc->model))
+                asic_clear_raster_irq(&cpc->asic, &cpc->mem);
+        }
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
@@ -514,6 +561,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
      * pointed the screen at block 0. */
     if (!(hi & 0x40) && !(hi & 0x02)) {
         if (!(hi & 0x01)) {
+            if (cpc_model_is_plus(cpc->model))
+                plus_asic_lock_write(cpc, val);
             crtc_select(&cpc->crtc, val);
         } else {
             if (cpc_trace_io)
@@ -532,7 +581,7 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         if (dbg_getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
             fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n", cpc->cpu.pc);
         }
-        cpc->mem.upper_rom_select = val;
+        mem_plus_select_upper_rom(&cpc->mem, val);
         return;
     }
     /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
@@ -738,11 +787,22 @@ static CrtcType default_crtc_type(CpcModel model) {
     switch (model) {
     case MODEL_6128:
         return CRTC_TYPE_1;
+    case MODEL_464_PLUS:
+    case MODEL_6128_PLUS:
+        return CRTC_TYPE_3;
     case MODEL_464:
     case MODEL_664:
     default:
         return CRTC_TYPE_0;
     }
+}
+
+void cpc_set_crtc_type(CPC *cpc, CrtcType type) {
+    if (type < CRTC_TYPE_AUTO || type > CRTC_TYPE_3)
+        type = CRTC_TYPE_AUTO;
+    cpc->crtc_type = type;
+    crtc_set_type(&cpc->crtc,
+                  type == CRTC_TYPE_AUTO ? default_crtc_type(cpc->model) : type);
 }
 
 /* Forward decl — definition lives near cpc_frame() with the rest of
@@ -787,7 +847,8 @@ static void cpc_monitor_reset(CPC *cpc) {
     cpc->monitor_frame_completed = false;
 }
 
-int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic, int scale) {
+int cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
+             const char *rom_basic, const char *cartridge, int scale) {
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
     cpc->model = model;
@@ -796,15 +857,22 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
     cpc->cycles_per_frame = cpc->cpu_clk_hz / 50;
 
     mem_init(&cpc->mem);
-    if (mem_load_rom(&cpc->mem, rom_os, rom_basic) < 0)
+    if (cpc_model_is_plus(model)) {
+        if (mem_load_cartridge(&cpc->mem, cartridge) < 0)
+            return -1;
+    } else if (mem_load_rom(&cpc->mem, rom_os, rom_basic) < 0) {
         return -1;
+    }
+    cpc->asic_locked = true;
+    cpc->asic_lock_pos = 0;
 
     z80_init(&cpc->cpu);
     z80_reset(&cpc->cpu);
 
     ga_init(&cpc->ga);
+    asic_reset(&cpc->asic, &cpc->ga);
     crtc_init(&cpc->crtc);
-    crtc_set_type(&cpc->crtc, default_crtc_type(model));
+    cpc_set_crtc_type(cpc, CRTC_TYPE_AUTO);
     cpc_monitor_reset(cpc);
     ppi_init(&cpc->ppi);
     psg_init(&cpc->psg);
@@ -865,9 +933,11 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os, const char *rom_basic
  * Net4CPC TAP interface, --rom-slot CLI overrides) — callers that need
  * those still set them up themselves. Returns -1 (cpc_init failed) or 0. */
 int cpc_build_from_config(CPC *cpc, Config *cfg) {
-    if (cpc_init(cpc, cfg->model, cfg->rom_os, cfg->rom_basic, cfg->scale) < 0)
+    if (cpc_init(cpc, cfg->model, cfg->rom_os, cfg->rom_basic,
+                 cfg->cartridge, cfg->scale) < 0)
         return -1;
 
+    cpc_set_crtc_type(cpc, cfg->crtc_type);
     ga_set_monochrome(&cpc->ga, cfg->monochrome);
     psg_set_volume(&cpc->psg, cfg->audio_volume);
     psg_set_stereo(&cpc->psg, cfg->audio_stereo_sep);
@@ -916,11 +986,11 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
                                                                    : PRINT_SINK_PDF);
     /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
     if (cfg->tape[0] &&
-            (cpc->model == MODEL_464 || cfg->external_tape))
+            (cpc_model_has_builtin_tape(cpc->model) || cfg->external_tape))
         tape_load(&cpc->tape, cfg->tape);
 
     /* Load AMSDOS ROM (non-fatal — 464 doesn't need it) */
-    if (cfg->rom_amsdos[0])
+    if (!cpc_model_is_plus(cpc->model) && cfg->rom_amsdos[0])
         mem_load_amsdos(&cpc->mem, cfg->rom_amsdos);
 
     /* Load expansion ROMs into slots 0-31. A slot owned by an MX4 card (its
@@ -974,8 +1044,9 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
 void cpc_reset(CPC *cpc) {
     z80_reset(&cpc->cpu);
     ga_init(&cpc->ga);
+    asic_reset(&cpc->asic, &cpc->ga);
     crtc_init(&cpc->crtc);
-    crtc_set_type(&cpc->crtc, default_crtc_type(cpc->model));
+    cpc_set_crtc_type(cpc, cpc->crtc_type);
     ppi_init(&cpc->ppi);
     psg_reset(&cpc->psg);
     kbd_init(&cpc->kbd);
@@ -990,6 +1061,9 @@ void cpc_reset(CPC *cpc) {
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
+    mem_plus_reset_mapping(&cpc->mem);
+    cpc->asic_locked = true;
+    cpc->asic_lock_pos = 0;
     cpc_monitor_reset(cpc);
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
@@ -1063,64 +1137,61 @@ static void build_pen_tables(void) {
     g_pen_tables_built = true;
 }
 
-/* Caller (cpc.c frame loop) guarantees px is a multiple of 16 in [0, 752],
- * so px..px+15 always fits in CPC_SCREEN_W (768). No per-pixel bounds
- * checks — the only valid call sites have already gated px. */
-static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 b1) {
+static inline void render_byte(u32 *out, const GateArray *ga, u8 value) {
     const u32 *inks = ga->resolved_ink;
-    u32 *out = row + px;
 
     switch (ga->screen_mode) {
     case 2: { /* 1 bpp, 8 pixels/byte */
-        const u8 *p0 = g_mode2_pens[b0];
-        const u8 *p1 = g_mode2_pens[b1];
-        out[0]  = inks[p0[0]]; out[1]  = inks[p0[1]];
-        out[2]  = inks[p0[2]]; out[3]  = inks[p0[3]];
-        out[4]  = inks[p0[4]]; out[5]  = inks[p0[5]];
-        out[6]  = inks[p0[6]]; out[7]  = inks[p0[7]];
-        out[8]  = inks[p1[0]]; out[9]  = inks[p1[1]];
-        out[10] = inks[p1[2]]; out[11] = inks[p1[3]];
-        out[12] = inks[p1[4]]; out[13] = inks[p1[5]];
-        out[14] = inks[p1[6]]; out[15] = inks[p1[7]];
+        const u8 *pens = g_mode2_pens[value];
+        for (int i = 0; i < 8; i++) out[i] = inks[pens[i]];
         break;
     }
     case 1: { /* 2 bpp, 4 pixels/byte, ×2 */
-        const u8 *p0 = g_mode1_pens[b0];
-        const u8 *p1 = g_mode1_pens[b1];
-        u32 c;
-        c = inks[p0[0]]; out[0]  = c; out[1]  = c;
-        c = inks[p0[1]]; out[2]  = c; out[3]  = c;
-        c = inks[p0[2]]; out[4]  = c; out[5]  = c;
-        c = inks[p0[3]]; out[6]  = c; out[7]  = c;
-        c = inks[p1[0]]; out[8]  = c; out[9]  = c;
-        c = inks[p1[1]]; out[10] = c; out[11] = c;
-        c = inks[p1[2]]; out[12] = c; out[13] = c;
-        c = inks[p1[3]]; out[14] = c; out[15] = c;
+        const u8 *pens = g_mode1_pens[value];
+        for (int i = 0; i < 4; i++) {
+            u32 colour = inks[pens[i]];
+            out[i * 2] = colour;
+            out[i * 2 + 1] = colour;
+        }
         break;
     }
     case 0: { /* 4 bpp, 2 pixels/byte, ×4 */
-        u32 c0 = inks[g_mode0_pens[b0][0]];
-        u32 c1 = inks[g_mode0_pens[b0][1]];
-        u32 c2 = inks[g_mode0_pens[b1][0]];
-        u32 c3 = inks[g_mode0_pens[b1][1]];
-        out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
-        out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
-        out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;
-        out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
+        for (int i = 0; i < 2; i++) {
+            u32 colour = inks[g_mode0_pens[value][i]];
+            for (int j = 0; j < 4; j++) out[i * 4 + j] = colour;
+        }
         break;
     }
     case 3: { /* undocumented 2 bpp, 2 pixels/byte, ×4 */
-        u32 c0 = inks[g_mode3_pens[b0][0]];
-        u32 c1 = inks[g_mode3_pens[b0][1]];
-        u32 c2 = inks[g_mode3_pens[b1][0]];
-        u32 c3 = inks[g_mode3_pens[b1][1]];
-        out[0]  = c0; out[1]  = c0; out[2]  = c0; out[3]  = c0;
-        out[4]  = c1; out[5]  = c1; out[6]  = c1; out[7]  = c1;
-        out[8]  = c2; out[9]  = c2; out[10] = c2; out[11] = c2;
-        out[12] = c3; out[13] = c3; out[14] = c3; out[15] = c3;
+        for (int i = 0; i < 2; i++) {
+            u32 colour = inks[g_mode3_pens[value][i]];
+            for (int j = 0; j < 4; j++) out[i * 4 + j] = colour;
+        }
         break;
     }
     }
+}
+
+/* Caller guarantees px..px+15 fits in the output row. */
+static inline void render_char(u32 *row, int px, const GateArray *ga, u8 b0, u8 b1) {
+    render_byte(row + px, ga, b0);
+    render_byte(row + px + 8, ga, b1);
+}
+
+/* The Plus horizontal scroll is a pixel shifter in front of video RAM, not a
+ * change to the monitor beam position. It can combine pixels from three
+ * adjacent bytes, including an odd byte boundary. */
+static inline void render_char_plus(u32 *row, int px, const GateArray *ga,
+                                    const Mem *mem, u16 addr, u8 hscroll) {
+    u32 pixels[24];
+    unsigned byte_offset = hscroll >> 3;
+    unsigned pixel_shift = hscroll & 7;
+    u16 first = (u16)(addr - byte_offset - 1);
+
+    for (int i = 0; i < 3; i++)
+        render_byte(pixels + i * 8, ga,
+                    mem_read_video(mem, (u16)(first + i)));
+    memcpy(row + px, pixels + 8 - pixel_shift, 16 * sizeof(*row));
 }
 
 /* ---- Frame execution ----
@@ -1332,11 +1403,23 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         bool new_hsync = crtc_hsync(&cpc->crtc);
         bool new_vsync = crtc_vsync(&cpc->crtc);
         bool new_crtc_line = crtc_new_scanline(&cpc->crtc);
+        bool new_crtc_frame = crtc_new_frame(&cpc->crtc);
         bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
+        if (cpc_model_is_plus(cpc->model)) {
+            asic_raster_tick(&cpc->asic, &cpc->crtc, &cpc->mem, &cpc->ga);
+            asic_latch_split(&cpc->asic, &cpc->crtc,
+                             cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
+                             new_crtc_line);
+        }
+
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
-        if (!new_hsync && cpc->prev_hsync)
-            ga_hsync(&cpc->ga);
+        if (!new_hsync && cpc->prev_hsync) {
+            if (cpc_model_is_plus(cpc->model))
+                asic_hsync(&cpc->asic, &cpc->mem, &cpc->psg, &cpc->ga);
+            else
+                ga_hsync(&cpc->ga);
+        }
 
         ppi_set_vsync(&cpc->ppi, new_vsync);
 
@@ -1355,12 +1438,26 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
             if (cpc->crtc_pre_de) {
                 /* Video address: bank=MA[13:12], raster=RA[2:0], col=MA[9:0] */
-                u16 bank = (cpc->crtc_pre_ma >> 12) & 3;
-                u16 col  = cpc->crtc_pre_ma & 0x3FF;
-                u16 addr = (u16)((bank << 14) | ((cpc->crtc_pre_ra & 7) << 11) | (col << 1));
-                u8  b0   = mem_read_video(&cpc->mem, addr);
-                u8  b1   = mem_read_video(&cpc->mem, (u16)(addr + 1));
-                render_char(row, px, &cpc->ga, b0, b1);
+                u16 video_ma = cpc->crtc_pre_ma;
+                u8 video_ra = cpc->crtc_pre_ra & 7;
+                if (cpc_model_is_plus(cpc->model)) {
+                    AsicVideoPosition pos = asic_video_position(
+                        &cpc->asic, video_ma, cpc->crtc_pre_ra,
+                        cpc->crtc.reg[9], cpc->crtc.reg[1]);
+                    video_ma = pos.ma;
+                    video_ra = pos.raster;
+                }
+                u16 bank = (video_ma >> 12) & 3;
+                u16 col  = video_ma & 0x3FF;
+                u16 addr = (u16)((bank << 14) | ((video_ra & 7) << 11) | (col << 1));
+                if (cpc_model_is_plus(cpc->model)) {
+                    render_char_plus(row, px, &cpc->ga, &cpc->mem, addr,
+                                     cpc->asic.hscroll);
+                } else {
+                    u8 b0 = mem_read_video(&cpc->mem, addr);
+                    u8 b1 = mem_read_video(&cpc->mem, (u16)(addr + 1));
+                    render_char(row, px, &cpc->ga, b0, b1);
+                }
             } else {
                 u32 c = cpc->ga.resolved_ink[16]; /* border */
                 u32 *out = row + px;
@@ -1369,6 +1466,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 out[8]=c;  out[9]=c;  out[10]=c; out[11]=c;
                 out[12]=c; out[13]=c; out[14]=c; out[15]=c;
             }
+            if (cpc_model_is_plus(cpc->model))
+                asic_draw_sprites_char(&cpc->asic, cpc->crtc_pre_hcc,
+                                       cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
+                                       cpc->crtc.reg[7], row + px);
+            memset(cpc->display.touched + py * CPC_SCREEN_W + px, 1, 16);
         }
 
         /* CRTC timing changes happen after the current character is output,
@@ -1382,8 +1484,20 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         /* The physical monitor free-runs through long/short CRTC lines, but
          * vertical hold is sampled when the CRTC starts a real scanline.
          * An 8-bit HCC wrap after a missed R0 comparator is not a newscan. */
-        if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync))
+        if (new_crtc_frame && cpc_model_is_plus(cpc->model))
+            asic_new_frame(&cpc->asic);
+        if (new_crtc_line && cpc_model_is_plus(cpc->model)) {
+            asic_apply_split(&cpc->asic, &cpc->crtc);
+            /* R1=0 compares at the start of the new line, after any split
+             * pending from the line that just ended has taken effect. */
+            asic_latch_split(&cpc->asic, &cpc->crtc,
+                             cpc->crtc.vcc, cpc->crtc.vlc, false);
+        }
+        if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync)) {
+            display_finalize_frame(&cpc->display,
+                                   cpc->ga.resolved_ink[16]);
             display_upload(&cpc->display);
+        }
 
         /* On a CPC the Gate Array only observes the first seven CRTC HSYNC
          * character clocks. The monitor-visible pulse starts a little later
@@ -1399,6 +1513,8 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         /* Capture next char's pre-tick state */
         cpc->crtc_pre_ma = cpc->crtc.ma;
+        cpc->crtc_pre_hcc = cpc->crtc.hcc;
+        cpc->crtc_pre_vcc = cpc->crtc.vcc;
         cpc->crtc_pre_ra = cpc->crtc.vlc;
         cpc->crtc_pre_de = cpc->crtc.display_enable;
     }
@@ -1482,6 +1598,8 @@ int cpc_frame(CPC *cpc) {
          * run a partial CRTC advance in the middle of an instruction and
          * the resumed chunk picks up where the previous one left off. */
         cpc->crtc_pre_ma = cpc->crtc.ma;
+        cpc->crtc_pre_hcc = cpc->crtc.hcc;
+        cpc->crtc_pre_vcc = cpc->crtc.vcc;
         cpc->crtc_pre_ra = cpc->crtc.vlc;
         cpc->crtc_pre_de = cpc->crtc.display_enable;
 
@@ -1769,8 +1887,15 @@ int cpc_frame(CPC *cpc) {
         }
         /* The GA acknowledges an interrupt as the CPU accepts it, before
          * interrupt-entry cycles advance the scanline counter. */
-        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay)
-            ga_irq_ack(&cpc->ga);
+        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay) {
+            if (cpc_model_is_plus(cpc->model)) {
+                if (!cpc->asic_locked)
+                    cpc->cpu.irq_vector = asic_irq_vector(&cpc->asic);
+                asic_irq_ack(&cpc->asic, &cpc->mem, &cpc->ga);
+            } else {
+                ga_irq_ack(&cpc->ga);
+            }
+        }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
          * "TXT WR CHAR" at &BB5A — A holds the byte to print. By
@@ -1795,7 +1920,10 @@ int cpc_frame(CPC *cpc) {
         /* Deliver pending Gate Array interrupt. */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
-            z80_interrupt(&cpc->cpu);
+            u8 vector = 0xFF;
+            if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked)
+                vector = asic_irq_vector(&cpc->asic);
+            z80_interrupt(&cpc->cpu, vector);
         }
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;

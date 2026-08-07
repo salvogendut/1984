@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "cartridge.h"
 
 /* CPC memory map:
  *   0x0000-0x3FFF  lower ROM (OS) or RAM bank
@@ -51,15 +52,31 @@ typedef struct {
      * just those is enough to pass detection and let FUZIX proceed to
      * use C_SDREAD/C_SDWRITE, which we already emulate. */
     u8   m4_snapshot_rom_stub[ROM_OS_SIZE];
+
+    /* CPC Plus cartridge/ASIC memory mapping. Cartridge ROM pages are 16 KB;
+     * RMR2 can map one into any lower 16 KB bank or expose ASIC registers at
+     * 0x4000-0x7FFF. The register page starts as backing storage and is
+     * interpreted by the ASIC implementation as support is added. */
+    Cartridge cartridge;
+    bool plus;
+    u8   plus_lower_bank;
+    u8   plus_lower_page;
+    bool plus_register_page;
+    u8   plus_registers[CARTRIDGE_PAGE_SIZE];
 } Mem;
 
 void mem_init(Mem *m);
 int  mem_load_os(Mem *m, const char *path);            /* reload lower ROM only */
 int  mem_load_rom(Mem *m, const char *os_path, const char *basic_path);
+int  mem_load_cartridge(Mem *m, const char *path);
 int  mem_load_amsdos(Mem *m, const char *path);        /* slot 7 default; non-fatal */
 void mem_unload_amsdos(Mem *m);                        /* clear slot 7 default */
 int  mem_load_rom_ext(Mem *m, int slot, const char *path);  /* expansion slot 0-31 */
 void mem_unload_rom_ext(Mem *m, int slot);
+void mem_plus_reset_mapping(Mem *m);
+void mem_plus_set_rmr2(Mem *m, u8 value);
+void mem_plus_select_upper_rom(Mem *m, u8 value);
 u8   mem_read(Mem *m, u16 addr);
-u8   mem_read_video(Mem *m, u16 addr);   /* CRTC/GA always reads RAM, bypasses ROM */
+u8   mem_read_video(const Mem *m, u16 addr); /* CRTC/GA reads RAM, bypassing ROM */
+u8   mem_read_dma(Mem *m, u16 addr);     /* Plus DMA sees physical base RAM */
 void mem_write(Mem *m, u16 addr, u8 val);

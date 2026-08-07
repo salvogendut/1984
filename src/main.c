@@ -317,7 +317,7 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
 
 static void apply_led_enables(const Config *cfg) {
     /* Floppies: shown when an FDC is wired (664/6128 built-in; 464 needs DDI-1). */
-    bool fdc_present = (cfg->model == MODEL_6128) || (cfg->model == MODEL_664) || cfg->dd1;
+    bool fdc_present = cpc_model_has_builtin_fdc(cfg->model) || cfg->dd1;
     leds_set_enabled(LED_FDC_A, fdc_present);
     leds_set_enabled(LED_FDC_B, fdc_present);
     /* MX4-bus cards light when the expansion bus is connected — they carry
@@ -364,6 +364,9 @@ static void usage(const char *prog, int code) {
         "  --464               Boot as CPC 464 (overrides config)\n"
         "  --664               Boot as CPC 664 (overrides config)\n"
         "  --6128              Boot as CPC 6128 (overrides config)\n"
+        "  --464plus           Boot as CPC 464 Plus (overrides config)\n"
+        "  --6128plus          Boot as CPC 6128 Plus (overrides config)\n"
+        "  --crtc=TYPE         CRTC type: auto, type0, type1, type2 or type3\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
         "  --config=PATH       Use PATH as the config file instead of ~/.config/1984/1984.conf\n"
@@ -372,6 +375,7 @@ static void usage(const char *prog, int code) {
         "  --disk-b=PATH       Mount a DSK image in drive B (overrides config)\n"
         "  --sdl-fm            Force the built-in SDL disk-image browser\n"
         "  --rom-os=PATH       Replace the OS (lower) ROM image\n"
+        "  --cartridge=PATH    Load a CPC Plus RIFF CPR cartridge\n"
         "  --rom-slot=N:PATH   Load a ROM image into upper ROM slot N (0-31)\n"
         "                      May be specified multiple times\n"
         "  --trace-io          Log CRTC/Gate Array register writes to stderr\n"
@@ -461,6 +465,7 @@ int main(int argc, char *argv[]) {
     const char *disk_b_arg      = NULL;
     bool        sdl_fm          = false;  /* force built-in Media disk browser */
     const char *rom_os_arg      = NULL;
+    const char *cartridge_arg   = NULL;
     int         screenshot_frame = -1;
     const char *screenshot_path  = NULL;
     int         save_sna_frame   = -1;
@@ -485,6 +490,8 @@ int main(int argc, char *argv[]) {
     PilotTarget pilot_target0    = PILOT_MOUSE;  /* --pilot=mouse|joystick */
     bool        pilot_reply_stderr = false;    /* --pilot-replies-stderr */
     CpcModel    model_override   = (CpcModel)-1;  /* -1 = no override */
+    CrtcType    crtc_override    = CRTC_TYPE_AUTO;
+    bool        crtc_override_set = false;
     bool        dd1_override     = false;
     int         memory_override  = 0;             /* 0 = no override */
 
@@ -513,6 +520,8 @@ int main(int argc, char *argv[]) {
             sdl_fm = true;
         else if (strncmp(argv[i], "--rom-os=", 9) == 0 && argv[i][9] != '\0')
             rom_os_arg = argv[i] + 9;
+        else if (strncmp(argv[i], "--cartridge=", 12) == 0 && argv[i][12] != '\0')
+            cartridge_arg = argv[i] + 12;
         else if (strncmp(argv[i], "--rom-slot=", 11) == 0 && argv[i][11] != '\0') {
             const char *arg = argv[i] + 11;
             char *colon = strchr(arg, ':');
@@ -537,6 +546,18 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_664;
         } else if (strcmp(argv[i], "--6128") == 0) {
             model_override = MODEL_6128;
+        } else if (strcmp(argv[i], "--464plus") == 0) {
+            model_override = MODEL_464_PLUS;
+        } else if (strcmp(argv[i], "--6128plus") == 0) {
+            model_override = MODEL_6128_PLUS;
+        } else if (strncmp(argv[i], "--crtc=", 7) == 0 && argv[i][7] != '\0') {
+            if (!config_parse_crtc_type(argv[i] + 7, &crtc_override)) {
+                fprintf(stderr,
+                        "%s: --crtc must be auto, type0, type1, type2 or type3\n",
+                        argv[0]);
+                return 2;
+            }
+            crtc_override_set = true;
         } else if (strcmp(argv[i], "--dd1") == 0) {
             dd1_override = true;
         } else if (strncmp(argv[i], "--memory=", 9) == 0 && argv[i][9] != '\0') {
@@ -690,6 +711,8 @@ int main(int argc, char *argv[]) {
 
     if (model_override != (CpcModel)-1)
         config_set_model(&cfg, model_override);
+    if (crtc_override_set)
+        cfg.crtc_type = crtc_override;
     if (memory_override)
         cfg.memory_kb = memory_override;
     if (dd1_override)
@@ -697,6 +720,8 @@ int main(int argc, char *argv[]) {
     if (disk_a_arg) snprintf(cfg.disk_a, sizeof(cfg.disk_a), "%s", disk_a_arg);
     if (disk_b_arg) snprintf(cfg.disk_b, sizeof(cfg.disk_b), "%s", disk_b_arg);
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
+    if (cartridge_arg)
+        snprintf(cfg.cartridge, sizeof(cfg.cartridge), "%s", cartridge_arg);
     if (printer_pdf_dir_arg) {
         snprintf(cfg.pdf_printer_dir, sizeof(cfg.pdf_printer_dir), "%s", printer_pdf_dir_arg);
         cfg.pdf_printer = true;
@@ -742,7 +767,7 @@ int main(int argc, char *argv[]) {
     notify_init();
     notify_set_mode(cfg.notifications);
     RealTapeMode real_tape_mode =
-        cfg.tinker && (cpc.model == MODEL_464 || cfg.external_tape)
+        cfg.tinker && (cpc_model_has_builtin_tape(cpc.model) || cfg.external_tape)
             ? cfg.real_tape_mode : REAL_TAPE_OFF;
     if (real_tape_mode_has_input(real_tape_mode) &&
         cfg.real_tape_wav[0] &&
@@ -1221,11 +1246,14 @@ int main(int argc, char *argv[]) {
             overlay.needs_cold_boot = false;
             cpc.model = cfg.model;
             cpc.mem.ram_size = cfg.memory_kb * 1024;
-            mem_load_rom(&cpc.mem, cfg.rom_os, cfg.rom_basic);
+            if (cpc_model_is_plus(cpc.model))
+                mem_load_cartridge(&cpc.mem, cfg.cartridge);
+            else
+                mem_load_rom(&cpc.mem, cfg.rom_os, cfg.rom_basic);
             /* AMSDOS is built-in on 6128 and supplied by DDI-1 on the 464;
              * config_set_model / config_apply_dd1 already nail rom_amsdos
              * to the right value, so just mirror it into the live ROM map. */
-            if (cfg.rom_amsdos[0])
+            if (!cpc_model_is_plus(cpc.model) && cfg.rom_amsdos[0])
                 mem_load_amsdos(&cpc.mem, cfg.rom_amsdos);
             else
                 mem_unload_amsdos(&cpc.mem);
@@ -1296,7 +1324,7 @@ int main(int argc, char *argv[]) {
             apply_led_enables(&cfg);
             tape_eject(&cpc.tape);
             if (cfg.tape[0] &&
-                    (cpc.model == MODEL_464 || cfg.external_tape))
+                    (cpc_model_has_builtin_tape(cpc.model) || cfg.external_tape))
                 tape_load(&cpc.tape, cfg.tape);
             /* Release mouse capture on cold boot */
             if (mouse_captured)
@@ -1429,6 +1457,8 @@ int main(int argc, char *argv[]) {
             const char *model_str = "CPC 6128";
             if (cpc.model == MODEL_464) model_str = "CPC 464";
             else if (cpc.model == MODEL_664) model_str = "CPC 664";
+            else if (cpc.model == MODEL_464_PLUS) model_str = "CPC 464 Plus";
+            else if (cpc.model == MODEL_6128_PLUS) model_str = "CPC 6128 Plus";
             const char *keys = host_mount_available
                 ? "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
                   "F9=options  F10=cards  F11=fullscreen  F12=quit"
