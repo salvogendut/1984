@@ -373,9 +373,18 @@ AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
 }
 
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
-                            u32 *pixels) {
+                            u8 vertical_sync_pos, u32 *pixels) {
     int sprite_row[ASIC_SPRITE_COUNT];
     unsigned beam_y = (((unsigned)vcc & 0x3F) << 3) | (vlc & 7);
+    int border_width = 64 + (asic->extend_border ? 16 : 0);
+    int border_height = 40 + 8 * (30 - (int)vertical_sync_pos);
+
+    /* Sprite coordinates ignore CRTC display enable, but the visible Plus
+     * monitor window still clips the outer coordinate range. These limits
+     * match Caprice32, including SSCR's 16-pixel horizontal displacement. */
+    if ((int)beam_y <= border_height ||
+            (int)beam_y >= border_height + 200)
+        return;
 
     /* Sprite coordinates are compared directly with CRTC counters. This is
      * deliberately done while the beam is drawing: Plus software can change
@@ -393,6 +402,9 @@ void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
      * Sprite 0 has highest priority, so the first opaque sprite wins. */
     unsigned beam_x = ((unsigned)hcc * 16) & 0x3FF;
     for (int x = 0; x < 16; x++, beam_x = (beam_x + 1) & 0x3FF) {
+        if ((int)beam_x <= border_width ||
+                (int)beam_x >= border_width + 640)
+            continue;
         for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
             int mx = asic->sprite_mag_x[id];
             if (sprite_row[id] < 0)

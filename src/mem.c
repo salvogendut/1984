@@ -287,8 +287,9 @@ u8 mem_read_video(const Mem *m, u16 addr) {
 }
 
 u8 mem_read_dma(Mem *m, u16 addr) {
-    u32 off = m->ram_bank ? banked_ram_offset(m, addr) : (u32)addr;
-    return read_ram(m, off);
+    /* Plus DMA source addresses are physical base-RAM addresses. The ASIC
+     * bypasses both ROM overlays and the CPU's Gate Array RAM mapping. */
+    return read_ram(m, (u32)addr);
 }
 
 void mem_write(Mem *m, u16 addr, u8 val) {

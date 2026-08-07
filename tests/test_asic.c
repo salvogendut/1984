@@ -301,6 +301,7 @@ static void test_dma_pause_cadence(void) {
 static void test_sprite_beam_composition(void) {
     Asic asic = {0};
     u32 pixels[16];
+    const u8 vertical_sync_pos = 30;
 
     for (int i = 0; i < 16; i++)
         pixels[i] = 0x010203;
@@ -308,10 +309,12 @@ static void test_sprite_beam_composition(void) {
     asic.palette[18] = 0x445566;
     asic.sprite_mag_x[0] = 1;
     asic.sprite_mag_y[0] = 1;
+    asic.sprite_x[0] = 80;
+    asic.sprite_y[0] = 48;
     asic.sprite[0][0][0] = 1;
     asic.sprite[0][1][0] = 2;
 
-    asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 0, vertical_sync_pos, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
     assert(pixels[2] == 0x010203);
@@ -321,35 +324,85 @@ static void test_sprite_beam_composition(void) {
     asic.sprite_mag_y[1] = 1;
     asic.sprite[1][0][0] = 2;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
+    asic.sprite_x[1] = 80;
+    asic.sprite_y[1] = 48;
+    asic_draw_sprites_char(&asic, 5, 6, 0, vertical_sync_pos, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
 
-    /* Coordinates wrap, allowing a sprite to begin just left of X=0. */
+    /* Wrapped coordinates outside the visible Plus monitor are clipped. */
     asic.sprite_x[0] = 0x3FF;
     asic.sprite[0][1][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 0, 0, 0, pixels);
-    assert(pixels[0] == 0x112233);
+    asic_draw_sprites_char(&asic, 0, 6, 0, vertical_sync_pos, pixels);
+    assert(pixels[0] == 0);
 
     /* Each CRTC character advances 16 sprite-coordinate pixels. */
-    asic.sprite_x[0] = 16;
+    asic.sprite_x[0] = 96;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 1, 0, 0, pixels);
+    asic_draw_sprites_char(&asic, 6, 6, 0, vertical_sync_pos, pixels);
     assert(pixels[0] == 0x112233);
 
     /* Sprite Y comparison is nine-bit: (VCC[5:0] << 3) | VLC[2:0]. */
-    asic.sprite_x[0] = 0;
-    asic.sprite_y[0] = 19;
+    asic.sprite_x[0] = 80;
+    asic.sprite_y[0] = 51;
     asic.sprite[0][0][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 0, 2, 3, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 3, vertical_sync_pos, pixels);
     assert(pixels[0] == 0x112233);
 
     asic.sprite_y[0] = 259;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 0, 32, 3, pixels);
+    asic_draw_sprites_char(&asic, 5, 32, 3, 3, pixels);
     assert(pixels[0] == 0x112233);
+}
+
+static void test_sprite_monitor_clipping(void) {
+    Asic asic = {0};
+    u32 pixels[16] = {0};
+
+    asic.palette[17] = 0x112233;
+    asic.sprite_mag_x[0] = 1;
+    asic.sprite_mag_y[0] = 1;
+    asic.sprite[0][0][0] = 1;
+
+    /* With R7=30 the normal visible window is X=65..703, Y=41..239. */
+    asic.sprite_x[0] = 64;
+    asic.sprite_y[0] = 48;
+    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
+    assert(pixels[0] == 0);
+
+    asic.sprite_x[0] = 65;
+    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
+    assert(pixels[0] == 0);
+    assert(pixels[1] == 0x112233);
+
+    memset(pixels, 0, sizeof(pixels));
+    asic.sprite_x[0] = 704;
+    asic_draw_sprites_char(&asic, 44, 6, 0, 30, pixels);
+    assert(pixels[0] == 0);
+
+    /* SSCR extend-border shifts both horizontal clip edges by 16 pixels. */
+    asic.extend_border = true;
+    asic.sprite_x[0] = 65;
+    asic_draw_sprites_char(&asic, 4, 6, 0, 30, pixels);
+    assert(pixels[1] == 0);
+
+    asic.extend_border = false;
+    asic.sprite_x[0] = 80;
+    asic.sprite_y[0] = 40;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 5, 5, 0, 30, pixels);
+    assert(pixels[0] == 0);
+
+    asic.sprite_y[0] = 41;
+    asic_draw_sprites_char(&asic, 5, 5, 1, 30, pixels);
+    assert(pixels[0] == 0x112233);
+
+    asic.sprite_y[0] = 240;
+    pixels[0] = 0;
+    asic_draw_sprites_char(&asic, 5, 30, 0, 30, pixels);
+    assert(pixels[0] == 0);
 }
 
 int main(void) {
@@ -358,5 +411,6 @@ int main(void) {
     test_vectored_interrupts();
     test_dma_pause_cadence();
     test_sprite_beam_composition();
+    test_sprite_monitor_clipping();
     return 0;
 }

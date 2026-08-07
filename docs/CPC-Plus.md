@@ -25,13 +25,22 @@ The initial ASIC implementation includes:
 - the documented lock/unlock sequence and RMR2 mapping;
 - the 32-entry 12-bit palette;
 - sixteen 16x16 hardware sprites with magnification, priority, coordinate
-  wrapping, and raster-time register updates;
+  wrapping, raster-time register updates, and outer monitor-window clipping;
 - horizontal and vertical soft scrolling;
 - CRTC-derived programmable raster interrupts and screen splits;
 - ASIC interrupt-mode-2 vectors and source acknowledgement;
 - three PSG DMA channels with pause/prescaler timing, repeat, loop, interrupt,
-  and stop;
+  and stop, fetching instructions from physical base RAM independently of
+  CPU RAM banking and ROM overlays;
 - Plus-aware 64 KB/128 KB, cassette, and floppy model defaults.
+
+The display records per-frame monitor-beam coverage and fills untouched output
+pixels with the current border colour before presentation. This avoids stale
+sprite or raster content outside the area scanned by a short Plus frame.
+Hardware sprites remain independent of CRTC display enable, as on the ASIC, so
+they can appear in the inner border. Their outer limits follow Caprice32's Plus
+monitor window, including the 16-pixel horizontal shift selected by SSCR's
+extend-border bit.
 
 Caprice32 is the general behavioral reference, with Sugarbox used where its
 Plus behavior is more complete. The v4 system cartridge, 1942, Robocop 2,

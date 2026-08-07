@@ -112,8 +112,11 @@ void display_destroy(Display *d) {
 }
 
 void display_put_pixel(Display *d, u32 rgb) {
-    if (d->scan_x < CPC_SCREEN_W && d->scan_y < CPC_SCREEN_H)
-        d->pixels[d->scan_y * CPC_SCREEN_W + d->scan_x] = rgb;
+    if (d->scan_x < CPC_SCREEN_W && d->scan_y < CPC_SCREEN_H) {
+        int off = d->scan_y * CPC_SCREEN_W + d->scan_x;
+        d->pixels[off] = rgb;
+        d->touched[off] = 1;
+    }
     d->scan_x++;
 }
 
@@ -125,6 +128,15 @@ void display_next_line(Display *d) {
 void display_vsync(Display *d) {
     d->scan_x = 0;
     d->scan_y = 0;
+}
+
+void display_finalize_frame(Display *d, u32 blank) {
+    int n = CPC_SCREEN_W * CPC_SCREEN_H;
+    for (int i = 0; i < n; i++) {
+        if (!d->touched[i])
+            d->pixels[i] = blank;
+        d->touched[i] = 0;
+    }
 }
 
 void display_upload(Display *d) {

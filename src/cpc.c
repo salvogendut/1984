@@ -1469,7 +1469,8 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             if (cpc_model_is_plus(cpc->model))
                 asic_draw_sprites_char(&cpc->asic, cpc->crtc_pre_hcc,
                                        cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
-                                       row + px);
+                                       cpc->crtc.reg[7], row + px);
+            memset(cpc->display.touched + py * CPC_SCREEN_W + px, 1, 16);
         }
 
         /* CRTC timing changes happen after the current character is output,
@@ -1493,6 +1494,8 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                              cpc->crtc.vcc, cpc->crtc.vlc, false);
         }
         if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync)) {
+            display_finalize_frame(&cpc->display,
+                                   cpc->ga.resolved_ink[16]);
             display_upload(&cpc->display);
         }
 

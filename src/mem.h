@@ -78,5 +78,5 @@ void mem_plus_set_rmr2(Mem *m, u8 value);
 void mem_plus_select_upper_rom(Mem *m, u8 value);
 u8   mem_read(Mem *m, u16 addr);
 u8   mem_read_video(const Mem *m, u16 addr); /* CRTC/GA reads RAM, bypassing ROM */
-u8   mem_read_dma(Mem *m, u16 addr);     /* Plus DMA sees banked RAM, bypasses ROM */
+u8   mem_read_dma(Mem *m, u16 addr);     /* Plus DMA sees physical base RAM */
 void mem_write(Mem *m, u16 addr, u8 val);

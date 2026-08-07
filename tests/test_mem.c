@@ -105,11 +105,26 @@ static void test_plus_cartridge_mapping(void) {
     assert(mem.ram[0x6400] == 0x00);
 }
 
+static void test_plus_dma_ignores_cpu_ram_mapping(void) {
+    Mem mem;
+    mem_init(&mem);
+
+    /* Mode 4 maps CPU addresses 4000-7FFF to expansion RAM, but ASIC DMA
+     * addresses remain physical offsets in the base 64 KB. */
+    mem.ram_bank = 4;
+    mem.ram[0x4000] = 0x11;
+    mem.ram[0x10000] = 0x22;
+
+    assert(mem_read(&mem, 0x4000) == 0x22);
+    assert(mem_read_dma(&mem, 0x4000) == 0x11);
+}
+
 int main(void) {
     test_absent_upper_rom_falls_back_to_basic();
     test_present_extension_rom_wins();
     test_amsdos_slot_still_wins();
     test_disabled_upper_rom_reads_ram();
     test_plus_cartridge_mapping();
+    test_plus_dma_ignores_cpu_ram_mapping();
     return 0;
 }

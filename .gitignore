@@ -39,6 +39,7 @@ roms/*
 dimitri-note*.md
 notes/
 *.note.md
+/HANDOVER.md
 
 # Runtime screenshots from --screenshot-at and overlay capture
 1984_*.ppm
