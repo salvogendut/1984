@@ -373,7 +373,7 @@ AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
 }
 
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
-                            u32 *pixels) {
+                            u8 chars_per_row, u32 *pixels) {
     int sprite_row[ASIC_SPRITE_COUNT];
     unsigned beam_y = (((unsigned)vcc & 0x3F) << 3) | (vlc & 7);
 
@@ -391,15 +391,15 @@ void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
             ? (int)(rel_y / (unsigned)my) : -1;
     }
 
-    /* Sprite X coordinates use the 640-pixel (mode 2) clock. A CRTC
-     * character therefore spans 16 coordinates in this output buffer.
-     * Caprice32 clips sprites to this same 640-column window after
-     * translating its frame border; do the equivalent in the counter space
-     * sprites draw in. Sprite 0 has highest priority, so the first opaque
-     * sprite wins. */
+    /* Sprite X coordinates use the 640-pixel (mode 2) clock: a CRTC character
+     * spans 16 coordinates. The visible sprite window is the CRTC display
+     * width (R1) in counter space, matching MAME, which clips sprites to the
+     * display-enable area: sprites enter and leave exactly at the playfield
+     * edges and never bleed into the side borders. Sprite 0 has highest
+     * priority, so the first opaque sprite wins. */
     unsigned beam_x = ((unsigned)hcc * 16) & 0x3FF;
     for (int x = 0; x < 16; x++, beam_x = (beam_x + 1) & 0x3FF) {
-        if ((int)beam_x <= 0 || (int)beam_x >= 640)
+        if ((int)beam_x >= (int)chars_per_row * 16)
             continue;
         for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
             int mx = asic->sprite_mag_x[id];

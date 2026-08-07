@@ -313,7 +313,7 @@ static void test_sprite_beam_composition(void) {
     asic.sprite[0][0][0] = 1;
     asic.sprite[0][1][0] = 2;
 
-    asic_draw_sprites_char(&asic, 5, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
     assert(pixels[2] == 0x010203);
@@ -325,21 +325,21 @@ static void test_sprite_beam_composition(void) {
     pixels[0] = pixels[1] = 0;
     asic.sprite_x[1] = 80;
     asic.sprite_y[1] = 48;
-    asic_draw_sprites_char(&asic, 5, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
     assert(pixels[1] == 0x445566);
 
-    /* Wrapped coordinates outside the visible Plus monitor are clipped. */
+    /* A wrapped negative X (0x3FF = -1) renders at the display left edge. */
     asic.sprite_x[0] = 0x3FF;
     asic.sprite[0][1][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 0, 6, 0, pixels);
-    assert(pixels[0] == 0);
+    asic_draw_sprites_char(&asic, 0, 6, 0, 40, pixels);
+    assert(pixels[0] == 0x112233);
 
     /* Each CRTC character advances 16 sprite-coordinate pixels. */
     asic.sprite_x[0] = 96;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 6, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 6, 6, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
 
     /* Sprite Y comparison is nine-bit: (VCC[5:0] << 3) | VLC[2:0]. */
@@ -347,14 +347,14 @@ static void test_sprite_beam_composition(void) {
     asic.sprite_y[0] = 51;
     asic.sprite[0][0][0] = 1;
     pixels[0] = pixels[1] = 0;
-    asic_draw_sprites_char(&asic, 5, 6, 3, pixels);
+    asic_draw_sprites_char(&asic, 5, 6, 3, 40, pixels);
     assert(pixels[0] == 0x112233);
 
     /* There is no vertical clip: rows below the 200-line window draw as long
      * as the beam reaches them (overscan modes such as GNG's 248-line one). */
     asic.sprite_y[0] = 259;
     pixels[0] = 0;
-    asic_draw_sprites_char(&asic, 5, 32, 3, pixels);
+    asic_draw_sprites_char(&asic, 5, 32, 3, 40, pixels);
     assert(pixels[0] == 0x112233);
 }
 
@@ -367,42 +367,58 @@ static void test_sprite_monitor_clipping(void) {
     asic.sprite_mag_y[0] = 1;
     asic.sprite[0][0][0] = 1;
 
-    /* Sprite coordinates are compared with the CRTC counters, so the
-     * visible window is the standard 200-line screen in counter space:
-     * X=1..639, Y=1..199. A sprite at X=64 lands fully inside. */
+    /* Sprite X is the CRTC counter; a sprite at X=64 fills char 4. */
     asic.sprite_x[0] = 64;
     asic.sprite_y[0] = 48;
-    asic_draw_sprites_char(&asic, 4, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 4, 6, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
 
-    /* The single beam_x=0 subpixel of column zero is the only clipped
-     * pixel at the left edge; the sprite still enters from X=1. */
+    /* Column zero is fully drawn for a sprite at X=0 (no left clip). */
+    asic.sprite_x[0] = 0;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 0, 6, 0, 40, pixels);
+    assert(pixels[0] == 0x112233);
+
+    /* A sprite at X=1 leaves pixel 0 transparent; its first column is at
+     * beam_x 1, so it enters exactly at the display left edge. */
     asic.sprite_x[0] = 1;
     memset(pixels, 0, sizeof(pixels));
-    asic_draw_sprites_char(&asic, 0, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 0, 6, 0, 40, pixels);
     assert(pixels[0] == 0);
     assert(pixels[1] == 0x112233);
 
-    /* Beyond the 640-column window is clipped. */
+    /* The clip follows the CRTC display width (R1): with R1=34, the last
+     * drawable sprite column is X=543; X=544 (char 34) is clipped. */
+    asic.sprite_x[0] = 543;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 33, 6, 0, 34, pixels);
+    assert(pixels[15] == 0x112233);
+
+    asic.sprite_x[0] = 544;
+    memset(pixels, 0, sizeof(pixels));
+    asic_draw_sprites_char(&asic, 34, 6, 0, 34, pixels);
+    assert(pixels[0] == 0);
+
+    /* With a 40-char display, X=640 is clipped. */
     asic.sprite_x[0] = 640;
     memset(pixels, 0, sizeof(pixels));
-    asic_draw_sprites_char(&asic, 40, 6, 0, pixels);
+    asic_draw_sprites_char(&asic, 40, 6, 0, 40, pixels);
     assert(pixels[0] == 0);
 
     /* Vertical extent is not clipped: sprites may draw in the lower border. */
     asic.sprite_x[0] = 64;
     asic.sprite_y[0] = 0;
     memset(pixels, 0, sizeof(pixels));
-    asic_draw_sprites_char(&asic, 4, 0, 0, pixels);
+    asic_draw_sprites_char(&asic, 4, 0, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
 
     asic.sprite_y[0] = 199;
-    asic_draw_sprites_char(&asic, 4, 24, 7, pixels);
+    asic_draw_sprites_char(&asic, 4, 24, 7, 40, pixels);
     assert(pixels[0] == 0x112233);
 
     asic.sprite_y[0] = 200;
     memset(pixels, 0, sizeof(pixels));
-    asic_draw_sprites_char(&asic, 4, 25, 0, pixels);
+    asic_draw_sprites_char(&asic, 4, 25, 0, 40, pixels);
     assert(pixels[0] == 0x112233);
 }
 

@@ -38,10 +38,10 @@ The display records per-frame monitor-beam coverage and fills untouched output
 pixels with the current border colour before presentation. This avoids stale
 sprite or raster content outside the area scanned by a short Plus frame.
 Hardware sprites remain independent of CRTC display enable, as on the ASIC, so
-they can appear in the inner border. Their horizontal range is clipped to the
-640-column screen in CRTC-counter space; vertically there is no clip beyond the
-scanlines the monitor beam actually draws, so overscan modes keep sprites at
-the bottom of the playfield.
+they can appear in the inner border vertically. Horizontally they are clipped
+to the CRTC display width (R1) in counter space, matching MAME: sprites enter
+and leave exactly at the playfield edges and never bleed into the side
+borders.
 
 Caprice32 is the general behavioral reference, with Sugarbox used where its
 Plus behavior is more complete. The v4 system cartridge, 1942, Robocop 2,
