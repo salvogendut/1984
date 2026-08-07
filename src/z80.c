@@ -586,6 +586,7 @@ void z80_init(Z80 *cpu) {
     memset(cpu, 0, sizeof(*cpu));
     cpu->sp = 0xFFFF;
     cpu->af = 0xFFFF;
+    cpu->irq_vector = 0xFF;
 }
 
 void z80_reset(Z80 *cpu) {
@@ -594,13 +595,15 @@ void z80_reset(Z80 *cpu) {
     cpu->im = 0;
     cpu->halted = false;
     cpu->pending_irq = false;
+    cpu->irq_vector = 0xFF;
     cpu->int_accepted = false;
     cpu->last_xycb = false;
     cpu->last_prefix_ignored = false;
     cpu->iWSAdjust = 0;
 }
 
-void z80_interrupt(Z80 *cpu) {
+void z80_interrupt(Z80 *cpu, u8 vector) {
+    cpu->irq_vector = vector;
     cpu->pending_irq = true;
 }
 
@@ -804,7 +807,8 @@ static int z80_step_impl(Z80 *cpu, Z80Bus *bus) {
                 cpu->pc = 0x0038; return 20 + adj;
             case 2:
                 if (bus->tick) bus->tick(bus->ctx, 28 + adj);
-                cpu->pc = read16(bus, (u16)((cpu->i << 8) | 0xFF));
+                cpu->pc = read16(bus,
+                    (u16)((cpu->i << 8) | cpu->irq_vector));
                 return 28 + adj;
         }
     }

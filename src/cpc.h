@@ -148,6 +148,8 @@ typedef struct {
      * middle of an IO instruction and the next chunk resumes from the
      * state the previous chunk left here. Updated after each CRTC tick. */
     u16  crtc_pre_ma;
+    u16  crtc_pre_hcc;
+    u16  crtc_pre_vcc;
     u8   crtc_pre_ra;
     bool crtc_pre_de;
 

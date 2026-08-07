@@ -2,10 +2,11 @@
 
 #include <string.h>
 #include "crtc.h"
-#include "display.h"
 #include "gate_array.h"
 #include "mem.h"
 #include "psg.h"
+
+static void dma_store_status(Asic *asic, Mem *mem);
 
 static u8 decode_magnification(u8 value) {
     value &= 3;
@@ -102,7 +103,11 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
         asic->vscroll = (value >> 4) & 7;
         asic->extend_border = (value & 0x80) != 0;
         break;
-    case 0x6805: asic->interrupt_vector = value & 0xF8; break;
+    case 0x6805:
+        /* D7-D3 form the vector base. D0 controls automatic DMA IRQ
+         * acknowledgement; D2-D1 are supplied by the interrupt source. */
+        asic->interrupt_vector = value & 0xF9;
+        break;
     case 0x6C00: case 0x6C04: case 0x6C08: {
         int channel = (addr - 0x6C00) >> 2;
         asic->dma[channel].source =
@@ -126,6 +131,7 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
             if (value & (0x40u >> channel))
                 asic->dma[channel].interrupt = false;
         }
+        dma_store_status(asic, mem);
         break;
     default:
         break;
@@ -133,7 +139,7 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
 }
 
 static void dma_store_status(Asic *asic, Mem *mem) {
-    u8 status = 0;
+    u8 status = asic->raster_interrupt ? 0x80 : 0;
     for (int i = 0; i < ASIC_DMA_CHANNELS; i++) {
         AsicDmaChannel *channel = &asic->dma[i];
         mem->plus_registers[0x2C00 + i * 4] = channel->source & 0xFF;
@@ -169,7 +175,12 @@ static void dma_cycle(Asic *asic, Mem *mem, PSG *psg, GateArray *ga) {
         } else {
             if (opcode & 1) {
                 channel->pause = instruction & 0x0FFF;
-                channel->prescale_count = 0;
+                /* PAUSE execution is part of the requested delay. Prime the
+                 * prescaler so the following instruction is fetched after
+                 * exactly pause * (prescaler + 1) HSYNC periods. */
+                if (channel->pause && !channel->prescaler)
+                    channel->pause--;
+                channel->prescale_count = channel->prescaler ? 1 : 0;
             }
             if (opcode & 2) {
                 channel->loops = instruction & 0x0FFF;
@@ -198,54 +209,120 @@ void asic_hsync(Asic *asic, Mem *mem, PSG *psg, GateArray *ga) {
 
     asic->scanline++;
     ga_hsync(ga);
-    if (asic->raster_line)
+    bool legacy_raster = !pending && ga->interrupt_pending;
+    if (asic->raster_line) {
         ga->interrupt_pending = pending;
-    if (asic->raster_line && (u8)asic->scanline == asic->raster_line)
-        ga->interrupt_pending = true;
+    } else if (legacy_raster) {
+        asic->raster_interrupt = true;
+    }
     dma_cycle(asic, mem, psg, ga);
+}
+
+void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
+    if (!asic->raster_line)
+        return;
+
+    /* The programmable interrupt comparator is sampled 10 character clocks
+     * after HSYNC starts, independently of the programmed HSYNC width. */
+    u8 irq_hcc = (u8)(crtc->reg[2] + 10);
+    if ((u8)crtc->hcc != irq_hcc)
+        return;
+
+    u8 line = (u8)(((crtc->vcc & 0x1F) << 3) | (crtc->vlc & 7));
+    if (line == asic->raster_line) {
+        asic->raster_interrupt = true;
+        ga->interrupt_pending = true;
+        dma_store_status(asic, mem);
+    }
 }
 
 void asic_new_frame(Asic *asic) {
     asic->scanline = 0;
 }
 
-void asic_apply_split(const Asic *asic, CRTC *crtc) {
-    if (!asic->split_line || (u8)asic->scanline != asic->split_line)
+bool asic_irq_pending(const Asic *asic) {
+    if (asic->raster_interrupt) return true;
+    for (int i = 0; i < ASIC_DMA_CHANNELS; i++)
+        if (asic->dma[i].interrupt) return true;
+    return false;
+}
+
+u8 asic_irq_vector(const Asic *asic) {
+    u8 source = 6; /* Raster IRQ, including the legacy 52-HSYNC source. */
+    if (!asic->raster_interrupt) {
+        if (asic->dma[2].interrupt) source = 0;
+        else if (asic->dma[1].interrupt) source = 2;
+        else if (asic->dma[0].interrupt) source = 4;
+    }
+    return (asic->interrupt_vector & 0xF8) | source;
+}
+
+void asic_irq_ack(Asic *asic, Mem *mem, GateArray *ga) {
+    if (asic->raster_interrupt) {
+        asic->raster_interrupt = false;
+        ga_irq_ack(ga);
+    } else if (!(asic->interrupt_vector & 1)) {
+        /* DMA priority is channel 2, then 1, then 0. With IVR bit 0 clear,
+         * the acknowledged channel is automatically removed from DCSR. */
+        for (int i = ASIC_DMA_CHANNELS - 1; i >= 0; i--) {
+            if (asic->dma[i].interrupt) {
+                asic->dma[i].interrupt = false;
+                break;
+            }
+        }
+    }
+    dma_store_status(asic, mem);
+    ga->interrupt_pending = asic_irq_pending(asic);
+}
+
+void asic_clear_raster_irq(Asic *asic, Mem *mem) {
+    asic->raster_interrupt = false;
+    dma_store_status(asic, mem);
+}
+
+void asic_apply_split(const Asic *asic, CRTC *crtc, u16 vcc, u16 vlc) {
+    u8 line = (u8)(((vcc & 0x1F) << 3) | (vlc & 7));
+    if (!asic->split_line || line != asic->split_line)
         return;
     crtc->ma = asic->split_address & 0x3FFF;
     crtc->ma_row_start = crtc->ma;
     crtc->ma_next_row = crtc->ma;
 }
 
-void asic_draw_sprites(const Asic *asic, const CRTC *crtc, Display *display) {
-    /* Plus sprite coordinates are relative to a 640x200 display with the
-     * normal 64/40-pixel border origin. Lower-numbered sprites have priority,
-     * so composite from 15 down to 0. */
-    for (int id = ASIC_SPRITE_COUNT - 1; id >= 0; id--) {
+void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
+                            u32 *pixels) {
+    int sprite_row[ASIC_SPRITE_COUNT];
+    unsigned beam_y = (((unsigned)vcc & 0x1F) << 3) | (vlc & 7);
+
+    /* Sprite coordinates are compared directly with CRTC counters. This is
+     * deliberately done while the beam is drawing: Plus software can change
+     * sprite data and attributes several times within one frame. */
+    for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
         int mx = asic->sprite_mag_x[id];
         int my = asic->sprite_mag_y[id];
-        if (!mx || !my) continue;
-        int border_x = 64 + (asic->extend_border ? 16 : 0);
-        int border_y = 40 + 8 * (30 - crtc->reg[7]);
-        if (border_y < 0) border_y = 0;
-        int right = border_x + 640;
-        int bottom = border_y + 200;
-        int sx = (int)asic->sprite_x[id] + border_x;
-        int sy = (int)asic->sprite_y[id] + border_y;
-        for (int y = 0; y < 16; y++) {
-            for (int x = 0; x < 16; x++) {
-                u8 pen = asic->sprite[id][x][y] & 0x0F;
-                if (!pen) continue;
+        unsigned rel_y = (beam_y - asic->sprite_y[id]) & 0x1FF;
+        sprite_row[id] = mx && my && rel_y < (unsigned)(16 * my)
+            ? (int)(rel_y / (unsigned)my) : -1;
+    }
+
+    /* One ASIC X coordinate is half a mode-2 output pixel pair. Sprite 0 has
+     * highest priority, so the first opaque sprite at a coordinate wins. */
+    unsigned beam_x = ((unsigned)hcc * 8) & 0x3FF;
+    for (int x = 0; x < 8; x++, beam_x = (beam_x + 1) & 0x3FF) {
+        for (int id = 0; id < ASIC_SPRITE_COUNT; id++) {
+            int mx = asic->sprite_mag_x[id];
+            if (sprite_row[id] < 0)
+                continue;
+            unsigned rel_x = (beam_x - asic->sprite_x[id]) & 0x3FF;
+            if (rel_x >= (unsigned)(16 * mx))
+                continue;
+            u8 pen = asic->sprite[id][rel_x / (unsigned)mx]
+                                  [sprite_row[id]] & 0x0F;
+            if (pen) {
                 u32 colour = asic->palette[16 + pen];
-                for (int dy = 0; dy < my; dy++) {
-                    int py = sy + y * my + dy;
-                    if (py <= border_y || py >= bottom) continue;
-                    for (int dx = 0; dx < mx; dx++) {
-                        int px = sx + x * mx + dx;
-                        if (px > border_x && px < right)
-                            display->pixels[py * CPC_SCREEN_W + px] = colour;
-                    }
-                }
+                pixels[x * 2] = colour;
+                pixels[x * 2 + 1] = colour;
+                break;
             }
         }
     }

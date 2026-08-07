@@ -247,10 +247,15 @@ static u8 bus_mem_read(void *ctx, u16 addr) {
 static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     if (cpc_model_is_plus(cpc->model) && cpc->mem.plus_register_page &&
-            addr >= 0x4000 && addr < 0x8000)
+            addr >= 0x4000 && addr < 0x8000) {
         asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
-    else
+        if (!asic_irq_pending(&cpc->asic)) {
+            cpc->ga.interrupt_pending = false;
+            cpc->cpu.pending_irq = false;
+        }
+    } else {
         mem_write(&cpc->mem, addr, val);
+    }
     /* Master gate: when no trace env is set, skip every debug hook
      * below. ~1 cycle's worth of branch on the hot path when off. */
     trace_check_master();
@@ -508,8 +513,11 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
             fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
                     cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
         /* Interrupt reset also cancels a request already latched by the CPU. */
-        if ((val & 0xC0) == 0x80 && (val & 0x10))
+        if ((val & 0xC0) == 0x80 && (val & 0x10)) {
             cpc->cpu.pending_irq = false;
+            if (cpc_model_is_plus(cpc->model))
+                asic_clear_raster_irq(&cpc->asic, &cpc->mem);
+        }
         ga_write(&cpc->ga, val);
         cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
         cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
@@ -1394,6 +1402,9 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         bool new_crtc_frame = crtc_new_frame(&cpc->crtc);
         bool latch_mode = crtc_mode_latch(&cpc->crtc);
 
+        if (cpc_model_is_plus(cpc->model))
+            asic_raster_tick(&cpc->asic, &cpc->crtc, &cpc->mem, &cpc->ga);
+
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
         if (!new_hsync && cpc->prev_hsync) {
             if (cpc_model_is_plus(cpc->model))
@@ -1449,6 +1460,10 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 out[8]=c;  out[9]=c;  out[10]=c; out[11]=c;
                 out[12]=c; out[13]=c; out[14]=c; out[15]=c;
             }
+            if (cpc_model_is_plus(cpc->model))
+                asic_draw_sprites_char(&cpc->asic, cpc->crtc_pre_hcc,
+                                       cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
+                                       row + px);
         }
 
         /* CRTC timing changes happen after the current character is output,
@@ -1465,10 +1480,9 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (new_crtc_frame && cpc_model_is_plus(cpc->model))
             asic_new_frame(&cpc->asic);
         if (new_crtc_line && cpc_model_is_plus(cpc->model))
-            asic_apply_split(&cpc->asic, &cpc->crtc);
+            asic_apply_split(&cpc->asic, &cpc->crtc, cpc->crtc_pre_vcc,
+                             cpc->crtc_pre_ra);
         if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync)) {
-            if (cpc_model_is_plus(cpc->model))
-                asic_draw_sprites(&cpc->asic, &cpc->crtc, &cpc->display);
             display_upload(&cpc->display);
         }
 
@@ -1486,6 +1500,8 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
 
         /* Capture next char's pre-tick state */
         cpc->crtc_pre_ma = cpc->crtc.ma;
+        cpc->crtc_pre_hcc = cpc->crtc.hcc;
+        cpc->crtc_pre_vcc = cpc->crtc.vcc;
         cpc->crtc_pre_ra = cpc->crtc.vlc;
         cpc->crtc_pre_de = cpc->crtc.display_enable;
     }
@@ -1569,6 +1585,8 @@ int cpc_frame(CPC *cpc) {
          * run a partial CRTC advance in the middle of an instruction and
          * the resumed chunk picks up where the previous one left off. */
         cpc->crtc_pre_ma = cpc->crtc.ma;
+        cpc->crtc_pre_hcc = cpc->crtc.hcc;
+        cpc->crtc_pre_vcc = cpc->crtc.vcc;
         cpc->crtc_pre_ra = cpc->crtc.vlc;
         cpc->crtc_pre_de = cpc->crtc.display_enable;
 
@@ -1856,8 +1874,15 @@ int cpc_frame(CPC *cpc) {
         }
         /* The GA acknowledges an interrupt as the CPU accepts it, before
          * interrupt-entry cycles advance the scanline counter. */
-        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay)
-            ga_irq_ack(&cpc->ga);
+        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay) {
+            if (cpc_model_is_plus(cpc->model)) {
+                if (!cpc->asic_locked)
+                    cpc->cpu.irq_vector = asic_irq_vector(&cpc->asic);
+                asic_irq_ack(&cpc->asic, &cpc->mem, &cpc->ga);
+            } else {
+                ga_irq_ack(&cpc->ga);
+            }
+        }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
          * "TXT WR CHAR" at &BB5A — A holds the byte to print. By
@@ -1882,7 +1907,10 @@ int cpc_frame(CPC *cpc) {
         /* Deliver pending Gate Array interrupt. */
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
-            z80_interrupt(&cpc->cpu);
+            u8 vector = 0xFF;
+            if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked)
+                vector = asic_irq_vector(&cpc->asic);
+            z80_interrupt(&cpc->cpu, vector);
         }
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;

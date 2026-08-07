@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include "types.h"
 #include "crtc.h"
-#include "display.h"
 #include "gate_array.h"
 #include "mem.h"
 #include "psg.h"
@@ -38,6 +37,7 @@ typedef struct {
     u8 vscroll;
     bool extend_border;
     u8 interrupt_vector;
+    bool raster_interrupt;
     u16 scanline;
 
     AsicDmaChannel dma[ASIC_DMA_CHANNELS];
@@ -47,6 +47,12 @@ void asic_reset(Asic *asic, GateArray *ga);
 void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
                          u16 addr, u8 value);
 void asic_hsync(Asic *asic, Mem *mem, PSG *psg, GateArray *ga);
+void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga);
 void asic_new_frame(Asic *asic);
-void asic_apply_split(const Asic *asic, CRTC *crtc);
-void asic_draw_sprites(const Asic *asic, const CRTC *crtc, Display *display);
+bool asic_irq_pending(const Asic *asic);
+u8 asic_irq_vector(const Asic *asic);
+void asic_irq_ack(Asic *asic, Mem *mem, GateArray *ga);
+void asic_clear_raster_irq(Asic *asic, Mem *mem);
+void asic_apply_split(const Asic *asic, CRTC *crtc, u16 vcc, u16 vlc);
+void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
+                            u32 *pixels);

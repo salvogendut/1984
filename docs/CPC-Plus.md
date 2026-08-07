@@ -18,14 +18,18 @@ The initial ASIC implementation includes:
 
 - the documented lock/unlock sequence and RMR2 mapping;
 - the 32-entry 12-bit palette;
-- sixteen 16x16 hardware sprites with magnification and priority;
+- sixteen 16x16 hardware sprites with magnification, priority, coordinate
+  wrapping, and raster-time register updates;
 - horizontal and vertical soft scrolling;
-- programmable raster interrupts and screen splits;
-- three PSG DMA channels with pause, repeat, loop, interrupt, and stop;
+- CRTC-derived programmable raster interrupts and screen splits;
+- ASIC interrupt-mode-2 vectors and source acknowledgement;
+- three PSG DMA channels with pause/prescaler timing, repeat, loop, interrupt,
+  and stop;
 - Plus-aware 64 KB/128 KB, cassette, and floppy model defaults.
 
-Caprice32 is the behavioral reference. The v4 system cartridge, 1942, and
-Robocop 2 are current smoke/regression cartridges. Exact Plus CRTC type-3
-edge cases, raster-time sprite register changes, and ASIC IM2 interrupt-vector
-delivery remain fidelity work; the normal CPC CRTC path is intentionally used
-for the current Plus profile because it boots the system cartridge reliably.
+Caprice32 is the general behavioral reference. The v4 system cartridge, 1942,
+Robocop 2, and Sonic GX are current smoke/regression cartridges. Sonic GX also
+exercises hardware behavior that Caprice32 does not currently implement,
+including ASIC IM2 interrupt vectors. Exact Plus CRTC type-3 edge cases remain
+fidelity work; the normal CPC CRTC path is intentionally used for the current
+Plus profile because it boots the system cartridge reliably.
