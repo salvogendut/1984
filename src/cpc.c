@@ -1469,7 +1469,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             if (cpc_model_is_plus(cpc->model))
                 asic_draw_sprites_char(&cpc->asic, cpc->crtc_pre_hcc,
                                        cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
-                                       cpc->crtc.reg[7], row + px);
+                                       row + px);
             memset(cpc->display.touched + py * CPC_SCREEN_W + px, 1, 16);
         }
 
