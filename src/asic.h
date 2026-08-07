@@ -72,4 +72,4 @@ AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
                                       u8 crtc_raster, u8 max_raster,
                                       u8 chars_per_row);
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
-                            u32 *pixels);
+                            u8 chars_per_row, u32 *pixels);
