@@ -71,5 +71,6 @@ u16 asic_video_ma(const Asic *asic, u16 crtc_ma);
 AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
                                       u8 crtc_raster, u8 max_raster,
                                       u8 chars_per_row);
+bool asic_scroll_border_active(const Asic *asic, u16 hcc);
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
                             u8 chars_per_row, u32 *pixels);
