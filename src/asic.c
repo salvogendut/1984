@@ -372,6 +372,12 @@ AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
     return pos;
 }
 
+bool asic_scroll_border_active(const Asic *asic, u16 hcc) {
+    /* SSCR bit 7 masks the invalid data exposed by horizontal scrolling by
+     * extending the left border over the first CRTC character. */
+    return asic->extend_border && hcc == 0;
+}
+
 void asic_draw_sprites_char(const Asic *asic, u16 hcc, u16 vcc, u16 vlc,
                             u8 chars_per_row, u32 *pixels) {
     int sprite_row[ASIC_SPRITE_COUNT];

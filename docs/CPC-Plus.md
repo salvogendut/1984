@@ -26,7 +26,8 @@ The initial ASIC implementation includes:
 - the 32-entry 12-bit palette;
 - sixteen 16x16 hardware sprites with magnification, priority, coordinate
   wrapping, raster-time register updates, and clipping to the scanned screen;
-- horizontal and vertical soft scrolling;
+- horizontal and vertical soft scrolling, including SSCR bit 7's one-character
+  left-border mask for the invalid data exposed by horizontal delay;
 - CRTC-derived programmable raster interrupts and screen splits;
 - ASIC interrupt-mode-2 vectors and source acknowledgement;
 - three PSG DMA channels with pause/prescaler timing, repeat, loop, interrupt,

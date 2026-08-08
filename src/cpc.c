@@ -1451,8 +1451,15 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 u16 col  = video_ma & 0x3FF;
                 u16 addr = (u16)((bank << 14) | ((video_ra & 7) << 11) | (col << 1));
                 if (cpc_model_is_plus(cpc->model)) {
-                    render_char_plus(row, px, &cpc->ga, &cpc->mem, addr,
-                                     cpc->asic.hscroll);
+                    if (asic_scroll_border_active(&cpc->asic,
+                                                  cpc->crtc_pre_hcc)) {
+                        u32 border = cpc->ga.resolved_ink[16];
+                        for (int x = 0; x < 16; x++)
+                            row[px + x] = border;
+                    } else {
+                        render_char_plus(row, px, &cpc->ga, &cpc->mem, addr,
+                                         cpc->asic.hscroll);
+                    }
                 } else {
                     u8 b0 = mem_read_video(&cpc->mem, addr);
                     u8 b1 = mem_read_video(&cpc->mem, (u16)(addr + 1));

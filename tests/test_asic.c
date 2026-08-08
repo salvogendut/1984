@@ -38,6 +38,16 @@ static void test_palette_and_sprite_registers(void) {
     asic_register_write(&asic, &ga, &mem, 0x6007, 0x06);
     assert(asic.sprite_mag_x[0] == 1);
     assert(asic.sprite_mag_y[0] == 2);
+
+    /* SSCR bit 7 extends the border over character zero to hide the bytes
+     * exposed before the row start by horizontal soft scrolling. */
+    asic_register_write(&asic, &ga, &mem, 0x6804, 0x8C);
+    assert(asic.hscroll == 12);
+    assert(asic.extend_border);
+    assert(asic_scroll_border_active(&asic, 0));
+    assert(!asic_scroll_border_active(&asic, 1));
+    asic_register_write(&asic, &ga, &mem, 0x6804, 0x0C);
+    assert(!asic_scroll_border_active(&asic, 0));
 }
 
 static void test_raster_split_and_dma(void) {
