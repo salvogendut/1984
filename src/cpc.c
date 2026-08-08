@@ -789,6 +789,7 @@ static CrtcType default_crtc_type(CpcModel model) {
         return CRTC_TYPE_1;
     case MODEL_464_PLUS:
     case MODEL_6128_PLUS:
+    case MODEL_GX4000:
         return CRTC_TYPE_3;
     case MODEL_464:
     case MODEL_664:
@@ -985,7 +986,7 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
                      cfg->print_sink == PRINTER_SINK_REAL_PRINTER ? PRINT_SINK_REAL
                                                                    : PRINT_SINK_PDF);
     /* Cassette: always wired on 464; requires external_tape toggle on 664/6128. */
-    if (cfg->tape[0] &&
+    if (!cpc_model_is_console(cpc->model) && cfg->tape[0] &&
             (cpc_model_has_builtin_tape(cpc->model) || cfg->external_tape))
         tape_load(&cpc->tape, cfg->tape);
 
@@ -1026,13 +1027,13 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
     }
 
     /* Load floppy images from config */
-    if (cfg->disk_a[0]) {
+    if (!cpc_model_is_console(cpc->model) && cfg->disk_a[0]) {
         if (disk_load(&cpc->drive[0], cfg->disk_a) < 0) {
             fprintf(stderr, "1984: failed to load drive A: %s\n", cfg->disk_a);
             cfg->disk_a[0] = '\0';
         }
     }
-    if (cfg->disk_b[0]) {
+    if (!cpc_model_is_console(cpc->model) && cfg->disk_b[0]) {
         if (disk_load(&cpc->drive[1], cfg->disk_b) < 0) {
             fprintf(stderr, "1984: failed to load drive B: %s\n", cfg->disk_b);
             cfg->disk_b[0] = '\0';
@@ -2069,5 +2070,7 @@ int cpc_frame(CPC *cpc) {
 }
 
 void cpc_key_event(CPC *cpc, SDL_Scancode sc, bool pressed) {
+    if (!cpc_model_has_keyboard(cpc->model))
+        return;
     kbd_sdl_key(&cpc->kbd, sc, pressed);
 }

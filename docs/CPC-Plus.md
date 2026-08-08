@@ -1,14 +1,26 @@
 # CPC Plus support
 
-1984 supports the CPC 464 Plus and CPC 6128 Plus as separate machine models.
-Both boot the bundled Amstrad v4 system cartridge (`roms/system.cpr`), and a
-standalone RIFF CPR can be selected from **Media > Cartridge** or supplied
-on the command line:
+1984 supports the CPC 464 Plus, CPC 6128 Plus, and GX4000 as separate machine
+models. The computers boot the bundled Amstrad v4 system cartridge
+(`roms/system.cpr`); the GX4000 boots its bundled Burning Rubber cartridge
+(`roms/GX4000.cpr`). A standalone RIFF CPR can be selected from
+**Media > Cartridge** or supplied on the command line:
 
 ```sh
 ./1984 --6128plus --cartridge=/path/to/game.cpr
 ./1984 --464plus --cartridge=/path/to/game.cpr
+./1984 --gx4000 --cartridge=/path/to/game.cpr
 ```
+
+GX4000 uses the 64 KB Plus ASIC/Type-3 CRTC path but models the console rather
+than a keyboard computer. CPC keyboard events are disconnected while physical
+joystick/gamepad and scripted joystick input remain connected. The console has
+no floppy controller or cassette deck, so **Media > Drive A**, **Drive B**, and
+**Tape** are read-only and configured DSK/CDT files are not mounted. Cartridge
+is the only active Media entry. Pressing Delete on Cartridge restores
+`GX4000.cpr` for GX4000 or `system.cpr` for either CPC Plus computer.
+GX4000 also disables the MX4 expansion bus and generic ROM Board; both General
+entries are read-only while the console model is selected.
 
 The CRTC can be selected under **Advanced > CRTC type**, in the configuration
 file with `crtc=auto|type0|type1|type2|type3`, or on the command line with
@@ -33,7 +45,8 @@ The initial ASIC implementation includes:
 - three PSG DMA channels with pause/prescaler timing, repeat, loop, interrupt,
   and stop, fetching instructions from physical base RAM independently of
   CPU RAM banking and ROM overlays;
-- Plus-aware 64 KB/128 KB, cassette, and floppy model defaults.
+- Plus-aware 64 KB/128 KB, cassette, floppy, and cartridge-only console model
+  defaults.
 
 The display records per-frame monitor-beam coverage and fills untouched output
 pixels with the current border colour before presentation. This avoids stale

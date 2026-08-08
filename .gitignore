@@ -11,6 +11,8 @@ roms/*
 !roms/*.ROM
 !roms/*.rom
 !roms/README*
+!roms/system.cpr
+!roms/GX4000.cpr
 
 # dist tarballs produced by `make dist`
 /1984-*.tar.gz

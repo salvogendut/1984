@@ -317,7 +317,8 @@ static void net4cpc_tap_sync(Config *cfg, const char *cli_tap_dev) {
 
 static void apply_led_enables(const Config *cfg) {
     /* Floppies: shown when an FDC is wired (664/6128 built-in; 464 needs DDI-1). */
-    bool fdc_present = cpc_model_has_builtin_fdc(cfg->model) || cfg->dd1;
+    bool fdc_present = !cpc_model_is_console(cfg->model) &&
+        (cpc_model_has_builtin_fdc(cfg->model) || cfg->dd1);
     leds_set_enabled(LED_FDC_A, fdc_present);
     leds_set_enabled(LED_FDC_B, fdc_present);
     /* MX4-bus cards light when the expansion bus is connected — they carry
@@ -366,6 +367,7 @@ static void usage(const char *prog, int code) {
         "  --6128              Boot as CPC 6128 (overrides config)\n"
         "  --464plus           Boot as CPC 464 Plus (overrides config)\n"
         "  --6128plus          Boot as CPC 6128 Plus (overrides config)\n"
+        "  --gx4000            Boot as Amstrad GX4000 (overrides config)\n"
         "  --crtc=TYPE         CRTC type: auto, type0, type1, type2 or type3\n"
         "  --dd1               Enable DDI-1 floppy interface on CPC 464 (overrides config)\n"
         "  --memory=KB         RAM size: 64, 128, 256, 512 or 576 (overrides config)\n"
@@ -550,6 +552,8 @@ int main(int argc, char *argv[]) {
             model_override = MODEL_464_PLUS;
         } else if (strcmp(argv[i], "--6128plus") == 0) {
             model_override = MODEL_6128_PLUS;
+        } else if (strcmp(argv[i], "--gx4000") == 0) {
+            model_override = MODEL_GX4000;
         } else if (strncmp(argv[i], "--crtc=", 7) == 0 && argv[i][7] != '\0') {
             if (!config_parse_crtc_type(argv[i] + 7, &crtc_override)) {
                 fprintf(stderr,
@@ -722,6 +726,7 @@ int main(int argc, char *argv[]) {
     if (rom_os_arg) snprintf(cfg.rom_os, sizeof(cfg.rom_os), "%s", rom_os_arg);
     if (cartridge_arg)
         snprintf(cfg.cartridge, sizeof(cfg.cartridge), "%s", cartridge_arg);
+    config_apply_model_constraints(&cfg);
     if (printer_pdf_dir_arg) {
         snprintf(cfg.pdf_printer_dir, sizeof(cfg.pdf_printer_dir), "%s", printer_pdf_dir_arg);
         cfg.pdf_printer = true;
@@ -767,7 +772,8 @@ int main(int argc, char *argv[]) {
     notify_init();
     notify_set_mode(cfg.notifications);
     RealTapeMode real_tape_mode =
-        cfg.tinker && (cpc_model_has_builtin_tape(cpc.model) || cfg.external_tape)
+        cfg.tinker && !cpc_model_is_console(cpc.model) &&
+        (cpc_model_has_builtin_tape(cpc.model) || cfg.external_tape)
             ? cfg.real_tape_mode : REAL_TAPE_OFF;
     if (real_tape_mode_has_input(real_tape_mode) &&
         cfg.real_tape_wav[0] &&
@@ -1246,6 +1252,16 @@ int main(int argc, char *argv[]) {
             overlay.needs_cold_boot = false;
             cpc.model = cfg.model;
             cpc.mem.ram_size = cfg.memory_kb * 1024;
+            if (cpc_model_is_console(cpc.model)) {
+                disk_eject(&cpc.drive[0]);
+                disk_eject(&cpc.drive[1]);
+                tape_eject(&cpc.tape);
+            } else {
+                if (!cpc.drive[0].inserted && cfg.disk_a[0])
+                    disk_load(&cpc.drive[0], cfg.disk_a);
+                if (!cpc.drive[1].inserted && cfg.disk_b[0])
+                    disk_load(&cpc.drive[1], cfg.disk_b);
+            }
             if (cpc_model_is_plus(cpc.model))
                 mem_load_cartridge(&cpc.mem, cfg.cartridge);
             else
@@ -1323,7 +1339,7 @@ int main(int argc, char *argv[]) {
             }
             apply_led_enables(&cfg);
             tape_eject(&cpc.tape);
-            if (cfg.tape[0] &&
+            if (!cpc_model_is_console(cpc.model) && cfg.tape[0] &&
                     (cpc_model_has_builtin_tape(cpc.model) || cfg.external_tape))
                 tape_load(&cpc.tape, cfg.tape);
             /* Release mouse capture on cold boot */
@@ -1337,7 +1353,8 @@ int main(int argc, char *argv[]) {
         monitor_pty_tick(monitor);
         kbd_pty_tick(&paste);
         screen_text_tick(&cpc);
-        paste_tick(&paste, &cpc.kbd);
+        if (cpc_model_has_keyboard(cpc.model))
+            paste_tick(&paste, &cpc.kbd);
         if (have_joyscript) joyscript_tick(&joyscript, &cpc.kbd);
         pilot_tick(&pilot, &cpc, &cpc.display, &paste);
         bool was_paused   = cpc.paused;
@@ -1454,11 +1471,7 @@ int main(int argc, char *argv[]) {
          * with the model name in red+bold and F-key hints in white.
          * The OS title bar stays minimal ("1984"). */
         {
-            const char *model_str = "CPC 6128";
-            if (cpc.model == MODEL_464) model_str = "CPC 464";
-            else if (cpc.model == MODEL_664) model_str = "CPC 664";
-            else if (cpc.model == MODEL_464_PLUS) model_str = "CPC 464 Plus";
-            else if (cpc.model == MODEL_6128_PLUS) model_str = "CPC 6128 Plus";
+            const char *model_str = cpc_model_name(cpc.model);
             const char *keys = host_mount_available
                 ? "  F4=screenshot  F5=reset  F6=capture  F8=monitor  "
                   "F9=options  F10=cards  F11=fullscreen  F12=quit"

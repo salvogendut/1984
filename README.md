@@ -2,14 +2,14 @@
 
 ![1984](1984.png)
 
-1984 is a cycle-stepped Amstrad CPC 464, 664, 6128, 464 Plus, and 6128 Plus
-emulator written in C using SDL3. It aims to run ordinary CPC software and
+1984 is a cycle-stepped Amstrad CPC 464, 664, 6128, 464 Plus, 6128 Plus, and
+GX4000 emulator written in C using SDL3. It aims to run ordinary CPC software and
 timing-sensitive programs while also modelling modern storage, networking,
 and input expansions.
 
 ## Current status
 
-All five models boot their bundled firmware or system cartridge. Disk, tape,
+All six models boot their bundled firmware or system cartridge. Disk, tape,
 and CPR software, commercial games, and a growing set of timing-sensitive
 demos run; Bomb Jack and Batman Forever are among the current CRTC/audio
 regression targets.
@@ -17,7 +17,7 @@ regression targets.
 | Workload | Current result |
 |----------|----------------|
 | Locomotive BASIC and AMSDOS | Working on CPC 464, 664, and 6128, with DDI-1 available for the 464 |
-| CPC Plus cartridges | 464 Plus and 6128 Plus boot the bundled v4 system CPR and standalone RIFF CPR software |
+| CPC Plus cartridges | 464 Plus and 6128 Plus boot the bundled v4 system CPR; GX4000 boots its bundled Burning Rubber cartridge; all accept standalone RIFF CPR software |
 | HDCPM / CP/M Plus | Boots from SYMBiFACE II/Cyboard IDE images with CP/M drives, ramdisk, ZCPR, and RTC time |
 | SymbOS with M4 | Boots with the unmodified M4 network daemon; time, Telnet, and HTTP applications work |
 | SymbOS with Cyboard | Boots with Net4CPC, RTC, IDE storage, and SYMBiFACE mouse |
@@ -40,7 +40,7 @@ See [docs/issue-62-fuzix-notes.md](docs/issue-62-fuzix-notes.md) and
 
 ## Core emulation
 
-- CPC 464, 664, 6128, 464 Plus, and 6128 Plus model defaults, including the
+- CPC 464, 664, 6128, 464 Plus, 6128 Plus, and GX4000 model defaults, including the
   correct firmware or cartridge, memory, floppy, and cassette configuration.
 - Cycle-stepped Z80 with documented and commonly used undocumented opcodes,
   interrupt timing, and memory contention.
@@ -69,8 +69,10 @@ the mounted image. The Media tab can also create a blank 40-track CPC DATA
 disk.
 
 The Plus models boot RIFF CPR cartridges. Select the model in General and the
-cartridge in Media, or use `--464plus` / `--6128plus` with
-`--cartridge=PATH`.
+cartridge in Media, or use `--464plus`, `--6128plus`, or `--gx4000` with
+`--cartridge=PATH`. GX4000 is a fixed 64 KB console model with no keyboard,
+floppy drives, or cassette deck. Its Drive A, Drive B, and Tape Media entries
+are disabled; joystick/gamepad input remains available.
 
 Drive A and B use the platform file picker by default. **Shift+Enter** opens
 the built-in keyboard-driven DSK browser, and 1984 falls back to it

@@ -101,6 +101,7 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/OS_664.ROM
 %{_datadir}/%{name}/roms/OS_6128.ROM
 %{_datadir}/%{name}/roms/system.cpr
+%{_datadir}/%{name}/roms/GX4000.cpr
 
 %changelog
 * Mon Jul 27 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.18-1

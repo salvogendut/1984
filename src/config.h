@@ -212,6 +212,7 @@ int config_save(const Config *cfg);
 
 /* Switch model and apply matching RAM size and ROM path defaults. */
 void config_set_model(Config *cfg, CpcModel model);
+void config_apply_model_constraints(Config *cfg);
 
 /* Enable or disable the DDI-1 on a CPC 464 (sets/clears rom_amsdos). */
 void config_apply_dd1(Config *cfg, bool enabled);
@@ -248,5 +249,6 @@ void config_default_os(CpcModel model, char *out, size_t sz);
 void config_default_basic(CpcModel model, char *out, size_t sz);
 void config_default_amsdos(CpcModel model, char *out, size_t sz);
 void config_default_cartridge(char *out, size_t sz);
+void config_default_cartridge_for_model(CpcModel model, char *out, size_t sz);
 void config_default_m4rom(char *out, size_t sz);
 void config_default_diag(char *out, size_t sz);

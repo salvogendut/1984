@@ -6,7 +6,7 @@
 .RI [ OPTIONS ]
 .SH DESCRIPTION
 .B 1984
-is a cycle-stepped Amstrad CPC 464/664/6128 and 464 Plus/6128 Plus emulator written in C
+is a cycle-stepped Amstrad CPC 464/664/6128, 464 Plus/6128 Plus, and GX4000 emulator written in C
 with SDL3. It boots commercial games, BASIC, AMSDOS, CP/M 2.2 and
 CP/M Plus disk images, and a wide range of expansion hardware
 (M4 board, Albireo USB host, SYMBiFACE II / Cyboard, Net4CPC
@@ -40,6 +40,9 @@ Boot as CPC 464 Plus using the configured CPR cartridge (overrides config).
 .TP
 .B --6128plus
 Boot as CPC 6128 Plus using the configured CPR cartridge (overrides config).
+.TP
+.B --gx4000
+Boot as a 64 KB GX4000 using the configured CPR cartridge (overrides config).
 .TP
 .B --dd1
 Enable the DDI-1 floppy interface on the CPC 464 (overrides config).
