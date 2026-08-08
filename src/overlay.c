@@ -116,7 +116,7 @@ static void overlay_apply_crt(Overlay *ov) {
 }
 
 static bool overlay_real_tape_connected(const Overlay *ov) {
-    return ov->cfg->tinker &&
+    return ov->cfg->tinker && !cpc_model_is_console(ov->cfg->model) &&
            ov->cfg->real_tape_mode != REAL_TAPE_OFF &&
            (cpc_model_has_builtin_tape(ov->cfg->model) || ov->cfg->external_tape);
 }
@@ -337,7 +337,8 @@ static void trunc_path(const char *path, char *out, size_t sz) {
 
 /* True when floppy drives are accessible (664/6128 always; 464 only with DD1) */
 static bool floppy_accessible(const Overlay *ov) {
-    return cpc_model_has_builtin_fdc(ov->cfg->model) || ov->cfg->dd1;
+    return !cpc_model_is_console(ov->cfg->model) &&
+           (cpc_model_has_builtin_fdc(ov->cfg->model) || ov->cfg->dd1);
 }
 
 static bool path_separator(char c) {
@@ -672,28 +673,40 @@ static void item_text(const Overlay *ov, int row,
         switch (logical) {
         case 0:
             snprintf(lbl, lsz, "Model");
-            snprintf(val, vsz, "%s",
-                ov->cfg->model == MODEL_464 ? "CPC 464" :
-                ov->cfg->model == MODEL_664 ? "CPC 664" :
-                ov->cfg->model == MODEL_6128 ? "CPC 6128" :
-                ov->cfg->model == MODEL_464_PLUS ? "CPC 464 Plus" :
-                                                   "CPC 6128 Plus");
+            snprintf(val, vsz, "%s", cpc_model_name(ov->cfg->model));
             break;
         case 1:
             snprintf(lbl, lsz, "Memory");
             snprintf(val, vsz, "%d KB", ov->cfg->memory_kb);
+            if (cpc_model_is_console(ov->cfg->model))
+                *readonly = true;
             break;
         case 2:
             snprintf(lbl, lsz, "MX4");
-            snprintf(val, vsz, "%s", ov->cfg->mx4 ? "enabled" : "disabled");
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "N/A (console)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->mx4 ? "enabled" : "disabled");
+            }
             break;
         case 3:
             snprintf(lbl, lsz, "Roms Board");
-            snprintf(val, vsz, "%s", ov->cfg->rom_board ? "enabled" : "disabled");
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "N/A (console)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->rom_board ? "enabled" : "disabled");
+            }
             break;
         case 4:
             snprintf(lbl, lsz, "External Tape");
-            snprintf(val, vsz, "%s", ov->cfg->external_tape ? "enabled" : "disabled");
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "N/A (console)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s", ov->cfg->external_tape ? "enabled" : "disabled");
+            }
             break;
         case 5: {
             char tmp[CONFIG_PATH_MAX];
@@ -723,6 +736,8 @@ static void item_text(const Overlay *ov, int row,
             snprintf(lbl, lsz, "Fallback Input");
             snprintf(val, vsz, "%s",
                 ov->cfg->fallback_input == FALLBACK_AMX_MOUSE ? "AMX Mouse" : "Joystick");
+            if (cpc_model_is_console(ov->cfg->model))
+                *readonly = true;
             break;
         case 9:
             snprintf(lbl, lsz, "About");
@@ -738,7 +753,10 @@ static void item_text(const Overlay *ov, int row,
         switch (row) {
         case 0:
             snprintf(lbl, lsz, "Drive A");
-            if (!accessible) {
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "Not available on GX4000");
+                *readonly = true;
+            } else if (!accessible) {
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (da && da->inserted && ov->cfg->disk_a[0]) {
@@ -749,7 +767,10 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 1:
             snprintf(lbl, lsz, "Drive B");
-            if (!accessible) {
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "Not available on GX4000");
+                *readonly = true;
+            } else if (!accessible) {
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (db && db->inserted && ov->cfg->disk_b[0]) {
@@ -760,7 +781,10 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 2:
             snprintf(lbl, lsz, "Tape");
-            if (overlay_real_tape_input_selected(ov)) {
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "Not available on GX4000");
+                *readonly = true;
+            } else if (overlay_real_tape_input_selected(ov)) {
                 if (ov->cfg->real_tape_wav[0]) {
                     char tmp[CONFIG_PATH_MAX];
                     char name[40];
@@ -832,7 +856,10 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 4:
             snprintf(lbl, lsz, "DD1");
-            if (cpc_model_has_builtin_fdc(ov->cfg->model)) {
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "N/A (console)");
+                *readonly = true;
+            } else if (cpc_model_has_builtin_fdc(ov->cfg->model)) {
                 snprintf(val, vsz, "N/A (built-in FDC)");
                 *readonly = true;
             } else {
@@ -1145,11 +1172,16 @@ static void item_text(const Overlay *ov, int row,
             break;
         case 19:
             snprintf(lbl, lsz, "Real Cassette");
-            snprintf(val, vsz, "%s  [Enter=settings]",
-                     ov->cfg->real_tape_mode == REAL_TAPE_INPUT
-                         ? "INPUT"
-                         : ov->cfg->real_tape_mode == REAL_TAPE_OUTPUT
-                             ? "OUTPUT" : "OFF");
+            if (cpc_model_is_console(ov->cfg->model)) {
+                snprintf(val, vsz, "N/A (console)");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s  [Enter=settings]",
+                         ov->cfg->real_tape_mode == REAL_TAPE_INPUT
+                             ? "INPUT"
+                             : ov->cfg->real_tape_mode == REAL_TAPE_OUTPUT
+                                 ? "OUTPUT" : "OFF");
+            }
             break;
         case 20:
             snprintf(lbl, lsz, "CRTC type");
@@ -1426,6 +1458,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                 case MODEL_664:  next = MODEL_6128; break;
                 case MODEL_6128: next = MODEL_464_PLUS; break;
                 case MODEL_464_PLUS: next = MODEL_6128_PLUS; break;
+                case MODEL_6128_PLUS: next = MODEL_GX4000; break;
+                case MODEL_GX4000: next = MODEL_464; break;
                 default:         next = MODEL_464;  break;
             }
             config_set_model(ov->cfg, next);
@@ -1439,6 +1473,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
         }
         case 1: {
             /* Memory — cycle through valid sizes for the current model. */
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             static const int sizes[] = { 64, 128, 256, 512, 576, 768, 1024 };
             int n = (int)(sizeof(sizes) / sizeof(sizes[0]));
             int min_idx = cpc_model_is_128k(ov->cfg->model) ? 1 : 0;
@@ -1450,6 +1486,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             break;
         }
         case 2:
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             ov->cfg->mx4 = !ov->cfg->mx4;
             if (ov->cpc) {
                 ov->cpc->mx4 = ov->cfg->mx4;
@@ -1459,11 +1497,15 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->dirty = true;
             break;
         case 3:
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             ov->cfg->rom_board = !ov->cfg->rom_board;
             ov->dirty = true;
             break;
         case 4:
             /* External Tape — only reachable from this menu on the 6128. */
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             ov->cfg->external_tape = !ov->cfg->external_tape;
             overlay_apply_real_tape(ov);
             ov->dirty = true;
@@ -1507,6 +1549,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
         case 8:
             /* Fallback Input: Joystick <-> AMX Mouse. Pure input routing —
              * mirror the flag live, no cold boot. */
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             ov->cfg->fallback_input =
                 (ov->cfg->fallback_input == FALLBACK_JOYSTICK)
                     ? FALLBACK_AMX_MOUSE : FALLBACK_JOYSTICK;
@@ -1530,6 +1574,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
     }
 
     case OV_STORAGE:
+        if (cpc_model_is_console(ov->cfg->model) && ov->row < 3)
+            break;
         if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
             if (mods & SDL_KMOD_SHIFT)
                 open_internal_disk_browser(ov, ov->row);
@@ -1673,7 +1719,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->dirty = true;
             break;
         case 4:
-            if (!cpc_model_has_builtin_fdc(ov->cfg->model)) {
+            if (!cpc_model_is_console(ov->cfg->model) &&
+                    !cpc_model_has_builtin_fdc(ov->cfg->model)) {
                 config_apply_dd1(ov->cfg, !ov->cfg->dd1);
                 if (ov->cpc) {
                     if (ov->cfg->dd1)
@@ -2108,6 +2155,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->dirty = true;
             break;
         case 19:
+            if (cpc_model_is_console(ov->cfg->model))
+                break;
             ov->state = OV_STATE_REAL_TAPE;
             ov->real_tape_row = 0;
             break;
@@ -3076,6 +3125,22 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                     ov->cfg->tape[0] = '\0';
                     ov->dirty = true;
                 }
+            } else if (ov->row == 3 &&
+                       cpc_model_is_plus(ov->cfg->model)) {
+                char default_cartridge[CONFIG_PATH_MAX];
+                config_default_cartridge_for_model(
+                    ov->cfg->model, default_cartridge,
+                    sizeof(default_cartridge));
+                if (strcmp(ov->cfg->cartridge, default_cartridge)) {
+                    snprintf(ov->cfg->cartridge,
+                             sizeof(ov->cfg->cartridge), "%s",
+                             default_cartridge);
+                    notify_post("Cartridge restored: %s",
+                                ov->cfg->model == MODEL_GX4000
+                                    ? "GX4000 Burning Rubber"
+                                    : "CPC Plus system");
+                    ov->dirty = true;
+                }
             }
             break;
         }
@@ -3570,10 +3635,12 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
     }
 
     if (ov->section == OV_STORAGE) {
-        draw_text(r, DROP_PAD, BAR_H + drop_h + 7.0f,
-                  ov->sdl_fm
-                      ? "Enter: built-in  N:new  Del:eject"
-                      : "Enter: system  Shift+Enter: built-in  N:new  Del:eject",
+        const char *help = cpc_model_is_console(ov->cfg->model)
+            ? "Cartridge: Enter=load CPR  Del=default"
+            : (ov->sdl_fm
+                ? "Enter: built-in  N:new  Del:eject/default"
+                : "Enter: system  Shift+Enter: built-in  N:new  Del:eject/default");
+        draw_text(r, DROP_PAD, BAR_H + drop_h + 7.0f, help,
                   150, 150, 175);
     }
 

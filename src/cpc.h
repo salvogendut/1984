@@ -31,11 +31,13 @@ typedef enum {
     MODEL_664,
     MODEL_6128,
     MODEL_6128_PLUS,  /* SNA model value 3, matching Caprice32 */
-    MODEL_464_PLUS    /* internal extension; SNA stores this as Plus/3 */
+    MODEL_464_PLUS,   /* internal extension; SNA stores this as Plus/3 */
+    MODEL_GX4000      /* console extension; SNA stores this as Plus/3 */
 } CpcModel;
 
 static inline bool cpc_model_is_plus(CpcModel model) {
-    return model == MODEL_464_PLUS || model == MODEL_6128_PLUS;
+    return model == MODEL_464_PLUS || model == MODEL_6128_PLUS ||
+           model == MODEL_GX4000;
 }
 
 static inline bool cpc_model_is_128k(CpcModel model) {
@@ -49,6 +51,38 @@ static inline bool cpc_model_has_builtin_fdc(CpcModel model) {
 
 static inline bool cpc_model_has_builtin_tape(CpcModel model) {
     return model == MODEL_464 || model == MODEL_464_PLUS;
+}
+
+static inline bool cpc_model_is_console(CpcModel model) {
+    return model == MODEL_GX4000;
+}
+
+static inline bool cpc_model_has_keyboard(CpcModel model) {
+    return !cpc_model_is_console(model);
+}
+
+static inline const char *cpc_model_name(CpcModel model) {
+    switch (model) {
+    case MODEL_464:       return "CPC 464";
+    case MODEL_664:       return "CPC 664";
+    case MODEL_6128:      return "CPC 6128";
+    case MODEL_464_PLUS:  return "CPC 464 Plus";
+    case MODEL_6128_PLUS: return "CPC 6128 Plus";
+    case MODEL_GX4000:    return "GX4000";
+    default:              return "CPC";
+    }
+}
+
+static inline const char *cpc_model_config_name(CpcModel model) {
+    switch (model) {
+    case MODEL_464:       return "464";
+    case MODEL_664:       return "664";
+    case MODEL_6128:      return "6128";
+    case MODEL_464_PLUS:  return "464plus";
+    case MODEL_6128_PLUS: return "6128plus";
+    case MODEL_GX4000:    return "gx4000";
+    default:              return "6128";
+    }
 }
 
 #define CPC_AUDIO_SAMPLE_RATE     44100

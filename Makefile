@@ -552,7 +552,8 @@ dist_roms_DATA = roms/AMSDOS.ROM \
                  roms/OS_664.ROM \
                  roms/OS_6128.ROM \
                  roms/AmstradDiagLower.rom \
-                 roms/system.cpr
+                 roms/system.cpr \
+                 roms/GX4000.cpr
 
 
 # Desktop integration: .desktop launcher, AppStream metainfo, hicolor icons.

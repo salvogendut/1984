@@ -131,6 +131,7 @@ int config_websvc_dir(char *out, size_t sz) {
 #define ROM_FILE_M4ROM      "M4ROM.ROM"
 #define ROM_FILE_DIAG       "AmstradDiagLower.rom"
 #define ROM_FILE_PLUS_SYSTEM "system.cpr"
+#define ROM_FILE_GX4000_SYSTEM "GX4000.cpr"
 
 /* Build a path to a bundled ROM file.
  * Priority:
@@ -317,9 +318,9 @@ static void config_create_default(const char *path) {
         "# Edit and restart the emulator for changes to take effect.\n"
         "\n"
         "[machine]\n"
-        "# CPC model: 464, 664, 6128, 464plus or 6128plus\n"
+        "# CPC model: 464, 664, 6128, 464plus, 6128plus or gx4000\n"
         "model=6128\n"
-        "# RAM size in KB: 64 (CPC 464/664) or 128+ (CPC 6128)\n"
+        "# RAM size in KB: GX4000 is fixed at 64; CPC computers allow expansions\n"
         "memory=128\n"
         "# CRTC implementation: auto, type0, type1, type2 or type3\n"
         "crtc=auto\n"
@@ -531,6 +532,8 @@ int config_load_from(Config *cfg, const char *path_override) {
                     config_set_model(cfg, MODEL_464_PLUS);
                 else if (!strcasecmp(val, "6128plus") || !strcmp(val, "6128+"))
                     config_set_model(cfg, MODEL_6128_PLUS);
+                else if (!strcasecmp(val, "gx4000"))
+                    config_set_model(cfg, MODEL_GX4000);
                 else { fprintf(stderr, "1984.conf:%d: unknown model '%s', using default\n", lineno, val); }
             } else if (!strcmp(key, "memory")) {
                 int kb = atoi(val);
@@ -872,9 +875,11 @@ int config_load_from(Config *cfg, const char *path_override) {
     if (!cfg->rom_basic[0])
         config_default_basic(cfg->model, cfg->rom_basic, sizeof(cfg->rom_basic));
     if (!cfg->cartridge[0])
-        config_default_cartridge(cfg->cartridge, sizeof(cfg->cartridge));
+        config_default_cartridge_for_model(
+            cfg->model, cfg->cartridge, sizeof(cfg->cartridge));
     if (cfg->memory_kb == 0)
         cfg->memory_kb = 128;
+    config_apply_model_constraints(cfg);
 
     /* M4 and Albireo both decode port 0xFExx and M4ROM clashes with
      * Albireo's UNIDOS tooling — they can't run together. Older configs may
@@ -917,10 +922,7 @@ int config_save(const Config *cfg) {
         "basic=%s\n"
         "amsdos=%s\n"
         "cartridge=%s\n",
-        cfg->model == MODEL_464 ? "464" :
-        cfg->model == MODEL_664 ? "664" :
-        cfg->model == MODEL_6128 ? "6128" :
-        cfg->model == MODEL_464_PLUS ? "464plus" : "6128plus",
+        cpc_model_config_name(cfg->model),
         cfg->memory_kb,
         config_crtc_type_name(cfg->crtc_type),
         fallback_to_str(cfg->fallback_input),
@@ -1111,6 +1113,15 @@ int config_save(const Config *cfg) {
 }
 
 void config_set_model(Config *cfg, CpcModel model) {
+    const char *cart_name = strrchr(cfg->cartridge, '/');
+    const char *cart_backslash = strrchr(cfg->cartridge, '\\');
+    if (!cart_name || (cart_backslash && cart_backslash > cart_name))
+        cart_name = cart_backslash;
+    cart_name = cart_name ? cart_name + 1 : cfg->cartridge;
+    bool bundled_cartridge = !cfg->cartridge[0] ||
+        !strcasecmp(cart_name, ROM_FILE_PLUS_SYSTEM) ||
+        !strcasecmp(cart_name, ROM_FILE_GX4000_SYSTEM);
+
     cfg->model = model;
     if (model == MODEL_464) {
         cfg->memory_kb = 64;
@@ -1131,14 +1142,27 @@ void config_set_model(Config *cfg, CpcModel model) {
         rom_cfg_path(ROM_FILE_BASIC_6128, cfg->rom_basic,  sizeof(cfg->rom_basic));
         rom_cfg_path(ROM_FILE_AMSDOS,     cfg->rom_amsdos, sizeof(cfg->rom_amsdos));
     } else {
-        cfg->memory_kb = model == MODEL_464_PLUS ? 64 : 128;
+        cfg->memory_kb = cpc_model_is_128k(model) ? 128 : 64;
         cfg->dd1 = false;
         cfg->rom_os[0] = '\0';
         cfg->rom_basic[0] = '\0';
         cfg->rom_amsdos[0] = '\0';
-        if (!cfg->cartridge[0])
-            config_default_cartridge(cfg->cartridge, sizeof(cfg->cartridge));
+        if (bundled_cartridge)
+            config_default_cartridge_for_model(
+                model, cfg->cartridge, sizeof(cfg->cartridge));
     }
+    config_apply_model_constraints(cfg);
+}
+
+void config_apply_model_constraints(Config *cfg) {
+    if (cfg->model != MODEL_GX4000)
+        return;
+    cfg->memory_kb = 64;
+    cfg->dd1 = false;
+    cfg->external_tape = false;
+    cfg->fallback_input = FALLBACK_JOYSTICK;
+    cfg->mx4 = false;
+    cfg->rom_board = false;
 }
 
 void config_apply_dd1(Config *cfg, bool enabled) {
@@ -1170,6 +1194,12 @@ void config_default_amsdos(CpcModel model, char *out, size_t sz) {
 
 void config_default_cartridge(char *out, size_t sz) {
     rom_cfg_path(ROM_FILE_PLUS_SYSTEM, out, sz);
+}
+
+void config_default_cartridge_for_model(CpcModel model, char *out, size_t sz) {
+    rom_cfg_path(model == MODEL_GX4000 ? ROM_FILE_GX4000_SYSTEM
+                                       : ROM_FILE_PLUS_SYSTEM,
+                 out, sz);
 }
 
 void config_default_m4rom(char *out, size_t sz) {
