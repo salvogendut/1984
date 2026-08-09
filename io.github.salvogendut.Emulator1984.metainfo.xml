@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.19" date="2026-08-09">
+      <description>
+        <p>Adds CPC Plus and GX4000 emulation with cartridge support, ASIC DMA audio, hardware sprites, raster splits, fine scrolling, and selectable CRTC types. Disk images gain an autostart file browser with optional per-image persistence. This release also adds macOS application bundles, corrects CPC punctuation key ordering, and adds an About dialog.</p>
+      </description>
+    </release>
     <release version="0.4.18" date="2026-07-27">
       <description>
         <p>Adds Tinker-gated real cassette INPUT and OUTPUT routing through host audio devices, WAV files, mounted CDT images, and the CPC SAVE write line. Audible and visual monitors can be controlled independently, WAV playback reports remaining time, and session capture supports WAV output and interoperable WAV-to-CDT direct recording.</p>
