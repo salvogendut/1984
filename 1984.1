@@ -351,8 +351,11 @@ built-in browser, and native-dialog errors fall back automatically.
 Press A on a mounted floppy to browse its AMSDOS/CP/M directory. Enter or
 Space marks a file with an asterisk; S saves the session choice, resets the
 CPC, and runs the file after boot. The mark survives machine resets but is
-cleared when the disk changes or the emulator exits, and is not stored in the
-configuration file.
+cleared when the disk changes or the emulator exits. P toggles permanent
+per-disk storage before S is pressed. Permanent choices are stored in indexed
+.B [disk_autostart:N]
+configuration sections and restored whenever the same disk image is mounted;
+session-only remains the default.
 .TP
 .B Extensions
 M4 board, Albireo USB, SYMBiFACE II IDE / mouse, Cyboard RTC,

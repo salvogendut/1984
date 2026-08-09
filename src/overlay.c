@@ -351,6 +351,59 @@ static void disk_autostart_clear(Overlay *ov, int drive) {
     ov->disk_autostart_request = false;
 }
 
+static const char *mounted_disk_path(const Overlay *ov, int drive) {
+    if (!ov->cpc || drive < 0 || drive > 1 ||
+        !ov->cpc->drive[drive].inserted)
+        return NULL;
+    return ov->cpc->drive[drive].path;
+}
+
+static bool disk_autostart_restore(Overlay *ov, int drive, bool request) {
+    const char *path = mounted_disk_path(ov, drive);
+    const ConfigDiskAutostart *saved =
+        config_disk_autostart_find(ov->cfg, path);
+    if (!saved)
+        return false;
+
+    DiskDirectoryEntry files[DISK_DIRECTORY_MAX_FILES];
+    int count = disk_list_directory(&ov->cpc->drive[drive], files,
+                                    DISK_DIRECTORY_MAX_FILES);
+    for (int i = 0; i < count; i++) {
+        if (files[i].user != saved->user ||
+            strcmp(files[i].name, saved->file))
+            continue;
+        ov->disk_autostart_drive = drive;
+        ov->disk_autostart_user = saved->user;
+        snprintf(ov->disk_autostart_file,
+                 sizeof(ov->disk_autostart_file), "%s", saved->file);
+        ov->disk_autostart_request = request;
+        return true;
+    }
+    return false;
+}
+
+static bool disk_autostart_apply_remember(
+        Overlay *ov, const DiskDirectoryEntry *entry) {
+    const char *path = mounted_disk_path(ov, ov->disk_file_drive);
+    if (!path)
+        return false;
+
+    if (ov->disk_file_remember && entry) {
+        int changed = config_disk_autostart_set(
+            ov->cfg, path, entry->user, entry->name);
+        if (changed < 0) {
+            notify_post("Cannot remember this autostart (limit: %d disks)",
+                        CONFIG_DISK_AUTOSTART_MAX);
+            return false;
+        }
+        if (changed > 0)
+            ov->dirty = true;
+    } else if (config_disk_autostart_remove(ov->cfg, path)) {
+        ov->dirty = true;
+    }
+    return true;
+}
+
 static void disk_autostart_ensure_visible(Overlay *ov) {
     if (ov->disk_file_row < ov->disk_file_scroll)
         ov->disk_file_scroll = ov->disk_file_row;
@@ -394,11 +447,23 @@ static void open_disk_autostart_browser(Overlay *ov, int drive) {
     ov->disk_file_row = 0;
     ov->disk_file_scroll = 0;
     ov->disk_file_marked_row = -1;
+    const char *path = mounted_disk_path(ov, drive);
+    const ConfigDiskAutostart *saved =
+        config_disk_autostart_find(ov->cfg, path);
+    ov->disk_file_remember = saved != NULL;
+    uint8_t marked_user = 0;
+    const char *marked_file = NULL;
     if (ov->disk_autostart_drive == drive) {
+        marked_user = ov->disk_autostart_user;
+        marked_file = ov->disk_autostart_file;
+    } else if (saved) {
+        marked_user = saved->user;
+        marked_file = saved->file;
+    }
+    if (marked_file) {
         for (int i = 0; i < count; i++) {
-            if (ov->disk_files[i].user == ov->disk_autostart_user &&
-                !strcmp(ov->disk_files[i].name,
-                        ov->disk_autostart_file)) {
+            if (ov->disk_files[i].user == marked_user &&
+                !strcmp(ov->disk_files[i].name, marked_file)) {
                 ov->disk_file_row = i;
                 ov->disk_file_marked_row = i;
                 disk_autostart_ensure_visible(ov);
@@ -2302,6 +2367,8 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc, bool sdl_fm) {
     ov->last_m4            = cfg->m4;
     ov->last_albireo       = cfg->albireo;
     ov->last_symbiface_ide = cfg->symbiface_ide;
+    if (!disk_autostart_restore(ov, 0, false))
+        disk_autostart_restore(ov, 1, false);
 }
 
 void overlay_quit(Overlay *ov) {
@@ -2403,6 +2470,8 @@ void overlay_tick(Overlay *ov) {
             if (dest[0] && disk_load(d, dest) < 0) {
                 fprintf(stderr, "1984: failed to load %s\n", dest);
                 dest[0] = '\0';
+            } else if (d->inserted) {
+                disk_autostart_restore(ov, drv, true);
             }
         }
         ov->dirty = true;
@@ -2417,6 +2486,7 @@ void overlay_tick(Overlay *ov) {
             fprintf(stderr,
                     "1984: cannot create disk: filename is empty or too long\n");
         } else if (disk_create_blank(ov->dialog_path) == 0) {
+            config_disk_autostart_remove(ov->cfg, ov->dialog_path);
             snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
             if (ov->cpc) {
                 Disk *d = &ov->cpc->drive[drv];
@@ -2946,19 +3016,28 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         case SDL_SCANCODE_DELETE:
         case SDL_SCANCODE_BACKSPACE:
             ov->disk_file_marked_row = -1;
+            ov->disk_file_remember = false;
             break;
-        case SDL_SCANCODE_S:
+        case SDL_SCANCODE_P:
+            ov->disk_file_remember = !ov->disk_file_remember;
+            break;
+        case SDL_SCANCODE_S: {
+            const DiskDirectoryEntry *entry = NULL;
             if (ov->disk_file_marked_row >= 0 &&
-                ov->disk_file_marked_row < ov->disk_file_count) {
-                const DiskDirectoryEntry *entry =
-                    &ov->disk_files[ov->disk_file_marked_row];
+                ov->disk_file_marked_row < ov->disk_file_count)
+                entry = &ov->disk_files[ov->disk_file_marked_row];
+            if (!disk_autostart_apply_remember(ov, entry))
+                break;
+
+            if (entry) {
                 ov->disk_autostart_drive = ov->disk_file_drive;
                 ov->disk_autostart_user = entry->user;
                 snprintf(ov->disk_autostart_file,
                          sizeof(ov->disk_autostart_file), "%s", entry->name);
                 ov->disk_autostart_request = true;
-                notify_post("Drive %c autostart: %s",
-                            ov->disk_file_drive ? 'B' : 'A', entry->name);
+                notify_post("Drive %c autostart: %s%s",
+                            ov->disk_file_drive ? 'B' : 'A', entry->name,
+                            ov->disk_file_remember ? " (remembered)" : "");
             } else {
                 disk_autostart_clear(ov, ov->disk_file_drive);
                 notify_post("Drive %c autostart cleared",
@@ -2967,6 +3046,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             ov->state = OV_STATE_MENU;
             try_close(ov);
             break;
+        }
         default:
             break;
         }
@@ -3584,7 +3664,7 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
         char title[96];
         snprintf(title, sizeof(title),
-                 "Drive %c files  Enter=mark S=save/reset Del=clear Esc=back",
+                 "Drive %c files Enter=mark P=remember S=save/reset Esc=back",
                  ov->disk_file_drive ? 'B' : 'A');
         draw_text(r, DROP_PAD, 4, title, 180, 180, 220);
         SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
@@ -3626,9 +3706,14 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
                      ov->disk_file_count == 1 ? "" : "s");
             draw_text(r, DROP_PAD, status_y, count, 150, 160, 180);
         }
-        draw_text(r, DROP_PAD, status_y + 17.0f,
-                  "Session-only mark: survives F5 reset; clears when 1984 exits.",
-                  150, 190, 230);
+        char remember[80];
+        snprintf(remember, sizeof(remember),
+                 "P=remember permanently: %s  Del=clear",
+                 ov->disk_file_remember ? "enabled" : "disabled");
+        draw_text(r, DROP_PAD, status_y + 17.0f, remember,
+                  ov->disk_file_remember ? 120 : 150,
+                  ov->disk_file_remember ? 230 : 190,
+                  ov->disk_file_remember ? 120 : 230);
         SDL_SetRenderScale(r, 1.0f, 1.0f);
         return;
     }

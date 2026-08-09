@@ -84,7 +84,11 @@ With a mounted floppy highlighted, press **A** to browse its AMSDOS/CP/M
 directory. Enter or Space places the autostart asterisk, and **S** saves the
 session choice and resets the CPC to run it. The choice survives F5 and other
 machine resets, but is cleared when that disk is replaced/ejected or when the
-1984 process exits; it is never written to `1984.conf`.
+1984 process exits. Before saving, press **P** to enable **remember
+permanently** for that disk image. Remembered choices are written as separate
+`[disk_autostart:N]` entries in `1984.conf`, restored when the same image is
+mounted in a later session, and removed by disabling P or clearing the mark
+and saving. Session-only remains the default.
 
 CPC 664 and 6128 models have floppy hardware built in. On the 464, enabling
 DDI-1 adds the controller and AMSDOS ROM. CDT/TZX cassette images support the

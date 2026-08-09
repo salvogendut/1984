@@ -233,6 +233,141 @@ void config_defaults(Config *cfg) {
     config_set_model(cfg, MODEL_6128);  /* sets model, memory, OS, BASIC, AMSDOS */
 }
 
+static bool normalize_disk_autostart_file(
+        const char *file, char out[CONFIG_DISK_AUTOSTART_FILE_MAX]) {
+    if (!file || !file[0])
+        return false;
+
+    size_t len = strlen(file);
+    if (len >= CONFIG_DISK_AUTOSTART_FILE_MAX)
+        return false;
+
+    int base_len = 0;
+    int ext_len = -1;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)file[i];
+        if (c == '.') {
+            if (ext_len >= 0 || base_len == 0)
+                return false;
+            ext_len = 0;
+            out[i] = '.';
+            continue;
+        }
+        if (c < 0x21 || c > 0x7E || c == '"' || c == '/' || c == '\\')
+            return false;
+        if (ext_len >= 0) {
+            if (++ext_len > 3)
+                return false;
+        } else if (++base_len > 8) {
+            return false;
+        }
+        out[i] = (char)toupper(c);
+    }
+    if (ext_len == 0)
+        return false;
+    out[len] = '\0';
+    return true;
+}
+
+const ConfigDiskAutostart *config_disk_autostart_find(const Config *cfg,
+                                                       const char *disk) {
+    if (!cfg || !disk || !disk[0])
+        return NULL;
+    for (int i = 0; i < cfg->disk_autostart_count; i++)
+        if (!strcmp(cfg->disk_autostart[i].disk, disk))
+            return &cfg->disk_autostart[i];
+    return NULL;
+}
+
+int config_disk_autostart_set(Config *cfg, const char *disk, uint8_t user,
+                              const char *file) {
+    char normalized[CONFIG_DISK_AUTOSTART_FILE_MAX];
+    if (!cfg || !disk || !disk[0] || strlen(disk) >= CONFIG_PATH_MAX ||
+        user > 15 ||
+        !normalize_disk_autostart_file(file, normalized))
+        return -1;
+
+    for (int i = 0; i < cfg->disk_autostart_count; i++) {
+        ConfigDiskAutostart *entry = &cfg->disk_autostart[i];
+        if (strcmp(entry->disk, disk))
+            continue;
+        if (entry->user == user && !strcmp(entry->file, normalized))
+            return 0;
+        entry->user = user;
+        snprintf(entry->file, sizeof(entry->file), "%s", normalized);
+        return 1;
+    }
+
+    if (cfg->disk_autostart_count >= CONFIG_DISK_AUTOSTART_MAX)
+        return -1;
+    ConfigDiskAutostart *entry =
+        &cfg->disk_autostart[cfg->disk_autostart_count++];
+    snprintf(entry->disk, sizeof(entry->disk), "%s", disk);
+    entry->user = user;
+    snprintf(entry->file, sizeof(entry->file), "%s", normalized);
+    return 1;
+}
+
+bool config_disk_autostart_remove(Config *cfg, const char *disk) {
+    if (!cfg || !disk || !disk[0])
+        return false;
+    for (int i = 0; i < cfg->disk_autostart_count; i++) {
+        if (strcmp(cfg->disk_autostart[i].disk, disk))
+            continue;
+        int remaining = cfg->disk_autostart_count - i - 1;
+        if (remaining > 0)
+            memmove(&cfg->disk_autostart[i],
+                    &cfg->disk_autostart[i + 1],
+                    (size_t)remaining * sizeof(cfg->disk_autostart[0]));
+        cfg->disk_autostart_count--;
+        memset(&cfg->disk_autostart[cfg->disk_autostart_count], 0,
+               sizeof(cfg->disk_autostart[0]));
+        return true;
+    }
+    return false;
+}
+
+static void compact_disk_autostart(Config *cfg) {
+    int out = 0;
+    for (int i = 0; i < cfg->disk_autostart_count; i++) {
+        ConfigDiskAutostart entry = cfg->disk_autostart[i];
+        char normalized[CONFIG_DISK_AUTOSTART_FILE_MAX];
+        if (!entry.disk[0] || entry.user > 15 ||
+            !normalize_disk_autostart_file(entry.file, normalized))
+            continue;
+        snprintf(entry.file, sizeof(entry.file), "%s", normalized);
+
+        int duplicate = -1;
+        for (int j = 0; j < out; j++) {
+            if (!strcmp(cfg->disk_autostart[j].disk, entry.disk)) {
+                duplicate = j;
+                break;
+            }
+        }
+        if (duplicate >= 0)
+            cfg->disk_autostart[duplicate] = entry;
+        else
+            cfg->disk_autostart[out++] = entry;
+    }
+    for (int i = out; i < CONFIG_DISK_AUTOSTART_MAX; i++)
+        memset(&cfg->disk_autostart[i], 0,
+               sizeof(cfg->disk_autostart[i]));
+    cfg->disk_autostart_count = out;
+}
+
+static int disk_autostart_section_index(const char *section) {
+    static const char prefix[] = "disk_autostart:";
+    if (strncmp(section, prefix, sizeof(prefix) - 1))
+        return -1;
+    const char *number = section + sizeof(prefix) - 1;
+    char *end;
+    long index = strtol(number, &end, 10);
+    if (!number[0] || end == number || *end || index < 0 ||
+        index >= CONFIG_DISK_AUTOSTART_MAX)
+        return -1;
+    return (int)index;
+}
+
 /* Expand a leading ~ to the home directory. Result written into out[size]. */
 static void expand_path(const char *in, char *out, size_t size) {
     if (in[0] == '~') {
@@ -502,6 +637,7 @@ int config_load_from(Config *cfg, const char *path_override) {
     bool legacy_real_tape_save = false;
     bool real_tape_output_source_seen = false;
     bool real_tape_output_target_seen = false;
+    bool disk_autostart_invalid[CONFIG_DISK_AUTOSTART_MAX] = { false };
 
     while (fgets(line, sizeof(line), f)) {
         lineno++;
@@ -522,6 +658,7 @@ int config_load_from(Config *cfg, const char *path_override) {
         *eq = '\0';
         char *key = trim(s);
         char *val = trim(eq + 1);
+        int disk_autostart_index = disk_autostart_section_index(section);
 
         if (!strcmp(section, "machine")) {
             if (!strcmp(key, "model")) {
@@ -586,6 +723,39 @@ int config_load_from(Config *cfg, const char *path_override) {
                 char *img = config_board_image(cfg, board);
                 if (img && val[0])
                     expand_path(val, img, CONFIG_PATH_MAX);
+            }
+        } else if (disk_autostart_index >= 0) {
+            int index = disk_autostart_index;
+            ConfigDiskAutostart *entry = &cfg->disk_autostart[index];
+            if (cfg->disk_autostart_count <= index)
+                cfg->disk_autostart_count = index + 1;
+            if (!strcmp(key, "disk")) {
+                if (val[0])
+                    expand_path(val, entry->disk, sizeof(entry->disk));
+            } else if (!strcmp(key, "user")) {
+                char *end;
+                long user = strtol(val, &end, 10);
+                if (end != val && !*end && user >= 0 && user <= 15)
+                    entry->user = (uint8_t)user;
+                else {
+                    fprintf(stderr,
+                            "1984.conf:%d: disk autostart user must be 0..15\n",
+                            lineno);
+                    disk_autostart_invalid[index] = true;
+                    rc = -1;
+                }
+            } else if (!strcmp(key, "file")) {
+                char normalized[CONFIG_DISK_AUTOSTART_FILE_MAX];
+                if (normalize_disk_autostart_file(val, normalized))
+                    snprintf(entry->file, sizeof(entry->file), "%s",
+                             normalized);
+                else {
+                    fprintf(stderr,
+                            "1984.conf:%d: invalid disk autostart filename '%s'\n",
+                            lineno, val);
+                    disk_autostart_invalid[index] = true;
+                    rc = -1;
+                }
             }
         } else if (!strcmp(section, "storage")) {
             if (!strcmp(key, "drive_a"))
@@ -861,6 +1031,11 @@ int config_load_from(Config *cfg, const char *path_override) {
 
     fclose(f);
 
+    for (int i = 0; i < CONFIG_DISK_AUTOSTART_MAX; i++)
+        if (disk_autostart_invalid[i])
+            cfg->disk_autostart[i].disk[0] = '\0';
+    compact_disk_autostart(cfg);
+
     if (legacy_real_tape_save) {
         if (!real_tape_output_source_seen)
             cfg->real_tape_output_source =
@@ -963,6 +1138,18 @@ int config_save(const Config *cfg) {
         }
         if (any_img)
             fprintf(f, "image=%s\n", img);
+    }
+
+    for (int i = 0; i < cfg->disk_autostart_count; i++) {
+        const ConfigDiskAutostart *entry = &cfg->disk_autostart[i];
+        if (!entry->disk[0] || !entry->file[0])
+            continue;
+        fprintf(f,
+                "\n[disk_autostart:%d]\n"
+                "disk=%s\n"
+                "user=%u\n"
+                "file=%s\n",
+                i, entry->disk, (unsigned)entry->user, entry->file);
     }
 
     fprintf(f,

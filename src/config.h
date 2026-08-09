@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stdint.h>
 #include "cpc.h"
 #include "notify.h"   /* NotifyMode */
 
@@ -15,8 +16,16 @@ typedef enum { PRINTER_SINK_PDF = 0, PRINTER_SINK_REAL_PRINTER } ConfigPrintSink
 typedef enum { FALLBACK_JOYSTICK = 0, FALLBACK_AMX_MOUSE } FallbackInput;
 
 #define CONFIG_PATH_MAX 512
+#define CONFIG_DISK_AUTOSTART_MAX 32
+#define CONFIG_DISK_AUTOSTART_FILE_MAX 13
 #define GIF_CAPTURE_WIDTH_DEFAULT 768
 #define GIF_CAPTURE_FPS_DEFAULT   25
+
+typedef struct {
+    char    disk[CONFIG_PATH_MAX];
+    uint8_t user;
+    char    file[CONFIG_DISK_AUTOSTART_FILE_MAX];
+} ConfigDiskAutostart;
 
 typedef struct {
     /* [machine] */
@@ -60,6 +69,8 @@ typedef struct {
     char disk_b[CONFIG_PATH_MAX];
     char tape[CONFIG_PATH_MAX];   /* .cdt tape image */
     bool external_tape;           /* CPC 6128: emulate an external cassette deck */
+    ConfigDiskAutostart disk_autostart[CONFIG_DISK_AUTOSTART_MAX];
+    int disk_autostart_count;
 
     /* [hardware] */
     bool mx4;        /* MX4 expansion bus connected (gates all extension I/O) */
@@ -209,6 +220,14 @@ const char *config_crtc_type_name(CrtcType type);
 
 /* Write current cfg back to ~/.config/1984/1984.conf. */
 int config_save(const Config *cfg);
+
+/* Optional persistent DSK autostart mappings, keyed by image path. Setting a
+ * mapping returns 1 when changed, 0 when identical, or -1 if invalid/full. */
+const ConfigDiskAutostart *config_disk_autostart_find(const Config *cfg,
+                                                       const char *disk);
+int config_disk_autostart_set(Config *cfg, const char *disk, uint8_t user,
+                              const char *file);
+bool config_disk_autostart_remove(Config *cfg, const char *disk);
 
 /* Switch model and apply matching RAM size and ROM path defaults. */
 void config_set_model(Config *cfg, CpcModel model);
