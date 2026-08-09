@@ -7,6 +7,8 @@
 #define DISK_MAX_SIDES     2
 #define DISK_MAX_SECTORS  29
 #define DISK_PATH_MAX    4096
+#define DISK_DIRECTORY_MAX_FILES 64
+#define DISK_AMSDOS_NAME_MAX     13
 
 typedef struct {
     uint8_t C, H, R, N;    /* CHRN — cylinder, head, record, size code */
@@ -35,6 +37,12 @@ typedef struct {
     int       cur_sector;   /* last-used sector index (for READ ID rotation) */
 } Disk;
 
+typedef struct {
+    uint8_t  user;
+    char     name[DISK_AMSDOS_NAME_MAX]; /* AMSDOS 8.3, NUL-terminated */
+    uint32_t size;                       /* extent-derived byte count */
+} DiskDirectoryEntry;
+
 void disk_init(Disk *d);
 void disk_eject(Disk *d);
 
@@ -49,6 +57,12 @@ int  disk_create_blank(const char *path);
 /* Ensure a newly created disk path ends in .dsk (case-insensitive).
  * Returns false if path is empty or the suffix would not fit. */
 bool disk_ensure_dsk_extension(char *path, size_t capacity);
+
+/* List unique CP/M/AMSDOS files from common CPC DATA, SYSTEM, or IBM format
+ * directory sectors. Returns the number of files, 0 for an empty directory,
+ * or -1 when the mounted image has no supported directory layout. */
+int disk_list_directory(const Disk *d, DiskDirectoryEntry *entries,
+                        int capacity);
 
 /* Find a sector by CHRN on the current track. Returns NULL if not found. */
 DiskSector *disk_find_sector(Disk *d, int side, uint8_t C, uint8_t H,
