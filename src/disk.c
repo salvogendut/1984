@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 void disk_init(Disk *d) {
     memset(d, 0, sizeof(*d));
@@ -154,6 +155,154 @@ bool disk_ensure_dsk_extension(char *path, size_t capacity) {
 
     memcpy(path + len, suffix, sizeof(suffix));
     return true;
+}
+
+static const DiskSector *disk_sector_by_id(const Disk *d, int track, int side,
+                                            uint8_t id) {
+    if (!d || !d->inserted || track < 0 || track >= d->track_count ||
+        side < 0 || side >= d->sides)
+        return NULL;
+    const DiskTrack *tr = &d->track[track][side];
+    for (int i = 0; i < tr->sector_count; i++)
+        if (tr->sectors[i].R == id)
+            return &tr->sectors[i];
+    return NULL;
+}
+
+static bool disk_read_directory_sector(const Disk *d, int track, uint8_t id,
+                                       uint8_t *out) {
+    const DiskSector *sec = disk_sector_by_id(d, track, 0, id);
+    if (!sec || sec->size < 512)
+        return false;
+    const DiskTrack *tr = &d->track[track][0];
+    if (!tr->data || sec->offset < 0 || sec->offset + 512 > tr->data_size)
+        return false;
+    memcpy(out, tr->data + sec->offset, 512);
+    return true;
+}
+
+static bool disk_directory_geometry(const Disk *d, int *track,
+                                    uint8_t *first_sector) {
+    if (disk_sector_by_id(d, 0, 0, 0xC1)) {
+        *track = 0;             /* CPC DATA format */
+        *first_sector = 0xC1;
+        return true;
+    }
+    if (disk_sector_by_id(d, 0, 0, 0x41)) {
+        *track = 2;             /* CPC SYSTEM format: two reserved tracks */
+        *first_sector = 0x41;
+        return true;
+    }
+    if (disk_sector_by_id(d, 0, 0, 0x01)) {
+        *track = 1;             /* IBM format: one reserved track */
+        *first_sector = 0x01;
+        return true;
+    }
+    return false;
+}
+
+static bool cpm_directory_name(const uint8_t *entry,
+                               char out[DISK_AMSDOS_NAME_MAX]) {
+    char name[9];
+    char ext[4];
+    int name_len = 8;
+    int ext_len = 3;
+
+    for (int i = 0; i < 8; i++) {
+        unsigned char c = entry[1 + i] & 0x7F;
+        if (c != ' ' && (c < 0x21 || c > 0x7E || c == '.'))
+            return false;
+        name[i] = (char)c;
+    }
+    name[8] = '\0';
+    while (name_len > 0 && name[name_len - 1] == ' ')
+        name_len--;
+    if (name_len == 0)
+        return false;
+
+    for (int i = 0; i < 3; i++) {
+        unsigned char c = entry[9 + i] & 0x7F;
+        if (c != ' ' && (c < 0x21 || c > 0x7E || c == '.'))
+            return false;
+        ext[i] = (char)c;
+    }
+    ext[3] = '\0';
+    while (ext_len > 0 && ext[ext_len - 1] == ' ')
+        ext_len--;
+
+    int pos = 0;
+    for (int i = 0; i < name_len; i++)
+        out[pos++] = (char)toupper((unsigned char)name[i]);
+    if (ext_len > 0) {
+        out[pos++] = '.';
+        for (int i = 0; i < ext_len; i++)
+            out[pos++] = (char)toupper((unsigned char)ext[i]);
+    }
+    out[pos] = '\0';
+    return true;
+}
+
+static int directory_entry_compare(const void *a_, const void *b_) {
+    const DiskDirectoryEntry *a = a_;
+    const DiskDirectoryEntry *b = b_;
+    if (a->user != b->user)
+        return (int)a->user - (int)b->user;
+    return strcmp(a->name, b->name);
+}
+
+int disk_list_directory(const Disk *d, DiskDirectoryEntry *entries,
+                        int capacity) {
+    uint8_t directory[64 * 32];
+    int dir_track;
+    uint8_t first_sector;
+
+    if (!d || !d->inserted || !entries || capacity <= 0 ||
+        !disk_directory_geometry(d, &dir_track, &first_sector))
+        return -1;
+    if (dir_track >= d->track_count)
+        return -1;
+    for (int i = 0; i < 4; i++)
+        if (!disk_read_directory_sector(d, dir_track,
+                                        (uint8_t)(first_sector + i),
+                                        directory + i * 512))
+            return -1;
+
+    int count = 0;
+    for (int i = 0; i < 64; i++) {
+        const uint8_t *raw = directory + i * 32;
+        if (raw[0] > 15)
+            continue;
+
+        char name[DISK_AMSDOS_NAME_MAX];
+        if (!cpm_directory_name(raw, name))
+            continue;
+
+        int found = -1;
+        for (int j = 0; j < count; j++) {
+            if (entries[j].user == raw[0] && !strcmp(entries[j].name, name)) {
+                found = j;
+                break;
+            }
+        }
+        if (found < 0) {
+            if (count >= capacity)
+                continue;
+            found = count++;
+            entries[found].user = raw[0];
+            snprintf(entries[found].name, sizeof(entries[found].name),
+                     "%s", name);
+            entries[found].size = 0;
+        }
+
+        unsigned extent = (raw[12] & 0x1F) | ((raw[14] & 0x3F) << 5);
+        unsigned records = raw[15] > 128 ? 128 : raw[15];
+        uint32_t end = (uint32_t)(extent * 128U + records) * 128U;
+        if (end > entries[found].size)
+            entries[found].size = end;
+    }
+
+    qsort(entries, (size_t)count, sizeof(*entries), directory_entry_compare);
+    return count;
 }
 
 int disk_create_blank(const char *path) {

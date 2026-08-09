@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <SDL3/SDL.h>
 #include "config.h"
+#include "disk.h"
 
 typedef enum {
     OV_GENERAL  = 0,
@@ -17,7 +18,8 @@ typedef enum {
     OV_STATE_ROMSLOTS = 2,   /* ROM slots sub-panel */
     OV_STATE_FILE_BROWSER = 3,
     OV_STATE_REAL_TAPE = 4,  /* Tinker-gated physical cassette controls */
-    OV_STATE_ABOUT    = 5    /* About dialog with an OK button */
+    OV_STATE_ABOUT    = 5,   /* About dialog with an OK button */
+    OV_STATE_DISK_AUTOSTART = 6
 } OvState;
 
 typedef enum {
@@ -71,6 +73,18 @@ typedef struct {
     int          browser_entry_capacity;
     int          browser_row;
     int          browser_scroll;
+    /* Session-only DSK autostart selector. The committed choice survives
+     * machine resets but is deliberately absent from Config. */
+    DiskDirectoryEntry disk_files[DISK_DIRECTORY_MAX_FILES];
+    int          disk_file_count;
+    int          disk_file_row;
+    int          disk_file_scroll;
+    int          disk_file_drive;
+    int          disk_file_marked_row;
+    int          disk_autostart_drive;
+    uint8_t      disk_autostart_user;
+    char         disk_autostart_file[DISK_AMSDOS_NAME_MAX];
+    bool         disk_autostart_request;
     int          real_tape_row;
     /* ROM slots sub-panel state */
     int          romslot_row;    /* selected slot 0-31 */
@@ -111,3 +125,9 @@ void overlay_render_real_tape_scope(const Overlay *ov, SDL_Renderer *r);
 
 /* Call once per frame to process any pending file-dialog results. */
 void overlay_tick(Overlay *ov);
+
+/* Query the session-only DSK autostart choice. The request accessor consumes
+ * only the immediate reset request; the selected file remains armed. */
+bool overlay_disk_autostart_get(const Overlay *ov, int *drive,
+                                uint8_t *user, const char **file);
+bool overlay_take_disk_autostart_request(Overlay *ov);

@@ -451,6 +451,38 @@ static void usage(const char *prog, int code) {
     exit(code);
 }
 
+typedef enum {
+    AUTOSTART_NONE = 0,
+    AUTOSTART_CLI,
+    AUTOSTART_PASTE,
+    AUTOSTART_DISK_SESSION
+} AutostartSource;
+
+static int autostart_delay_frames(void) {
+    int delay = 42;
+    const char *e = getenv("ONE_K_AUTOSTART_FRAMES");
+    if (e) {
+        int requested = atoi(e);
+        if (requested > 0)
+            delay = requested;
+    }
+    return delay;
+}
+
+static bool arm_disk_session_autostart(const Overlay *overlay,
+                                       const CPC *cpc,
+                                       AutostartSource *source,
+                                       int *countdown) {
+    int drive;
+    if (!overlay_disk_autostart_get(overlay, &drive, NULL, NULL) ||
+        !cpc_model_has_keyboard(cpc->model) || drive < 0 || drive > 1 ||
+        !cpc->drive[drive].inserted)
+        return false;
+    *source = AUTOSTART_DISK_SESSION;
+    *countdown = autostart_delay_frames();
+    return true;
+}
+
 int main(int argc, char *argv[]) {
 
     SD_INIT();
@@ -905,14 +937,11 @@ int main(int argc, char *argv[]) {
     /* Frames to wait before injecting autostart text (matches caprice32 timing).
      * ONE_K_AUTOSTART_FRAMES overrides for headless QA scripts that need a
      * larger margin (paste before BASIC Ready is silently dropped). */
-    int autostart_countdown = (autostart || paste_arg) ? 42 : 0;
-    {
-        const char *e = getenv("ONE_K_AUTOSTART_FRAMES");
-        if (e && autostart_countdown > 0) {
-            int n = atoi(e);
-            if (n > 0) autostart_countdown = n;
-        }
-    }
+    AutostartSource autostart_source = paste_arg ? AUTOSTART_PASTE
+                                         : autostart ? AUTOSTART_CLI
+                                                     : AUTOSTART_NONE;
+    int autostart_countdown = autostart_source == AUTOSTART_NONE
+                            ? 0 : autostart_delay_frames();
 
     /* Host pacer. A normal CPC frame is 20 ms, but software can program a
      * different CRTC frame length. Pace from the CPU cycles cpc_frame()
@@ -1155,6 +1184,9 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (ev.key.scancode == SDL_SCANCODE_F5) {
                     cpc_reset(&cpc);
+                    arm_disk_session_autostart(&overlay, &cpc,
+                                               &autostart_source,
+                                               &autostart_countdown);
                 } else if (ev.key.scancode == SDL_SCANCODE_F10) {
                     /* Toggle host-side card browse: pause the guest, mount
                      * every active FAT card image (M4 SD / IDE / Albireo)
@@ -1218,7 +1250,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (autostart_countdown > 0 && --autostart_countdown == 0) {
-            if (paste_arg) {
+            if (autostart_source == AUTOSTART_PASTE) {
                 /* --paste=TEXT: expand \n to real newline then inject */
                 char buf[512];
                 int j = 0;
@@ -1228,14 +1260,33 @@ int main(int argc, char *argv[]) {
                 }
                 buf[j] = '\0';
                 paste_text(&paste, buf);
-            } else {
+            } else if (autostart_source == AUTOSTART_CLI) {
                 char cmd[256];
                 snprintf(cmd, sizeof(cmd), "run\"%s", autostart);
                 paste_text(&paste, cmd);
+            } else if (autostart_source == AUTOSTART_DISK_SESSION) {
+                int drive;
+                uint8_t user;
+                const char *file;
+                if (overlay_disk_autostart_get(&overlay, &drive,
+                                               &user, &file)) {
+                    char cmd[96];
+                    if (user > 0)
+                        snprintf(cmd, sizeof(cmd),
+                                 "|%c\n|user,%u\nrun\"%s",
+                                 drive ? 'b' : 'a', (unsigned)user, file);
+                    else
+                        snprintf(cmd, sizeof(cmd), "|%c\nrun\"%s",
+                                 drive ? 'b' : 'a', file);
+                    paste_text(&paste, cmd);
+                }
             }
+            autostart_source = AUTOSTART_NONE;
         }
 
         overlay_tick(&overlay);
+        bool disk_autostart_requested = !overlay.visible &&
+            overlay_take_disk_autostart_request(&overlay);
 
         /* Auto-finish F10 mount session if the user ejected the card from
          * the file manager (Nautilus, Files, …). Same effect as a second
@@ -1348,6 +1399,14 @@ int main(int argc, char *argv[]) {
                                   &mouse_captured, cpc.model);
             net4cpc_reset();
             cpc_reset(&cpc);
+            arm_disk_session_autostart(&overlay, &cpc,
+                                       &autostart_source,
+                                       &autostart_countdown);
+        } else if (disk_autostart_requested) {
+            cpc_reset(&cpc);
+            arm_disk_session_autostart(&overlay, &cpc,
+                                       &autostart_source,
+                                       &autostart_countdown);
         }
 
         monitor_pty_tick(monitor);

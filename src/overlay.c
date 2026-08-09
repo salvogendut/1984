@@ -33,6 +33,7 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define ROMSLOT_TOTAL   (ROM_EXT_COUNT + 1)
 #define BROWSER_VISIBLE_ROWS 16
 #define BROWSER_ROW_H 16
+#define DISK_AUTOSTART_VISIBLE_ROWS 16
 #define REAL_TAPE_ROWS 10
 
 #define ABOUT_TEXT "1984 Amstrad CPC emulator (c) 2026 salvogendut"
@@ -339,6 +340,73 @@ static void trunc_path(const char *path, char *out, size_t sz) {
 static bool floppy_accessible(const Overlay *ov) {
     return !cpc_model_is_console(ov->cfg->model) &&
            (cpc_model_has_builtin_fdc(ov->cfg->model) || ov->cfg->dd1);
+}
+
+static void disk_autostart_clear(Overlay *ov, int drive) {
+    if (ov->disk_autostart_drive != drive)
+        return;
+    ov->disk_autostart_drive = -1;
+    ov->disk_autostart_user = 0;
+    ov->disk_autostart_file[0] = '\0';
+    ov->disk_autostart_request = false;
+}
+
+static void disk_autostart_ensure_visible(Overlay *ov) {
+    if (ov->disk_file_row < ov->disk_file_scroll)
+        ov->disk_file_scroll = ov->disk_file_row;
+    if (ov->disk_file_row >=
+        ov->disk_file_scroll + DISK_AUTOSTART_VISIBLE_ROWS)
+        ov->disk_file_scroll =
+            ov->disk_file_row - DISK_AUTOSTART_VISIBLE_ROWS + 1;
+    if (ov->disk_file_scroll < 0)
+        ov->disk_file_scroll = 0;
+}
+
+static void disk_autostart_move(Overlay *ov, int delta) {
+    if (ov->disk_file_count <= 0)
+        return;
+    int row = ov->disk_file_row + delta;
+    if (row < 0)
+        row = 0;
+    if (row >= ov->disk_file_count)
+        row = ov->disk_file_count - 1;
+    ov->disk_file_row = row;
+    disk_autostart_ensure_visible(ov);
+}
+
+static void open_disk_autostart_browser(Overlay *ov, int drive) {
+    if (!ov->cpc || drive < 0 || drive > 1 ||
+        !ov->cpc->drive[drive].inserted) {
+        notify_post("Insert a disk in Drive %c first", drive ? 'B' : 'A');
+        return;
+    }
+
+    int count = disk_list_directory(&ov->cpc->drive[drive], ov->disk_files,
+                                    DISK_DIRECTORY_MAX_FILES);
+    if (count < 0) {
+        notify_post("Drive %c disk directory format is unsupported",
+                    drive ? 'B' : 'A');
+        return;
+    }
+
+    ov->disk_file_drive = drive;
+    ov->disk_file_count = count;
+    ov->disk_file_row = 0;
+    ov->disk_file_scroll = 0;
+    ov->disk_file_marked_row = -1;
+    if (ov->disk_autostart_drive == drive) {
+        for (int i = 0; i < count; i++) {
+            if (ov->disk_files[i].user == ov->disk_autostart_user &&
+                !strcmp(ov->disk_files[i].name,
+                        ov->disk_autostart_file)) {
+                ov->disk_file_row = i;
+                ov->disk_file_marked_row = i;
+                disk_autostart_ensure_visible(ov);
+                break;
+            }
+        }
+    }
+    ov->state = OV_STATE_DISK_AUTOSTART;
 }
 
 static bool path_separator(char c) {
@@ -760,7 +828,9 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (da && da->inserted && ov->cfg->disk_a[0]) {
-                trunc_path(ov->cfg->disk_a, val, vsz);
+                char shown[34];
+                trunc_path(ov->cfg->disk_a, shown, sizeof(shown));
+                snprintf(val, vsz, "%s  A=autostart", shown);
             }
             else
                 snprintf(val, vsz, "[empty]  Enter=load, N=new, Del=clear");
@@ -774,7 +844,9 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "[enable DD1 in Advanced]");
                 *readonly = true;
             } else if (db && db->inserted && ov->cfg->disk_b[0]) {
-                trunc_path(ov->cfg->disk_b, val, vsz);
+                char shown[34];
+                trunc_path(ov->cfg->disk_b, shown, sizeof(shown));
+                snprintf(val, vsz, "%s  A=autostart", shown);
             }
             else
                 snprintf(val, vsz, "[empty]  Enter=load, N=new, Del=clear");
@@ -2224,6 +2296,9 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc, bool sdl_fm) {
     ov->dialog_kind  = DIALOG_NONE;
     ov->dialog_drive = -1;
     ov->dialog_slot  = -1;
+    ov->disk_file_drive = -1;
+    ov->disk_file_marked_row = -1;
+    ov->disk_autostart_drive = -1;
     ov->last_m4            = cfg->m4;
     ov->last_albireo       = cfg->albireo;
     ov->last_symbiface_ide = cfg->symbiface_ide;
@@ -2231,6 +2306,24 @@ void overlay_init(Overlay *ov, Config *cfg, CPC *cpc, bool sdl_fm) {
 
 void overlay_quit(Overlay *ov) {
     browser_clear_entries(ov);
+}
+
+bool overlay_disk_autostart_get(const Overlay *ov, int *drive,
+                                uint8_t *user, const char **file) {
+    if (!ov || ov->disk_autostart_drive < 0 ||
+        !ov->disk_autostart_file[0])
+        return false;
+    if (drive) *drive = ov->disk_autostart_drive;
+    if (user) *user = ov->disk_autostart_user;
+    if (file) *file = ov->disk_autostart_file;
+    return true;
+}
+
+bool overlay_take_disk_autostart_request(Overlay *ov) {
+    if (!ov || !ov->disk_autostart_request)
+        return false;
+    ov->disk_autostart_request = false;
+    return true;
 }
 
 /* Check whether any of the ROM-owning hardware toggles flipped since
@@ -2301,6 +2394,8 @@ void overlay_tick(Overlay *ov) {
         int drv = ov->dialog_drive;
         ov->dialog_drive = -1;
         char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+        if (strcmp(dest, ov->dialog_path))
+            disk_autostart_clear(ov, drv);
         snprintf(dest, CONFIG_PATH_MAX, "%s", ov->dialog_path);
         if (ov->cpc) {
             Disk *d = &ov->cpc->drive[drv];
@@ -2316,6 +2411,7 @@ void overlay_tick(Overlay *ov) {
         int drv = ov->dialog_drive;
         ov->dialog_drive = -1;
         char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+        disk_autostart_clear(ov, drv);
         if (!disk_ensure_dsk_extension(ov->dialog_path,
                                        sizeof(ov->dialog_path))) {
             fprintf(stderr,
@@ -2811,6 +2907,72 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         return true;
     }
 
+    if (ov->state == OV_STATE_DISK_AUTOSTART) {
+        switch (sc) {
+        case SDL_SCANCODE_ESCAPE:
+            ov->state = OV_STATE_MENU;
+            break;
+        case SDL_SCANCODE_UP:
+            disk_autostart_move(ov, -1);
+            break;
+        case SDL_SCANCODE_DOWN:
+            disk_autostart_move(ov, 1);
+            break;
+        case SDL_SCANCODE_PAGEUP:
+            disk_autostart_move(ov, -DISK_AUTOSTART_VISIBLE_ROWS);
+            break;
+        case SDL_SCANCODE_PAGEDOWN:
+            disk_autostart_move(ov, DISK_AUTOSTART_VISIBLE_ROWS);
+            break;
+        case SDL_SCANCODE_HOME:
+            if (ov->disk_file_count > 0) {
+                ov->disk_file_row = 0;
+                disk_autostart_ensure_visible(ov);
+            }
+            break;
+        case SDL_SCANCODE_END:
+            if (ov->disk_file_count > 0) {
+                ov->disk_file_row = ov->disk_file_count - 1;
+                disk_autostart_ensure_visible(ov);
+            }
+            break;
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+        case SDL_SCANCODE_SPACE:
+            if (ov->disk_file_row >= 0 &&
+                ov->disk_file_row < ov->disk_file_count)
+                ov->disk_file_marked_row = ov->disk_file_row;
+            break;
+        case SDL_SCANCODE_DELETE:
+        case SDL_SCANCODE_BACKSPACE:
+            ov->disk_file_marked_row = -1;
+            break;
+        case SDL_SCANCODE_S:
+            if (ov->disk_file_marked_row >= 0 &&
+                ov->disk_file_marked_row < ov->disk_file_count) {
+                const DiskDirectoryEntry *entry =
+                    &ov->disk_files[ov->disk_file_marked_row];
+                ov->disk_autostart_drive = ov->disk_file_drive;
+                ov->disk_autostart_user = entry->user;
+                snprintf(ov->disk_autostart_file,
+                         sizeof(ov->disk_autostart_file), "%s", entry->name);
+                ov->disk_autostart_request = true;
+                notify_post("Drive %c autostart: %s",
+                            ov->disk_file_drive ? 'B' : 'A', entry->name);
+            } else {
+                disk_autostart_clear(ov, ov->disk_file_drive);
+                notify_post("Drive %c autostart cleared",
+                            ov->disk_file_drive ? 'B' : 'A');
+            }
+            ov->state = OV_STATE_MENU;
+            try_close(ov);
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
     /* ---- Confirm dialog ---- */
     if (ov->state == OV_STATE_CONFIRM) {
         switch (sc) {
@@ -3095,6 +3257,11 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
                 dsk_filters, 2, ov->cfg->last_dir[0] ? ov->cfg->last_dir : NULL);
         }
         break;
+    case SDL_SCANCODE_A:
+        if (ov->section == OV_STORAGE &&
+            (ov->row == 0 || ov->row == 1) && floppy_accessible(ov))
+            open_disk_autostart_browser(ov, ov->row);
+        break;
     case SDL_SCANCODE_DELETE:
     case SDL_SCANCODE_BACKSPACE:
         if (reset_tinker_item(ov))
@@ -3106,6 +3273,7 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
             if ((ov->row == 0 || ov->row == 1) && floppy_accessible(ov)) {
                 int drv = ov->row;
                 char *dest = (drv == 0) ? ov->cfg->disk_a : ov->cfg->disk_b;
+                disk_autostart_clear(ov, drv);
                 if (dest[0]) {
                     dest[0] = '\0';
                     if (ov->cpc) disk_eject(&ov->cpc->drive[drv]);
@@ -3411,6 +3579,60 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
 
     SDL_SetRenderScale(r, SCALE, SCALE);
 
+    /* ---- Files inside the mounted DSK ---- */
+    if (ov->state == OV_STATE_DISK_AUTOSTART) {
+        fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
+        char title[96];
+        snprintf(title, sizeof(title),
+                 "Drive %c files  Enter=mark S=save/reset Del=clear Esc=back",
+                 ov->disk_file_drive ? 'B' : 'A');
+        draw_text(r, DROP_PAD, 4, title, 180, 180, 220);
+        SDL_SetRenderDrawColor(r, 70, 90, 200, 255);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_RenderLine(r, 0, BAR_H - 1, lw, BAR_H - 1);
+
+        for (int shown = 0; shown < DISK_AUTOSTART_VISIBLE_ROWS; shown++) {
+            int index = ov->disk_file_scroll + shown;
+            if (index >= ov->disk_file_count)
+                break;
+            const DiskDirectoryEntry *entry = &ov->disk_files[index];
+            float iy = BAR_H + 2.0f + shown * BROWSER_ROW_H;
+            bool selected = index == ov->disk_file_row;
+            if (selected)
+                fill_rect(r, 0, iy - 2.0f, lw, 14.0f,
+                          70, 90, 200, 255);
+
+            char line[64];
+            snprintf(line, sizeof(line), "%c U%02u  %-12s %6uK",
+                     index == ov->disk_file_marked_row ? '*' : ' ',
+                     (unsigned)entry->user, entry->name,
+                     (unsigned)((entry->size + 1023U) / 1024U));
+            draw_text(r, DROP_PAD, iy, line,
+                      selected ? 255 : 215,
+                      selected ? 255 : 220,
+                      index == ov->disk_file_marked_row ? 100 : 225);
+        }
+
+        float status_y = BAR_H + 2.0f +
+                         DISK_AUTOSTART_VISIBLE_ROWS * BROWSER_ROW_H + 4.0f;
+        if (ov->disk_file_count == 0) {
+            draw_text(r, DROP_PAD, status_y,
+                      "The disk directory contains no files.",
+                      160, 160, 180);
+        } else {
+            char count[64];
+            snprintf(count, sizeof(count), "%d file%s",
+                     ov->disk_file_count,
+                     ov->disk_file_count == 1 ? "" : "s");
+            draw_text(r, DROP_PAD, status_y, count, 150, 160, 180);
+        }
+        draw_text(r, DROP_PAD, status_y + 17.0f,
+                  "Session-only mark: survives F5 reset; clears when 1984 exits.",
+                  150, 190, 230);
+        SDL_SetRenderScale(r, 1.0f, 1.0f);
+        return;
+    }
+
     /* ---- ROM slots sub-panel ---- */
     if (ov->state == OV_STATE_ROMSLOTS) {
         fill_rect(r, 0, 0, lw, lh, 10, 10, 30, 245);
@@ -3638,8 +3860,8 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         const char *help = cpc_model_is_console(ov->cfg->model)
             ? "Cartridge: Enter=load CPR  Del=default"
             : (ov->sdl_fm
-                ? "Enter: built-in  N:new  Del:eject/default"
-                : "Enter: system  Shift+Enter: built-in  N:new  Del:eject/default");
+                ? "Enter=load A=autostart N=new Del=eject/default"
+                : "Enter=load Shift+Enter=built-in A=autostart N=new Del=eject");
         draw_text(r, DROP_PAD, BAR_H + drop_h + 7.0f, help,
                   150, 150, 175);
     }
