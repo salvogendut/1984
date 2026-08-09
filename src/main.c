@@ -917,10 +917,12 @@ int main(int argc, char *argv[]) {
      * etc.) is done — the snapshot overrides only the CPU + GA + CRTC + PPI
      * + RAM state. Suppress autostart/paste so a typed sequence doesn't fight
      * the loaded snapshot's PC. */
+    bool snapshot_loaded = false;
     if (load_sna_arg) {
         if (snapshot_load(&cpc, load_sna_arg) == 0) {
             autostart = NULL;
             paste_arg = NULL;
+            snapshot_loaded = true;
         }
     }
 
@@ -942,6 +944,10 @@ int main(int argc, char *argv[]) {
                                                      : AUTOSTART_NONE;
     int autostart_countdown = autostart_source == AUTOSTART_NONE
                             ? 0 : autostart_delay_frames();
+    if (autostart_source == AUTOSTART_NONE && !snapshot_loaded)
+        arm_disk_session_autostart(&overlay, &cpc,
+                                   &autostart_source,
+                                   &autostart_countdown);
 
     /* Host pacer. A normal CPC frame is 20 ms, but software can program a
      * different CRTC frame length. Pace from the CPU cycles cpc_frame()

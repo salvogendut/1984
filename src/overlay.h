@@ -81,6 +81,7 @@ typedef struct {
     int          disk_file_scroll;
     int          disk_file_drive;
     int          disk_file_marked_row;
+    bool         disk_file_remember;
     int          disk_autostart_drive;
     uint8_t      disk_autostart_user;
     char         disk_autostart_file[DISK_AMSDOS_NAME_MAX];

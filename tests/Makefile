@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model
+TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config
 
 .PHONY: all check clean
 
@@ -64,6 +64,11 @@ test-model: test_model.c ../src/cpc.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_model.c -o $@
 
+test-config: test_config.c ../src/config.c ../src/config.h ../src/real_tape.c ../src/tape.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_config.c ../src/config.c ../src/real_tape.c ../src/tape.c \
+		$(SDL3_LIBS) -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -78,6 +83,7 @@ check: $(TESTS)
 	./test-cartridge
 	./test-asic
 	./test-model
+	./test-config
 
 clean:
 	rm -f $(TESTS)

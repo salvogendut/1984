@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.18
+Version:        0.4.19
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -104,6 +104,13 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/GX4000.cpr
 
 %changelog
+* Sun Aug 09 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.19-1
+- Add CPC Plus and GX4000 emulation with cartridge support, ASIC DMA audio,
+  hardware sprites, raster splits, fine scrolling, and selectable CRTC types.
+- Add disk-directory autostart selection with optional per-image persistence.
+- Add macOS application bundles, correct CPC punctuation key ordering, and an
+  About dialog.
+
 * Mon Jul 27 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.18-1
 - Add Tinker-gated real cassette INPUT and OUTPUT routing through host audio
   devices, WAV files, mounted CDT images, and the CPC SAVE write line.
