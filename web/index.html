@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>1984 WASM POC</title>
+<style>
+  body { background: #111; color: #ccc; font: 14px monospace; text-align: center; }
+  canvas { image-rendering: pixelated; border: 1px solid #444; margin-top: 12px; }
+  #status { margin-top: 8px; }
+</style>
+</head>
+<body>
+<canvas id="screen" width="768" height="576"></canvas>
+<div id="status">loading…</div>
+<script src="poc.js"></script>
+<script>
+// Map KeyboardEvent.code -> SDL_Scancode (values from SDL_scancode.h).
+const CODE2SCAN = {
+  KeyA:4, KeyB:5, KeyC:6, KeyD:7, KeyE:8, KeyF:9, KeyG:10, KeyH:11, KeyI:12,
+  KeyJ:13, KeyK:14, KeyL:15, KeyM:16, KeyN:17, KeyO:18, KeyP:19, KeyQ:20,
+  KeyR:21, KeyS:22, KeyT:23, KeyU:24, KeyV:25, KeyW:26, KeyX:27, KeyY:28, KeyZ:29,
+  Digit1:30, Digit2:31, Digit3:32, Digit4:33, Digit5:34, Digit6:35, Digit7:36,
+  Digit8:37, Digit9:38, Digit0:39,
+  Enter:40, Escape:41, Backspace:42, Tab:43, Space:44,
+  Minus:45, Equal:46, BracketLeft:47, BracketRight:48, Backslash:49,
+  Semicolon:51, Quote:52, Backquote:53, Comma:54, Period:55, Slash:56,
+  Delete:76, ArrowRight:79, ArrowLeft:80, ArrowDown:81, ArrowUp:82,
+  NumpadEnter:88,
+  ControlLeft:224, ShiftLeft:225, AltLeft:226,
+  ControlRight:228, ShiftRight:229, AltRight:230,
+};
+
+const canvas = document.getElementById('screen');
+const statusEl = document.getElementById('status');
+const ctx = canvas.getContext('2d');
+const W = 768, H = 272;
+// The internal buffer is 768x272 (non-square CPC pixels); the host emulator
+// stretches it to a 4:3 canvas (768x576). We do the same here.
+const VW = 768, VH = 576;
+const off = document.createElement('canvas');
+off.width = W; off.height = H;
+const offctx = off.getContext('2d');
+const img = offctx.createImageData(W, H);
+
+createPoc().then(m => {
+  if (m._poc_init() !== 0) { statusEl.textContent = 'poc_init failed'; return; }
+  statusEl.textContent = 'CPC 6128 booting… (click canvas for keyboard focus)';
+
+  const ptr = m._poc_pixels();
+  const px = m.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + W * H);
+
+  let last = 0;
+  function frame(t) {
+    // Pace to 50 Hz (20 ms) like the PAL CPC.
+    if (t - last >= 20) {
+      m._poc_step();
+      last = t;
+      for (let i = 0, j = 0; i < W * H; i++, j += 4) {
+        const c = px[i];
+        img.data[j]     = (c >> 16) & 0xFF;
+        img.data[j + 1] = (c >> 8)  & 0xFF;
+        img.data[j + 2] =  c        & 0xFF;
+        img.data[j + 3] = 0xFF;
+      }
+      offctx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, 0, 0, W, H, 0, 0, VW, VH);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  window.addEventListener('keydown', e => {
+    if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); m._poc_key(CODE2SCAN[e.code], 1); }
+  });
+  window.addEventListener('keyup', e => {
+    if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); m._poc_key(CODE2SCAN[e.code], 0); }
+  });
+}).catch(err => { statusEl.textContent = 'failed to start: ' + err; });
+</script>
+</body>
+</html>
