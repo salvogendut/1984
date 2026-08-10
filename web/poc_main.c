@@ -93,5 +93,8 @@ EMSCRIPTEN_KEEPALIVE void poc_joy(int col, int pressed) {
     else         kbd_key_up  (&g_cpc.kbd, POC_JOY_ROW, col);
 }
 
+/* Disk activity: the FDC motor spins while a floppy is being accessed. */
+EMSCRIPTEN_KEEPALIVE int poc_disk_motor(void) { return g_cpc.fdc.motor ? 1 : 0; }
+
 EMSCRIPTEN_KEEPALIVE int poc_width(void)  { return CPC_SCREEN_W; }
 EMSCRIPTEN_KEEPALIVE int poc_height(void) { return CPC_SCREEN_H; }
