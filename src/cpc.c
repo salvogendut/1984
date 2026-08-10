@@ -9,6 +9,13 @@
 
 /* Set to 1 at runtime to trace CRTC/GA writes to stderr */
 int cpc_trace_io = 0;
+
+/* Temporary WASM-POC diagnostics: count CRTC ticks, monitor advances/peaks. */
+int g_poc_crtc_ticks = 0;
+int g_poc_monitor_advances = 0;
+int g_poc_monitor_peaks = 0;
+int g_poc_trace_pc = 0;   /* set to 1 to sample the Z80 PC during boot */
+
 /* Counter incremented by ide_write on each command, used by crash trace arming */
 u32 ide_cmd_count_for_crash_trace = 0;
 int cpc_trace_palette = 0;
@@ -1284,12 +1291,14 @@ static void cpc_monitor_end_hsync(CPC *cpc) {
 }
 
 static void cpc_monitor_advance(CPC *cpc) {
+    g_poc_monitor_advances++;
     cpc->monitor_hs_start_pos += 0x100;
     cpc->monitor_hs_end_pos += 0x100;
     cpc->monitor_hs_peak_pos += 0x100;
     cpc->monitor_hpos += 0x100;
 
     if (cpc->monitor_hpos >= cpc->monitor_hsync) {
+        g_poc_monitor_peaks++;
         cpc->monitor_had_peak = true;
         cpc->monitor_hs_peak_pos = cpc->monitor_hpos - cpc->monitor_hsync;
         cpc->monitor_hs_start_to_peak =
@@ -1400,6 +1409,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
     while (cpc->crtc_cycle_acc >= 4) {
         cpc->crtc_cycle_acc -= 4;
         crtc_tick(&cpc->crtc);
+        g_poc_crtc_ticks++;
 
         bool new_hsync = crtc_hsync(&cpc->crtc);
         bool new_vsync = crtc_vsync(&cpc->crtc);
@@ -1905,6 +1915,10 @@ int cpc_frame(CPC *cpc) {
             }
         }
         int t = z80_step(&cpc->cpu, &cpc->bus);
+        if (g_poc_trace_pc && cpc->cpu.pc == 0x0342)
+            fprintf(stderr, "at0342 mem[C000]=%02X\n", (unsigned)mem_read(&cpc->mem, 0xC000));
+        if (g_poc_trace_pc && g_total_t >= 1000000 && g_total_t < 4000000)
+            fprintf(stderr, "pc=%04X\n", (unsigned)cpc->cpu.pc);
         /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
          * "TXT WR CHAR" at &BB5A — A holds the byte to print. By
          * sampling AFTER the step we catch the moment the CPU has

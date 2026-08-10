@@ -735,6 +735,8 @@ int main(int argc, char *argv[]) {
      * hooks. Production env vars (CC_TABLES, FAKE_RTC, AUTOSTART_FRAMES,
      * PASTE_GAP) use plain getenv() and are unaffected. */
     g_debug_enabled = cfg.debug ? 1 : 0;
+    extern int g_poc_trace_pc;
+    g_poc_trace_pc = dbg_getenv("ONE_K_TRACE_PC") ? 1 : 0;
 
     /* Apply per-board ROM templates to rom_ext[]: every slot tagged
      * with an active board (m4/albireo/symbiface_ide-for-cyboard) gets
