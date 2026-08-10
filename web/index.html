@@ -14,6 +14,19 @@
 </style>
 </head>
 <body>
+<div id="topbar">
+  <label>Model:
+    <select id="model">
+      <option value="0">CPC 6128</option>
+      <option value="1">CPC 6128 PLUS</option>
+    </select>
+  </label>
+  <button id="reset" type="button">Reset</button>
+  <span id="cartspan" style="display:none">
+    <input type="file" id="cartfile" accept=".cpr,.CPR">
+  </span>
+  <span id="cartname"></span>
+</div>
 <canvas id="screen" width="768" height="576"></canvas>
 <div><span id="ledA" class="led"></span><span id="diskname"></span></div>
 <div id="status">loading…</div>
@@ -61,6 +74,67 @@ create6128().then(m => {
   statusEl.textContent = 'CPC 6128 booting… (click for keyboard focus)';
 
   const ptr = m._poc_pixels();
+  let currentModel = 0;
+
+  // Re-init the machine (model switch / cartridge load). The framebuffer
+  // pointer is stable (static CPC struct), so `ptr` stays valid.
+  function reinit(model, cartridge) {
+    const rc = (cartridge !== undefined)
+      ? m.ccall('poc_load_cartridge', 'number', ['string'], [cartridge])
+      : m._poc_init_model(model, 0);
+    if (rc !== 0) { statusEl.textContent = 'machine init failed'; return false; }
+    currentModel = model;
+    m._poc_audio_reset();
+    if (audioCtx) nextStart = audioCtx.currentTime + 0.3;
+    prevGamepad = null;
+    releaseAllJoy();
+    statusEl.textContent = 'Machine reset';
+    return true;
+  }
+
+  // ---- model picker + reset + cartridge ----
+  const modelEl = document.getElementById('model');
+  const resetEl = document.getElementById('reset');
+  const cartspanEl = document.getElementById('cartspan');
+  const cartfileEl = document.getElementById('cartfile');
+  const cartnameEl = document.getElementById('cartname');
+  function updateCartUi() {
+    cartspanEl.style.display = (currentModel === 1) ? '' : 'none';
+    if (currentModel === 1 && !cartnameEl.textContent)
+      cartnameEl.textContent = 'system.cpr';
+  }
+  modelEl.addEventListener('change', () => {
+    const model = parseInt(modelEl.value, 10);
+    if (reinit(model)) {
+      cartnameEl.textContent = (model === 1) ? 'system.cpr' : '';
+      updateCartUi();
+    }
+  });
+  resetEl.addEventListener('click', () => {
+    m._poc_reset();
+    m._poc_audio_reset();
+    if (audioCtx) nextStart = audioCtx.currentTime + 0.3;
+    prevGamepad = null;
+    releaseAllJoy();
+    statusEl.textContent = 'Reset';
+  });
+  cartfileEl.addEventListener('change', () => {
+    const f = cartfileEl.files[0];
+    if (!f) return;
+    f.arrayBuffer().then(buf => {
+      m.FS.writeFile('/system.cpr', new Uint8Array(buf));
+      const rc = m.ccall('poc_load_cartridge', 'number', ['string'], ['/system.cpr']);
+      if (rc === 0) {
+        cartnameEl.textContent = f.name;
+        currentModel = 1;
+        updateCartUi();
+        statusEl.textContent = 'Cartridge: ' + f.name;
+      } else {
+        statusEl.textContent = 'cartridge load failed';
+      }
+    });
+  });
+  updateCartUi();
 
   // ---- audio: schedule buffers ahead of the audio clock ----
   // The emulator fills an in-wasm ring at 50 Hz; each frame we schedule
