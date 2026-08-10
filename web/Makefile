@@ -46,7 +46,7 @@ all: poc.js
 poc.js: $(OBJS)
 	$(EMCC) $(CFLAGS) $(OBJS) -o poc.js \
 	    -sMODULARIZE -sEXPORT_NAME=createPoc \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_poc_pc,_poc_irq_counter,_poc_irq_pending,_poc_frame_count,_poc_monitor_completed,_poc_total,_poc_paused,_poc_hcc,_poc_vcc,_poc_vlc,_poc_vline,_poc_raster_y,_poc_hsync_reg,_poc_hpos,_poc_in_hsync,_poc_crtc_reg,_poc_crtc_hsync,_poc_crtc_hsc,_poc_z_pending,_poc_z_iff1,_poc_z_accepted,_poc_crtc_ticks,_poc_mon_advances,_poc_mon_peaks,_poc_ga_hsync_calls,_poc_ga_irq_fires,_poc_set_trace_pc,_poc_mem,_poc_upper_sel,_poc_upper_en,_poc_lower_en,_poc_rom_basic0,_poc_rom_os0,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \

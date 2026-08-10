@@ -51,23 +51,25 @@ createPoc().then(m => {
 
   let last = 0;
   function frame(t) {
-    // Pace to 50 Hz (20 ms) like the PAL CPC.
-    if (t - last >= 20) {
+    // Pace to 50 Hz (20 ms) like the PAL CPC. Advance `last` by the fixed
+    // frame duration (not to the current time) so the cadence doesn't drift
+    // slow on a 60 Hz display — otherwise audio underruns and sounds slow.
+    while (t - last >= 20) {
       m._poc_step();
-      last = t;
-      // Re-fetch the heap view each frame so wasm memory growth stays valid.
-      const px = m.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + W * H);
-      for (let i = 0, j = 0; i < W * H; i++, j += 4) {
-        const c = px[i];
-        img.data[j]     = (c >> 16) & 0xFF;
-        img.data[j + 1] = (c >> 8)  & 0xFF;
-        img.data[j + 2] =  c        & 0xFF;
-        img.data[j + 3] = 0xFF;
-      }
-      offctx.putImageData(img, 0, 0);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(off, 0, 0, W, H, 0, 0, VW, VH);
+      last += 20;
     }
+    // Re-fetch the heap view each frame so wasm memory growth stays valid.
+    const px = m.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + W * H);
+    for (let i = 0, j = 0; i < W * H; i++, j += 4) {
+      const c = px[i];
+      img.data[j]     = (c >> 16) & 0xFF;
+      img.data[j + 1] = (c >> 8)  & 0xFF;
+      img.data[j + 2] =  c        & 0xFF;
+      img.data[j + 3] = 0xFF;
+    }
+    offctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, W, H, 0, 0, VW, VH);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -141,14 +141,9 @@ void ga_latch_mode(GateArray *ga) {
     ga->screen_mode = ga->requested_mode;
 }
 
-int g_poc_ga_hsync_calls = 0;   /* temporary WASM-POC diagnostic */
-int g_poc_ga_irq_fires = 0;     /* temporary WASM-POC diagnostic */
-
 void ga_hsync(GateArray *ga) {
-    g_poc_ga_hsync_calls++;
     ga->interrupt_counter++;
     if (ga->interrupt_counter >= 52) {
-        g_poc_ga_irq_fires++;
         ga->interrupt_counter = 0;
         ga->interrupt_pending = true;
     }
