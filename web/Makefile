@@ -44,7 +44,8 @@ CORE_OBJS = $(patsubst ../src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 OBJS = $(CORE_OBJS) $(BUILD_DIR)/poc_main.o $(BUILD_DIR)/stubs.o
 WASM_ASSETS = $(DIST_DIR)/6128.js $(DIST_DIR)/6128.wasm
 
-all: $(DIST_DIR)/index.html $(DIST_DIR)/gamepad.js $(WASM_ASSETS)
+all: $(DIST_DIR)/index.html $(DIST_DIR)/styles.css $(DIST_DIR)/app.js \
+	$(DIST_DIR)/gamepad.js $(WASM_ASSETS)
 
 test-gamepad:
 	node test_gamepad.js
@@ -52,7 +53,7 @@ test-gamepad:
 $(WASM_ASSETS) &: $(OBJS) | $(DIST_DIR)
 	$(EMCC) $(CFLAGS) $(OBJS) -o $(DIST_DIR)/6128.js \
 	    -sMODULARIZE -sEXPORT_NAME=create6128 \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_disk_motor,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_load_disk,_poc_eject_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \
@@ -73,6 +74,12 @@ $(DIST_DIR)/index.html: index.html | $(DIST_DIR)
 	cp $< $@
 
 $(DIST_DIR)/gamepad.js: gamepad.js | $(DIST_DIR)
+	cp $< $@
+
+$(DIST_DIR)/styles.css: styles.css | $(DIST_DIR)
+	cp $< $@
+
+$(DIST_DIR)/app.js: app.js | $(DIST_DIR)
 	cp $< $@
 
 $(BUILD_DIR) $(DIST_DIR):
