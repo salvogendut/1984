@@ -1,5 +1,5 @@
 # WASM POC build artifacts
 *.o
-*.js
-*.wasm
+poc.js
+poc.wasm
 *.ppm

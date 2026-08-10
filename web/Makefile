@@ -46,7 +46,7 @@ all: poc.js
 poc.js: $(OBJS)
 	$(EMCC) $(CFLAGS) $(OBJS) -o poc.js \
 	    -sMODULARIZE -sEXPORT_NAME=createPoc \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \

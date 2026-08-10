@@ -85,5 +85,13 @@ EMSCRIPTEN_KEEPALIVE int poc_load_disk(const char *path) {
     return 0;
 }
 
+/* CPC joystick 1 = keyboard matrix row 9, bits 0-5 (Up Down Left Right F1 F2). */
+#define POC_JOY_ROW 9
+EMSCRIPTEN_KEEPALIVE void poc_joy(int col, int pressed) {
+    if (col < 0 || col > 5) return;
+    if (pressed) kbd_key_down(&g_cpc.kbd, POC_JOY_ROW, col);
+    else         kbd_key_up  (&g_cpc.kbd, POC_JOY_ROW, col);
+}
+
 EMSCRIPTEN_KEEPALIVE int poc_width(void)  { return CPC_SCREEN_W; }
 EMSCRIPTEN_KEEPALIVE int poc_height(void) { return CPC_SCREEN_H; }

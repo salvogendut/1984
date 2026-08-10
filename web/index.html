@@ -57,6 +57,8 @@ createPoc().then(m => {
     while (t - last >= 20) {
       m._poc_step();
       last += 20;
+      if (workletNode && workletNode.port) drainAudio(m, audioState, workletNode);
+      pollGamepad(m);
     }
     // Re-fetch the heap view each frame so wasm memory growth stays valid.
     const px = m.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + W * H);
@@ -74,34 +76,54 @@ createPoc().then(m => {
   }
   requestAnimationFrame(frame);
 
-  // ---- audio: WebAudio pulls from the wasm ring buffer ----
-  let audioCtx = null, spNode = null;
-  function startAudio() {
+  // ---- audio: main thread drains the wasm ring; an AudioWorklet plays it ----
+  let audioCtx = null, workletNode = null, audioState = null;
+  async function startAudio() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     m._poc_audio_reset();
     const ringPtr = m._poc_audio_buffer();
     const RING = 44100 * 4;   // interleaved s16 samples
-    spNode = audioCtx.createScriptProcessor(4096, 0, 2);
-    spNode.onaudioprocess = e => {
-      const outL = e.outputBuffer.getChannelData(0);
-      const outR = e.outputBuffer.getChannelData(1);
-      const need = outL.length * 2;
-      let avail = m._poc_audio_avail();
-      const take = Math.min(avail, need);
-      const rp = m._poc_audio_read_pos();
-      const i16 = new Int16Array(m.HEAPU8.subarray(ringPtr, ringPtr + RING * 2).buffer, ringPtr, RING);
-      for (let i = 0; i < take / 2; i++) {
-        outL[i] = i16[(rp + i * 2) % RING] / 32768;
-        outR[i] = i16[(rp + i * 2 + 1) % RING] / 32768;
-      }
-      if (take < need) {
+    audioState = { ringPtr, RING };
+    try {
+      await audioCtx.audioWorklet.addModule('audio-worklet.js');
+      workletNode = new AudioWorkletNode(audioCtx, 'poc-audio', {
+        numberOfOutputs: 1, outputChannelCount: [2],
+      });
+      workletNode.connect(audioCtx.destination);
+    } catch (e) {
+      // Fallback: ScriptProcessorNode (deprecated but universal).
+      workletNode = audioCtx.createScriptProcessor(2048, 0, 2);
+      workletNode.onaudioprocess = ev => {
+        const outL = ev.outputBuffer.getChannelData(0);
+        const outR = ev.outputBuffer.getChannelData(1);
+        const avail = m._poc_audio_avail();
+        const take = Math.min(avail, outL.length * 2);
+        const rp = m._poc_audio_read_pos();
+        const i16 = new Int16Array(m.HEAPU8.subarray(ringPtr, ringPtr + RING * 2).buffer, ringPtr, RING);
+        for (let i = 0; i < take / 2; i++) {
+          outL[i] = i16[(rp + i * 2) % RING] / 32768;
+          outR[i] = i16[(rp + i * 2 + 1) % RING] / 32768;
+        }
         for (let i = take / 2; i < outL.length; i++) { outL[i] = 0; outR[i] = 0; }
-      }
-      m._poc_audio_advance(take);
-    };
-    spNode.connect(audioCtx.destination);
+        m._poc_audio_advance(take);
+      };
+      workletNode.connect(audioCtx.destination);
+    }
     audioCtx.resume();
+  }
+
+  // Drain the ring into the worklet once per emulated frame. Uses whichever
+  // node is active (AudioWorkletNode or the ScriptProcessor fallback).
+  function drainAudio(m, audioState, workletNode) {
+    const avail = m._poc_audio_avail();
+    if (avail <= 0) return;
+    const rp = m._poc_audio_read_pos();
+    const i16 = new Int16Array(m.HEAPU8.subarray(audioState.ringPtr, audioState.ringPtr + audioState.RING * 2).buffer, audioState.ringPtr, audioState.RING);
+    const chunk = new Float32Array(avail);
+    for (let i = 0; i < avail; i++) chunk[i] = i16[(rp + i) % audioState.RING] / 32768;
+    m._poc_audio_advance(avail);
+    if (workletNode.port) workletNode.port.postMessage(chunk);
   }
 
   // Audio must start after a user gesture (autoplay policy).
@@ -113,6 +135,33 @@ createPoc().then(m => {
   window.addEventListener('keyup', e => {
     if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); m._poc_key(CODE2SCAN[e.code], 0); }
   });
+
+  // ---- USB gamepad -> CPC joystick 1 (matrix row 9, bits 0-5: U D L R F1 F2) ----
+  let prevGamepad = null;
+  function pollGamepad(m) {
+    const pads = (navigator.getGamepads ? navigator.getGamepads() : []);
+    let g = null;
+    for (const p of pads) { if (p && p.connected) { g = p; break; } }
+    if (!g) return;
+    const b = g.buttons, ax = g.axes;
+    const state = [0, 0, 0, 0, 0, 0];
+    if (b[12] && b[12].pressed) state[0] = 1;   // D-pad up
+    if (b[13] && b[13].pressed) state[1] = 1;   // D-pad down
+    if (b[14] && b[14].pressed) state[2] = 1;   // D-pad left
+    if (b[15] && b[15].pressed) state[3] = 1;   // D-pad right
+    if (ax.length >= 2) {
+      if (ax[1] < -0.5) state[0] = 1; else if (ax[1] > 0.5) state[1] = 1;  // left stick Y
+      if (ax[0] < -0.5) state[2] = 1; else if (ax[0] > 0.5) state[3] = 1;  // left stick X
+    }
+    if (b[0] && b[0].pressed) state[4] = 1;                                   // A = fire 1
+    if ((b[1] && b[1].pressed) || (b[2] && b[2].pressed) || (b[3] && b[3].pressed)) state[5] = 1; // B/X/Y = fire 2
+    if (prevGamepad) {
+      for (let c = 0; c < 6; c++) if (prevGamepad[c] !== state[c]) m._poc_joy(c, state[c]);
+    } else {
+      for (let c = 0; c < 6; c++) if (state[c]) m._poc_joy(c, 1);
+    }
+    prevGamepad = state;
+  }
 
   // ---- floppy loading: write the uploaded .dsk into the virtual FS ----
   const diskfile = document.getElementById('diskfile');
