@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Javascript 1984</title>
+<style>
+  body { background: #111; color: #ccc; font: 14px monospace; text-align: center; }
+  canvas { image-rendering: pixelated; border: 1px solid #444; margin-top: 12px; }
+  #status { margin-top: 8px; }
+  .led { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+         background: #400; margin: 6px 2px 0 2px; vertical-align: middle; }
+  .led.on { background: #f00; box-shadow: 0 0 8px #f00; }
+  #joystatus { color: #aaa; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <label>Model:
+    <select id="model">
+      <option value="0">CPC 6128</option>
+      <option value="1">CPC 6128 PLUS</option>
+    </select>
+  </label>
+  <button id="reset" type="button">Reset</button>
+  <span id="cartspan" style="display:none">
+    <input type="file" id="cartfile" accept=".cpr,.CPR">
+  </span>
+  <span id="cartname"></span>
+</div>
+<canvas id="screen" width="768" height="576"></canvas>
+<div><span id="ledA" class="led"></span><span id="diskname"></span></div>
+<div id="status">loading…</div>
+<div><input type="file" id="diskfile" accept=".dsk,.DSK">
+  <label><input type="checkbox" id="joytoggle" checked> Joystick</label>
+  <button id="joydetect" type="button">Detect controller</button>
+</div>
+<div id="joystatus">Joystick: waiting for gamepad…</div>
+<div id="joymatrix">CPC joystick: idle</div>
+<script src="gamepad.js"></script>
+<script src="6128.js"></script>
+<script>
+// Map KeyboardEvent.code -> SDL_Scancode (values from SDL_scancode.h).
+const CODE2SCAN = {
+  KeyA:4, KeyB:5, KeyC:6, KeyD:7, KeyE:8, KeyF:9, KeyG:10, KeyH:11, KeyI:12,
+  KeyJ:13, KeyK:14, KeyL:15, KeyM:16, KeyN:17, KeyO:18, KeyP:19, KeyQ:20,
+  KeyR:21, KeyS:22, KeyT:23, KeyU:24, KeyV:25, KeyW:26, KeyX:27, KeyY:28, KeyZ:29,
+  Digit1:30, Digit2:31, Digit3:32, Digit4:33, Digit5:34, Digit6:35, Digit7:36,
+  Digit8:37, Digit9:38, Digit0:39,
+  Enter:40, Escape:41, Backspace:42, Tab:43, Space:44,
+  Minus:45, Equal:46, BracketLeft:47, BracketRight:48, Backslash:49,
+  Semicolon:51, Quote:52, Backquote:53, Comma:54, Period:55, Slash:56,
+  Delete:76, ArrowRight:79, ArrowLeft:80, ArrowDown:81, ArrowUp:82,
+  NumpadEnter:88,
+  ControlLeft:224, ShiftLeft:225, AltLeft:226,
+  ControlRight:228, ShiftRight:229, AltRight:230,
+};
+
+const canvas = document.getElementById('screen');
+const statusEl = document.getElementById('status');
+const disknameEl = document.getElementById('diskname');
+const ledAEl = document.getElementById('ledA');
+const ctx = canvas.getContext('2d');
+const W = 768, H = 272;
+// The internal buffer is 768x272 (non-square CPC pixels); the host emulator
+// stretches it to a 4:3 canvas (768x576). We do the same here.
+const VW = 768, VH = 576;
+const off = document.createElement('canvas');
+off.width = W; off.height = H;
+const offctx = off.getContext('2d');
+const img = offctx.createImageData(W, H);
+
+create6128().then(m => {
+  if (m._poc_init() !== 0) { statusEl.textContent = 'poc_init failed'; return; }
+  statusEl.textContent = 'CPC 6128 booting… (click for keyboard focus)';
+
+  const ptr = m._poc_pixels();
+  let currentModel = 0;
+
+  // Re-init the machine (model switch / cartridge load). The framebuffer
+  // pointer is stable (static CPC struct), so `ptr` stays valid.
+  function reinit(model, cartridge) {
+    const rc = (cartridge !== undefined)
+      ? m.ccall('poc_load_cartridge', 'number', ['string'], [cartridge])
+      : m._poc_init_model(model, 0);
+    if (rc !== 0) { statusEl.textContent = 'machine init failed'; return false; }
+    currentModel = model;
+    m._poc_audio_reset();
+    if (audioCtx) nextStart = audioCtx.currentTime + 0.3;
+    prevGamepad = null;
+    releaseAllJoy();
+    statusEl.textContent = 'Machine reset';
+    return true;
+  }
+
+  // ---- model picker + reset + cartridge ----
+  const modelEl = document.getElementById('model');
+  const resetEl = document.getElementById('reset');
+  const cartspanEl = document.getElementById('cartspan');
+  const cartfileEl = document.getElementById('cartfile');
+  const cartnameEl = document.getElementById('cartname');
+  function updateCartUi() {
+    cartspanEl.style.display = (currentModel === 1) ? '' : 'none';
+    if (currentModel === 1 && !cartnameEl.textContent)
+      cartnameEl.textContent = 'system.cpr';
+  }
+  modelEl.addEventListener('change', () => {
+    const model = parseInt(modelEl.value, 10);
+    if (reinit(model)) {
+      cartnameEl.textContent = (model === 1) ? 'system.cpr' : '';
+      updateCartUi();
+    }
+  });
+  resetEl.addEventListener('click', () => {
+    m._poc_reset();
+    m._poc_audio_reset();
+    if (audioCtx) nextStart = audioCtx.currentTime + 0.3;
+    prevGamepad = null;
+    releaseAllJoy();
+    statusEl.textContent = 'Reset';
+  });
+  cartfileEl.addEventListener('change', () => {
+    const f = cartfileEl.files[0];
+    if (!f) return;
+    f.arrayBuffer().then(buf => {
+      m.FS.writeFile('/system.cpr', new Uint8Array(buf));
+      const rc = m.ccall('poc_load_cartridge', 'number', ['string'], ['/system.cpr']);
+      if (rc === 0) {
+        cartnameEl.textContent = f.name;
+        currentModel = 1;
+        updateCartUi();
+        statusEl.textContent = 'Cartridge: ' + f.name;
+      } else {
+        statusEl.textContent = 'cartridge load failed';
+      }
+    });
+  });
+  updateCartUi();
+
+  // ---- audio: schedule buffers ahead of the audio clock ----
+  // The emulator fills an in-wasm ring at 50 Hz; each frame we schedule
+  // short AudioBuffers ~250 ms ahead of currentTime so main-thread jitter
+  // (rAF, canvas draw) cannot starve the output. This is far more robust
+  // than a pull-based node on the main thread.
+  const CHUNK = 2048;               // frames per scheduled buffer (~46 ms)
+  let audioCtx = null, nextStart = 0, audioState = null;
+  function startAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    m._poc_audio_reset();
+    const ringPtr = m._poc_audio_buffer();
+    audioState = { ringPtr, RING: 44100 * 4 };
+    nextStart = audioCtx.currentTime + 0.3;   // start ~300 ms ahead
+    audioCtx.resume();
+  }
+  function scheduleAudio() {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    // If the main thread stalled (tab throttled), don't queue a backlog of
+    // late audio: skip to just ahead of now.
+    if (nextStart < audioCtx.currentTime + 0.05)
+      nextStart = audioCtx.currentTime + 0.05;
+    while (nextStart - audioCtx.currentTime < 0.25) {
+      const avail = m._poc_audio_avail();
+      const frames = Math.min(CHUNK, avail >> 1);
+      if (frames === 0) break;       // ring empty — stop scheduling
+      const rp = m._poc_audio_read_pos();
+      const i16 = new Int16Array(m.HEAPU8.subarray(audioState.ringPtr, audioState.ringPtr + audioState.RING * 2).buffer, audioState.ringPtr, audioState.RING);
+      const buf = audioCtx.createBuffer(2, CHUNK, 44100);
+      const L = buf.getChannelData(0), R = buf.getChannelData(1);
+      for (let i = 0; i < frames; i++) {
+        L[i] = i16[(rp + i * 2) % audioState.RING] / 32768;
+        R[i] = i16[(rp + i * 2 + 1) % audioState.RING] / 32768;
+      }
+      m._poc_audio_advance(frames * 2);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(nextStart);
+      nextStart += CHUNK / 44100;
+    }
+  }
+
+  // Audio must start after a user gesture (autoplay policy).
+  window.addEventListener('pointerdown', startAudio, { once: true });
+
+  // ---- USB gamepad -> CPC joystick 1 (matrix row 9, bits 0-5: U D L R F1 F2) ----
+  let prevGamepad = null;
+  let joyEnabled = true;
+  const joystatusEl = document.getElementById('joystatus');
+  const joymatrixEl = document.getElementById('joymatrix');
+  const joytoggleEl = document.getElementById('joytoggle');
+  const joydetectEl = document.getElementById('joydetect');
+  joytoggleEl.addEventListener('change', () => {
+    joyEnabled = joytoggleEl.checked;
+    joystatusEl.textContent = joyEnabled ? 'Joystick: enabled' : 'Joystick: disabled';
+    if (!joyEnabled && prevGamepad) {
+      for (let c = 0; c < 6; c++) if (prevGamepad[c]) m._poc_joy(c, 0);  // release
+      prevGamepad = null;
+    }
+  });
+  function releaseAllJoy() { for (let c = 0; c < 6; c++) m._poc_joy(c, 0); prevGamepad = null; }
+
+  function setJoyStatus(msg) { joystatusEl.textContent = msg; }
+
+  function gamepadUnavailableReason() {
+    if (!window.isSecureContext)
+      return 'Gamepad API requires HTTPS or http://localhost';
+    if (typeof navigator.getGamepads !== 'function')
+      return 'Gamepad API is unavailable in this browser';
+    const policy = document.permissionsPolicy || document.featurePolicy;
+    if (policy && typeof policy.allowsFeature === 'function' &&
+        !policy.allowsFeature('gamepad'))
+      return 'Gamepad API is blocked by iframe Permissions Policy';
+    return '';
+  }
+
+  function updateCpcJoyStatus() {
+    const row = m._poc_joy_matrix() & 0xFF;
+    const names = ['UP','DOWN','LEFT','RIGHT','F1','F2'];
+    const active = names.filter((_, col) => !(row & (1 << col)));
+    joymatrixEl.textContent = 'CPC joystick: ' +
+      (active.length ? active.join(' ') : 'idle') +
+      ' (row 9 = 0x' + row.toString(16).padStart(2, '0').toUpperCase() + ')';
+  }
+
+  function pollGamepad() {
+    const unavailable = gamepadUnavailableReason();
+    if (unavailable) {
+      setJoyStatus('Joystick unavailable: ' + unavailable);
+      return;
+    }
+    let pads;
+    try {
+      pads = navigator.getGamepads();
+    } catch (error) {
+      setJoyStatus('Joystick unavailable: ' + error.message);
+      return;
+    }
+    let g = null;
+    for (const p of pads) { if (p && p.connected) { g = p; break; } }
+    if (!g) {
+      if (prevGamepad) releaseAllJoy();
+      setJoyStatus('Joystick: no controller exposed; press PS, then Cross, and click Detect controller');
+      updateCpcJoyStatus();
+      return;
+    }
+    const b = g.buttons, ax = g.axes;
+    const mapped = JS1984Gamepad.mapGamepad(g);
+    if (!prevGamepad) {
+      setJoyStatus('Joystick: ' + g.id + ' [' + mapped.profile + ', ' +
+        b.length + ' buttons, ' + ax.length + ' axes]');
+    }
+    if (!joyEnabled) { if (prevGamepad) releaseAllJoy(); return; }
+    const state = mapped.state;
+    if (state.some(v => v)) {
+      const names = ['UP','DOWN','LEFT','RIGHT','F1','F2'];
+      setJoyStatus('Joystick [' + mapped.profile + ']: ' +
+        names.filter((_, c) => state[c]).join(' '));
+    } else {
+      // Report unrecognised raw activity so another profile can be added
+      // without guessing how a browser exposes the device.
+      const rawButtons = [];
+      for (let i = 0; i < b.length; i++)
+        if (b[i] && (b[i].pressed || b[i].value > 0.5)) rawButtons.push(i);
+      const rawAxes = [];
+      for (let i = 0; i < ax.length; i++)
+        if (Math.abs(ax[i]) > 0.5) rawAxes.push(i + '=' + ax[i].toFixed(2));
+      if (rawButtons.length || rawAxes.length)
+        setJoyStatus('Joystick [' + mapped.profile + '] raw: buttons ' +
+          (rawButtons.join(',') || '-') + '; axes ' + (rawAxes.join(',') || '-'));
+    }
+    if (prevGamepad) {
+      for (let c = 0; c < 6; c++) if (prevGamepad[c] !== state[c]) m._poc_joy(c, state[c]);
+    } else {
+      for (let c = 0; c < 6; c++) if (state[c]) m._poc_joy(c, 1);
+    }
+    prevGamepad = state;
+    updateCpcJoyStatus();
+  }
+  window.addEventListener('gamepadconnected', e => {
+    setJoyStatus('Joystick: connected ' + e.gamepad.id);
+  });
+  window.addEventListener('gamepaddisconnected', () => {
+    releaseAllJoy();
+    setJoyStatus('Joystick: disconnected');
+  });
+  window.addEventListener('focus', pollGamepad);   // some browsers wake pads on focus
+  joydetectEl.addEventListener('click', () => {
+    startAudio();
+    pollGamepad();
+  });
+  setInterval(pollGamepad, 100);                   // wake-up poll independent of the frame loop
+
+  window.addEventListener('keydown', e => {
+    if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); startAudio(); m._poc_key(CODE2SCAN[e.code], 1); }
+  });
+  window.addEventListener('keyup', e => {
+    if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); m._poc_key(CODE2SCAN[e.code], 0); }
+  });
+
+  // ---- disk activity LED (drive A motor) ----
+  let ledState = 0;
+  function updateLed() {
+    const on = m._poc_disk_motor();
+    if (on !== ledState) {
+      ledState = on;
+      ledAEl.classList.toggle('on', !!on);
+    }
+  }
+
+  // ---- floppy loading: write the uploaded .dsk into the virtual FS ----
+  const diskfile = document.getElementById('diskfile');
+  diskfile.addEventListener('change', () => {
+    const f = diskfile.files[0];
+    if (!f) return;
+    f.arrayBuffer().then(buf => {
+      m.FS.writeFile('/disk.dsk', new Uint8Array(buf));
+      const rc = m.ccall('poc_load_disk', 'number', ['string'], ['/disk.dsk']);
+      disknameEl.textContent = (rc === 0) ? ('Drive A: ' + f.name) : ('load failed: ' + f.name);
+      if (rc === 0) statusEl.textContent = 'Loaded ' + f.name;
+    });
+  });
+
+  // ---- frame loop ----
+  let last = 0;
+  function frame(t) {
+    // Pace to 50 Hz (20 ms) like the PAL CPC. Advance `last` by the fixed
+    // frame duration (not to the current time) so the cadence doesn't drift
+    // slow on a 60 Hz display — otherwise audio underruns and sounds slow.
+    while (t - last >= 20) {
+      m._poc_step();
+      last += 20;
+      scheduleAudio();
+      pollGamepad();
+      updateLed();
+    }
+    // Re-fetch the heap view each frame so wasm memory growth stays valid.
+    const px = m.HEAPU32.subarray(ptr >> 2, (ptr >> 2) + W * H);
+    for (let i = 0, j = 0; i < W * H; i++, j += 4) {
+      const c = px[i];
+      img.data[j]     = (c >> 16) & 0xFF;
+      img.data[j + 1] = (c >> 8)  & 0xFF;
+      img.data[j + 2] =  c        & 0xFF;
+      img.data[j + 3] = 0xFF;
+    }
+    offctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, W, H, 0, 0, VW, VH);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}).catch(err => { statusEl.textContent = 'failed to start: ' + err; });
+</script>
+</body>
+</html>

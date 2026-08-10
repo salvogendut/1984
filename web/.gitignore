@@ -1,6 +1,5 @@
 # WASM build products and old root-level diagnostics.
 /build/
-/dist/
 /*.o
 /*.ppm
 /poc.js
