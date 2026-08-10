@@ -50,21 +50,37 @@ EMSCRIPTEN_KEEPALIVE void poc_audio_advance(int n) {
     g_audio_r = (g_audio_r + n) % AUDIO_RING_SAMPLES;
 }
 
-/* ---- emulator lifecycle ---- */
+/* ---- emulator lifecycle ----
+ * model 0 = CPC 6128 (OS/BASIC/AMSDOS), 1 = CPC 6128 Plus (cartridge;
+ * defaults to the bundled system cartridge when cartridge is NULL).
+ * May be called repeatedly to switch machines. */
 
-EMSCRIPTEN_KEEPALIVE int poc_init(void) {
-    if (g_inited) return 0;
-    if (cpc_init(&g_cpc, MODEL_6128, "roms/OS_6128.ROM",
-                 "roms/BASIC_1.1.ROM", NULL, 1) != 0)
+EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
+    int rc;
+    if (model == 1) {
+        rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
+                      cartridge ? cartridge : "roms/system.cpr", 1);
+    } else {
+        rc = cpc_init(&g_cpc, MODEL_6128, "roms/OS_6128.ROM",
+                      "roms/BASIC_1.1.ROM", NULL, 1);
+        if (rc == 0)
+            mem_load_amsdos(&g_cpc.mem, "roms/AMSDOS.ROM");
+    }
+    if (rc != 0)
         return -1;
-    /* AMSDOS is required to use floppy disks and for the firmware's boot-time
-     * AMSDOS detection (it probes upper ROM slot 7). */
-    if (mem_load_amsdos(&g_cpc.mem, "roms/AMSDOS.ROM") != 0)
-        return -2;
     cpc_set_audio_sink(&g_cpc, poc_audio_sink, NULL);
     g_inited = 1;
     return 0;
 }
+
+EMSCRIPTEN_KEEPALIVE int poc_init(void) { return poc_init_model(0, NULL); }
+
+EMSCRIPTEN_KEEPALIVE int poc_load_cartridge(const char *path) {
+    return poc_init_model(1, path);
+}
+
+/* Warm reset of the current machine (keeps loaded ROMs/cartridge). */
+EMSCRIPTEN_KEEPALIVE void poc_reset(void) { cpc_reset(&g_cpc); }
 
 EMSCRIPTEN_KEEPALIVE int poc_step(void) {
     return cpc_frame(&g_cpc);
