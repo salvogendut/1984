@@ -6,6 +6,7 @@
  *   - poc_pixels():   pointer to the 768x272 framebuffer (u32 0x00RRGGBB)
  *   - poc_key():      SDL_Scancode key down/up
  *   - poc_load_disk(): mount a .dsk into drive A from the virtual FS
+ *   - poc_mouse_*():  browser pointer input through the AMX adapter
  *   - poc_audio_*():  ring-buffer access for the PSG audio (interleaved s16)
  *
  * No SDL runtime is used — the browser reads the framebuffer and the audio
@@ -20,7 +21,6 @@
 #include "mem.h"
 
 static CPC g_cpc;
-static int g_inited = 0;
 
 /* ---- audio ring buffer (interleaved stereo s16, 2 seconds @ 44.1 kHz) ---- */
 #define AUDIO_RING_SAMPLES (44100 * 4)
@@ -69,7 +69,6 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     if (rc != 0)
         return -1;
     cpc_set_audio_sink(&g_cpc, poc_audio_sink, NULL);
-    g_inited = 1;
     return 0;
 }
 
@@ -101,6 +100,10 @@ EMSCRIPTEN_KEEPALIVE int poc_load_disk(const char *path) {
     return 0;
 }
 
+EMSCRIPTEN_KEEPALIVE void poc_eject_disk(void) {
+    disk_eject(&g_cpc.drive[0]);
+}
+
 /* CPC joystick 1 = keyboard matrix row 9, bits 0-5 (Up Down Left Right F1 F2). */
 #define POC_JOY_ROW 9
 EMSCRIPTEN_KEEPALIVE void poc_joy(int col, int pressed) {
@@ -113,6 +116,24 @@ EMSCRIPTEN_KEEPALIVE void poc_joy(int col, int pressed) {
  * failures from CPC-side input failures. Row 9 is active low. */
 EMSCRIPTEN_KEEPALIVE int poc_joy_matrix(void) {
     return g_cpc.kbd.matrix[POC_JOY_ROW];
+}
+
+/* Browser pointer input uses the AMX adapter on joystick port 1. The AMX
+ * mouse and a physical joystick share matrix row 9, so the web UI presents
+ * them as mutually exclusive input channels. */
+EMSCRIPTEN_KEEPALIVE void poc_set_mouse(int enabled) {
+    amx_reset(&g_cpc.amx, &g_cpc.kbd);
+    g_cpc.amx_mouse = enabled != 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_mouse_move(int dx, int dy) {
+    if (g_cpc.amx_mouse)
+        amx_move(&g_cpc.amx, dx, dy);
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_mouse_button(int button, int pressed) {
+    if (g_cpc.amx_mouse)
+        amx_button(&g_cpc.amx, &g_cpc.kbd, button, pressed != 0);
 }
 
 /* Disk activity: the FDC motor spins while a floppy is being accessed. */
