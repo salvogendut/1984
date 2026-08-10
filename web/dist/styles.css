@@ -206,11 +206,24 @@ select {
 .led-amber.on { background: var(--amber); box-shadow: 0 0 10px rgba(255,183,67,.95), inset 0 0 2px #fff; }
 
 .screen-stage {
+  position: relative;
   display: flex;
   justify-content: center;
   padding: clamp(14px, 2.5vw, 34px);
   background: #0c0e0f;
   box-shadow: inset 0 12px 30px #030404, inset 0 -8px 20px #050606;
+}
+
+.screen-brand {
+  position: absolute;
+  z-index: 5;
+  bottom: clamp(28px, 3vw, 42px);
+  left: clamp(18px, 2.6vw, 38px);
+  width: clamp(82px, 8vw, 128px);
+  height: auto;
+  filter: drop-shadow(0 5px 5px rgba(0,0,0,.72));
+  pointer-events: none;
+  user-select: none;
 }
 
 .screen-frame {
@@ -504,6 +517,11 @@ html[data-theme="retro-crt"] .screen-stage {
   background: transparent;
   box-shadow: none;
 }
+html[data-theme="retro-crt"] .screen-brand {
+  left: 37px;
+  width: 82px;
+  filter: drop-shadow(0 4px 3px rgba(0,0,0,.65));
+}
 html[data-theme="retro-crt"] .screen-stage::before,
 html[data-theme="retro-crt"] .screen-stage::after {
   flex: 0 0 96px;
@@ -764,6 +782,14 @@ html[data-theme="sapporo"] .screen-stage {
     linear-gradient(135deg, #cdd0cd 0 52%, #c5c8c5 52%);
   box-shadow: none;
 }
+html[data-theme="sapporo"] .screen-brand {
+  width: 96px;
+  padding: 5px;
+  border: 3px solid #111415;
+  background: #f2f3ee;
+  box-shadow: 5px 5px #ffdc00;
+  filter: none;
+}
 html[data-theme="sapporo"] .screen-frame {
   position: relative;
   padding: 16px;
@@ -919,6 +945,9 @@ html[data-theme="sapporo"] .toast { border: 4px solid #111415; border-radius: 0;
 }
 
 @media (max-width: 1180px) {
+  .screen-stage { padding-bottom: 86px; }
+  .screen-brand { bottom: 12px; width: 64px; }
+  html[data-theme="retro-crt"] .screen-brand { left: 24px; width: 60px; }
   .control-deck { grid-template-columns: .8fr 1.6fr 1.2fr; }
   .screen-module { grid-column: 1 / -1; border-top: 1px solid #080909; }
   .screen-module .module-heading { margin-bottom: 11px; }
@@ -949,7 +978,9 @@ html[data-theme="sapporo"] .toast { border: 4px solid #111415; border-radius: 0;
   .receiver-top { grid-template-columns: 1fr; gap: 12px; }
   .display-panel, .activity-bank { grid-column: 1; grid-row: auto; }
   .activity-bank { justify-content: flex-start; }
-  .screen-stage { padding: 8px; }
+  .screen-stage { padding: 8px 8px 64px; }
+  .screen-brand { bottom: 8px; left: 14px; width: 48px; }
+  html[data-theme="retro-crt"] .screen-brand { left: 14px; width: 48px; }
   .screen-frame { padding: 6px; border-radius: 7px; }
   .screen-badge { display: none; }
   .control-deck { grid-template-columns: 1fr; }

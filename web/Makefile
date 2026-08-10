@@ -43,9 +43,10 @@ SRCS = \
 CORE_OBJS = $(patsubst ../src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 OBJS = $(CORE_OBJS) $(BUILD_DIR)/poc_main.o $(BUILD_DIR)/stubs.o
 WASM_ASSETS = $(DIST_DIR)/6128.js $(DIST_DIR)/6128.wasm
+BRAND_ICON = ../icons/512x512/apps/io.github.salvogendut.Emulator1984.png
 
 all: $(DIST_DIR)/index.html $(DIST_DIR)/styles.css $(DIST_DIR)/app.js \
-	$(DIST_DIR)/gamepad.js $(WASM_ASSETS)
+	$(DIST_DIR)/gamepad.js $(DIST_DIR)/brand-1984.png $(WASM_ASSETS)
 
 test-gamepad:
 	node test_gamepad.js
@@ -80,6 +81,9 @@ $(DIST_DIR)/styles.css: styles.css | $(DIST_DIR)
 	cp $< $@
 
 $(DIST_DIR)/app.js: app.js | $(DIST_DIR)
+	cp $< $@
+
+$(DIST_DIR)/brand-1984.png: $(BRAND_ICON) | $(DIST_DIR)
 	cp $< $@
 
 $(BUILD_DIR) $(DIST_DIR):
