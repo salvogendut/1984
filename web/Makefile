@@ -5,14 +5,15 @@
 # container where emcc and the SDL3 headers live.
 #
 #   make clean && make
+#   python3 -m http.server 8080 --directory dist
 #
-# Produces poc.js + poc.wasm (MODULARIZE; factory = createPoc) with the ROMs
-# embedded in the virtual filesystem at /roms.
+# Produces a self-contained publish directory under dist/. Compiler
+# intermediates stay under build/.
 
 EMCC      = emcc
-# SDL3 headers are vendored under web/SDL3 (copied from the container's
-# /usr/include/SDL3) so emcc does not pick up the host glibc headers.
-CFLAGS    = -O2 -std=c11 -Wall -Wextra -I../src -I.
+BUILD_DIR = build
+DIST_DIR  = dist
+CFLAGS    = -O2 -std=c11 -Wall -Wextra -I../src -Icompat -I.
 
 SRCS = \
 	../src/z80.c \
@@ -39,28 +40,48 @@ SRCS = \
 	../src/snapshot.c \
 	../src/cpc.c
 
-OBJS = $(SRCS:../src/%.c=%.o) poc_main.o stubs.o
+CORE_OBJS = $(patsubst ../src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+OBJS = $(CORE_OBJS) $(BUILD_DIR)/poc_main.o $(BUILD_DIR)/stubs.o
+WASM_ASSETS = $(DIST_DIR)/6128.js $(DIST_DIR)/6128.wasm
 
-all: poc.js
+all: $(DIST_DIR)/index.html $(DIST_DIR)/gamepad.js $(WASM_ASSETS)
 
-poc.js: $(OBJS)
-	$(EMCC) $(CFLAGS) $(OBJS) -o poc.js \
-	    -sMODULARIZE -sEXPORT_NAME=createPoc \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_disk_motor,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
+test-gamepad:
+	node test_gamepad.js
+
+$(WASM_ASSETS) &: $(OBJS) | $(DIST_DIR)
+	$(EMCC) $(CFLAGS) $(OBJS) -o $(DIST_DIR)/6128.js \
+	    -sMODULARIZE -sEXPORT_NAME=create6128 \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_disk_motor,_poc_load_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \
 	    --embed-file ../roms/BASIC_1.1.ROM@roms/BASIC_1.1.ROM \
 	    --embed-file ../roms/AMSDOS.ROM@roms/AMSDOS.ROM
 
-%.o: ../src/%.c
+$(BUILD_DIR)/%.o: ../src/%.c | $(BUILD_DIR)
 	$(EMCC) $(CFLAGS) -c $< -o $@
 
-poc_main.o: poc_main.c
+$(BUILD_DIR)/poc_main.o: poc_main.c | $(BUILD_DIR)
 	$(EMCC) $(CFLAGS) -c poc_main.c -o $@
 
-stubs.o: stubs.c
+$(BUILD_DIR)/stubs.o: stubs.c | $(BUILD_DIR)
 	$(EMCC) $(CFLAGS) -c stubs.c -o $@
 
+$(DIST_DIR)/index.html: index.html | $(DIST_DIR)
+	cp $< $@
+
+$(DIST_DIR)/gamepad.js: gamepad.js | $(DIST_DIR)
+	cp $< $@
+
+$(BUILD_DIR) $(DIST_DIR):
+	mkdir -p $@
+
+serve: all
+	python3 -m http.server 8080 --directory $(DIST_DIR)
+
 clean:
-	rm -f *.o poc.js poc.wasm
+	rm -rf $(BUILD_DIR) $(DIST_DIR)
+	rm -f *.o *.ppm poc.js poc.wasm 6128.js 6128.wasm
+
+.PHONY: all clean serve test-gamepad

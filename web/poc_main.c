@@ -93,6 +93,12 @@ EMSCRIPTEN_KEEPALIVE void poc_joy(int col, int pressed) {
     else         kbd_key_up  (&g_cpc.kbd, POC_JOY_ROW, col);
 }
 
+/* Diagnostic readback used by the browser to distinguish Gamepad API mapping
+ * failures from CPC-side input failures. Row 9 is active low. */
+EMSCRIPTEN_KEEPALIVE int poc_joy_matrix(void) {
+    return g_cpc.kbd.matrix[POC_JOY_ROW];
+}
+
 /* Disk activity: the FDC motor spins while a floppy is being accessed. */
 EMSCRIPTEN_KEEPALIVE int poc_disk_motor(void) { return g_cpc.fdc.motor ? 1 : 0; }
 
