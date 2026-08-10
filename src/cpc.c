@@ -9,6 +9,7 @@
 
 /* Set to 1 at runtime to trace CRTC/GA writes to stderr */
 int cpc_trace_io = 0;
+
 /* Counter incremented by ide_write on each command, used by crash trace arming */
 u32 ide_cmd_count_for_crash_trace = 0;
 int cpc_trace_palette = 0;

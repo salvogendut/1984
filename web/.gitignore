@@ -1,0 +1,9 @@
+# WASM build products and old root-level diagnostics.
+/build/
+/dist/
+/*.o
+/*.ppm
+/poc.js
+/poc.wasm
+/6128.js
+/6128.wasm
