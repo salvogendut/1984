@@ -10,13 +10,17 @@
   .led { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
          background: #400; margin: 6px 2px 0 2px; vertical-align: middle; }
   .led.on { background: #f00; box-shadow: 0 0 8px #f00; }
+  #joystatus { color: #aaa; margin-top: 4px; }
 </style>
 </head>
 <body>
 <canvas id="screen" width="768" height="576"></canvas>
 <div><span id="ledA" class="led"></span><span id="diskname"></span></div>
 <div id="status">loading…</div>
-<div><input type="file" id="diskfile" accept=".dsk,.DSK"></div>
+<div><input type="file" id="diskfile" accept=".dsk,.DSK">
+  <label><input type="checkbox" id="joytoggle" checked> Joystick</label>
+</div>
+<div id="joystatus">Joystick: waiting for gamepad…</div>
 <script src="poc.js"></script>
 <script>
 // Map KeyboardEvent.code -> SDL_Scancode (values from SDL_scancode.h).
@@ -103,17 +107,38 @@ createPoc().then(m => {
 
   // ---- USB gamepad -> CPC joystick 1 (matrix row 9, bits 0-5: U D L R F1 F2) ----
   let prevGamepad = null;
-  let gamepadName = null;
+  let joyEnabled = true;
+  const joystatusEl = document.getElementById('joystatus');
+  const joytoggleEl = document.getElementById('joytoggle');
+  joytoggleEl.addEventListener('change', () => {
+    joyEnabled = joytoggleEl.checked;
+    joystatusEl.textContent = joyEnabled ? 'Joystick: enabled' : 'Joystick: disabled';
+    if (!joyEnabled && prevGamepad) {
+      for (let c = 0; c < 6; c++) if (prevGamepad[c]) m._poc_joy(c, 0);  // release
+      prevGamepad = null;
+    }
+  });
+  function releaseAllJoy() { for (let c = 0; c < 6; c++) m._poc_joy(c, 0); prevGamepad = null; }
+
+  function setJoyStatus(msg) { joystatusEl.textContent = msg; }
+
   function pollGamepad() {
     const pads = (navigator.getGamepads ? navigator.getGamepads() : []);
     let g = null;
     for (const p of pads) { if (p && p.connected) { g = p; break; } }
-    if (!g) return;
-    if (gamepadName !== g.id) {
-      gamepadName = g.id;
-      statusEl.textContent = 'Gamepad: ' + g.id;
+    if (!g) {
+      if (prevGamepad) { releaseAllJoy(); setJoyStatus('Joystick: gamepad lost'); }
+      return;
     }
     const b = g.buttons, ax = g.axes;
+    if (!prevGamepad) {
+      setJoyStatus('Joystick: ' + g.id + '  (' + b.length + ' buttons)');
+    }
+    // Debug: report the first button press so a wrong mapping is visible.
+    for (let i = 0; i < b.length; i++) {
+      if (b[i] && b[i].pressed) { setJoyStatus('Joystick: button ' + i + ' pressed on ' + g.id); break; }
+    }
+    if (!joyEnabled) { if (prevGamepad) releaseAllJoy(); return; }
     const state = [0, 0, 0, 0, 0, 0];
     if (b[12] && b[12].pressed) state[0] = 1;   // D-pad up
     if (b[13] && b[13].pressed) state[1] = 1;   // D-pad down
@@ -125,6 +150,10 @@ createPoc().then(m => {
     }
     if (b[0] && b[0].pressed) state[4] = 1;                                   // A = fire 1
     if ((b[1] && b[1].pressed) || (b[2] && b[2].pressed) || (b[3] && b[3].pressed)) state[5] = 1; // B/X/Y = fire 2
+    if (state.some(v => v)) {
+      const names = ['UP','DOWN','LEFT','RIGHT','F1','F2'];
+      setJoyStatus('Joystick: ' + names.filter((_, c) => state[c]).join(' '));
+    }
     if (prevGamepad) {
       for (let c = 0; c < 6; c++) if (prevGamepad[c] !== state[c]) m._poc_joy(c, state[c]);
     } else {
@@ -132,16 +161,15 @@ createPoc().then(m => {
     }
     prevGamepad = state;
   }
-  // Some browsers only populate getGamepads() after a poll or a button press;
-  // also listen for connection events and show the pad name once found.
   window.addEventListener('gamepadconnected', e => {
-    statusEl.textContent = 'Gamepad: ' + e.gamepad.id;
+    setJoyStatus('Joystick: connected ' + e.gamepad.id);
   });
   window.addEventListener('gamepaddisconnected', () => {
-    gamepadName = null; prevGamepad = null;
-    statusEl.textContent = 'Gamepad disconnected';
+    releaseAllJoy();
+    setJoyStatus('Joystick: disconnected');
   });
-  setInterval(pollGamepad, 100);   // wake-up poll independent of the frame loop
+  window.addEventListener('focus', pollGamepad);   // some browsers wake pads on focus
+  setInterval(pollGamepad, 100);                   // wake-up poll independent of the frame loop
 
   window.addEventListener('keydown', e => {
     if (CODE2SCAN[e.code] !== undefined) { e.preventDefault(); startAudio(); m._poc_key(CODE2SCAN[e.code], 1); }
