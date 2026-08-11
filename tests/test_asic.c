@@ -95,6 +95,7 @@ static void test_raster_split_and_dma(void) {
     asic_register_write(&asic, &ga, &mem, 0x6802, 0x3A);
     asic_register_write(&asic, &ga, &mem, 0x6803, 0xBC);
     crtc.ma = 0x3040;
+    crtc.hcc = 0;
     asic_apply_split(&asic, &crtc);
     assert(crtc.ma == 0x3040);
     assert(crtc.ma_row_start == 0x3000);
@@ -108,8 +109,10 @@ static void test_raster_split_and_dma(void) {
     asic_register_write(&asic, &ga, &mem, 0x6802, 0x23);
     asic_register_write(&asic, &ga, &mem, 0x6803, 0x40);
     crtc.vlc = 4;
+    crtc.hcc = crtc.reg[1];
     asic_latch_split(&asic, &crtc, 0, 4, false);
     crtc.ma = 0x3090;
+    crtc.hcc = 0;
     asic_apply_split(&asic, &crtc);
     assert(asic_video_ma(&asic, 0x3090) == 0x2340);
     assert(asic_video_ma(&asic, 0x3093) == 0x2343);
@@ -156,8 +159,7 @@ static void test_raster_split_and_dma(void) {
     asic_latch_split(&compare_asic, &compare_crtc, 2, 2, false);
     assert(compare_asic.split_pending);
 
-    /* A split address overrides the fine-scroll row advance. Its first
-     * displayed scanline must begin at SSA even when RA+SSCR wraps R9. */
+    /* A split address overrides the fine-scroll row advance sampled at R1. */
     Asic wrap_asic = {
         .split_pending_base = 0x1234,
         .split_pending = true,
@@ -168,34 +170,75 @@ static void test_raster_split_and_dma(void) {
     wrap_crtc.reg[1] = 49;
     wrap_crtc.reg[9] = 7;
     wrap_crtc.ma = 0x3040;
-    wrap_crtc.vlc = 6;
+    wrap_crtc.hcc = 0;
+    wrap_crtc.vlc = 5;
     asic_apply_split(&wrap_asic, &wrap_crtc);
     AsicVideoPosition split_pos = asic_video_position(
-        &wrap_asic, wrap_crtc.ma, wrap_crtc.vlc,
-        wrap_crtc.reg[9], wrap_crtc.reg[1]);
+        &wrap_asic, wrap_crtc.ma, wrap_crtc.vlc);
     assert(split_pos.ma == 0x1234);
-    assert(split_pos.raster == 0);
-    split_pos = asic_video_position(&wrap_asic, wrap_crtc.ma, 7, 7, 49);
-    assert(split_pos.ma == 0x1234);
-    assert(split_pos.raster == 1);
-    split_pos = asic_video_position(
-        &wrap_asic, wrap_crtc.ma + 49, 0, 7, 49);
-    assert(split_pos.ma == 0x1234);
-    assert(split_pos.raster == 2);
+    assert(split_pos.raster == 7);
 
-    /* Fine vertical scroll wraps into a row whose width comes from R1.
-     * Sonic GX uses 49 characters, so a firmware-width constant corrupts
-     * the wrapped scanlines into displaced horizontal strips. */
+    /* RA 5 + SSCR 2 reaches R9, which would normally advance by R1. */
+    wrap_crtc.hcc = 49;
+    wrap_crtc.ma = 0x3040 + 49;
+    asic_latch_video_row(&wrap_asic, &wrap_crtc);
+    assert(wrap_asic.video_next_base == 0x1234 + 49);
+    wrap_asic.split_pending_base = 0x2345;
+    wrap_asic.split_pending = true;
+    wrap_crtc.hcc = 0;
+    wrap_crtc.ma = 0x3040;
+    wrap_crtc.vlc = 6;
+    asic_apply_split(&wrap_asic, &wrap_crtc);
+    split_pos = asic_video_position(&wrap_asic, wrap_crtc.ma, 6);
+    assert(split_pos.ma == 0x2345);
+    assert(split_pos.raster == 0);
+
+    /* Changing SSCR at HCC 0 affects RA immediately but cannot carry MA into
+     * another row until the R1 comparator samples the new value. */
+    wrap_asic.vscroll = 6;
+    split_pos = asic_video_position(&wrap_asic, wrap_crtc.ma, 6);
+    assert(split_pos.ma == 0x2345);
+    assert(split_pos.raster == 4);
+
+    wrap_crtc.hcc = 49;
+    wrap_crtc.ma = 0x3040 + 49;
+    asic_latch_video_row(&wrap_asic, &wrap_crtc);
+    wrap_crtc.hcc = 0;
+    wrap_crtc.ma = 0x3040;
+    wrap_crtc.vlc = 7;
+    asic_apply_split(&wrap_asic, &wrap_crtc);
+    split_pos = asic_video_position(&wrap_asic, wrap_crtc.ma, 7);
+    assert(split_pos.ma == 0x2345);
+    assert(split_pos.raster == 5);
+
+    /* With a stable SSCR, the R1-sampled carry uses the programmed display
+     * width. Sonic GX uses 49 characters rather than the firmware's 40. */
     asic.vscroll = 2;
-    AsicVideoPosition pos = asic_video_position(&asic, 0x3005, 4, 7, 49);
+    AsicVideoPosition pos = asic_video_position(&asic, 0x3005, 4);
     assert(pos.ma == 0x3005);
     assert(pos.raster == 6);
-    pos = asic_video_position(&asic, 0x3005, 7, 7, 49);
+
+    CRTC scroll_crtc;
+    crtc_init(&scroll_crtc);
+    scroll_crtc.reg[1] = 49;
+    scroll_crtc.reg[9] = 7;
+    scroll_crtc.hcc = 49;
+    scroll_crtc.ma = 0x3005 + 49;
+    scroll_crtc.vlc = 5;
+    asic_latch_video_row(&asic, &scroll_crtc);
+    scroll_crtc.hcc = 0;
+    scroll_crtc.ma = 0x3005;
+    scroll_crtc.vlc = 6;
+    asic_apply_split(&asic, &scroll_crtc);
+    pos = asic_video_position(&asic, 0x3005, 7);
     assert(pos.ma == 0x3036);
     assert(pos.raster == 1);
+
+    /* SSCR adds to the three raster-address bits; it does not perform an
+     * immediate multi-row MA carry when R9 is smaller than seven. */
     asic.vscroll = 6;
-    pos = asic_video_position(&asic, 0x3005, 3, 3, 49);
-    assert(pos.ma == 0x3067);
+    pos = asic_video_position(&asic, 0x3005, 3);
+    assert(pos.ma == 0x3036);
     assert(pos.raster == 1);
 
     /* A programmable raster replaces legacy GA IRQ requests, but the GA

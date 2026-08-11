@@ -276,7 +276,8 @@ void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
 
 void asic_new_frame(Asic *asic) {
     asic->scanline = 0;
-    asic->split_active = false;
+    asic->video_ma_offset = 0;
+    asic->video_next_valid = false;
 }
 
 bool asic_irq_pending(const Asic *asic) {
@@ -349,55 +350,52 @@ void asic_latch_split(Asic *asic, const CRTC *crtc, u16 previous_vcc,
     asic->split_pending = true;
 }
 
-void asic_apply_split(Asic *asic, const CRTC *crtc) {
-    if (!asic->split_pending)
+void asic_latch_video_row(Asic *asic, const CRTC *crtc) {
+    u16 width = crtc->reg[1];
+    if (!width || crtc->hcc != width)
         return;
 
-    /* The Plus ASIC does not reload the CRTC's internal MA counters. It
-     * translates the video address from the MA present at the split to SSA.
-     * Keeping the CRTC running independently matters when software programs
-     * another split later in the same frame. */
-    asic->split_ma_started = crtc->ma & 0x3FFF;
-    asic->split_ma_base = asic->split_pending_base;
+    /* SSCR changes the three raster-address bits immediately, but its carry
+     * into the next video-memory row is sampled only by the R1 comparator.
+     * Keeping this row base stateful matters when software rewrites SSCR near
+     * the start of every raster, as Eerie Forest does for its lower panel. */
+    u16 raw_start = (u16)((crtc->ma - crtc->hcc) & 0x3FFF);
+    u16 video_start = (u16)((raw_start + asic->video_ma_offset) & 0x3FFF);
+    unsigned scrolled_raster = (crtc->vlc + asic->vscroll) & 0x1F;
+    if (scrolled_raster == crtc->reg[9])
+        video_start = (u16)((video_start + width) & 0x3FFF);
+    asic->video_next_base = video_start;
+    asic->video_next_valid = true;
+}
 
-    /* SSA is the absolute row base for the scanline after the split. If that
-     * line crosses the SSCR fine-scroll wrap, video_position() will advance
-     * by R1; compensate the translation baseline so it still resolves to
-     * SSA. Hardware gives the split load priority over the row advance. */
-    unsigned row_height = (unsigned)crtc->reg[9] + 1;
-    unsigned rows = (crtc->vlc + asic->vscroll) / row_height;
-    asic->split_ma_base = (u16)((asic->split_ma_base -
-                                 rows * crtc->reg[1]) & 0x3FFF);
-    asic->split_pending = false;
-    asic->split_active = true;
+void asic_apply_split(Asic *asic, const CRTC *crtc) {
+    u16 raw_start = (u16)((crtc->ma - crtc->hcc) & 0x3FFF);
+    u16 video_start;
+
+    if (asic->split_pending) {
+        /* SSA has priority over the row advance sampled at R1. */
+        video_start = asic->split_pending_base;
+        asic->split_pending = false;
+    } else if (asic->video_next_valid) {
+        video_start = asic->video_next_base;
+    } else {
+        video_start = (u16)((raw_start + asic->video_ma_offset) & 0x3FFF);
+    }
+
+    asic->video_ma_offset = (u16)((video_start - raw_start) & 0x3FFF);
+    asic->video_next_valid = false;
 }
 
 u16 asic_video_ma(const Asic *asic, u16 crtc_ma) {
-    if (!asic->split_active)
-        return crtc_ma & 0x3FFF;
-    return (u16)((crtc_ma - asic->split_ma_started +
-                  asic->split_ma_base) & 0x3FFF);
+    return (u16)((crtc_ma + asic->video_ma_offset) & 0x3FFF);
 }
 
 AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
-                                      u8 crtc_raster, u8 max_raster,
-                                      u8 chars_per_row) {
+                                      u8 crtc_raster) {
     AsicVideoPosition pos = {
         .ma = asic_video_ma(asic, crtc_ma),
-        .raster = crtc_raster & 7,
+        .raster = (u8)((crtc_raster + asic->vscroll) & 7),
     };
-    unsigned scrolled = crtc_raster + asic->vscroll;
-    unsigned row_height = (unsigned)max_raster + 1;
-
-    /* SSCR advances the raster presented to the video address generator.
-     * Crossing R9 therefore selects the next CRTC row, whose width is R1
-     * characters. It is not necessarily the 40-character firmware width. */
-    if (scrolled >= row_height) {
-        unsigned rows = scrolled / row_height;
-        pos.ma = (u16)((pos.ma + rows * chars_per_row) & 0x3FFF);
-        scrolled %= row_height;
-    }
-    pos.raster = (u8)(scrolled & 7);
     return pos;
 }
 
