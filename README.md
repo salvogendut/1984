@@ -3,9 +3,10 @@
 ![1984](1984.png)
 
 1984 is a cycle-stepped Amstrad CPC 464, 664, 6128, 464 Plus, 6128 Plus, and
-GX4000 emulator written in C using SDL3. It aims to run ordinary CPC software and
-timing-sensitive programs while also modelling modern storage, networking,
-and input expansions.
+GX4000 emulator with a core written in C. The native application uses SDL3,
+while the standalone browser edition compiles the same core to WebAssembly. It
+aims to run ordinary CPC software and timing-sensitive programs while also
+modelling modern storage, networking, and input expansions.
 
 ## Current status
 
@@ -172,8 +173,13 @@ Without Cairo the guest port still responds, but no host document is created.
 
 ## Web access
 
-1984 has two browser-facing modes:
+1984 has three browser-facing modes:
 
+- **Browser/WebAssembly edition** runs the emulator entirely in the browser
+  from static files in `web/dist`. It currently provides CPC 6128 and 6128 Plus
+  machines, DSK and CPR loading, Web Audio, keyboard, gamepad and AMX mouse
+  input, display controls, and selectable themes. Media can be selected from
+  the browser or loaded from server URLs; changes remain in browser memory.
 - **Web GUI** mirrors the one CPC already running in the SDL application. It
   streams screen and browser-started stereo audio, accepts keyboard, mouse,
   touch joystick, paste, and reset input, and can upload DSK images into either
@@ -184,9 +190,12 @@ Without Cairo the guest port still responds, but no host document is created.
   sessions ten minutes after their last viewer disconnects. Packages install
   the sandboxed `1984-web.service` system service.
 
-Both modes bind to `0.0.0.0` and provide no authentication. Anyone who can
-reach the port can view and control a machine, so use them only on a trusted
-network. The default port is `1984`.
+The native Web GUI and Web Service bind to `0.0.0.0` and provide no
+authentication. Anyone who can reach the port can view and control a machine,
+so use them only on a trusted network. The default port is `1984`. The static
+WebAssembly edition follows the access policy of the web server used to
+publish it. See [web/README.md](web/README.md) for browser build, deployment,
+controls, URL parameters, and current limitations.
 
 ## Development and automation
 
@@ -212,6 +221,17 @@ autoreconf -iv
 make -j"$(nproc)"
 ./1984 --disk-a=/path/to/software.dsk
 ```
+
+The standalone browser edition requires Emscripten. Build it and serve the
+generated static directory over HTTP:
+
+```bash
+make -C web
+python3 -m http.server 8080 --directory web/dist
+```
+
+Publish the contents of `web/dist/`, not the development files in `web/`. See
+[web/README.md](web/README.md) for server-hosted media and browser controls.
 
 Cairo is optional (`./configure --without-cairo` disables PDF capture), and
 `ffmpeg` is optional for WebM recording. The required CPC firmware, M4ROM, and
