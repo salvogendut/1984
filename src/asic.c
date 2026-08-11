@@ -8,6 +8,12 @@
 
 static void dma_store_status(Asic *asic, Mem *mem);
 
+static void raise_raster_interrupt(Asic *asic, Mem *mem, GateArray *ga) {
+    asic->raster_interrupt = true;
+    ga->interrupt_pending = true;
+    dma_store_status(asic, mem);
+}
+
 static u8 decode_magnification(u8 value) {
     value &= 3;
     return value == 3 ? 4 : value;
@@ -91,7 +97,20 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
 
     mem->plus_registers[off] = value;
     switch (addr) {
-    case 0x6800: asic->raster_line = value; break;
+    case 0x6800: {
+        u8 previous = asic->raster_line;
+        asic->raster_line = value;
+        /* PRI is a level-sensitive request. Programming a different nonzero
+         * line withdraws an outstanding raster request unless the new value
+         * matches immediately (handled by asic_program_raster()). Eerie
+         * Forest relies on the withdrawal while rebuilding its IRQ chain. */
+        if (value && value != previous) {
+            asic->raster_interrupt = false;
+            ga->interrupt_pending = asic_irq_pending(asic);
+            dma_store_status(asic, mem);
+        }
+        break;
+    }
     case 0x6801: asic->split_line = value; break;
     case 0x6802:
         asic->split_address = (asic->split_address & 0x00FF) | ((u16)value << 8);
@@ -137,6 +156,19 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
     default:
         break;
     }
+}
+
+void asic_program_raster(Asic *asic, GateArray *ga, Mem *mem,
+                         const CRTC *crtc, u8 value) {
+    u8 previous = asic->raster_line;
+    asic_register_write(asic, ga, mem, 0x6800, value);
+    if (!crtc || !value || value == previous || !crtc->hsync ||
+        crtc->vcc >= 32)
+        return;
+
+    u8 line = (u8)((crtc->vcc << 3) | (crtc->vlc & 7));
+    if (line == value)
+        raise_raster_interrupt(asic, mem, ga);
 }
 
 static void dma_store_status(Asic *asic, Mem *mem) {
@@ -238,16 +270,14 @@ void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
     if (crtc->vcc >= 32)
         return;
     u8 line = (u8)((crtc->vcc << 3) | (crtc->vlc & 7));
-    if (line == asic->raster_line) {
-        asic->raster_interrupt = true;
-        ga->interrupt_pending = true;
-        dma_store_status(asic, mem);
-    }
+    if (line == asic->raster_line)
+        raise_raster_interrupt(asic, mem, ga);
 }
 
 void asic_new_frame(Asic *asic) {
     asic->scanline = 0;
-    asic->split_active = false;
+    asic->video_ma_offset = 0;
+    asic->video_next_valid = false;
 }
 
 bool asic_irq_pending(const Asic *asic) {
@@ -320,55 +350,52 @@ void asic_latch_split(Asic *asic, const CRTC *crtc, u16 previous_vcc,
     asic->split_pending = true;
 }
 
-void asic_apply_split(Asic *asic, const CRTC *crtc) {
-    if (!asic->split_pending)
+void asic_latch_video_row(Asic *asic, const CRTC *crtc) {
+    u16 width = crtc->reg[1];
+    if (!width || crtc->hcc != width)
         return;
 
-    /* The Plus ASIC does not reload the CRTC's internal MA counters. It
-     * translates the video address from the MA present at the split to SSA.
-     * Keeping the CRTC running independently matters when software programs
-     * another split later in the same frame. */
-    asic->split_ma_started = crtc->ma & 0x3FFF;
-    asic->split_ma_base = asic->split_pending_base;
+    /* SSCR changes the three raster-address bits immediately, but its carry
+     * into the next video-memory row is sampled only by the R1 comparator.
+     * Keeping this row base stateful matters when software rewrites SSCR near
+     * the start of every raster, as Eerie Forest does for its lower panel. */
+    u16 raw_start = (u16)((crtc->ma - crtc->hcc) & 0x3FFF);
+    u16 video_start = (u16)((raw_start + asic->video_ma_offset) & 0x3FFF);
+    unsigned scrolled_raster = (crtc->vlc + asic->vscroll) & 0x1F;
+    if (scrolled_raster == crtc->reg[9])
+        video_start = (u16)((video_start + width) & 0x3FFF);
+    asic->video_next_base = video_start;
+    asic->video_next_valid = true;
+}
 
-    /* SSA is the absolute row base for the scanline after the split. If that
-     * line crosses the SSCR fine-scroll wrap, video_position() will advance
-     * by R1; compensate the translation baseline so it still resolves to
-     * SSA. Hardware gives the split load priority over the row advance. */
-    unsigned row_height = (unsigned)crtc->reg[9] + 1;
-    unsigned rows = (crtc->vlc + asic->vscroll) / row_height;
-    asic->split_ma_base = (u16)((asic->split_ma_base -
-                                 rows * crtc->reg[1]) & 0x3FFF);
-    asic->split_pending = false;
-    asic->split_active = true;
+void asic_apply_split(Asic *asic, const CRTC *crtc) {
+    u16 raw_start = (u16)((crtc->ma - crtc->hcc) & 0x3FFF);
+    u16 video_start;
+
+    if (asic->split_pending) {
+        /* SSA has priority over the row advance sampled at R1. */
+        video_start = asic->split_pending_base;
+        asic->split_pending = false;
+    } else if (asic->video_next_valid) {
+        video_start = asic->video_next_base;
+    } else {
+        video_start = (u16)((raw_start + asic->video_ma_offset) & 0x3FFF);
+    }
+
+    asic->video_ma_offset = (u16)((video_start - raw_start) & 0x3FFF);
+    asic->video_next_valid = false;
 }
 
 u16 asic_video_ma(const Asic *asic, u16 crtc_ma) {
-    if (!asic->split_active)
-        return crtc_ma & 0x3FFF;
-    return (u16)((crtc_ma - asic->split_ma_started +
-                  asic->split_ma_base) & 0x3FFF);
+    return (u16)((crtc_ma + asic->video_ma_offset) & 0x3FFF);
 }
 
 AsicVideoPosition asic_video_position(const Asic *asic, u16 crtc_ma,
-                                      u8 crtc_raster, u8 max_raster,
-                                      u8 chars_per_row) {
+                                      u8 crtc_raster) {
     AsicVideoPosition pos = {
         .ma = asic_video_ma(asic, crtc_ma),
-        .raster = crtc_raster & 7,
+        .raster = (u8)((crtc_raster + asic->vscroll) & 7),
     };
-    unsigned scrolled = crtc_raster + asic->vscroll;
-    unsigned row_height = (unsigned)max_raster + 1;
-
-    /* SSCR advances the raster presented to the video address generator.
-     * Crossing R9 therefore selects the next CRTC row, whose width is R1
-     * characters. It is not necessarily the 40-character firmware width. */
-    if (scrolled >= row_height) {
-        unsigned rows = scrolled / row_height;
-        pos.ma = (u16)((pos.ma + rows * chars_per_row) & 0x3FFF);
-        scrolled %= row_height;
-    }
-    pos.raster = (u8)(scrolled & 7);
     return pos;
 }
 

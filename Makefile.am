@@ -77,6 +77,7 @@ noinst_HEADERS = \
 	src/websvc.h \
 	src/host_mount.h \
 	src/ide.h \
+	src/io_decode.h \
 	src/joy.h \
 	src/kbd.h \
 	src/kbd_pty.h \

@@ -250,7 +250,11 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     if (cpc_model_is_plus(cpc->model) && cpc->mem.plus_register_page &&
             addr >= 0x4000 && addr < 0x8000) {
-        asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
+        if (addr == 0x6800)
+            asic_program_raster(&cpc->asic, &cpc->ga, &cpc->mem,
+                                &cpc->crtc, val);
+        else
+            asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
         if (!asic_irq_pending(&cpc->asic)) {
             cpc->ga.interrupt_pending = false;
             cpc->cpu.pending_irq = false;
@@ -1420,6 +1424,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             asic_latch_split(&cpc->asic, &cpc->crtc,
                              cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
                              new_crtc_line);
+            asic_latch_video_row(&cpc->asic, &cpc->crtc);
         }
 
         /* GA interrupt counter on hsync falling edge (matches Caprice32) */
@@ -1442,6 +1447,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         /* --- Render 16 pixels for this char clock --- */
         int px = cpc_monitor_px(cpc);
         int py = cpc->raster_y;
+        bool plus_scroll_border = false;
 
         if (py >= 0 && py < CPC_SCREEN_H && px >= 0 && px <= CPC_SCREEN_W - 16) {
             u32 *row = cpc->display.pixels + py * CPC_SCREEN_W;
@@ -1451,8 +1457,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 u8 video_ra = cpc->crtc_pre_ra & 7;
                 if (cpc_model_is_plus(cpc->model)) {
                     AsicVideoPosition pos = asic_video_position(
-                        &cpc->asic, video_ma, cpc->crtc_pre_ra,
-                        cpc->crtc.reg[9], cpc->crtc.reg[1]);
+                        &cpc->asic, video_ma, cpc->crtc_pre_ra);
                     video_ma = pos.ma;
                     video_ra = pos.raster;
                 }
@@ -1460,15 +1465,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 u16 col  = video_ma & 0x3FF;
                 u16 addr = (u16)((bank << 14) | ((video_ra & 7) << 11) | (col << 1));
                 if (cpc_model_is_plus(cpc->model)) {
-                    if (asic_scroll_border_active(&cpc->asic,
-                                                  cpc->crtc_pre_hcc)) {
-                        u32 border = cpc->ga.resolved_ink[16];
-                        for (int x = 0; x < 16; x++)
-                            row[px + x] = border;
-                    } else {
+                    plus_scroll_border = asic_scroll_border_active(
+                        &cpc->asic, cpc->crtc_pre_hcc);
+                    if (!plus_scroll_border)
                         render_char_plus(row, px, &cpc->ga, &cpc->mem, addr,
                                          cpc->asic.hscroll);
-                    }
                 } else {
                     u8 b0 = mem_read_video(&cpc->mem, addr);
                     u8 b1 = mem_read_video(&cpc->mem, (u16)(addr + 1));
@@ -1486,6 +1487,14 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
                 asic_draw_sprites_char(&cpc->asic, cpc->crtc_pre_hcc,
                                        cpc->crtc_pre_vcc, cpc->crtc_pre_ra,
                                        cpc->crtc.reg[1], row + px);
+            /* SSCR bit 7 is a final video-output mask. It hides both the
+             * invalid bitmap data exposed by horizontal scrolling and any
+             * hardware sprites in that first character. */
+            if (plus_scroll_border) {
+                u32 border = cpc->ga.resolved_ink[16];
+                for (int x = 0; x < 16; x++)
+                    row[px + x] = border;
+            }
             memset(cpc->display.touched + py * CPC_SCREEN_W + px, 1, 16);
         }
 
@@ -1983,7 +1992,8 @@ int cpc_frame(CPC *cpc) {
      * are valid hardware colour indices (0x00-0x1F).  Values outside that range
      * (e.g. 0xFF or 0x55 written by a diagnostic RAM fill) suppress the flush,
      * preventing false triggers during memory tests. */
-    if (mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
+    if (!cpc_model_is_plus(cpc->model) &&
+            mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
         bool palette_valid = true;
         for (int p = 0; p < 17; p++) {
             if (mem_read(&cpc->mem, (u16)(0xB7D4 + p)) > 0x1F) {
@@ -2016,7 +2026,8 @@ int cpc_frame(CPC *cpc) {
      * The 464 firmware uses 0xB1FC as dirty flag and 0xB1D9-0xB1E9 as the
      * palette buffer (17 bytes: border first, then inks 0-15).  Same validity
      * guard as above: only flush when all bytes are in 0x00-0x1F range. */
-    if (mem_read(&cpc->mem, 0xB1FC) == 0xFF) {
+    if (!cpc_model_is_plus(cpc->model) &&
+            mem_read(&cpc->mem, 0xB1FC) == 0xFF) {
         bool palette_valid = true;
         for (int p = 0; p < 17; p++) {
             if (mem_read(&cpc->mem, (u16)(0xB1D9 + p)) > 0x1F) {
