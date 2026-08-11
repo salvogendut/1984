@@ -45,8 +45,8 @@ CORE_OBJS = $(patsubst ../src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 OBJS = $(CORE_OBJS) $(BUILD_DIR)/poc_main.o $(BUILD_DIR)/stubs.o
 WASM_ASSETS = $(DIST_DIR)/6128.js $(DIST_DIR)/6128.wasm
 BRAND_ICON = ../icons/512x512/apps/io.github.salvogendut.Emulator1984.png
-STYLE_ASSETS = styles.css theme-default.css theme-retro-crt.css \
-	theme-sapporo.css theme-sapporo-dark.css
+STYLE_ASSETS = styles.css theme-retro-crt.css \
+	theme-sapporo.css theme-sapporo-dark.css theme-cpc464.css
 
 all: $(DIST_DIR)/index.html $(addprefix $(DIST_DIR)/,$(STYLE_ASSETS)) $(DIST_DIR)/app.js \
 	$(DIST_DIR)/gamepad.js $(DIST_DIR)/media-url.js \
