@@ -1,11 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="default">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#121416">
 <title>Javascript 1984</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="theme-default.css">
+<link rel="stylesheet" href="theme-retro-crt.css">
+<link rel="stylesheet" href="theme-sapporo.css">
+<link rel="stylesheet" href="theme-sapporo-dark.css">
 </head>
 <body>
 <main class="workbench">
@@ -36,6 +40,10 @@
           <button type="button" role="menuitemradio" aria-checked="false" data-theme="sapporo">
             <i class="theme-swatch swatch-sapporo" aria-hidden="true"></i>
             <span><strong>Sapporo</strong><small>Transit computer</small></span>
+          </button>
+          <button type="button" role="menuitemradio" aria-checked="false" data-theme="sapporo-dark">
+            <i class="theme-swatch swatch-sapporo-dark" aria-hidden="true"></i>
+            <span><strong>Sapporo Dark</strong><small>Solarized transit</small></span>
           </button>
         </div>
       </div>
@@ -204,6 +212,7 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="gamepad.js"></script>
+<script src="media-url.js"></script>
 <script src="6128.js"></script>
 <script src="app.js"></script>
 </body>

@@ -6,6 +6,7 @@
  *   - poc_pixels():   pointer to the 768x272 framebuffer (u32 0x00RRGGBB)
  *   - poc_key():      SDL_Scancode key down/up
  *   - poc_load_disk(): mount a .dsk into drive A from the virtual FS
+ *   - poc_autorun():  queue RUN"file" after a frame-counted boot delay
  *   - poc_mouse_*():  browser pointer input through the AMX adapter
  *   - poc_audio_*():  ring-buffer access for the PSG audio (interleaved s16)
  *
@@ -15,12 +16,25 @@
  * SDL_Scancode).
  */
 #include <emscripten.h>
+#include <stdio.h>
+#include <string.h>
 #include "cpc.h"
 #include "kbd.h"
 #include "disk.h"
 #include "mem.h"
+#include "paste.h"
 
 static CPC g_cpc;
+static Paste g_paste;
+static int g_autorun_frames;
+static char g_autorun_command[256];
+
+static void poc_cancel_paste(void) {
+    paste_free(&g_paste);
+    paste_init(&g_paste);
+    g_autorun_frames = 0;
+    g_autorun_command[0] = '\0';
+}
 
 /* ---- audio ring buffer (interleaved stereo s16, 2 seconds @ 44.1 kHz) ---- */
 #define AUDIO_RING_SAMPLES (44100 * 4)
@@ -57,6 +71,7 @@ EMSCRIPTEN_KEEPALIVE void poc_audio_advance(int n) {
 
 EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     int rc;
+    poc_cancel_paste();
     if (model == 1) {
         rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
                       cartridge ? cartridge : "roms/system.cpr", 1);
@@ -79,9 +94,15 @@ EMSCRIPTEN_KEEPALIVE int poc_load_cartridge(const char *path) {
 }
 
 /* Warm reset of the current machine (keeps loaded ROMs/cartridge). */
-EMSCRIPTEN_KEEPALIVE void poc_reset(void) { cpc_reset(&g_cpc); }
+EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
+    poc_cancel_paste();
+    cpc_reset(&g_cpc);
+}
 
 EMSCRIPTEN_KEEPALIVE int poc_step(void) {
+    if (g_autorun_frames > 0 && --g_autorun_frames == 0)
+        paste_text(&g_paste, g_autorun_command);
+    paste_tick(&g_paste, &g_cpc.kbd);
     return cpc_frame(&g_cpc);
 }
 
@@ -102,6 +123,31 @@ EMSCRIPTEN_KEEPALIVE int poc_load_disk(const char *path) {
 
 EMSCRIPTEN_KEEPALIVE void poc_eject_disk(void) {
     disk_eject(&g_cpc.drive[0]);
+}
+
+/* Queue RUN"filename" after a frame-counted boot delay. This mirrors the
+ * native --autostart path instead of synthesizing browser key events. */
+EMSCRIPTEN_KEEPALIVE int poc_autorun(const char *filename, int delay_frames) {
+    if (!filename || !filename[0])
+        return -1;
+    size_t len = strlen(filename);
+    if (len > 240)
+        return -1;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)filename[i];
+        if (c < 0x20 || c == 0x7f || c == '"')
+            return -1;
+    }
+
+    poc_cancel_paste();
+    int written = snprintf(g_autorun_command, sizeof(g_autorun_command),
+                           "run\"%s", filename);
+    if (written < 0 || written >= (int)sizeof(g_autorun_command)) {
+        g_autorun_command[0] = '\0';
+        return -1;
+    }
+    g_autorun_frames = delay_frames > 0 ? delay_frames : 42;
+    return 0;
 }
 
 /* CPC joystick 1 = keyboard matrix row 9, bits 0-5 (Up Down Left Right F1 F2). */
