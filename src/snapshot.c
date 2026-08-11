@@ -133,7 +133,8 @@ int snapshot_load(CPC *cpc, const char *path) {
     cpc->ppi.port_b = hdr[0x57];
     cpc->ppi.port_c = hdr[0x58];
     cpc->ppi.control = hdr[0x59];
-    cpc->ppi.kbd_row = cpc->ppi.port_c & 0x0F;
+    ppi_set_port_a_input(&cpc->ppi, 0xFF);
+    ppi_refresh_outputs(&cpc->ppi);
 
     /* ---- PSG ---- */
     psg_load_registers(&cpc->psg, &hdr[SNA_PSG_REGS], hdr[SNA_PSG_SELECT],

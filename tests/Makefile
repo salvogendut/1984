@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config
+TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config
 
 .PHONY: all check clean
 
@@ -26,6 +26,14 @@ test-z80: test_z80.c ../src/z80.c ../src/z80.h
 test-psg: test_psg.c ../src/psg.c ../src/psg.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_psg.c ../src/psg.c -o $@
+
+test-ppi: test_ppi.c ../src/ppi.c ../src/ppi.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_ppi.c ../src/ppi.c -o $@
+
+test-io-decode: test_io_decode.c ../src/io_decode.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_io_decode.c -o $@
 
 test-mem: test_mem.c ../src/mem.c ../src/mem.h ../src/cartridge.c ../src/cartridge.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
@@ -74,6 +82,8 @@ check: $(TESTS)
 	./test-crtc
 	./test-z80
 	./test-psg
+	./test-ppi
+	./test-io-decode
 	./test-mem
 	./test-disk
 	./test-gifcap

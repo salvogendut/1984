@@ -101,7 +101,9 @@ static u8 psg_register_mask(u8 reg, u8 val) {
     case 10:
         return val & 0x1F;
     case 7:
-        return val & 0x3F;
+        /* Bits 6 and 7 configure the AY I/O ports. The CPC uses bit 6 to
+         * switch port A between keyboard input and register output. */
+        return val;
     default:
         return val;
     }
@@ -125,10 +127,10 @@ void psg_write(PSG *psg, u8 val) {
 }
 
 u8 psg_read(PSG *psg) {
-    if (psg->selected == 14)
-        return psg->kbd_data;
     if (psg->selected >= PSG_NUM_REGS)
         return 0xFF;
+    if (psg->selected == 14 && !(psg->reg[7] & 0x40))
+        return psg->kbd_data;
     return psg->reg[psg->selected];
 }
 

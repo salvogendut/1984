@@ -3,6 +3,7 @@
 #include "snapshot.h"
 #include "kbd_pty.h"
 #include "config.h"
+#include "io_decode.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -349,36 +350,117 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
                 cpc->mem.lower_rom_enabled);
 }
 
+static void plus_asic_lock_write(CPC *cpc, u8 val);
+
+static void gate_array_bus_write(CPC *cpc, u16 port, u8 val) {
+    u8 hi = port >> 8;
+
+    if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked &&
+            (val & 0xE0) == 0xA0) {
+        mem_plus_set_rmr2(&cpc->mem, val);
+        return;
+    }
+    if (cpc_trace_palette && cpc_frame_count > 520 && (val & 0xC0) == 0x40)
+        fprintf(stderr, "[f%04d ga] pen=%02X col=%02X\n",
+                cpc_frame_count, cpc->ga.selected_pen, val & 0x1F);
+    else if (cpc_trace_palette && cpc_frame_count > 520
+             && (val & 0xC0) == 0x00 && val <= 0x10)
+        fprintf(stderr, "[f%04d ga] select pen=%02X\n",
+                cpc_frame_count, val);
+    if (dbg_getenv("ONE_K_TRACE_FE58") && (val & 0xC0) == 0xC0)
+        fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
+                cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
+    if ((val & 0xC0) == 0x80 && (val & 0x10)) {
+        cpc->cpu.pending_irq = false;
+        if (cpc_model_is_plus(cpc->model))
+            asic_clear_raster_irq(&cpc->asic, &cpc->mem);
+    }
+    ga_write(&cpc->ga, val);
+    cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
+    cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
+
+    if ((val & 0xC0) == 0xC0 && cpc->mem.ram_size > 0x10000) {
+        u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
+        u8 mode  = val & 0x07;
+        u8 group = (val >> 3) & 0x07;
+        u32 full_bg = (u32)bank_high * 8u + (u32)group;
+        if (((full_bg + 2u) * 64u * 1024u) > (u32)cpc->mem.ram_size) {
+            group     = 0;
+            bank_high = 0;
+        }
+        cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
+        if (dbg_getenv("ONE_K_TRACE_BANK"))
+            fprintf(stderr, "[BANK] ram_bank=%02X (group=%u mode=%u bank_high=%u) PC=%04X\n",
+                    cpc->mem.ram_bank, group, mode, bank_high, cpc->cpu.pc);
+    }
+}
+
+static void prepare_ppi_port_a_input(CPC *cpc) {
+    u8 psg_ctrl = (ppi_output_c(&cpc->ppi) >> 6) & 0x03;
+    u8 value = 0xFF;
+
+    if (psg_ctrl == 0x01) {
+        if (cpc->psg.selected == 14) {
+            if (cpc->amx_mouse)
+                amx_pre_read(&cpc->amx, &cpc->kbd, cpc->ppi.kbd_row);
+            psg_set_kbd_row(&cpc->psg,
+                            kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
+        }
+        value = psg_read(&cpc->psg);
+    }
+    ppi_set_port_a_input(&cpc->ppi, value);
+}
+
 static u8 bus_io_read(void *ctx, u16 port) {
     CPC *cpc = ctx;
     u8 hi = port >> 8;
-    u8 result;
+    u8 result = 0xFF;
+    unsigned selected = cpc_io_decode(port);
 
-    /* CRTC read: A14=0 (hi & ~0x40 → 0xBF area) */
-    if (!(hi & 0x40)) {
-        u8 func = (port >> 8) & 0x03;
-        if (func == 0x03)      result = crtc_read(&cpc->crtc);
-        else if (func == 0x02) result = crtc_read_status(&cpc->crtc);
-        else                   result = 0xFF;
+    /* Devices are deliberately not mutually exclusive. PPI must run before
+     * the Gate Array so an overlapping IN can transfer PPI data directly into
+     * a GA register (the Arnold Acid "OnlyInc" case). */
+    if (selected & CPC_IO_PPI) {
+        u8 ppi_port = hi & 0x03;
+        if (ppi_port == 0) prepare_ppi_port_a_input(cpc);
+        result = ppi_read(&cpc->ppi, ppi_port);
     }
-    /* PPI: A11=0 selects PPI (0xF4xx/0xF5xx/0xF6xx/0xF7xx) */
-    else if (!(hi & 0x08)) {
-        result = ppi_read(&cpc->ppi, (port >> 8) & 0x03);
+    if (selected & CPC_IO_GATE_ARRAY)
+        gate_array_bus_write(cpc, port, result);
+
+    /* The CRTC R/W pin is wired to A9, not the Z80 RD pin. An IN through a
+     * write-side alias therefore writes the value already on the data bus. */
+    if (selected & CPC_IO_CRTC) {
+        switch (hi & 0x03) {
+        case 0:
+            if (cpc_model_is_plus(cpc->model)) plus_asic_lock_write(cpc, result);
+            crtc_select(&cpc->crtc, result);
+            break;
+        case 1:
+            crtc_write(&cpc->crtc, result);
+            break;
+        case 2:
+            result = crtc_read_status(&cpc->crtc);
+            break;
+        case 3:
+            result = crtc_read(&cpc->crtc);
+            break;
+        }
     }
+
     /* USIfAC II serial @ 0xFBD0..FBDF. Decoded before the FDC clause so
      * even if the FDC's lo-bit-7 gate ever changes, USIfAC keeps its
      * range. Internally dispatches on the low nibble (D0/D1/D8/DD). */
-    else if (cpc->mx4 && cpc->usifac.present && hi == 0xFB &&
-             (port & 0xF0) == 0xD0) {
-        result = usifac_read(&cpc->usifac, (u8)(port & 0x0F));
-    }
+    if (cpc->mx4 && cpc->usifac.present && hi == 0xFB &&
+            (port & 0xF0) == 0xD0)
+        return usifac_read(&cpc->usifac, (u8)(port & 0x0F));
     /* FDC: hi=0xFB AND lo bit 7=0 → status (lo bit 0=0) or data (lo bit 0=1).
      * Real CPC hardware decodes the FDC at 0xFB7E/0xFB7F only; the upper
      * half (0xFB80–0xFBFF) is free for peripherals like USIfAC at
      * 0xFBD0/D1. Without the lo-bit-7 gate, generic IN A,(0xFBxx) probes
      * from other software read the FDC main status register instead of
      * 0xFF and mistake the FDC for a different device. */
-    else if (hi == 0xFB && !(port & 0x80)) {
+    if (hi == 0xFB && !(port & 0x80)) {
         u8 lo = port & 0xFF;
         if (lo & 0x01) {
             FdcPhase phase_before = cpc->fdc.phase;
@@ -392,22 +474,19 @@ static u8 bus_io_read(void *ctx, u16 port) {
             trace_fdc_status(cpc, port, result);
         }
     }
-    else if (hi == 0xFA) {
-        result = 0xFF;
-    }
+    else if (hi == 0xFA) return 0xFF;
     /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
      * mouse) or 0x40/0x41 (right chip, dual-mode storage).
      * Claim before M4 wide decode. */
-    else if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80) {
-        result = ch376_read(&cpc->ch376, (u8)(port & 0x01));
-    }
+    else if (cpc->mx4 && cpc->albireo && hi == 0xFE && (port & 0xFE) == 0x80)
+        return ch376_read(&cpc->ch376, (u8)(port & 0x01));
     else if (cpc->mx4 && cpc->albireo && cpc->albireo_mouse &&
              hi == 0xFE && (port & 0xFE) == 0x40) {
-        result = ch376_read(&cpc->ch376_b, (u8)(port & 0x01));
+        return ch376_read(&cpc->ch376_b, (u8)(port & 0x01));
     }
     /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
     else if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
-        result = m4_dataport_read(&cpc->m4_card);
+        return m4_dataport_read(&cpc->m4_card);
     }
     /* hi=0xFD: Mouse (0xFD10), IDE (0xFD06,0xFD08-0xFD0F), RTC (0xFD14), Net4CPC (0xFD20-0xFD23) */
     else if (cpc->mx4 && hi == 0xFD) {
@@ -443,10 +522,6 @@ static u8 bus_io_read(void *ctx, u16 port) {
         else
             result = 0xFF;
     }
-    else {
-        result = 0xFF;
-    }
-
     return result;
 }
 
@@ -483,87 +558,67 @@ static void plus_asic_lock_write(CPC *cpc, u8 val) {
 static void bus_io_write(void *ctx, u16 port, u8 val) {
     CPC *cpc = ctx;
     u8 hi = port >> 8;
+    unsigned selected = cpc_io_decode(port);
 
-    /* Parallel printer port: any write with A12 LOW (0xEFxx). The
-     * printer module handles the strobe-edge detect and bit-7 invert.
-     * Side-effect only — fall through so any expansion that happens to
-     * decode the same address space (none in the stock CPC, but the
-     * decoder is permissive) still sees the write. Caprice32
-     * cap32.cpp:768. */
-    if (!(hi & 0x10))
+    if (selected & CPC_IO_PRINTER)
         printer_out(&cpc->printer, val);
 
-    /* Gate Array: A15=0, A14=1 → 0x7Fxx */
-    if (!(hi & 0x80) && (hi & 0x40)) {
-        if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked &&
-                (val & 0xE0) == 0xA0) {
-            mem_plus_set_rmr2(&cpc->mem, val);
-            return;
-        }
-        if (cpc_trace_palette && cpc_frame_count > 520 && (val & 0xC0) == 0x40)
-            fprintf(stderr, "[f%04d ga] pen=%02X col=%02X\n",
-                    cpc_frame_count, cpc->ga.selected_pen, val & 0x1F);
-        else if (cpc_trace_palette && cpc_frame_count > 520
-                 && (val & 0xC0) == 0x00 && val <= 0x10)
-            fprintf(stderr, "[f%04d ga] select pen=%02X\n",
-                    cpc_frame_count, val);
-        /* #102 layer A: trace every RAM-banking write (top 2 bits = 11)
-         * so we can correlate banking flips against $FE58 writes and
-         * IRQ events. */
-        if (dbg_getenv("ONE_K_TRACE_FE58") && (val & 0xC0) == 0xC0)
-            fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
-                    cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
-        /* Interrupt reset also cancels a request already latched by the CPU. */
-        if ((val & 0xC0) == 0x80 && (val & 0x10)) {
-            cpc->cpu.pending_irq = false;
-            if (cpc_model_is_plus(cpc->model))
-                asic_clear_raster_irq(&cpc->asic, &cpc->mem);
-        }
-        ga_write(&cpc->ga, val);
-        cpc->mem.lower_rom_enabled = cpc->ga.lower_rom;
-        cpc->mem.upper_rom_enabled = cpc->ga.upper_rom;
-        /* RAM banking — bits[5:0] of data select bank group and mode.
-         * Standard on 6128; emulator extension enables it on 464 too
-         * when memory > 64 KB is configured.
-         * Yarek extension: port address bits A10-A8 carry an upper bank_high
-         * selector for RAM above 576 KB. Port 0x7Fxx = bank_high 0 (DK'tronics
-         * compatible); 0x7Exx = 1, 0x7Dxx = 2, 0x7Cxx = 3. bank_high is packed
-         * into ram_bank bits[7:6] so banked_ram_offset() can read it. */
-        if ((val & 0xC0) == 0xC0 && cpc->mem.ram_size > 0x10000) {
-            u8 bank_high = ((hi & 0xFC) == 0x7C) ? ((~hi) & 0x03) : 0;
-            u8 mode  = val & 0x07;
-            u8 group = (val >> 3) & 0x07;
-            /* Caprice32 ga_memory_manager() quirk: when the selected
-             * expansion group would point past installed RAM, force
-             * group=0 (fall back to the first 64K extension bank).
-             * Without this, CP/M+ and other software that probes more
-             * banks than physically exist see 0xFF reads where real
-             * hardware mirrors to group 0. Materially affects smaller
-             * configs (128/192/256/384/448K); a no-op at 576K/1024K
-             * where all standard groups fit. */
-            u32 full_bg = (u32)bank_high * 8u + (u32)group;
-            if (((full_bg + 2u) * 64u * 1024u) > (u32)cpc->mem.ram_size) {
-                group     = 0;
-                bank_high = 0;
+    /* PPI runs first so its pins already drive the bus before other partially
+     * decoded devices observe the same cycle. */
+    if (selected & CPC_IO_PPI) {
+        u8 ppi_port = hi & 0x03;
+        ppi_write(&cpc->ppi, ppi_port, val);
+        u8 port_c_pins = ppi_output_c(&cpc->ppi);
+        tape_set_motor(&cpc->tape, (port_c_pins & 0x10) != 0);
+        /* The AY bus is driven only when a write can change PPI port A or
+         * upper port C. Port B and mode-set writes must not replay stale
+         * BDIR/BC1 levels. */
+        bool drives_psg = (ppi_port == 0 && !(cpc->ppi.control & 0x10))
+                       || (ppi_port == 2 && !(cpc->ppi.control & 0x08))
+                       || (ppi_port == 3 && !(val & 0x80)
+                                         && !(cpc->ppi.control & 0x08));
+        if (drives_psg) {
+            u8 psg_ctrl = (port_c_pins >> 6) & 0x03;
+            if (psg_ctrl == 0x03) {
+                if (dbg_getenv("ONE_K_TRACE_PSG"))
+                    fprintf(stderr, "[PSG f%d] select=%02X PC=%04X port=%04X\n",
+                            cpc_frame_count, cpc->ppi.port_a, cpc->cpu.pc, port);
+                psg_select(&cpc->psg, cpc->ppi.port_a);
             }
-            cpc->mem.ram_bank = (u8)((bank_high << 6) | (group << 3) | mode);
-            if (dbg_getenv("ONE_K_TRACE_BANK"))
-                fprintf(stderr, "[BANK] ram_bank=%02X (group=%u mode=%u bank_high=%u) PC=%04X\n",
-                        cpc->mem.ram_bank, group, mode, bank_high, cpc->cpu.pc);
+            else if (psg_ctrl == 0x02) {
+                if (dbg_getenv("ONE_K_TRACE_PSG"))
+                    fprintf(stderr, "[PSG f%d] R%u <- %02X PC=%04X port=%04X\n",
+                            cpc_frame_count, cpc->psg.selected, cpc->ppi.port_a,
+                            cpc->cpu.pc, port);
+                psg_write(&cpc->psg, cpc->ppi.port_a);
+            }
+            else if (psg_ctrl == 0x01) {
+                prepare_ppi_port_a_input(cpc);
+                if (cpc_trace_input && cpc->ppi.kbd_row == 9)
+                    fprintf(stderr, "[input] kbd scan row9 = %02X  (matrix=%02X)\n",
+                            cpc->ppi.input_a, cpc->kbd.matrix[9]);
+            }
         }
-        return;
     }
-    /* CRTC write functions: A14=0 AND A9=0. A8 selects:
-     *   A8=0 → 0xBCxx select, A8=1 → 0xBDxx write.
-     * A9=1 (0xBExx/0xBFxx) is the CRTC read side — OUT to those ports
-     * is a no-op on real hardware. FUZIX's SDCC port helper at
-     * F995 issues OUT (C),B with BC=0x03FF for unrelated reasons; the
-     * old A14-only decode wrongly latched that as R12 := 0x03 and
-     * pointed the screen at block 0. */
-    if (!(hi & 0x40) && !(hi & 0x02)) {
+
+    if (selected & CPC_IO_GATE_ARRAY)
+        gate_array_bus_write(cpc, port, val);
+
+    /* The upper-ROM latch only decodes A13, so aliases outside DFxx work and
+     * may overlap another onboard device. */
+    if (selected & CPC_IO_ROM_SELECT) {
+        if (dbg_getenv("ONE_K_TRACE_HDCPM") && val == 0x01 &&
+                cpc->mem.upper_rom_select != 0x01)
+            fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n",
+                    cpc->cpu.pc);
+        mem_plus_select_upper_rom(&cpc->mem, val);
+    }
+
+    /* A9 is the CRTC R/W signal. Only its write-side aliases alter state on
+     * an OUT; read-side aliases merely drive data against the CPU bus. */
+    if ((selected & CPC_IO_CRTC) && !(hi & 0x02)) {
         if (!(hi & 0x01)) {
-            if (cpc_model_is_plus(cpc->model))
-                plus_asic_lock_write(cpc, val);
+            if (cpc_model_is_plus(cpc->model)) plus_asic_lock_write(cpc, val);
             crtc_select(&cpc->crtc, val);
         } else {
             if (cpc_trace_io)
@@ -575,62 +630,8 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
                         cpc->cpu.bc, cpc->cpu.hl, cpc->cpu.de, cpc->cpu.af);
             crtc_write(&cpc->crtc, val);
         }
-        return;
     }
-    /* Upper ROM select: A15=1, A14=1, A13=0 → 0xC0xx–0xDFxx */
-    if ((hi & 0xE0) == 0xC0) {
-        if (dbg_getenv("ONE_K_TRACE_HDCPM") && val == 0x01 && cpc->mem.upper_rom_select != 0x01) {
-            fprintf(stderr, "[HDCPM ROM SELECTED] PC=%04X (caller about to use HDCPM ROM)\n", cpc->cpu.pc);
-        }
-        mem_plus_select_upper_rom(&cpc->mem, val);
-        return;
-    }
-    /* PPI: A11=0 → 0xF4 (port A), 0xF5 (B), 0xF6 (C), 0xF7 (ctrl) */
-    if (!(hi & 0x08)) {
-        u8 ppi_port = hi & 0x03;
-        ppi_write(&cpc->ppi, ppi_port, val);
-        /* Cassette motor follows PPI port C bit 4. */
-        tape_set_motor(&cpc->tape, (cpc->ppi.port_c & 0x10) != 0);
-        /* The AY bus is driven only when a write can change PPI port A or
-         * upper port C. Port B and mode-set writes must not replay stale
-         * BDIR/BC1 levels. */
-        bool drives_psg = (ppi_port == 0 && !(cpc->ppi.control & 0x10))
-                       || (ppi_port == 2 && !(cpc->ppi.control & 0x08))
-                       || (ppi_port == 3 && !(val & 0x80)
-                                         && !(cpc->ppi.control & 0x08));
-        if (!drives_psg)
-            return;
 
-        u8 psg_ctrl = (cpc->ppi.port_c >> 6) & 0x03;
-        if (psg_ctrl == 0x03) {
-            if (dbg_getenv("ONE_K_TRACE_PSG"))
-                fprintf(stderr, "[PSG f%d] select=%02X PC=%04X port=%04X\n",
-                        cpc_frame_count, cpc->ppi.port_a, cpc->cpu.pc, port);
-            psg_select(&cpc->psg, cpc->ppi.port_a);
-        }
-        else if (psg_ctrl == 0x02) {
-            if (dbg_getenv("ONE_K_TRACE_PSG"))
-                fprintf(stderr, "[PSG f%d] R%u <- %02X PC=%04X port=%04X\n",
-                        cpc_frame_count, cpc->psg.selected, cpc->ppi.port_a,
-                        cpc->cpu.pc, port);
-            psg_write(&cpc->psg, cpc->ppi.port_a);
-        }
-        else if (psg_ctrl == 0x01) {
-            /* AMX mouse (Fallback Input) delivers one row-9 pulse per fresh
-             * select-edge; run it on the value being read so it's robust to
-             * both PPI row-select write paths. */
-            if (cpc->amx_mouse)
-                amx_pre_read(&cpc->amx, &cpc->kbd, cpc->ppi.kbd_row);
-            psg_set_kbd_row(&cpc->psg, kbd_read_row(&cpc->kbd, cpc->ppi.kbd_row));
-            /* PSG read mode on CPC always reads I/O port A (reg 14 = keyboard matrix).
-             * Bypass psg_read() to avoid depending on psg->selected being 14. */
-            cpc->ppi.port_a = cpc->psg.kbd_data;
-            if (cpc_trace_input && cpc->ppi.kbd_row == 9)
-                fprintf(stderr, "[input] kbd scan row9 = %02X  (matrix=%02X)\n",
-                        cpc->ppi.port_a, cpc->kbd.matrix[9]);
-        }
-        return;
-    }
     /* Albireo CH376: hi=0xFE, lo=0x80/0x81 (left chip, storage or USB
      * mouse) or 0x40/0x41 (right chip, dual-mode storage).
      * Claim before M4 wide decode. */
@@ -1069,6 +1070,11 @@ void cpc_reset(CPC *cpc) {
     cpc_monitor_reset(cpc);
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
+    cpc->crtc_cycle_acc = 0;
+    cpc->crtc_pre_ma = cpc->crtc.ma;
+    cpc->crtc_pre_ra = cpc->crtc.vlc;
+    cpc->crtc_pre_de = cpc->crtc.display_enable;
+    cpc->bus_ticked_in_step = 0;
     cpc->cycle_debt = 0;
     cpc->audio_frame_pos = 0;
     cpc->audio_sample_cycles = 0;
@@ -1337,6 +1343,7 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
+    u8 cassette_pins = ppi_output_c(&cpc->ppi);
     /* INPUT and CPC SAVE output pause the virtual tape. CDT output keeps it
      * connected so the decoded waveform reaches both the CPC and host. */
     bool real_input = real_tape_mode_has_input(cpc->real_tape.mode);
@@ -1358,7 +1365,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
      * this is required for volume-register sample playback. */
     cpc->audio_sample_cycles += cycles * AUDIO_SAMPLE_RATE;
     while (cpc->audio_sample_cycles >= cpc->cpu_clk_hz) {
-        real_tape_sample(&cpc->real_tape, cpc->ppi.port_c);
+        real_tape_sample(&cpc->real_tape, cassette_pins);
         if (real_tape_input_active(&cpc->real_tape))
             ppi_set_tape_level(&cpc->ppi,
                                real_tape_input_level(&cpc->real_tape));
@@ -1374,13 +1381,13 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             s16 *dst = &cpc->audio_frame[cpc->audio_frame_pos * 2];
             psg_render_stereo(&cpc->psg, dst, 1, PSG_CLOCK_HZ, AUDIO_SAMPLE_RATE);
             int t = 0;
-            if (real_input && (cpc->ppi.port_c & 0x10))
+            if (real_input && (cassette_pins & 0x10))
                 t = real_tape_monitor_sample(&cpc->real_tape);
             else if (cpc_save_output &&
-                     (cpc->ppi.port_c & 0x10) &&
+                     (cassette_pins & 0x10) &&
                      real_tape_audible_monitor_enabled(
                          &cpc->real_tape))
-                t = (cpc->ppi.port_c & 0x20) ? 2500 : -2500;
+                t = (cassette_pins & 0x20) ? 2500 : -2500;
             else if (cdt_audio &&
                      (!real_tape_mode_has_output(cpc->real_tape.mode) ||
                       real_tape_audible_monitor_enabled(&cpc->real_tape)))
