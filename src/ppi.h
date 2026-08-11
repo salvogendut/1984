@@ -15,6 +15,7 @@ typedef struct {
     u8 port_b;
     u8 port_c;
     u8 control;        /* mode control word */
+    u8 input_a;        /* value currently driven onto external port A pins */
 
     u8 kbd_row;        /* keyboard matrix row selected by port C bits 0-3 */
     bool vsync_signal; /* fed from CRTC */
@@ -24,5 +25,8 @@ typedef struct {
 void ppi_init(PPI *p);
 void ppi_write(PPI *p, u8 port, u8 val);   /* port 0-3 (A/B/C/ctrl) */
 u8   ppi_read(PPI *p, u8 port);
+u8   ppi_output_c(const PPI *p);           /* externally driven port C pins */
+void ppi_refresh_outputs(PPI *p);
+void ppi_set_port_a_input(PPI *p, u8 value);
 void ppi_set_vsync(PPI *p, bool v);
 void ppi_set_tape_level(PPI *p, u8 level);   /* 0x00 or 0x80 */

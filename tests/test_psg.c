@@ -17,7 +17,7 @@ static void test_register_write_masks(void) {
 
     psg_select(&psg, 7);
     psg_write(&psg, 0xFF);
-    assert(psg.reg[7] == 0x3F);
+    assert(psg.reg[7] == 0xFF);
 
     psg_select(&psg, 8);
     psg_write(&psg, 0xFF);
@@ -51,7 +51,7 @@ static void test_snapshot_register_load_and_store(void) {
     assert(psg.reg[0] == 0xFF);
     assert(psg.reg[1] == 0x0F);
     assert(psg.reg[6] == 0x1F);
-    assert(psg.reg[7] == 0x3F);
+    assert(psg.reg[7] == 0xFF);
     assert(psg.reg[8] == 0x1F);
     assert(psg.reg[13] == 0x0F);
     assert(!psg.env_dir);
@@ -63,6 +63,25 @@ static void test_snapshot_register_load_and_store(void) {
     assert(memcmp(stored, psg.reg, sizeof(stored)) == 0);
     assert(env_step == 12);
     assert(env_direction == 0xFF);
+}
+
+static void test_port_a_input_and_output_readback(void) {
+    PSG psg;
+    psg_init(&psg);
+    psg_set_kbd_row(&psg, 0x5A);
+
+    psg_select(&psg, 14);
+    psg_write(&psg, 0xA5);
+    assert(psg_read(&psg) == 0x5A); /* R7 bit 6 clear: keyboard input */
+
+    psg_select(&psg, 7);
+    psg_write(&psg, 0x40);
+    psg_select(&psg, 14);
+    assert(psg_read(&psg) == 0xA5); /* R7 bit 6 set: output latch */
+
+    psg_select(&psg, 3);
+    psg_write(&psg, 0x0B);
+    assert(psg_read(&psg) == 0x0B);
 }
 
 static void test_snapshot_held_envelope_level(void) {
@@ -130,6 +149,7 @@ int main(void) {
     test_register_write_masks();
     test_snapshot_register_load_and_store();
     test_snapshot_held_envelope_level();
+    test_port_a_input_and_output_readback();
     test_envelope_period_uses_ay_prescaler();
     test_disabled_sources_can_act_as_volume_dac();
     return 0;
