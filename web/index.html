@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="default">
+<html lang="en" data-theme="cpc464">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#121416">
 <title>Javascript 1984</title>
 <link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="theme-default.css">
 <link rel="stylesheet" href="theme-retro-crt.css">
 <link rel="stylesheet" href="theme-sapporo.css">
 <link rel="stylesheet" href="theme-sapporo-dark.css">
+<link rel="stylesheet" href="theme-cpc464.css">
 </head>
 <body>
 <main class="workbench">
@@ -29,10 +29,6 @@
           Theme: <strong id="themeName">Default</strong>
         </button>
         <div id="themeMenu" class="theme-menu" role="menu" hidden>
-          <button type="button" role="menuitemradio" aria-checked="true" data-theme="default">
-            <i class="theme-swatch swatch-default" aria-hidden="true"></i>
-            <span><strong>Default</strong><small>Hi-fi receiver</small></span>
-          </button>
           <button type="button" role="menuitemradio" aria-checked="false" data-theme="retro-crt">
             <i class="theme-swatch swatch-crt" aria-hidden="true"></i>
             <span><strong>Retro CRT</strong><small>Phosphor terminal</small></span>
@@ -44,6 +40,10 @@
           <button type="button" role="menuitemradio" aria-checked="false" data-theme="sapporo-dark">
             <i class="theme-swatch swatch-sapporo-dark" aria-hidden="true"></i>
             <span><strong>Sapporo Dark</strong><small>Solarized transit</small></span>
+          </button>
+          <button type="button" role="menuitemradio" aria-checked="true" data-theme="cpc464">
+            <i class="theme-swatch swatch-cpc464" aria-hidden="true"></i>
+            <span><strong>CPC464</strong><small>GT65 workstation</small></span>
           </button>
         </div>
       </div>
@@ -200,6 +200,109 @@
           <i class="mode-lamp" aria-hidden="true"></i>
           <span><strong id="colorModeName">Color display</strong><small>Switch to green monochrome</small></span>
         </button>
+      </section>
+    </div>
+
+    <div class="cpc464-keyboard" data-keyboard-open="false">
+      <div class="cpc-keyboard-bar">
+        <span>Optional on-screen keyboard</span>
+        <button id="cpcKeyboardToggle" type="button" aria-expanded="false"
+                aria-controls="cpcKeyboardKeys">Show keyboard</button>
+      </div>
+
+      <div id="cpcKeyboardKeys" class="cpc464-keybed" role="group"
+           aria-label="Amstrad CPC keyboard" hidden>
+        <div class="cpc-key-row cpc-key-row-number">
+          <button type="button" class="cpc-key cpc-key-red" data-scancode="41">ESC</button>
+          <button type="button" class="cpc-key" data-scancode="30">1</button>
+          <button type="button" class="cpc-key" data-scancode="31">2</button>
+          <button type="button" class="cpc-key" data-scancode="32">3</button>
+          <button type="button" class="cpc-key" data-scancode="33">4</button>
+          <button type="button" class="cpc-key" data-scancode="34">5</button>
+          <button type="button" class="cpc-key" data-scancode="35">6</button>
+          <button type="button" class="cpc-key" data-scancode="36">7</button>
+          <button type="button" class="cpc-key" data-scancode="37">8</button>
+          <button type="button" class="cpc-key" data-scancode="38">9</button>
+          <button type="button" class="cpc-key" data-scancode="39">0</button>
+          <button type="button" class="cpc-key" data-scancode="45">-</button>
+          <button type="button" class="cpc-key" data-scancode="46">^</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="76">CLR</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="42">DEL</button>
+        </div>
+        <div class="cpc-key-row">
+          <button type="button" class="cpc-key cpc-key-wide" data-scancode="43">TAB</button>
+          <button type="button" class="cpc-key" data-scancode="20">Q</button>
+          <button type="button" class="cpc-key" data-scancode="26">W</button>
+          <button type="button" class="cpc-key" data-scancode="8">E</button>
+          <button type="button" class="cpc-key" data-scancode="21">R</button>
+          <button type="button" class="cpc-key" data-scancode="23">T</button>
+          <button type="button" class="cpc-key" data-scancode="28">Y</button>
+          <button type="button" class="cpc-key" data-scancode="24">U</button>
+          <button type="button" class="cpc-key" data-scancode="12">I</button>
+          <button type="button" class="cpc-key" data-scancode="18">O</button>
+          <button type="button" class="cpc-key" data-scancode="19">P</button>
+          <button type="button" class="cpc-key" data-scancode="53">@</button>
+          <button type="button" class="cpc-key" data-scancode="47">[</button>
+          <button type="button" class="cpc-key cpc-key-green cpc-key-wide" data-scancode="40">RETURN</button>
+        </div>
+        <div class="cpc-key-row">
+          <button type="button" class="cpc-key cpc-key-blue cpc-key-wide" data-scancode="57">CAPS</button>
+          <button type="button" class="cpc-key" data-scancode="4">A</button>
+          <button type="button" class="cpc-key" data-scancode="22">S</button>
+          <button type="button" class="cpc-key" data-scancode="7">D</button>
+          <button type="button" class="cpc-key" data-scancode="9">F</button>
+          <button type="button" class="cpc-key" data-scancode="10">G</button>
+          <button type="button" class="cpc-key" data-scancode="11">H</button>
+          <button type="button" class="cpc-key" data-scancode="13">J</button>
+          <button type="button" class="cpc-key" data-scancode="14">K</button>
+          <button type="button" class="cpc-key" data-scancode="15">L</button>
+          <button type="button" class="cpc-key" data-scancode="52">;</button>
+          <button type="button" class="cpc-key" data-scancode="51">:</button>
+          <button type="button" class="cpc-key" data-scancode="48">]</button>
+          <button type="button" class="cpc-key" data-scancode="49" aria-label="Backslash">\</button>
+          <button type="button" class="cpc-key cpc-key-green" data-scancode="88">ENTER</button>
+        </div>
+        <div class="cpc-key-row">
+          <button type="button" class="cpc-key cpc-key-wide" data-scancode="225" data-modifier aria-pressed="false">SHIFT</button>
+          <button type="button" class="cpc-key" data-scancode="29">Z</button>
+          <button type="button" class="cpc-key" data-scancode="27">X</button>
+          <button type="button" class="cpc-key" data-scancode="6">C</button>
+          <button type="button" class="cpc-key" data-scancode="25">V</button>
+          <button type="button" class="cpc-key" data-scancode="5">B</button>
+          <button type="button" class="cpc-key" data-scancode="17">N</button>
+          <button type="button" class="cpc-key" data-scancode="16">M</button>
+          <button type="button" class="cpc-key" data-scancode="54">,</button>
+          <button type="button" class="cpc-key" data-scancode="55">.</button>
+          <button type="button" class="cpc-key" data-scancode="56">/</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="82">UP</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="81">DOWN</button>
+          <button type="button" class="cpc-key cpc-key-wide" data-scancode="225" data-modifier aria-pressed="false">SHIFT</button>
+        </div>
+        <div class="cpc-key-row cpc-key-row-space">
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="224" data-modifier aria-pressed="false">CTRL</button>
+          <button type="button" class="cpc-key cpc-key-red" data-scancode="226" data-modifier aria-pressed="false">COPY</button>
+          <button type="button" class="cpc-key cpc-key-space" data-scancode="44">SPACE</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="80">LEFT</button>
+          <button type="button" class="cpc-key cpc-key-blue" data-scancode="79">RIGHT</button>
+        </div>
+      </div>
+
+      <section id="tapeDeckMock" class="cpc464-tape-deck" data-future-control="tape"
+               aria-hidden="true">
+        <div class="tape-deck-heading">
+          <strong>DATA RECORDER</strong>
+          <span>FUTURE TAPE SUPPORT</span>
+        </div>
+        <div class="tape-door">
+          <span class="tape-label">CPC DATA</span>
+          <div class="tape-reels"><i></i><b></b><i></i></div>
+          <span class="tape-window-line"></span>
+        </div>
+        <div class="tape-counter">000</div>
+        <div class="tape-transport">
+          <span>REC</span><span>PLAY</span><span>REW</span>
+          <span>F.FWD</span><span>STOP</span><span>PAUSE</span>
+        </div>
       </section>
     </div>
 

@@ -125,10 +125,10 @@ label.small-key:focus-within {
 .theme-menu strong { font: 700 10px/1.2 ui-monospace, monospace; text-transform: uppercase; }
 .theme-menu small { margin-top: 3px; color: #777b79; font: 500 8px/1 ui-monospace, monospace; }
 .theme-swatch { display: block; width: 34px; height: 25px; border: 2px solid #090a0a; border-radius: 3px; box-shadow: 0 1px 2px #000; }
-.swatch-default { background: linear-gradient(135deg, #363a3c 0 48%, #0b0d0e 49% 72%, #ffb743 73% 78%, #1c1f21 79%); }
 .swatch-crt { background: radial-gradient(ellipse, #15362b 0 42%, #22231f 43% 58%, #c7b995 59%); }
 .swatch-sapporo { background: linear-gradient(135deg, #ffdf00 0 42%, #101314 43% 65%, #008c6b 66% 76%, #1b58a8 77% 88%, #d63a31 89%); }
 .swatch-sapporo-dark { background: linear-gradient(135deg, #002b36 0 42%, #b58900 43% 62%, #2aa198 63% 75%, #268bd2 76% 87%, #dc322f 88%); }
+.swatch-cpc464 { background: linear-gradient(135deg, #4a4c48 0 45%, #171817 46% 68%, #c7483a 69% 76%, #d69b36 77% 84%, #4f9b51 85% 91%, #3e65a0 92%); }
 
 .receiver {
   overflow: hidden;
