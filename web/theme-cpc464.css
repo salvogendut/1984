@@ -440,11 +440,6 @@ html[data-theme="cpc464"] .cpc464-keyboard[data-keyboard-open="false"] {
   grid-template-columns: 1fr;
 }
 
-html[data-theme="cpc464"] .cpc464-keyboard[data-keyboard-open="false"] .cpc464-tape-deck {
-  width: min(285px, 100%);
-  justify-self: end;
-}
-
 html[data-theme="cpc464"] .cpc-keyboard-bar {
   display: flex;
   grid-column: 1 / -1;
@@ -478,6 +473,10 @@ html[data-theme="cpc464"] .cpc-keyboard-bar button:hover { color: #fff; backgrou
 html[data-theme="cpc464"] .cpc-keyboard-bar button:active { transform: translateY(2px); box-shadow: 0 1px #080908; }
 
 html[data-theme="cpc464"] .cpc464-keybed[hidden] {
+  display: none !important;
+}
+
+html[data-theme="cpc464"] .cpc464-tape-deck[hidden] {
   display: none !important;
 }
 
@@ -684,7 +683,6 @@ html[data-theme="cpc464"] .toast {
   html[data-theme="cpc464"] .control-deck { grid-template-columns: 1fr 1fr; }
   html[data-theme="cpc464"] .media-module { grid-column: 1 / -1; grid-row: 1; }
   html[data-theme="cpc464"] .cpc464-keyboard { grid-template-columns: 1fr; }
-  html[data-theme="cpc464"] .cpc464-keyboard[data-keyboard-open="false"] .cpc464-tape-deck { width: 100%; }
   html[data-theme="cpc464"] .cpc464-tape-deck { grid-template-columns: 1fr auto; }
   html[data-theme="cpc464"] .cpc-key { min-height: 30px; font-size: 6px; }
 }
