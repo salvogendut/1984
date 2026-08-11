@@ -57,6 +57,8 @@ typedef struct {
 void asic_reset(Asic *asic, GateArray *ga);
 void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
                          u16 addr, u8 value);
+void asic_program_raster(Asic *asic, GateArray *ga, Mem *mem,
+                         const CRTC *crtc, u8 value);
 void asic_hsync(Asic *asic, Mem *mem, PSG *psg, GateArray *ga);
 void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga);
 void asic_new_frame(Asic *asic);

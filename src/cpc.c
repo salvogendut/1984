@@ -250,7 +250,11 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
     CPC *cpc = ctx;
     if (cpc_model_is_plus(cpc->model) && cpc->mem.plus_register_page &&
             addr >= 0x4000 && addr < 0x8000) {
-        asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
+        if (addr == 0x6800)
+            asic_program_raster(&cpc->asic, &cpc->ga, &cpc->mem,
+                                &cpc->crtc, val);
+        else
+            asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
         if (!asic_irq_pending(&cpc->asic)) {
             cpc->ga.interrupt_pending = false;
             cpc->cpu.pending_irq = false;

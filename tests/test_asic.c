@@ -257,6 +257,50 @@ static void test_vectored_interrupts(void) {
     assert(!asic.dma[1].interrupt);
 }
 
+static void test_pri_write_withdraws_raster_request(void) {
+    Asic asic;
+    GateArray ga = {0};
+    Mem mem;
+    PSG psg;
+    init_parts(&asic, &ga, &mem, &psg);
+
+    asic.raster_line = 7;
+    asic.raster_interrupt = true;
+    ga.interrupt_pending = true;
+    asic_register_write(&asic, &ga, &mem, 0x6800, 11);
+    assert(!asic.raster_interrupt);
+    assert(!ga.interrupt_pending);
+
+    /* Rewriting the active comparator value does not withdraw its request. */
+    asic.raster_interrupt = true;
+    ga.interrupt_pending = true;
+    asic_register_write(&asic, &ga, &mem, 0x6800, 11);
+    assert(asic.raster_interrupt);
+    assert(ga.interrupt_pending);
+
+    /* DMA requests remain asserted when PRI is reprogrammed. */
+    asic.dma[2].interrupt = true;
+    asic_register_write(&asic, &ga, &mem, 0x6800, 14);
+    assert(!asic.raster_interrupt);
+    assert(ga.interrupt_pending);
+
+    /* A changed PRI matching the current line during HSYNC fires at once. */
+    asic.dma[2].interrupt = false;
+    ga.interrupt_pending = false;
+    CRTC crtc;
+    crtc_init(&crtc);
+    crtc.vcc = 1;
+    crtc.vlc = 6;
+    crtc.hsync = true;
+    asic_program_raster(&asic, &ga, &mem, &crtc, 14);
+    assert(!asic.raster_interrupt); /* unchanged PRI does not retrigger */
+    asic_program_raster(&asic, &ga, &mem, &crtc, 13);
+    assert(!asic.raster_interrupt); /* changed, but not the current line */
+    asic_program_raster(&asic, &ga, &mem, &crtc, 14);
+    assert(asic.raster_interrupt);
+    assert(ga.interrupt_pending);
+}
+
 static void test_dma_pause_cadence(void) {
     Asic asic;
     GateArray ga = {0};
@@ -436,6 +480,7 @@ int main(void) {
     test_palette_and_sprite_registers();
     test_raster_split_and_dma();
     test_vectored_interrupts();
+    test_pri_write_withdraws_raster_request();
     test_dma_pause_cadence();
     test_sprite_beam_composition();
     test_sprite_monitor_clipping();

@@ -8,6 +8,12 @@
 
 static void dma_store_status(Asic *asic, Mem *mem);
 
+static void raise_raster_interrupt(Asic *asic, Mem *mem, GateArray *ga) {
+    asic->raster_interrupt = true;
+    ga->interrupt_pending = true;
+    dma_store_status(asic, mem);
+}
+
 static u8 decode_magnification(u8 value) {
     value &= 3;
     return value == 3 ? 4 : value;
@@ -91,7 +97,20 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
 
     mem->plus_registers[off] = value;
     switch (addr) {
-    case 0x6800: asic->raster_line = value; break;
+    case 0x6800: {
+        u8 previous = asic->raster_line;
+        asic->raster_line = value;
+        /* PRI is a level-sensitive request. Programming a different nonzero
+         * line withdraws an outstanding raster request unless the new value
+         * matches immediately (handled by asic_program_raster()). Eerie
+         * Forest relies on the withdrawal while rebuilding its IRQ chain. */
+        if (value && value != previous) {
+            asic->raster_interrupt = false;
+            ga->interrupt_pending = asic_irq_pending(asic);
+            dma_store_status(asic, mem);
+        }
+        break;
+    }
     case 0x6801: asic->split_line = value; break;
     case 0x6802:
         asic->split_address = (asic->split_address & 0x00FF) | ((u16)value << 8);
@@ -137,6 +156,19 @@ void asic_register_write(Asic *asic, GateArray *ga, Mem *mem,
     default:
         break;
     }
+}
+
+void asic_program_raster(Asic *asic, GateArray *ga, Mem *mem,
+                         const CRTC *crtc, u8 value) {
+    u8 previous = asic->raster_line;
+    asic_register_write(asic, ga, mem, 0x6800, value);
+    if (!crtc || !value || value == previous || !crtc->hsync ||
+        crtc->vcc >= 32)
+        return;
+
+    u8 line = (u8)((crtc->vcc << 3) | (crtc->vlc & 7));
+    if (line == value)
+        raise_raster_interrupt(asic, mem, ga);
 }
 
 static void dma_store_status(Asic *asic, Mem *mem) {
@@ -238,11 +270,8 @@ void asic_raster_tick(Asic *asic, const CRTC *crtc, Mem *mem, GateArray *ga) {
     if (crtc->vcc >= 32)
         return;
     u8 line = (u8)((crtc->vcc << 3) | (crtc->vlc & 7));
-    if (line == asic->raster_line) {
-        asic->raster_interrupt = true;
-        ga->interrupt_pending = true;
-        dma_store_status(asic, mem);
-    }
+    if (line == asic->raster_line)
+        raise_raster_interrupt(asic, mem, ga);
 }
 
 void asic_new_frame(Asic *asic) {
