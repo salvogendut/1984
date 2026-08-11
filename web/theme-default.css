@@ -1,0 +1,14 @@
+html[data-theme="default"] {
+  --ink: #ece9df;
+  --muted: #979b9b;
+  --panel: #202326;
+  --panel-deep: #111315;
+  --panel-edge: #4c5052;
+  --metal: #b8b7ad;
+  --metal-dark: #66685f;
+  --amber: #ffb743;
+  --amber-soft: #b56f20;
+  --red: #ff4b32;
+  --green: #72e39a;
+  font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+}

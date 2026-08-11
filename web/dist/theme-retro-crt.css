@@ -1,0 +1,262 @@
+/* Retro CRT is deliberately a skin over the same semantic controls. New
+   themes can follow this data-theme contract without changing app.js. */
+html[data-theme="retro-crt"] {
+  --ink: #e7ddc1;
+  --muted: #a39a81;
+  --panel: #3a3934;
+  --panel-deep: #24251f;
+  --panel-edge: #716956;
+  --metal: #c7b995;
+  --metal-dark: #8f856d;
+  --amber: #e7a52b;
+  --amber-soft: #a86f1d;
+  --red: #bc3b2e;
+  --green: #8bd6a3;
+  font-family: "Courier New", Courier, monospace;
+}
+
+html[data-theme="retro-crt"] body {
+  background: radial-gradient(circle at 50% 28%, #444438 0, #1a1b18 45%, #090a09 100%);
+}
+html[data-theme="retro-crt"] body::before {
+  opacity: .1;
+  background-size: 22px 22px;
+}
+html[data-theme="retro-crt"] .masthead { margin-inline: 12px; }
+html[data-theme="retro-crt"] .brand-lockup h1 {
+  color: #d9cfb2;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-shadow: 0 2px #090a09;
+}
+html[data-theme="retro-crt"] .brand-lockup h1 strong { color: #8bd6a3; }
+html[data-theme="retro-crt"] .eyebrow,
+html[data-theme="retro-crt"] .masthead-meta { color: #b9b096; }
+html[data-theme="retro-crt"] .brand-mark i {
+  background: #8bd6a3;
+  box-shadow: 0 0 9px rgba(139,214,163,.45);
+}
+html[data-theme="retro-crt"] .theme-button {
+  border: 2px solid #5f594a;
+  color: #332f27;
+  background: linear-gradient(#ded4b4, #a99d7d);
+  box-shadow: inset 0 1px rgba(255,255,255,.45), 0 2px #11120f;
+}
+html[data-theme="retro-crt"] .theme-button strong { color: #713029; }
+html[data-theme="retro-crt"] .theme-menu {
+  border: 3px solid #5f594a;
+  color: #171713;
+  background: #c7b995;
+  box-shadow: 0 14px 35px rgba(0,0,0,.62), inset 0 2px rgba(255,255,255,.3);
+}
+html[data-theme="retro-crt"] .theme-menu::before {
+  top: -7px;
+  border-color: #5f594a;
+  background: #c7b995;
+}
+html[data-theme="retro-crt"] .theme-menu button { color: #29271f; }
+html[data-theme="retro-crt"] .theme-menu button:hover,
+html[data-theme="retro-crt"] .theme-menu button[aria-checked="true"] {
+  border-color: #8f856d;
+  color: #171713;
+  background: #ded4b4;
+}
+html[data-theme="retro-crt"] .theme-menu small { color: #6b6351; }
+html[data-theme="retro-crt"] .theme-menu button[aria-checked="true"]::after { color: #8c3028; }
+
+html[data-theme="retro-crt"] .receiver {
+  border: 5px solid #5f594a;
+  border-radius: 28px 28px 42px 42px;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.14), transparent 6%, transparent 94%, rgba(0,0,0,.17)),
+    linear-gradient(#d1c4a4, #b5a783);
+  box-shadow: 0 32px 65px rgba(0,0,0,.58), inset 0 2px rgba(255,255,255,.45), inset 0 -7px rgba(72,64,46,.25);
+}
+html[data-theme="retro-crt"] .receiver-top {
+  margin: 16px 18px 0;
+  border: 3px solid #736b57;
+  border-radius: 12px;
+  color: #e8dec1;
+  background: linear-gradient(#46453f, #292a26);
+  box-shadow: inset 0 0 0 2px #1f201d, 0 3px rgba(255,255,255,.36);
+}
+html[data-theme="retro-crt"] .model-bank > label,
+html[data-theme="retro-crt"] .display-label,
+html[data-theme="retro-crt"] .activity-bank div { color: #ded4b8; }
+html[data-theme="retro-crt"] select {
+  border: 2px solid #151611;
+  color: #171713;
+  background: linear-gradient(#ded4b4, #a79b7b);
+  box-shadow: inset 0 1px rgba(255,255,255,.4), 0 2px #11120f;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+}
+html[data-theme="retro-crt"] .select-shell::after { border-top-color: #7f2f27; }
+html[data-theme="retro-crt"] .display-panel {
+  border: 3px solid #151611;
+  border-radius: 6px;
+  background: radial-gradient(ellipse at center, rgba(65,152,104,.14), transparent 72%), #06100d;
+  box-shadow: inset 0 0 16px #000, inset 0 0 5px rgba(111,217,149,.3);
+}
+html[data-theme="retro-crt"] #status {
+  color: #8bd6a3;
+  font-family: "Courier New", Courier, monospace;
+  text-shadow: 0 0 6px rgba(139,214,163,.75);
+}
+html[data-theme="retro-crt"] .led { width: 12px; height: 12px; border-width: 2px; }
+
+html[data-theme="retro-crt"] .screen-stage {
+  gap: 18px;
+  align-items: stretch;
+  padding: 28px;
+  background: transparent;
+  box-shadow: none;
+}
+html[data-theme="retro-crt"] .screen-brand {
+  left: 37px;
+  width: 82px;
+  filter: drop-shadow(0 4px 3px rgba(0,0,0,.65));
+}
+html[data-theme="retro-crt"] .screen-stage::before,
+html[data-theme="retro-crt"] .screen-stage::after {
+  flex: 0 0 96px;
+  min-height: 420px;
+  content: "";
+  border: 3px solid #716956;
+  border-radius: 13px;
+  background-color: #353630;
+  background-image: radial-gradient(circle, #10110f 0 3px, #54554d 3.5px, transparent 4.5px);
+  background-position: 5px 5px;
+  background-size: 14px 14px;
+  box-shadow: inset 0 0 0 3px #292a26, inset 0 0 18px #151611, 0 3px rgba(255,255,255,.35);
+}
+html[data-theme="retro-crt"] .screen-frame {
+  align-self: center;
+  padding: clamp(15px, 2vw, 26px);
+  border: 5px solid #716956;
+  border-radius: 28px;
+  background: #252621;
+  box-shadow: inset 0 0 0 7px #131411, inset 0 0 35px #050605, 0 3px #eee0bd;
+}
+html[data-theme="retro-crt"] .screen-glass {
+  border: 9px solid #10110f;
+  border-radius: 14% / 10%;
+  background: radial-gradient(ellipse at center, rgba(65,152,104,.16), transparent 66%), #06100d;
+  box-shadow: inset 0 0 60px #000, inset 0 0 18px rgba(111,217,149,.3), 0 0 0 3px #4c4c43;
+}
+html[data-theme="retro-crt"] .scanline-overlay {
+  z-index: 3;
+  opacity: .58;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.04) 0, rgba(255,255,255,.04) 1px, rgba(0,0,0,.13) 2px, rgba(0,0,0,.13) 4px);
+  mix-blend-mode: screen;
+}
+html[data-theme="retro-crt"] .screen-glass::after {
+  z-index: 4;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.52) 100%), linear-gradient(110deg, rgba(255,255,255,.07), transparent 22%);
+}
+html[data-theme="retro-crt"] .screen-hint,
+html[data-theme="retro-crt"] .drop-hint {
+  z-index: 5;
+  border-color: #77715e;
+  color: #d9cfb2;
+  background: rgba(25,26,22,.9);
+}
+html[data-theme="retro-crt"] .screen-badge { color: #bdb49c; }
+
+html[data-theme="retro-crt"] .control-deck {
+  gap: 12px;
+  padding: 0 18px 18px;
+  border: 0;
+  background: transparent;
+}
+html[data-theme="retro-crt"] .deck-module {
+  border: 3px solid #736b57;
+  border-radius: 13px;
+  color: #ded5bc;
+  background: linear-gradient(#42413b, #292a26);
+  box-shadow: inset 0 0 0 2px #1f201d, 0 3px rgba(255,255,255,.38);
+}
+html[data-theme="retro-crt"] .module-heading { color: #eadfbe; }
+html[data-theme="retro-crt"] .module-heading small { color: #aaa187; }
+html[data-theme="retro-crt"] .deck-key,
+html[data-theme="retro-crt"] .small-key,
+html[data-theme="retro-crt"] .wide-key {
+  border: 3px solid #151611;
+  color: #171713;
+  background: linear-gradient(#d6caa7, #a79b7b);
+  box-shadow: 0 5px 0 #11120f, inset 0 2px rgba(255,255,255,.42);
+  font-family: "Courier New", Courier, monospace;
+}
+html[data-theme="retro-crt"] .deck-key:hover,
+html[data-theme="retro-crt"] .small-key:hover,
+html[data-theme="retro-crt"] .wide-key:hover { color: #171713; background: linear-gradient(#e3d8b8, #b4a888); }
+html[data-theme="retro-crt"] .deck-key:active,
+html[data-theme="retro-crt"] .small-key:active,
+html[data-theme="retro-crt"] .wide-key:active { box-shadow: 0 1px #11120f; }
+html[data-theme="retro-crt"] .danger-key { background: linear-gradient(#d85a4a, #9c2f25); }
+html[data-theme="retro-crt"] .danger-key .key-icon,
+html[data-theme="retro-crt"] .danger-key small { color: #f4e9c8; }
+html[data-theme="retro-crt"] .expansion-key { background: linear-gradient(#efbd52, #b17d1e); }
+html[data-theme="retro-crt"] .deck-key .key-icon,
+html[data-theme="retro-crt"] .deck-key small { color: #27251f; }
+html[data-theme="retro-crt"] .media-slot {
+  border: 2px solid #171814;
+  background: #262722;
+  box-shadow: inset 0 1px #595950;
+}
+html[data-theme="retro-crt"] .cassette-window { border-width: 2px; color: #d1c7a9; background: #11120f; }
+html[data-theme="retro-crt"] .cassette-window i { border-color: #aaa187; }
+html[data-theme="retro-crt"] .media-copy strong { color: #e4dac0; }
+html[data-theme="retro-crt"] .media-copy span { color: #a59c84; }
+html[data-theme="retro-crt"] .toggle-track {
+  width: 36px;
+  height: 20px;
+  border: 2px solid #151611;
+  border-radius: 4px;
+  background: #78745f;
+  box-shadow: inset 0 0 0 2px #a69d7d;
+}
+html[data-theme="retro-crt"] .toggle-track i { top: 3px; left: 3px; width: 12px; height: 10px; border-radius: 2px; background: linear-gradient(#ded4b4, #8e856c); }
+html[data-theme="retro-crt"] .toggle-control input:checked + .toggle-track i { left: 17px; background: linear-gradient(#a7e293, #609c55); box-shadow: 0 0 7px #82e96e; }
+html[data-theme="retro-crt"] .toggle-control strong { color: #e4dac0; }
+html[data-theme="retro-crt"] .toggle-control small { color: #aaa187; }
+html[data-theme="retro-crt"] .input-readout {
+  border: 3px solid #151611;
+  color: #8bd6a3;
+  background: #06100d;
+  box-shadow: inset 0 0 13px #000, inset 0 0 5px rgba(111,217,149,.25);
+  text-shadow: 0 0 5px rgba(139,214,163,.6);
+}
+html[data-theme="retro-crt"] .rotary {
+  border: 6px solid #1d1e1b;
+  background: radial-gradient(circle at 35% 30%, #66675e 0 10%, #33342f 35%, #171815 70%);
+  box-shadow: 0 4px #0c0d0b, inset 0 0 0 3px #4d4e47;
+}
+html[data-theme="retro-crt"] .rotary::after { background: radial-gradient(circle at 35% 30%, #66675e 0 10%, #33342f 35%, #171815 70%); }
+html[data-theme="retro-crt"] #screenScale { background: #11120f; }
+html[data-theme="retro-crt"] #screenScale::-webkit-slider-thumb { background: #c7b995; }
+html[data-theme="retro-crt"] #screenScale::-moz-range-thumb { background: #c7b995; }
+html[data-theme="retro-crt"] .receiver-footer {
+  margin: 0 18px 18px;
+  border: 3px solid #736b57;
+  border-radius: 10px 10px 22px 22px;
+  color: #bdb49c;
+  background: #292a26;
+  box-shadow: inset 0 0 0 2px #1f201d;
+}
+html[data-theme="retro-crt"] .toast { border: 3px solid #5f594a; color: #171713; background: rgba(208,196,164,.97); }
+html[data-theme="retro-crt"] .color-mode-key small { color: #514b3e; }
+
+@media (max-width: 1050px) {
+  html[data-theme="retro-crt"] .screen-stage::before,
+  html[data-theme="retro-crt"] .screen-stage::after { display: none; }
+}
+
+@media (max-width: 1180px) {
+  html[data-theme="retro-crt"] .screen-brand { left: 24px; width: 60px; }
+}
+
+@media (max-width: 560px) {
+  html[data-theme="retro-crt"] .screen-brand { left: 14px; width: 48px; }
+}

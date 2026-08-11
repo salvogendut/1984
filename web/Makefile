@@ -38,23 +38,32 @@ SRCS = \
 	../src/config.c \
 	../src/cartridge.c \
 	../src/snapshot.c \
+	../src/paste.c \
 	../src/cpc.c
 
 CORE_OBJS = $(patsubst ../src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 OBJS = $(CORE_OBJS) $(BUILD_DIR)/poc_main.o $(BUILD_DIR)/stubs.o
 WASM_ASSETS = $(DIST_DIR)/6128.js $(DIST_DIR)/6128.wasm
 BRAND_ICON = ../icons/512x512/apps/io.github.salvogendut.Emulator1984.png
+STYLE_ASSETS = styles.css theme-default.css theme-retro-crt.css \
+	theme-sapporo.css theme-sapporo-dark.css
 
-all: $(DIST_DIR)/index.html $(DIST_DIR)/styles.css $(DIST_DIR)/app.js \
-	$(DIST_DIR)/gamepad.js $(DIST_DIR)/brand-1984.png $(WASM_ASSETS)
+all: $(DIST_DIR)/index.html $(addprefix $(DIST_DIR)/,$(STYLE_ASSETS)) $(DIST_DIR)/app.js \
+	$(DIST_DIR)/gamepad.js $(DIST_DIR)/media-url.js \
+	$(DIST_DIR)/brand-1984.png $(WASM_ASSETS)
+
+test: test-gamepad test-media-url
 
 test-gamepad:
 	node test_gamepad.js
 
+test-media-url:
+	node test_media_url.js
+
 $(WASM_ASSETS) &: $(OBJS) | $(DIST_DIR)
 	$(EMCC) $(CFLAGS) $(OBJS) -o $(DIST_DIR)/6128.js \
 	    -sMODULARIZE -sEXPORT_NAME=create6128 \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_load_disk,_poc_eject_disk,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_load_disk,_poc_eject_disk,_poc_autorun,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \
@@ -77,7 +86,10 @@ $(DIST_DIR)/index.html: index.html | $(DIST_DIR)
 $(DIST_DIR)/gamepad.js: gamepad.js | $(DIST_DIR)
 	cp $< $@
 
-$(DIST_DIR)/styles.css: styles.css | $(DIST_DIR)
+$(DIST_DIR)/media-url.js: media-url.js | $(DIST_DIR)
+	cp $< $@
+
+$(DIST_DIR)/%.css: %.css | $(DIST_DIR)
 	cp $< $@
 
 $(DIST_DIR)/app.js: app.js | $(DIST_DIR)
@@ -96,4 +108,4 @@ clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)
 	rm -f *.o *.ppm poc.js poc.wasm 6128.js 6128.wasm
 
-.PHONY: all clean serve test-gamepad
+.PHONY: all clean serve test test-gamepad test-media-url

@@ -1,0 +1,286 @@
+/* Sapporo combines high-contrast transit wayfinding with the squared shells,
+   charcoal key beds, and isolated function-key colors of Japanese MSX-era
+   hardware. */
+html[data-theme="sapporo"] {
+  --ink: #f3f4ef;
+  --muted: #8d9493;
+  --panel: #252a2c;
+  --panel-deep: #111516;
+  --panel-edge: #0b0d0e;
+  --metal: #d6d9d6;
+  --metal-dark: #797f7e;
+  --amber: #ffdc00;
+  --amber-soft: #c4a900;
+  --red: #d83d32;
+  --green: #00966f;
+  font-family: Arial, Helvetica, sans-serif;
+}
+html[data-theme="sapporo"] body {
+  color: #111415;
+  background:
+    linear-gradient(125deg, transparent 0 72%, rgba(0,0,0,.035) 72% 74%, transparent 74%),
+    #e7e9e6;
+}
+html[data-theme="sapporo"] body::before {
+  opacity: .2;
+  background-image:
+    linear-gradient(90deg, transparent 0 48%, #ffd900 48% 52%, transparent 52%),
+    linear-gradient(0deg, transparent 0 48%, rgba(16,19,20,.16) 48% 52%, transparent 52%);
+  background-size: 180px 180px;
+  mask-image: linear-gradient(135deg, #000, transparent 75%);
+}
+html[data-theme="sapporo"] .masthead { align-items: center; margin-inline: 7px; }
+html[data-theme="sapporo"] .brand-lockup h1 {
+  color: #111415;
+  font-family: Arial Black, Arial, Helvetica, sans-serif;
+  font-weight: 900;
+  letter-spacing: -.055em;
+  text-transform: uppercase;
+}
+html[data-theme="sapporo"] .brand-lockup h1 strong {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 3px 10px 2px;
+  color: #111415;
+  background: #ffdc00;
+  letter-spacing: -.02em;
+}
+html[data-theme="sapporo"] .eyebrow,
+html[data-theme="sapporo"] .masthead-meta { color: #111415; font-family: Arial, Helvetica, sans-serif; font-weight: 900; }
+html[data-theme="sapporo"] .brand-mark { grid-template-columns: repeat(3, 7px); gap: 2px; }
+html[data-theme="sapporo"] .brand-mark i { width: 7px; box-shadow: none; }
+html[data-theme="sapporo"] .brand-mark i:nth-child(1) { background: #00966f; }
+html[data-theme="sapporo"] .brand-mark i:nth-child(2) { background: #1859a8; }
+html[data-theme="sapporo"] .brand-mark i:nth-child(3) { background: #d83d32; }
+html[data-theme="sapporo"] .theme-button {
+  min-height: 30px;
+  border: 3px solid #111415;
+  border-radius: 0;
+  color: #111415;
+  background: #ffdc00;
+  box-shadow: 3px 3px #111415;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+html[data-theme="sapporo"] .theme-button strong { color: #111415; }
+html[data-theme="sapporo"] .theme-menu {
+  border: 4px solid #111415;
+  border-radius: 0;
+  color: #111415;
+  background: #f2f3ee;
+  box-shadow: 8px 8px #111415;
+}
+html[data-theme="sapporo"] .theme-menu::before { display: none; }
+html[data-theme="sapporo"] .theme-menu button { border-radius: 0; color: #111415; }
+html[data-theme="sapporo"] .theme-menu button:hover,
+html[data-theme="sapporo"] .theme-menu button[aria-checked="true"] { border-color: #111415; color: #111415; background: #ffdc00; }
+html[data-theme="sapporo"] .theme-menu small { color: #505655; }
+html[data-theme="sapporo"] .theme-menu button[aria-checked="true"]::after { color: #111415; }
+
+html[data-theme="sapporo"] .receiver {
+  overflow: visible;
+  border: 7px solid #111415;
+  border-radius: 4px;
+  background: #d4d7d4;
+  box-shadow: 13px 13px #ffdc00, 0 30px 70px rgba(0,0,0,.25);
+}
+html[data-theme="sapporo"] .receiver-top {
+  border-bottom: 7px solid #111415;
+  color: #111415;
+  background: #ffdc00;
+  box-shadow: none;
+}
+html[data-theme="sapporo"] .model-bank > label,
+html[data-theme="sapporo"] .display-label,
+html[data-theme="sapporo"] .activity-bank div {
+  color: #111415;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+html[data-theme="sapporo"] select {
+  min-height: 40px;
+  border: 3px solid #111415;
+  border-radius: 0;
+  color: #ffdc00;
+  background: #111415;
+  box-shadow: none;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+html[data-theme="sapporo"] .select-shell::after { border-top-color: #ffdc00; }
+html[data-theme="sapporo"] .display-panel {
+  border: 3px solid #111415;
+  border-radius: 0;
+  background: #111415;
+  box-shadow: none;
+}
+html[data-theme="sapporo"] .display-label { color: #ffdc00; }
+html[data-theme="sapporo"] #status { color: #89efaf; text-shadow: none; }
+html[data-theme="sapporo"] .activity-bank .led { width: 12px; height: 12px; border: 3px solid #111415; box-shadow: none; }
+
+html[data-theme="sapporo"] .screen-stage {
+  position: relative;
+  padding: 38px clamp(18px, 3vw, 42px) 34px;
+  border-bottom: 7px solid #111415;
+  background:
+    linear-gradient(90deg, #00966f 0 33%, #1859a8 33% 66%, #d83d32 66%) left top / 100% 8px no-repeat,
+    linear-gradient(135deg, #cdd0cd 0 52%, #c5c8c5 52%);
+  box-shadow: none;
+}
+html[data-theme="sapporo"] .screen-brand {
+  width: 96px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+}
+html[data-theme="sapporo"] .screen-frame {
+  position: relative;
+  padding: 16px;
+  border: 4px solid #111415;
+  border-radius: 1px;
+  background: #282d2f;
+  box-shadow: 9px 9px #7d8382;
+}
+html[data-theme="sapporo"] .screen-frame::before {
+  position: absolute;
+  top: -24px;
+  left: -4px;
+  z-index: 2;
+  padding: 5px 13px 4px;
+  content: "S01  SYSTEM DISPLAY";
+  color: #111415;
+  background: #ffdc00;
+  font: 900 9px/1 Arial, Helvetica, sans-serif;
+  letter-spacing: .12em;
+}
+html[data-theme="sapporo"] .screen-frame::after {
+  position: absolute;
+  right: 16px;
+  bottom: -7px;
+  width: 150px;
+  height: 7px;
+  content: "";
+  background: linear-gradient(90deg, #00966f 0 33%, #1859a8 33% 66%, #d83d32 66%);
+}
+html[data-theme="sapporo"] .screen-glass {
+  border: 4px solid #090b0c;
+  border-radius: 0;
+  box-shadow: inset 0 0 18px #000;
+}
+html[data-theme="sapporo"] .scanline-overlay { opacity: .1; mix-blend-mode: multiply; }
+html[data-theme="sapporo"] .screen-glass::after { background: linear-gradient(120deg, rgba(255,255,255,.04), transparent 28%); }
+html[data-theme="sapporo"] .screen-hint,
+html[data-theme="sapporo"] .drop-hint { border: 3px solid #ffdc00; border-radius: 0; color: #ffdc00; background: #111415; }
+html[data-theme="sapporo"] .screen-badge {
+  margin-top: 12px;
+  color: #f1f2ed;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+
+html[data-theme="sapporo"] .control-deck {
+  gap: 10px;
+  padding: 16px;
+  border: 0;
+  background: #d4d7d4;
+}
+html[data-theme="sapporo"] .deck-module {
+  position: relative;
+  border: 4px solid #111415;
+  border-radius: 0;
+  color: #f1f2ed;
+  background: #292e30;
+  box-shadow: 5px 5px #111415;
+}
+html[data-theme="sapporo"] .deck-module::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 7px;
+  content: "";
+  background: #ffdc00;
+}
+html[data-theme="sapporo"] .transport-module::before { background: #d83d32; }
+html[data-theme="sapporo"] .input-module::before { background: #00966f; }
+html[data-theme="sapporo"] .screen-module::before { background: #1859a8; }
+html[data-theme="sapporo"] .module-heading {
+  margin-top: 5px;
+  color: #f2f3ee;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+html[data-theme="sapporo"] .module-heading small { color: #aab0ae; }
+html[data-theme="sapporo"] .deck-key,
+html[data-theme="sapporo"] .small-key,
+html[data-theme="sapporo"] .wide-key {
+  border: 3px solid #080a0a;
+  border-radius: 1px;
+  color: #111415;
+  background: #d8dad5;
+  box-shadow: 0 5px #080a0a;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+html[data-theme="sapporo"] .deck-key:hover,
+html[data-theme="sapporo"] .small-key:hover,
+html[data-theme="sapporo"] .wide-key:hover { color: #111415; background: #f1f2ed; }
+html[data-theme="sapporo"] .deck-key:active,
+html[data-theme="sapporo"] .small-key:active,
+html[data-theme="sapporo"] .wide-key:active { box-shadow: 0 1px #080a0a; }
+html[data-theme="sapporo"] #reset { color: #fff; background: #d83d32; }
+html[data-theme="sapporo"] #reset .key-icon,
+html[data-theme="sapporo"] #reset small { color: #fff; }
+html[data-theme="sapporo"] #fullscreen { background: #ffdc00; }
+html[data-theme="sapporo"] #fitScreen { color: #fff; background: #00966f; }
+html[data-theme="sapporo"] #fitScreen .key-icon,
+html[data-theme="sapporo"] #fitScreen small { color: #fff; }
+html[data-theme="sapporo"] #expansion { color: #fff; background: #1859a8; }
+html[data-theme="sapporo"] #expansion .key-icon,
+html[data-theme="sapporo"] #expansion small { color: #fff; }
+html[data-theme="sapporo"] .media-slot { border: 3px solid #090b0c; border-radius: 0; background: #171b1c; box-shadow: none; }
+html[data-theme="sapporo"] .cassette-window { border: 3px solid #090b0c; border-radius: 0; color: #ffdc00; background: #2e3435; }
+html[data-theme="sapporo"] .cassette-window i { border-color: #00966f; }
+html[data-theme="sapporo"] .media-copy strong { color: #f2f3ee; }
+html[data-theme="sapporo"] .media-copy span { color: #9da3a1; }
+html[data-theme="sapporo"] .media-actions .small-key:first-child { background: #ffdc00; }
+html[data-theme="sapporo"] .toggle-track { border: 3px solid #090b0c; border-radius: 1px; background: #15191a; box-shadow: none; }
+html[data-theme="sapporo"] .toggle-track i { border-radius: 0; background: #737978; }
+html[data-theme="sapporo"] .toggle-control input:checked + .toggle-track i { background: #00966f; box-shadow: none; }
+html[data-theme="sapporo"] .toggle-control strong { color: #f2f3ee; }
+html[data-theme="sapporo"] .toggle-control small { color: #9da3a1; }
+html[data-theme="sapporo"] .input-readout {
+  border: 3px solid #090b0c;
+  border-radius: 0;
+  color: #89efaf;
+  background: #0d1112;
+  box-shadow: none;
+}
+html[data-theme="sapporo"] .rotary {
+  border: 5px solid #090b0c;
+  border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #53595a 0 3px, #353a3b 3px 6px);
+  box-shadow: 4px 4px #090b0c;
+}
+html[data-theme="sapporo"] .rotary::after { inset: 7px; border-radius: 50%; background: radial-gradient(circle at 38% 30%, #737a79, #252a2b 68%); }
+html[data-theme="sapporo"] .rotary i { background: #ffdc00; }
+html[data-theme="sapporo"] .dial-row label span { color: #aab0ae; }
+html[data-theme="sapporo"] .dial-row label strong { color: #ffdc00; }
+html[data-theme="sapporo"] #screenScale { height: 6px; border-radius: 0; background: #090b0c; }
+html[data-theme="sapporo"] #screenScale::-webkit-slider-thumb { border-radius: 1px; background: #ffdc00; }
+html[data-theme="sapporo"] #screenScale::-moz-range-thumb { border-radius: 1px; background: #ffdc00; }
+html[data-theme="sapporo"] .color-mode-key { background: #ffdc00; }
+html[data-theme="sapporo"] .color-mode-key.active { color: #fff; background: #00966f; }
+html[data-theme="sapporo"] .color-mode-key small { color: #3f4544; }
+html[data-theme="sapporo"] .color-mode-key.active small { color: #d7f2e8; }
+html[data-theme="sapporo"] .receiver-footer {
+  border-top: 7px solid #ffdc00;
+  color: #ffdc00;
+  background: #111415;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+}
+html[data-theme="sapporo"] .toast { border: 4px solid #111415; border-radius: 0; color: #111415; background: #ffdc00; box-shadow: 7px 7px #111415; }

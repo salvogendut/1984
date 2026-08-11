@@ -56,6 +56,7 @@ const THEMES = {
   "default": "Default",
   "retro-crt": "Retro CRT",
   "sapporo": "Sapporo",
+  "sapporo-dark": "Sapporo Dark",
 };
 const THEME_STORAGE_KEY = "javascript1984.theme";
 const themePickerEl = document.querySelector(".theme-picker");
@@ -292,17 +293,30 @@ create6128().then(m => {
     canvas.focus();
   });
 
+  function mountDisk(data, name, path) {
+    m.FS.writeFile(path, data);
+    const rc = m.ccall("poc_load_disk", "number", ["string"], [path]);
+    if (rc !== 0) throw new Error("unsupported or damaged disk image");
+    disknameEl.textContent = name;
+    diskEjectEl.disabled = false;
+    setStatus("Drive A: " + name);
+    showToast("Disk loaded into Drive A");
+  }
+
+  function mountCartridge(data, name, path) {
+    m.FS.writeFile(path, data);
+    if (!reinit(1, path)) throw new Error("unsupported or damaged cartridge");
+    cartnameEl.textContent = name;
+    updateCartUi();
+    setStatus("Cartridge: " + name);
+    showToast("Cartridge loaded and CPC 6128 Plus started");
+  }
+
   async function loadDiskFile(file) {
     if (!file) return;
     try {
       const data = new Uint8Array(await file.arrayBuffer());
-      m.FS.writeFile("/disk.dsk", data);
-      const rc = m.ccall("poc_load_disk", "number", ["string"], ["/disk.dsk"]);
-      if (rc !== 0) throw new Error("unsupported or damaged disk image");
-      disknameEl.textContent = file.name;
-      diskEjectEl.disabled = false;
-      setStatus("Drive A: " + file.name);
-      showToast("Disk loaded into Drive A");
+      mountDisk(data, file.name, "/disk.dsk");
     } catch (error) {
       setStatus("Disk load failed: " + error.message);
       showToast("Could not load " + file.name);
@@ -313,12 +327,7 @@ create6128().then(m => {
     if (!file) return;
     try {
       const data = new Uint8Array(await file.arrayBuffer());
-      m.FS.writeFile("/uploaded.cpr", data);
-      if (!reinit(1, "/uploaded.cpr")) throw new Error("unsupported or damaged cartridge");
-      cartnameEl.textContent = file.name;
-      updateCartUi();
-      setStatus("Cartridge: " + file.name);
-      showToast("Cartridge loaded and CPC 6128 Plus started");
+      mountCartridge(data, file.name, "/uploaded.cpr");
     } catch (error) {
       setStatus("Cartridge load failed: " + error.message);
       showToast("Could not load " + file.name);
@@ -339,6 +348,64 @@ create6128().then(m => {
     }
   });
   updateCartUi();
+
+  async function fetchServerMedia(url, kind) {
+    const name = JS1984Media.filenameFromUrl(url, kind);
+    setStatus("Fetching " + kind + ": " + name);
+    const response = await fetch(url);
+    if (!response.ok)
+      throw new Error(kind + " request returned HTTP " + response.status);
+    const data = new Uint8Array(await response.arrayBuffer());
+    if (!data.byteLength) throw new Error(kind + " response was empty");
+    return { data, name };
+  }
+
+  async function bootstrapServerMedia() {
+    let media;
+    try {
+      media = JS1984Media.parseStartupMedia(
+        window.location.search,
+        document.baseURI
+      );
+    } catch (error) {
+      setStatus("Media URL error: " + error.message);
+      showToast("Invalid server media URL");
+      return;
+    }
+    if (!media.disk && !media.cartridge) return;
+
+    try {
+      if (media.cartridge) {
+        const cartridge = await fetchServerMedia(media.cartridge, "cartridge");
+        mountCartridge(cartridge.data, cartridge.name, "/server-cartridge.cpr");
+      }
+      if (media.disk) {
+        const disk = await fetchServerMedia(media.disk, "disk");
+        mountDisk(disk.data, disk.name, "/server-disk.dsk");
+        if (media.autorun) {
+          m._poc_reset();
+          m._poc_audio_reset();
+          if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+          releaseAllJoy();
+          m._poc_set_mouse(mouseEnabled ? 1 : 0);
+          const rc = m.ccall(
+            "poc_autorun",
+            "number",
+            ["string", "number"],
+            [media.autorun, 42]
+          );
+          if (rc !== 0) throw new Error("invalid autorun filename");
+          setStatus(
+            "Drive A: " + disk.name + " - autorun " + media.autorun + " armed"
+          );
+          showToast("Autorun " + media.autorun + " armed");
+        }
+      }
+    } catch (error) {
+      setStatus("Server media failed: " + error.message);
+      showToast("Could not load server media");
+    }
+  }
 
   // The emulator fills a stereo ring at 50 Hz. Schedule short buffers ahead
   // of the Web Audio clock so canvas work cannot starve playback.
@@ -642,6 +709,7 @@ create6128().then(m => {
   }
 
   requestAnimationFrame(frame);
+  bootstrapServerMedia();
 }).catch(error => {
   setStatus("Failed to start: " + error);
 });
