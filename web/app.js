@@ -128,10 +128,12 @@ document.addEventListener("click", event => {
 const cpcKeyboardEl = document.querySelector(".cpc464-keyboard");
 const cpcKeyboardKeysEl = $("cpcKeyboardKeys");
 const cpcKeyboardToggleEl = $("cpcKeyboardToggle");
+const cpcTapeDeckEl = $("tapeDeckMock");
 
 function setCpcKeyboardOpen(open) {
   cpcKeyboardEl.dataset.keyboardOpen = String(open);
   cpcKeyboardKeysEl.hidden = !open;
+  cpcTapeDeckEl.hidden = !open;
   cpcKeyboardToggleEl.setAttribute("aria-expanded", String(open));
   cpcKeyboardToggleEl.textContent = open ? "Hide keyboard" : "Show keyboard";
 }

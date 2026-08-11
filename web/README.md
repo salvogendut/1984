@@ -6,9 +6,9 @@ Build the browser edition with Emscripten and serve the publish directory:
     python3 -m http.server 8080 --directory web/dist
 
 The default CPC464 theme presents the emulator as a dark GT65 monitor above a
-CPC 464 chassis. Its optional on-screen keyboard is collapsed by default and
-the tape deck is a visual placeholder for future support. Retro CRT, Sapporo,
-and Sapporo Dark remain available from the theme selector.
+CPC 464 chassis. Its optional on-screen keyboard and visual tape-deck
+placeholder expand and collapse together, and are collapsed by default. Retro
+CRT, Sapporo, and Sapporo Dark remain available from the theme selector.
 
 A theme can be selected in a link using its case-insensitive display name:
 
