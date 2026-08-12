@@ -199,6 +199,7 @@ select {
   display: flex;
   justify-content: center;
   padding: clamp(14px, 2.5vw, 34px);
+  padding-bottom: clamp(92px, 7vw, 108px);
   background: #0c0e0f;
   box-shadow: inset 0 12px 30px #030404, inset 0 -8px 20px #050606;
 }
@@ -284,6 +285,32 @@ canvas.mouse-captured { cursor: none; }
 .screen-frame.dragging .screen-hint { display: none; }
 .screen-badge { display: flex; justify-content: space-between; margin: 10px 4px 0; color: #808481; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .13em; text-transform: uppercase; }
 
+.display-dial-bank {
+  position: absolute;
+  z-index: 6;
+  right: clamp(16px, 3vw, 40px);
+  bottom: 13px;
+  display: grid;
+  grid-template-columns: repeat(6, 43px);
+  gap: 6px;
+  padding: 7px 9px 6px;
+  border: 1px solid #080909;
+  border-radius: 5px;
+  background: linear-gradient(#343735, #1b1d1c);
+  box-shadow: inset 0 1px rgba(255,255,255,.12), 0 4px 10px rgba(0,0,0,.5);
+}
+.display-dial-control { display: grid; gap: 3px; justify-items: center; color: #989c97; font: 700 6px/1 ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; }
+.display-dial-control > span:first-child { overflow: hidden; width: 100%; text-align: center; text-overflow: ellipsis; }
+.display-dial-control strong { color: var(--amber); font-size: 7px; }
+.display-dial-knob { position: relative; display: block; width: 32px; height: 32px; border: 2px solid #090a09; border-radius: 50%; background: repeating-conic-gradient(#71746e 0 3deg, #353835 3deg 8deg); box-shadow: 0 2px #090a09, inset 0 0 0 4px #222422; }
+.display-dial-knob::after { position: absolute; inset: 6px; content: ""; border-radius: 50%; background: radial-gradient(circle at 36% 30%, #7c7f78, #303330 68%); }
+.display-dial-knob i { position: absolute; z-index: 2; top: 3px; left: 14px; width: 2px; height: 10px; border-radius: 2px; background: var(--amber); transform-origin: 1px 13px; transition: transform .12s; }
+.display-dial-knob input { position: absolute; z-index: 3; inset: -5px; width: 42px; height: 42px; margin: 0; opacity: 0; cursor: ew-resize; }
+.display-dial-control:focus-within .display-dial-knob { outline: 2px solid var(--amber); outline-offset: 2px; }
+.display-dial-red .display-dial-knob i { background: #dd5749; }
+.display-dial-green .display-dial-knob i { background: #62bb68; }
+.display-dial-blue .display-dial-knob i { background: #5788d0; }
+
 .control-deck {
   display: grid;
   grid-template-columns: .82fr 1.6fr 1.15fr .9fr;
@@ -332,12 +359,14 @@ canvas.mouse-captured { cursor: none; }
 .media-slot-disabled { opacity: .44; }
 .cassette-window { display: flex; align-items: center; justify-content: space-evenly; height: 40px; padding: 0 7px; border: 1px solid #050606; border-radius: 3px; color: #a8aaa5; background: linear-gradient(#090a0b, #181a1b); box-shadow: inset 0 2px 7px #000; font: 800 8px/1 ui-monospace, monospace; }
 .cassette-window i { width: 16px; height: 16px; border: 4px dotted #777a77; border-radius: 50%; }
-.cartridge-window span { padding: 7px 13px; border: 1px solid #555; border-radius: 2px; color: var(--amber); background: #111; }
+.cartridge-window span, .snapshot-window span { padding: 7px 13px; border: 1px solid #555; border-radius: 2px; color: var(--amber); background: #111; }
+.snapshot-window span { color: var(--green); }
 .media-copy { min-width: 0; }
 .media-copy strong, .media-copy span { display: block; }
 .media-copy strong { color: #d7d5ce; font: 700 11px/1.2 ui-monospace, monospace; text-transform: uppercase; }
 .media-copy span { overflow: hidden; margin-top: 5px; color: #858987; font: 500 10px/1.2 ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .media-actions { display: flex; gap: 6px; }
+.snapshot-actions .small-key { min-width: 62px; }
 .small-key { display: grid; place-items: center; min-width: 48px; min-height: 28px; padding: 0 8px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .05em; }
 button:disabled, [aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
 
@@ -386,6 +415,7 @@ button:disabled, [aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
 .toast { position: fixed; z-index: 20; right: 22px; bottom: 22px; max-width: min(380px, calc(100vw - 44px)); padding: 12px 15px; border: 1px solid #6b5732; border-radius: 4px; color: #f2dec0; background: rgba(24,20,14,.95); box-shadow: 0 10px 30px #000; font: 600 11px/1.35 ui-monospace, monospace; opacity: 0; transform: translateY(12px); transition: opacity .2s, transform .2s; pointer-events: none; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.ml-monitor { display: none; }
 
 .screen-frame:fullscreen { display: grid; width: 100vw; height: 100vh; padding: 0; place-items: center; border: 0; border-radius: 0; background: #000; }
 .screen-frame:fullscreen .screen-glass { width: min(100vw, calc(100vh * 4 / 3)); height: min(100vh, calc(100vw * 3 / 4)); }
@@ -425,8 +455,9 @@ button:disabled, [aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
   .receiver-top { grid-template-columns: 1fr; gap: 12px; }
   .display-panel, .activity-bank { grid-column: 1; grid-row: auto; }
   .activity-bank { justify-content: flex-start; }
-  .screen-stage { padding: 8px 8px 64px; }
-  .screen-brand { bottom: 8px; left: 14px; width: 48px; }
+  .screen-stage { padding: 8px 8px 142px; }
+  .screen-brand { bottom: 86px; left: 14px; width: 48px; }
+  .display-dial-bank { right: 50%; bottom: 10px; grid-template-columns: repeat(6, 41px); gap: 3px; padding-inline: 6px; transform: translateX(50%); }
   .screen-frame { padding: 6px; border-radius: 7px; }
   .screen-badge { display: none; }
   .control-deck { grid-template-columns: 1fr; }

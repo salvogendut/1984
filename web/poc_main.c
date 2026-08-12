@@ -6,6 +6,7 @@
  *   - poc_pixels():   pointer to the 768x272 framebuffer (u32 0x00RRGGBB)
  *   - poc_key():      SDL_Scancode key down/up
  *   - poc_load_disk(): mount a .dsk into drive A from the virtual FS
+ *   - poc_*_snapshot(): load or save an SNA through the virtual FS
  *   - poc_autorun():  queue RUN"file" after a frame-counted boot delay
  *   - poc_mouse_*():  browser pointer input through the AMX adapter
  *   - poc_audio_*():  ring-buffer access for the PSG audio (interleaved s16)
@@ -23,11 +24,94 @@
 #include "disk.h"
 #include "mem.h"
 #include "paste.h"
+#include "snapshot.h"
+#include "z80dis.h"
 
 static CPC g_cpc;
 static Paste g_paste;
 static int g_autorun_frames;
 static char g_autorun_command[256];
+
+/* ---- browser machine-language monitor ---- */
+#define POC_DEBUG_WATCH_MAX 16
+#define POC_DEBUG_EVENT_MAX 64
+#define POC_DEBUG_DIS_LINES 12
+
+typedef void (*PocCoreMemWrite)(void *, u16, u8);
+
+typedef struct {
+    unsigned int serial;
+    u16 addr;
+    u16 pc;
+    u8 old_value;
+    u8 new_value;
+    u8 watch_slot;
+} PocDebugWriteEvent;
+
+enum {
+    POC_DEBUG_RUNNING = 0,
+    POC_DEBUG_PAUSE,
+    POC_DEBUG_BREAKPOINT,
+    POC_DEBUG_STEP_IN,
+    POC_DEBUG_STEP_BACK,
+    POC_DEBUG_STEP_OUT,
+    POC_DEBUG_NEXT
+};
+
+static PocCoreMemWrite g_core_mem_write;
+static bool g_debug_watch_enabled[POC_DEBUG_WATCH_MAX];
+static u16 g_debug_watch_addr[POC_DEBUG_WATCH_MAX];
+static PocDebugWriteEvent g_debug_events[POC_DEBUG_EVENT_MAX];
+static unsigned int g_debug_event_serial;
+static CPC g_debug_checkpoint;
+static bool g_debug_checkpoint_valid;
+static int g_debug_stop_reason;
+static int g_debug_temp_bp_slot = -1;
+static u16 g_debug_temp_bp_addr;
+static int g_debug_temp_bp_reason;
+static int g_debug_step_reason;
+static u8 g_debug_dis_memory[0x10000];
+static char g_debug_disassembly[2048];
+
+static void poc_debug_reset_state(void) {
+    memset(g_debug_watch_enabled, 0, sizeof(g_debug_watch_enabled));
+    memset(g_debug_watch_addr, 0, sizeof(g_debug_watch_addr));
+    memset(g_debug_events, 0, sizeof(g_debug_events));
+    g_debug_event_serial = 0;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    g_debug_temp_bp_slot = -1;
+    g_debug_temp_bp_addr = 0;
+    g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+    g_debug_step_reason = POC_DEBUG_STEP_IN;
+}
+
+static void poc_debug_mem_write(void *ctx, u16 addr, u8 value) {
+    CPC *cpc = ctx;
+    u8 old_value = mem_read(&cpc->mem, addr);
+    if (g_core_mem_write)
+        g_core_mem_write(ctx, addr, value);
+    u8 new_value = mem_read(&cpc->mem, addr);
+
+    for (int slot = 0; slot < POC_DEBUG_WATCH_MAX; slot++) {
+        if (!g_debug_watch_enabled[slot] || g_debug_watch_addr[slot] != addr)
+            continue;
+        unsigned int serial = ++g_debug_event_serial;
+        PocDebugWriteEvent *event =
+            &g_debug_events[serial % POC_DEBUG_EVENT_MAX];
+        event->serial = serial;
+        event->addr = addr;
+        event->pc = cpc->cpu.pc;
+        event->old_value = old_value;
+        event->new_value = new_value;
+        event->watch_slot = (u8)slot;
+    }
+}
+
+static void poc_debug_install_mem_hook(void) {
+    g_core_mem_write = g_cpc.bus.mem_write;
+    g_cpc.bus.mem_write = poc_debug_mem_write;
+}
 
 static void poc_cancel_paste(void) {
     paste_free(&g_paste);
@@ -84,6 +168,8 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     if (rc != 0)
         return -1;
     cpc_set_audio_sink(&g_cpc, poc_audio_sink, NULL);
+    poc_debug_reset_state();
+    poc_debug_install_mem_hook();
     return 0;
 }
 
@@ -97,13 +183,356 @@ EMSCRIPTEN_KEEPALIVE int poc_load_cartridge(const char *path) {
 EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
     poc_cancel_paste();
     cpc_reset(&g_cpc);
+    g_cpc.paused = false;
+    g_cpc.step_once = false;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    if (g_debug_temp_bp_slot >= 0)
+        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+    g_debug_temp_bp_slot = -1;
+    g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_load_snapshot(const char *path) {
+    if (!path || !path[0])
+        return -1;
+    poc_cancel_paste();
+    int rc = snapshot_load(&g_cpc, path);
+    if (rc != 0)
+        return rc;
+
+    if (g_debug_temp_bp_slot >= 0)
+        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+    g_debug_temp_bp_slot = -1;
+    g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    g_cpc.paused = false;
+    g_cpc.step_once = false;
+    poc_audio_reset();
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_save_snapshot(const char *path) {
+    if (!path || !path[0])
+        return -1;
+    return snapshot_save(&g_cpc, path);
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_step(void) {
     if (g_autorun_frames > 0 && --g_autorun_frames == 0)
         paste_text(&g_paste, g_autorun_command);
     paste_tick(&g_paste, &g_cpc.kbd);
-    return cpc_frame(&g_cpc);
+    bool stepping = g_cpc.step_once;
+    int cycles = cpc_frame(&g_cpc);
+    if (g_cpc.paused) {
+        if (g_debug_temp_bp_slot >= 0 &&
+                g_cpc.cpu.pc == g_debug_temp_bp_addr) {
+            g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+            g_debug_temp_bp_slot = -1;
+            g_debug_stop_reason = g_debug_temp_bp_reason;
+            g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+        } else {
+            bool user_breakpoint = false;
+            for (int slot = 0; slot < CPC_MAX_BREAKPOINTS; slot++) {
+                if (slot != g_debug_temp_bp_slot && g_cpc.bp_enabled[slot] &&
+                        g_cpc.breakpoints[slot] == g_cpc.cpu.pc) {
+                    user_breakpoint = true;
+                    break;
+                }
+            }
+            if (user_breakpoint)
+                g_debug_stop_reason = POC_DEBUG_BREAKPOINT;
+            else if (stepping)
+                g_debug_stop_reason = g_debug_step_reason;
+            else if (g_debug_stop_reason == POC_DEBUG_RUNNING)
+                g_debug_stop_reason = POC_DEBUG_BREAKPOINT;
+        }
+    }
+    return cycles;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_debug_pause(void) {
+    if (g_debug_temp_bp_slot >= 0) {
+        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+        g_debug_temp_bp_slot = -1;
+        g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+    }
+    g_cpc.paused = true;
+    g_cpc.step_once = false;
+    g_debug_stop_reason = POC_DEBUG_PAUSE;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_debug_continue(void) {
+    g_cpc.paused = false;
+    g_cpc.step_once = false;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_step_in(void) {
+    if (!g_cpc.paused)
+        return -1;
+    memcpy(&g_debug_checkpoint, &g_cpc, sizeof(g_cpc));
+    g_debug_checkpoint_valid = true;
+    g_cpc.step_once = true;
+    g_debug_step_reason = POC_DEBUG_STEP_IN;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_step_back(void) {
+    if (!g_cpc.paused || !g_debug_checkpoint_valid)
+        return -1;
+    memcpy(&g_cpc, &g_debug_checkpoint, sizeof(g_cpc));
+    g_cpc.paused = true;
+    g_cpc.step_once = false;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_STEP_BACK;
+    poc_audio_reset();
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_step_out(void) {
+    if (!g_cpc.paused || g_debug_temp_bp_slot >= 0)
+        return -1;
+    int slot = -1;
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+        if (!g_cpc.bp_enabled[i]) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0)
+        return -2;
+    u16 sp = g_cpc.cpu.sp;
+    u16 target = (u16)mem_read(&g_cpc.mem, sp) |
+                 ((u16)mem_read(&g_cpc.mem, (u16)(sp + 1)) << 8);
+    g_cpc.breakpoints[slot] = target;
+    g_cpc.bp_enabled[slot] = true;
+    g_debug_temp_bp_slot = slot;
+    g_debug_temp_bp_addr = target;
+    g_debug_temp_bp_reason = POC_DEBUG_STEP_OUT;
+    g_debug_checkpoint_valid = false;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    g_cpc.paused = false;
+    return target;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_next(void) {
+    if (!g_cpc.paused || g_debug_temp_bp_slot >= 0)
+        return -1;
+
+    memcpy(&g_debug_checkpoint, &g_cpc, sizeof(g_cpc));
+    g_debug_checkpoint_valid = true;
+
+    u16 pc = g_cpc.cpu.pc;
+    u8 opcode = mem_read(&g_cpc.mem, pc);
+    bool call_or_rst = opcode == 0xCD || (opcode & 0xC7) == 0xC4 ||
+                       (opcode & 0xC7) == 0xC7;
+    if (!call_or_rst) {
+        g_cpc.step_once = true;
+        g_debug_step_reason = POC_DEBUG_NEXT;
+        g_debug_stop_reason = POC_DEBUG_RUNNING;
+        return 0;
+    }
+
+    for (int i = 0; i < 0x10000; i++)
+        g_debug_dis_memory[i] = mem_read(&g_cpc.mem, (u16)i);
+    char mnemonic[64];
+    int bytes = z80dis(g_debug_dis_memory, pc, mnemonic, sizeof(mnemonic));
+    if (bytes <= 0) bytes = 1;
+
+    int slot = -1;
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+        if (!g_cpc.bp_enabled[i]) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        g_debug_checkpoint_valid = false;
+        return -2;
+    }
+
+    u16 target = (u16)(pc + bytes);
+    g_cpc.breakpoints[slot] = target;
+    g_cpc.bp_enabled[slot] = true;
+    g_debug_temp_bp_slot = slot;
+    g_debug_temp_bp_addr = target;
+    g_debug_temp_bp_reason = POC_DEBUG_NEXT;
+    g_debug_stop_reason = POC_DEBUG_RUNNING;
+    g_cpc.paused = false;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_is_paused(void) {
+    return g_cpc.paused ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_stop_reason(void) {
+    return g_debug_stop_reason;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_can_step_back(void) {
+    return g_debug_checkpoint_valid ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_reg(int reg) {
+    switch (reg) {
+    case 0: return g_cpc.cpu.af;
+    case 1: return g_cpc.cpu.bc;
+    case 2: return g_cpc.cpu.de;
+    case 3: return g_cpc.cpu.hl;
+    case 4: return g_cpc.cpu.ix;
+    case 5: return g_cpc.cpu.iy;
+    case 6: return g_cpc.cpu.sp;
+    case 7: return g_cpc.cpu.pc;
+    case 8: return g_cpc.cpu.af_;
+    case 9: return g_cpc.cpu.bc_;
+    case 10: return g_cpc.cpu.de_;
+    case 11: return g_cpc.cpu.hl_;
+    case 12: return ((int)g_cpc.cpu.i << 8) | g_cpc.cpu.r;
+    case 13: return g_cpc.cpu.im;
+    default: return -1;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_set(int addr) {
+    u16 target = (u16)addr;
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+        if (i != g_debug_temp_bp_slot && g_cpc.bp_enabled[i] &&
+                g_cpc.breakpoints[i] == target)
+            return i;
+    }
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+        if (!g_cpc.bp_enabled[i]) {
+            g_cpc.breakpoints[i] = target;
+            g_cpc.bp_enabled[i] = true;
+            return i;
+        }
+    }
+    return -1;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_debug_breakpoint_clear(int slot) {
+    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS)
+        return;
+    g_cpc.bp_enabled[slot] = false;
+    if (slot == g_debug_temp_bp_slot) {
+        g_debug_temp_bp_slot = -1;
+        g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_enabled(int slot) {
+    return slot >= 0 && slot < CPC_MAX_BREAKPOINTS &&
+           g_cpc.bp_enabled[slot] ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_addr(int slot) {
+    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !g_cpc.bp_enabled[slot])
+        return -1;
+    return g_cpc.breakpoints[slot];
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_mem_read(int addr) {
+    return mem_read(&g_cpc.mem, (u16)addr);
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_mem_write_byte(int addr, int value) {
+    if (!g_cpc.paused)
+        return -1;
+    poc_debug_mem_write(&g_cpc, (u16)addr, (u8)value);
+    g_debug_checkpoint_valid = false;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *poc_debug_disassemble(int addr, int lines) {
+    if (lines < 1) lines = 1;
+    if (lines > POC_DEBUG_DIS_LINES) lines = POC_DEBUG_DIS_LINES;
+    for (int i = 0; i < 0x10000; i++)
+        g_debug_dis_memory[i] = mem_read(&g_cpc.mem, (u16)i);
+
+    size_t used = 0;
+    u16 pc = (u16)addr;
+    g_debug_disassembly[0] = '\0';
+    for (int line = 0; line < lines; line++) {
+        char mnemonic[64];
+        int bytes = z80dis(g_debug_dis_memory, pc, mnemonic,
+                           sizeof(mnemonic));
+        if (bytes <= 0) bytes = 1;
+        int written = snprintf(g_debug_disassembly + used,
+                               sizeof(g_debug_disassembly) - used,
+                               "%c%04X  ", pc == g_cpc.cpu.pc ? '>' : ' ', pc);
+        if (written < 0 || (size_t)written >= sizeof(g_debug_disassembly) - used)
+            break;
+        used += (size_t)written;
+        for (int i = 0; i < 4; i++) {
+            written = snprintf(g_debug_disassembly + used,
+                               sizeof(g_debug_disassembly) - used,
+                               i < bytes ? "%02X " : "   ",
+                               g_debug_dis_memory[(u16)(pc + i)]);
+            if (written < 0 || (size_t)written >= sizeof(g_debug_disassembly) - used)
+                return g_debug_disassembly;
+            used += (size_t)written;
+        }
+        written = snprintf(g_debug_disassembly + used,
+                           sizeof(g_debug_disassembly) - used,
+                           " %s\n", mnemonic);
+        if (written < 0 || (size_t)written >= sizeof(g_debug_disassembly) - used)
+            break;
+        used += (size_t)written;
+        pc = (u16)(pc + bytes);
+    }
+    return g_debug_disassembly;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_set(int slot, int addr) {
+    if (slot < 0 || slot >= POC_DEBUG_WATCH_MAX)
+        return -1;
+    g_debug_watch_addr[slot] = (u16)addr;
+    g_debug_watch_enabled[slot] = true;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_debug_watch_clear(int slot) {
+    if (slot >= 0 && slot < POC_DEBUG_WATCH_MAX)
+        g_debug_watch_enabled[slot] = false;
+}
+
+static const PocDebugWriteEvent *poc_debug_event(unsigned int serial) {
+    PocDebugWriteEvent *event = &g_debug_events[serial % POC_DEBUG_EVENT_MAX];
+    return event->serial == serial ? event : NULL;
+}
+
+EMSCRIPTEN_KEEPALIVE unsigned int poc_debug_watch_serial(void) {
+    return g_debug_event_serial;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_event_slot(unsigned int serial) {
+    const PocDebugWriteEvent *event = poc_debug_event(serial);
+    return event ? event->watch_slot : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_event_addr(unsigned int serial) {
+    const PocDebugWriteEvent *event = poc_debug_event(serial);
+    return event ? event->addr : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_event_pc(unsigned int serial) {
+    const PocDebugWriteEvent *event = poc_debug_event(serial);
+    return event ? event->pc : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_event_old(unsigned int serial) {
+    const PocDebugWriteEvent *event = poc_debug_event(serial);
+    return event ? event->old_value : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_watch_event_new(unsigned int serial) {
+    const PocDebugWriteEvent *event = poc_debug_event(serial);
+    return event ? event->new_value : -1;
 }
 
 EMSCRIPTEN_KEEPALIVE unsigned int *poc_pixels(void) {

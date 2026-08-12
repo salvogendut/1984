@@ -6,26 +6,40 @@ it in a static HTML, CSS, and JavaScript interface. It is separate from the
 native application's streaming Web GUI and multi-session Web Service: no 1984
 process runs on the server after the files have been published.
 
+## Use the hosted edition
+
+Open **[Javascript 1984](https://salvogendut.github.io/chimeric/js1984/)** to
+run it directly. No download or installation is required. Click the CPC
+display to give it keyboard focus, then use the Media Deck to select a local
+DSK, CPR, or SNA file. Local files and guest changes stay in browser memory and
+are not uploaded by the application.
+
 ## Current capabilities
 
 - CPC 6128 and CPC 6128 Plus machines using the bundled firmware and system
   cartridge.
-- Local DSK loading in drive A and CPR cartridge loading on the Plus model.
+- Local DSK loading in drive A, CPR cartridge loading on the Plus model, and
+  SNA v1-v3 snapshot loading with v3 snapshot downloads.
 - Server-hosted DSK and CPR media selected through URL parameters.
 - CPC keyboard input from the physical keyboard or the collapsible on-screen
   keyboard, including latched Shift, Ctrl, and Copy modifiers.
 - Browser Gamepad API joystick input and optional AMX mouse pointer capture.
-- Stereo Web Audio, fullscreen, display scaling, sharp or smooth pixels, and
-  colour or green-monochrome output.
+- Stereo Web Audio, fullscreen, display scaling, sharp or smooth pixels,
+  colour or green-monochrome output, and persistent CRT scanline, brightness,
+  contrast, and RGB-gain adjustments.
 - CPC464, Retro CRT, Sapporo, and Sapporo Dark themes.
+- A collapsible machine-language monitor in the CPC464 theme with Z80
+  registers and disassembly, breakpoints, continue, Step In, Step Out,
+  one-instruction Step Back, labelled memory-write notifications, and mapped
+  memory-slice reading and writing.
 
 The browser frontend does not currently expose the native F9 overlay,
-expansion devices, tape emulation, snapshots, or additional CPC models. The
-CPC464 tape deck in the interface is a placeholder for future tape support.
-Disk writes and fetched media changes are held in browser memory and are lost
-when the page is reloaded; they are not uploaded to the server.
+expansion devices, tape emulation, or additional CPC models. The CPC464 tape
+deck in the interface is a placeholder for future tape support. Disk writes
+and fetched media changes are held in browser memory and are lost when the
+page is reloaded; they are not uploaded to the server.
 
-## Build and publish
+## Build and self-host
 
 Install Emscripten so `emcc` is available, then build from the repository root:
 
@@ -59,9 +73,57 @@ gamepad. Whether a device is available depends on the browser and its sandbox
 permissions. Enable **Mouse** and click the display to capture the pointer;
 press Escape to release browser pointer lock.
 
-The media deck loads local DSK and CPR files using the browser file chooser.
-Reset, fullscreen, fit-to-window, pixel filtering, display size, and colour
-mode are available from the front panel.
+The media deck loads local DSK, CPR, and SNA files using the browser file
+chooser. **Save SNA** downloads the current machine state as an Amstrad SNA v3
+file. Reset, fullscreen, fit-to-window, pixel filtering, display size, and
+colour mode are available from the front panel. The six controls under the
+display adjust scanline visibility, brightness, contrast, and individual red,
+green, and blue gain. Their values are retained in browser local storage.
+
+## ML Monitor
+
+The **ML Monitor** handle on the right edge of the CPC464 theme opens a
+hardware-styled diagnostic panel. It opens without interrupting the CPC and
+reserves no page width while collapsed. Its in-process adapter follows Debug
+Adapter Protocol 1.71.0 request, response, event, lifetime, and `Content-Length`
+framing rules. Use **BREAK** to pause between Z80 instructions before
+inspecting registers, disassembling, or accessing memory; **CONT** resumes
+execution.
+
+Breakpoints accept hexadecimal CPU addresses and remain armed across a warm
+reset. Step In executes one instruction and Step Over uses the DAP `next`
+request; both create a single rollback point for Step Back. Step Out runs to the
+return address currently found at the top of the Z80 stack; this is intended
+for use immediately after entering a CALL or where SP points at the routine
+return address. BREAK cancels an in-progress Step Over or Step Out.
+
+The label write detector associates a descriptive name with a CPU address and
+reports each write with its old value, new value, and writer PC. Its event ring
+retains the latest 64 writes between browser polls. Memory Slice reads up to
+256 mapped bytes and accepts whitespace- or comma-separated hexadecimal bytes
+for writing. Reads and writes are available only while the CPU is paused.
+
+The adapter advertises only implemented capabilities: configuration completion,
+instruction breakpoints, instruction-granularity stepping, one-level reverse
+stepping, disassembly, and base64 memory reads/writes. A CPC exposes one
+`Z80 CPU` thread, one synthetic stack frame, and a register scope. Frame and
+variable references expire whenever execution resumes. Label watches do not
+stop execution, so they are deliberately reported as DAP output and memory
+telemetry rather than falsely advertising data-breakpoint support.
+
+`dap.js` includes an incremental parser and serializer for standard
+`Content-Length` framed UTF-8 JSON messages. The browser UI currently uses the
+same protocol engine in process; it does not yet expose a WebSocket, TCP, or
+stdio endpoint to an external IDE. See the official
+[Debug Adapter Protocol overview](https://microsoft.github.io/debug-adapter-protocol/overview)
+and [protocol schema](https://github.com/microsoft/debug-adapter-protocol/blob/main/debugAdapterProtocol.json).
+
+Protocol unit tests and a compiled-core integration test are available with:
+
+```bash
+make -C web test
+make -C web test-wasm
+```
 
 ## Themes
 
@@ -70,9 +132,9 @@ Themes can be selected from the front panel or with a case-insensitive URL
 parameter:
 
 ```text
-http://localhost:8080/?theme=CPC464
-http://localhost:8080/?theme=Retro%20CRT
-http://localhost:8080/?theme=Sapporo%20Dark
+https://salvogendut.github.io/chimeric/js1984/?theme=CPC464
+https://salvogendut.github.io/chimeric/js1984/?theme=Retro%20CRT
+https://salvogendut.github.io/chimeric/js1984/?theme=Sapporo%20Dark
 ```
 
 An unknown theme name falls back to CPC464. A front-panel choice is retained

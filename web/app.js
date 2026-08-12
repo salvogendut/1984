@@ -38,6 +38,12 @@ const offctx = offscreen.getContext("2d");
 const image = offctx.createImageData(W, H);
 let pixelSharp = true;
 let monochromeGreen = false;
+let scanlineStrength = 15;
+let scanlineCustomized = false;
+const crtTone = { brightness: 100, contrast: 100, red: 100, green: 100, blue: 100 };
+const crtRedLut = new Uint8Array(256);
+const crtGreenLut = new Uint8Array(256);
+const crtBlueLut = new Uint8Array(256);
 let toastTimer = 0;
 let inputLedTimer = 0;
 
@@ -111,6 +117,8 @@ themeMenuEl.addEventListener("click", event => {
   const option = event.target.closest("[data-theme]");
   if (!option) return;
   applyTheme(option.dataset.theme);
+  if (!scanlineCustomized)
+    setScanlineStrength(themeScanlineDefault(), false);
   setThemeMenu(false);
   themeButtonEl.focus();
   showToast(THEMES[option.dataset.theme] + " theme selected");
@@ -143,6 +151,30 @@ cpcKeyboardToggleEl.addEventListener("click", () => {
 });
 setCpcKeyboardOpen(false);
 
+const mlMonitorEl = $("mlMonitor");
+const mlMonitorPanelEl = $("mlMonitorPanel");
+const mlMonitorToggleEl = $("mlMonitorToggle");
+
+// Anchor the debugger to the GT65 chassis instead of the browser edge.
+$("screenStage").append(mlMonitorEl);
+
+function setMlMonitorOpen(open) {
+  mlMonitorEl.dataset.open = String(open);
+  mlMonitorPanelEl.hidden = !open;
+  mlMonitorToggleEl.setAttribute("aria-expanded", String(open));
+}
+
+mlMonitorToggleEl.addEventListener("click", () => {
+  setMlMonitorOpen(mlMonitorPanelEl.hidden);
+});
+mlMonitorPanelEl.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    setMlMonitorOpen(false);
+    mlMonitorToggleEl.focus();
+  }
+});
+setMlMonitorOpen(false);
+
 function pulseInputLed() {
   ledInputEl.classList.add("on");
   clearTimeout(inputLedTimer);
@@ -167,7 +199,82 @@ function updatePixelMode() {
 function updateScreenModeReadout() {
   $("screenMode").textContent = "768 x 576 / " +
     (pixelSharp ? "Sharp" : "Smooth") + " / " +
-    (monochromeGreen ? "Green" : "Color");
+    (monochromeGreen ? "Green" : "Color") + " / Scan " +
+    scanlineStrength + "%";
+}
+
+const SCANLINE_STORAGE_KEY = "javascript1984.scanlines";
+const scanlineOverlayEl = document.querySelector(".scanline-overlay");
+function themeScanlineDefault() {
+  scanlineOverlayEl.style.removeProperty("opacity");
+  const opacity = Number.parseFloat(getComputedStyle(scanlineOverlayEl).opacity);
+  return Number.isFinite(opacity) ? Math.round(opacity * 20) * 5 : 15;
+}
+
+function setScanlineStrength(value, persist = true) {
+  const numeric = Number(value);
+  scanlineStrength = Number.isFinite(numeric)
+    ? Math.max(0, Math.min(95, Math.round(numeric / 5) * 5))
+    : 15;
+  $("scanlineStrength").value = String(scanlineStrength);
+  $("scanlineValue").textContent = scanlineStrength + "%";
+  scanlineOverlayEl.style.opacity = String(scanlineStrength / 100);
+  const rotation = -115 + (scanlineStrength / 95) * 230;
+  $("scanlineNeedle").style.transform = "rotate(" + rotation + "deg)";
+  updateScreenModeReadout();
+  if (persist) {
+    scanlineCustomized = true;
+    try {
+      localStorage.setItem(SCANLINE_STORAGE_KEY, String(scanlineStrength));
+    } catch (_) {
+      // Keep the in-memory selection when storage is unavailable.
+    }
+  }
+}
+
+const CRT_TONE_STORAGE_PREFIX = "javascript1984.crt.";
+const CRT_TONE_CONTROLS = {
+  brightness: { input: "crtBrightness", value: "brightnessValue", needle: "brightnessNeedle", min: 50, max: 100 },
+  contrast: { input: "crtContrast", value: "contrastValue", needle: "contrastNeedle", min: 50, max: 150 },
+  red: { input: "crtRed", value: "redValue", needle: "redNeedle", min: 50, max: 150 },
+  green: { input: "crtGreen", value: "greenValue", needle: "greenNeedle", min: 50, max: 150 },
+  blue: { input: "crtBlue", value: "blueValue", needle: "blueNeedle", min: 50, max: 150 },
+};
+
+function adjustedComponent(component, gain) {
+  let value = 128 + Math.trunc(((component - 128) * crtTone.contrast + 50) / 100);
+  value = Math.trunc((value * crtTone.brightness + 50) / 100);
+  value = Math.trunc((value * gain + 50) / 100);
+  return Math.max(0, Math.min(255, value));
+}
+
+function rebuildCrtToneLuts() {
+  for (let component = 0; component < 256; component++) {
+    crtRedLut[component] = adjustedComponent(component, crtTone.red);
+    crtGreenLut[component] = adjustedComponent(component, crtTone.green);
+    crtBlueLut[component] = adjustedComponent(component, crtTone.blue);
+  }
+}
+
+function setCrtTone(name, value, persist = true) {
+  const control = CRT_TONE_CONTROLS[name];
+  const numeric = Number(value);
+  const setting = Number.isFinite(numeric)
+    ? Math.max(control.min, Math.min(control.max, Math.round(numeric / 5) * 5))
+    : 100;
+  crtTone[name] = setting;
+  $(control.input).value = String(setting);
+  $(control.value).textContent = setting + "%";
+  const rotation = -115 + ((setting - control.min) / (control.max - control.min)) * 230;
+  $(control.needle).style.transform = "rotate(" + rotation + "deg)";
+  rebuildCrtToneLuts();
+  if (persist) {
+    try {
+      localStorage.setItem(CRT_TONE_STORAGE_PREFIX + name, String(setting));
+    } catch (_) {
+      // Keep the in-memory selection when storage is unavailable.
+    }
+  }
 }
 
 const DISPLAY_MODE_STORAGE_KEY = "javascript1984.displayMode";
@@ -191,6 +298,22 @@ function setDisplayColorMode(green, persist = true) {
 }
 
 $("screenScale").addEventListener("input", event => setScreenScale(event.target.value));
+$("scanlineStrength").addEventListener("input", event => {
+  setScanlineStrength(event.target.value);
+});
+for (const [name, control] of Object.entries(CRT_TONE_CONTROLS)) {
+  $(control.input).addEventListener("input", event => {
+    setCrtTone(name, event.target.value);
+  });
+}
+for (const input of document.querySelectorAll(".display-dial-knob input[type=range]")) {
+  input.addEventListener("wheel", event => {
+    event.preventDefault();
+    const step = Number(input.step) || 1;
+    input.value = String(Number(input.value) + (event.deltaY < 0 ? step : -step));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, { passive: false });
+}
 $("fitScreen").addEventListener("click", () => {
   setScreenScale(100);
   showToast("Display fitted to the receiver");
@@ -212,6 +335,29 @@ $("expansion").addEventListener("click", () => {
   showToast("Expansion bay reserved for future browser devices");
 });
 setScreenScale(100);
+let savedScanlineStrength = null;
+try {
+  const stored = localStorage.getItem(SCANLINE_STORAGE_KEY);
+  if (stored !== null) {
+    savedScanlineStrength = Number(stored);
+    scanlineCustomized = true;
+  }
+} catch (_) {
+  // Keep the default scanline visibility when storage is unavailable.
+}
+setScanlineStrength(
+  savedScanlineStrength === null ? themeScanlineDefault() : savedScanlineStrength,
+  false
+);
+for (const name of Object.keys(CRT_TONE_CONTROLS)) {
+  let saved = 100;
+  try {
+    saved = Number(localStorage.getItem(CRT_TONE_STORAGE_PREFIX + name) || 100);
+  } catch (_) {
+    // Keep the neutral adjustment when storage is unavailable.
+  }
+  setCrtTone(name, saved, false);
+}
 updatePixelMode();
 let savedDisplayMode = "color";
 try {
@@ -241,6 +387,9 @@ create6128().then(m => {
   const cartSlotEl = $("cartSlot");
   const cartLoadEl = $("cartLoad");
   const cartDefaultEl = $("cartDefault");
+  const snapshotfileEl = $("snapshotfile");
+  const snapshotnameEl = $("snapshotname");
+  const snapshotSaveEl = $("snapshotSave");
   const joytoggleEl = $("joytoggle");
   const mousetoggleEl = $("mousetoggle");
   const joystatusEl = $("joystatus");
@@ -258,6 +407,438 @@ create6128().then(m => {
   const heldKeys = new Set();
   const virtualKeys = new Set();
   const latchedVirtualModifiers = new Set();
+  const mlBreakpointSlots = new Map();
+  const mlWatchLabels = Array(16).fill(null);
+  const mlWriteEvents = [];
+  let mlWatchSerial = 0;
+  let mlLastRefresh = 0;
+  let mlDap = null;
+  let mlStopDescription = "Live processor";
+
+  const mlRegisterIds = [
+    "mlRegAF", "mlRegBC", "mlRegDE", "mlRegHL",
+    "mlRegIX", "mlRegIY", "mlRegSP", "mlRegPC",
+  ];
+  function setMlMessage(message, error = false) {
+    const element = $("mlMonitorMessage");
+    element.textContent = message;
+    element.classList.toggle("error", error);
+  }
+
+  function dapRequest(command, args = {}) {
+    const response = mlDap.request(command, args);
+    if (!response.success) {
+      const detail = response.body && response.body.error && response.body.error.format;
+      throw new Error(detail || response.message || `DAP ${command} failed`);
+    }
+    return response.body || {};
+  }
+
+  function createMlDapSession() {
+    mlDap = new JS1984DAP.Session({
+      isPaused: () => Boolean(m._poc_debug_is_paused()),
+      pause: () => m._poc_debug_pause(),
+      continue: () => m._poc_debug_continue(),
+      stepIn: () => m._poc_debug_step_in(),
+      next: () => m._poc_debug_next(),
+      stepOut: () => m._poc_debug_step_out(),
+      stepBack: () => m._poc_debug_step_back(),
+      canStepBack: () => Boolean(m._poc_debug_can_step_back()),
+      stopReason: () => m._poc_debug_stop_reason(),
+      register: index => m._poc_debug_reg(index),
+      setBreakpoint: address => m._poc_debug_breakpoint_set(address),
+      clearBreakpoint: slot => m._poc_debug_breakpoint_clear(slot),
+      readMemory: address => m._poc_debug_mem_read(address) & 0xff,
+      writeMemory: (address, value) => m._poc_debug_mem_write_byte(address, value),
+      disassemble: (address, count) => m.ccall(
+        "poc_debug_disassemble", "string", ["number", "number"], [address, count]
+      ),
+    });
+    dapRequest("initialize", {
+      clientID: "javascript-1984",
+      clientName: "Javascript 1984 ML Monitor",
+      adapterID: "1984-z80",
+      linesStartAt1: true,
+      columnsStartAt1: true,
+      pathFormat: "uri",
+      supportsMemoryReferences: true,
+      supportsMemoryEvent: true,
+    });
+    dapRequest("attach", {});
+    const initialized = mlDap.takeEvents();
+    if (!initialized.some(event => event.event === "initialized"))
+      throw new Error("DAP adapter did not complete initialization");
+    dapRequest("configurationDone", {});
+    mlStopDescription = mlDap.running ? "Live processor" : "Processor stopped";
+  }
+
+  function drainMlDapEvents() {
+    let executionChanged = false;
+    for (const event of mlDap.takeEvents()) {
+      if (event.event === "stopped") {
+        mlStopDescription = event.body.description || event.body.reason || "Processor stopped";
+        executionChanged = true;
+        if (event.body.reason === "instruction breakpoint") {
+          const pc = m._poc_debug_reg(7);
+          showToast("ML Monitor breakpoint hit at &" + JS1984Monitor.hex(pc, 4));
+        }
+      } else if (event.event === "continued") {
+        mlStopDescription = "Live processor";
+        executionChanged = true;
+      } else if (event.event === "terminated") {
+        mlStopDescription = "Debug session terminated";
+        executionChanged = true;
+      }
+    }
+    return executionChanged;
+  }
+
+  function resetMlUi() {
+    mlBreakpointSlots.clear();
+    mlWatchLabels.fill(null);
+    mlWriteEvents.length = 0;
+    mlWatchSerial = 0;
+    renderMlBreakpoints();
+    renderMlWatches();
+    $("mlWriteLog").textContent = "Write events will appear here.";
+    setMlMessage("Monitor channels reset for the selected machine.");
+  }
+
+  function updateMlState(forceDisassembly = false) {
+    const paused = !mlDap.running && Boolean(m._poc_debug_is_paused());
+    mlMonitorEl.classList.toggle("paused", paused);
+    $("mlState").textContent = paused ? "PAUSED" : "RUN";
+    $("mlStopReason").textContent = paused ? mlStopDescription : "Live processor";
+    let pc = -1;
+
+    if (paused) {
+      try {
+        const stack = dapRequest("stackTrace", { threadId: JS1984DAP.THREAD_ID });
+        const frame = stack.stackFrames[0];
+        const scopes = dapRequest("scopes", { frameId: frame.id });
+        const registers = scopes.scopes.find(scope => scope.presentationHint === "registers");
+        const variables = dapRequest("variables", {
+          variablesReference: registers.variablesReference,
+        });
+        const byName = new Map(variables.variables.map(variable => [variable.name, variable]));
+        const names = ["AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC"];
+        for (let index = 0; index < names.length; index++) {
+          const variable = byName.get(names[index]);
+          $(mlRegisterIds[index]).textContent = variable
+            ? JS1984Monitor.hex(Number.parseInt(variable.value, 16), 4) : "----";
+        }
+        pc = JS1984DAP.parseReference(frame.instructionPointerReference);
+        if (!mlMonitorPanelEl.hidden || forceDisassembly) {
+          const result = dapRequest("disassemble", {
+            memoryReference: frame.instructionPointerReference,
+            instructionCount: 12,
+          });
+          $("mlDisassembly").textContent = result.instructions.map((instruction, index) => {
+            const address = JS1984DAP.parseReference(instruction.address);
+            const bytes = (instruction.instructionBytes || "").padEnd(11, " ");
+            return `${index === 0 ? ">" : " "}${JS1984Monitor.hex(address, 4)}  ${bytes}  ${instruction.instruction}`;
+          }).join("\n");
+        }
+      } catch (error) {
+        setMlMessage(error.message, true);
+      }
+    } else {
+      for (const id of mlRegisterIds) $(id).textContent = "----";
+      if (!mlMonitorPanelEl.hidden || forceDisassembly)
+        $("mlDisassembly").textContent = "Pause the Z80 to inspect its instruction stream.";
+    }
+
+    for (const row of $("mlBreakpointList").querySelectorAll("[data-breakpoint-address]"))
+      row.classList.toggle("hit", paused && Number(row.dataset.breakpointAddress) === pc);
+
+    $("mlPause").disabled = paused;
+    $("mlContinue").disabled = !paused;
+    $("mlStepIn").disabled = !paused;
+    $("mlNext").disabled = !paused;
+    $("mlStepOut").disabled = !paused;
+    $("mlStepBack").disabled = !paused || !m._poc_debug_can_step_back();
+    $("mlMemoryRead").disabled = !paused;
+    $("mlMemoryWrite").disabled = !paused;
+  }
+
+  function renderMlBreakpoints() {
+    const list = $("mlBreakpointList");
+    list.replaceChildren();
+    const entries = [...mlBreakpointSlots.entries()].sort((a, b) => a[1] - b[1]);
+    if (!entries.length) {
+      const empty = document.createElement("span");
+      empty.className = "ml-empty";
+      empty.textContent = "No breakpoints armed";
+      list.append(empty);
+      return;
+    }
+    for (const [id, address] of entries) {
+      const row = document.createElement("div");
+      row.className = "ml-channel";
+      row.dataset.breakpointAddress = String(address);
+      row.innerHTML = `<i></i><b>BP ${String(id).padStart(2, "0")}</b>` +
+        `<code>${JS1984Monitor.hex(address, 4)}</code>` +
+        `<button type="button" class="ml-channel-remove" data-breakpoint-id="${id}" aria-label="Clear breakpoint ${id}">X</button>`;
+      list.append(row);
+    }
+  }
+
+  function applyMlBreakpoints(addresses) {
+    const body = dapRequest("setInstructionBreakpoints", {
+      breakpoints: addresses.map(address => ({
+        instructionReference: JS1984DAP.addressReference(address),
+      })),
+    });
+    mlBreakpointSlots.clear();
+    for (let index = 0; index < body.breakpoints.length; index++) {
+      const breakpoint = body.breakpoints[index];
+      if (breakpoint.verified && breakpoint.id !== undefined)
+        mlBreakpointSlots.set(breakpoint.id, addresses[index]);
+    }
+    renderMlBreakpoints();
+    return body.breakpoints;
+  }
+
+  function renderMlWatches() {
+    const list = $("mlWatchList");
+    list.replaceChildren();
+    let count = 0;
+    for (let slot = 0; slot < mlWatchLabels.length; slot++) {
+      const watch = mlWatchLabels[slot];
+      if (!watch) continue;
+      count++;
+      const row = document.createElement("div");
+      row.className = "ml-channel";
+      const lamp = document.createElement("i");
+      const name = document.createElement("b");
+      name.textContent = watch.label;
+      name.title = watch.label;
+      const address = document.createElement("code");
+      address.textContent = JS1984Monitor.hex(watch.address, 4);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "ml-channel-remove";
+      remove.dataset.watchSlot = String(slot);
+      remove.setAttribute("aria-label", `Clear watch ${watch.label}`);
+      remove.textContent = "X";
+      row.append(lamp, name, address, remove);
+      list.append(row);
+    }
+    if (!count) {
+      const empty = document.createElement("span");
+      empty.className = "ml-empty";
+      empty.textContent = "No labels watched";
+      list.append(empty);
+    }
+  }
+
+  function readMlMemory() {
+    try {
+      const address = JS1984Monitor.parseAddress($("mlMemoryAddress").value);
+      const length = JS1984Monitor.parseLength($("mlMemoryLength").value);
+      const body = dapRequest("readMemory", {
+        memoryReference: JS1984DAP.addressReference(address),
+        count: length,
+      });
+      const bytes = [...JS1984DAP.decodeBase64(body.data || "")];
+      $("mlMemoryAddress").value = JS1984Monitor.hex(address, 4);
+      $("mlMemoryBytes").value = bytes.map(value => JS1984Monitor.hex(value, 2)).join(" ");
+      $("mlMemoryDump").textContent = JS1984Monitor.formatMemory(address, bytes);
+      const unreadable = body.unreadableBytes || 0;
+      setMlMessage(`Read ${bytes.length} byte${bytes.length === 1 ? "" : "s"} from &${JS1984Monitor.hex(address, 4)}` +
+        (unreadable ? `; ${unreadable} beyond Z80 memory.` : "."));
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  }
+
+  function pollMlWriteEvents() {
+    const newest = m._poc_debug_watch_serial() >>> 0;
+    if (newest === mlWatchSerial) return;
+    let first = mlWatchSerial + 1;
+    if (newest - first >= 64) first = newest - 63;
+    for (let serial = first; serial <= newest; serial++) {
+      const slot = m._poc_debug_watch_event_slot(serial);
+      if (slot < 0) continue;
+      const address = m._poc_debug_watch_event_addr(serial);
+      const pc = m._poc_debug_watch_event_pc(serial);
+      const oldValue = m._poc_debug_watch_event_old(serial);
+      const newValue = m._poc_debug_watch_event_new(serial);
+      const watch = mlWatchLabels[slot];
+      const label = watch ? watch.label : `watch_${slot}`;
+      mlDap.notifyWrite({ address, pc, oldValue, newValue, label });
+      mlWriteEvents.unshift(
+        `${label} @${JS1984Monitor.hex(address, 4)}  ` +
+        `${JS1984Monitor.hex(oldValue, 2)}>${JS1984Monitor.hex(newValue, 2)}  ` +
+        `PC=${JS1984Monitor.hex(pc, 4)}`
+      );
+    }
+    mlWatchSerial = newest;
+    mlWriteEvents.splice(24);
+    $("mlWriteLog").textContent = mlWriteEvents.join("\n") ||
+      "Write events will appear here.";
+  }
+
+  $("mlPause").addEventListener("click", () => {
+    try {
+      dapRequest("pause", { threadId: JS1984DAP.THREAD_ID });
+      drainMlDapEvents();
+      m._poc_audio_reset();
+      setMlMessage("DAP paused the processor between instructions.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlContinue").addEventListener("click", () => {
+    try {
+      dapRequest("continue", { threadId: JS1984DAP.THREAD_ID });
+      setMlMessage("DAP continued execution.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlStepIn").addEventListener("click", () => {
+    try {
+      dapRequest("stepIn", { threadId: JS1984DAP.THREAD_ID, granularity: "instruction" });
+      setMlMessage("DAP Step In is executing one Z80 instruction.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlNext").addEventListener("click", () => {
+    try {
+      dapRequest("next", { threadId: JS1984DAP.THREAD_ID, granularity: "instruction" });
+      setMlMessage("DAP Step Over is running to the next Z80 instruction.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlStepBack").addEventListener("click", () => {
+    try {
+      dapRequest("stepBack", { threadId: JS1984DAP.THREAD_ID, granularity: "instruction" });
+      drainMlDapEvents();
+      setMlMessage("DAP restored the previous instruction checkpoint.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlStepOut").addEventListener("click", () => {
+    try {
+      dapRequest("stepOut", { threadId: JS1984DAP.THREAD_ID, granularity: "instruction" });
+      setMlMessage("DAP Step Out is running to the stack return address.");
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+
+  $("mlBreakpointAdd").addEventListener("click", () => {
+    try {
+      const address = JS1984Monitor.parseAddress($("mlBreakpointAddress").value);
+      if ([...mlBreakpointSlots.values()].includes(address))
+        throw new Error("a breakpoint is already armed at this address");
+      const addresses = [...mlBreakpointSlots.values(), address];
+      const results = applyMlBreakpoints(addresses);
+      const breakpoint = results[results.length - 1];
+      if (!breakpoint.verified) throw new Error(breakpoint.message || "breakpoint was rejected");
+      $("mlBreakpointAddress").value = JS1984Monitor.hex(address, 4);
+      setMlMessage(`DAP instruction breakpoint ${breakpoint.id} armed at &${JS1984Monitor.hex(address, 4)}.`);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlBreakpointList").addEventListener("click", event => {
+    const button = event.target.closest("[data-breakpoint-id]");
+    if (!button) return;
+    const id = Number(button.dataset.breakpointId);
+    const address = mlBreakpointSlots.get(id);
+    try {
+      applyMlBreakpoints([...mlBreakpointSlots]
+        .filter(([breakpointId]) => breakpointId !== id)
+        .map(([, breakpointAddress]) => breakpointAddress));
+      setMlMessage(`DAP instruction breakpoint ${id} at &${JS1984Monitor.hex(address, 4)} cleared.`);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+
+  $("mlWatchAdd").addEventListener("click", () => {
+    try {
+      const label = JS1984Monitor.normalizeLabel($("mlWatchLabel").value);
+      const address = JS1984Monitor.parseAddress($("mlWatchAddress").value);
+      const slot = mlWatchLabels.findIndex(watch => !watch);
+      if (slot < 0) throw new Error("all 16 write-watch channels are in use");
+      if (m._poc_debug_watch_set(slot, address) !== 0)
+        throw new Error("could not arm write watch");
+      mlWatchLabels[slot] = { label, address };
+      $("mlWatchAddress").value = JS1984Monitor.hex(address, 4);
+      $("mlWatchLabel").value = "";
+      renderMlWatches();
+      setMlMessage(`Watching ${label} at &${JS1984Monitor.hex(address, 4)} for writes.`);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+  $("mlWatchList").addEventListener("click", event => {
+    const button = event.target.closest("[data-watch-slot]");
+    if (!button) return;
+    const slot = Number(button.dataset.watchSlot);
+    const watch = mlWatchLabels[slot];
+    m._poc_debug_watch_clear(slot);
+    mlWatchLabels[slot] = null;
+    renderMlWatches();
+    setMlMessage(`${watch ? watch.label : "Write watch"} cleared.`);
+  });
+
+  $("mlMemoryRead").addEventListener("click", readMlMemory);
+  $("mlMemoryWrite").addEventListener("click", () => {
+    try {
+      const address = JS1984Monitor.parseAddress($("mlMemoryAddress").value);
+      const bytes = JS1984Monitor.parseBytes($("mlMemoryBytes").value);
+      dapRequest("writeMemory", {
+        memoryReference: JS1984DAP.addressReference(address),
+        data: JS1984DAP.encodeBase64(Uint8Array.from(bytes)),
+        allowPartial: false,
+      });
+      drainMlDapEvents();
+      pollMlWriteEvents();
+      $("mlMemoryLength").value = String(bytes.length);
+      readMlMemory();
+      setMlMessage(`Wrote ${bytes.length} byte${bytes.length === 1 ? "" : "s"} at &${JS1984Monitor.hex(address, 4)}.`);
+      updateMlState(true);
+    } catch (error) {
+      setMlMessage(error.message, true);
+    }
+  });
+
+  for (const encoder of document.querySelectorAll(".ml-encoder[data-encoder]")) {
+    const adjust = delta => {
+      const input = $(encoder.dataset.encoder);
+      let address;
+      try { address = JS1984Monitor.parseAddress(input.value); }
+      catch (_) { address = 0; }
+      input.value = JS1984Monitor.hex((address + delta) & 0xffff, 4);
+    };
+    encoder.addEventListener("click", () => adjust(Number(encoder.dataset.delta)));
+    encoder.addEventListener("wheel", event => {
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      adjust(Math.abs(Number(encoder.dataset.delta)) * direction);
+    }, { passive: false });
+  }
+
+  renderMlBreakpoints();
+  renderMlWatches();
+  createMlDapSession();
+  updateMlState(true);
+  mlMonitorToggleEl.addEventListener("click", () => {
+    if (!mlMonitorPanelEl.hidden) updateMlState(true);
+  });
 
   function pressVirtualKey(scancode) {
     if (virtualKeys.has(scancode)) return;
@@ -402,6 +983,10 @@ create6128().then(m => {
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
     clearDiskUi();
+    snapshotnameEl.textContent = "Machine state";
+    createMlDapSession();
+    resetMlUi();
+    updateMlState(true);
     updateCartUi();
     setStatus("Machine reset");
     return true;
@@ -422,6 +1007,10 @@ create6128().then(m => {
     if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
+    mlDap.sync();
+    drainMlDapEvents();
+    setMlMessage("Warm reset complete; breakpoints and write watches remain armed.");
+    updateMlState(true);
     setStatus("Warm reset complete");
     showToast("CPC reset");
     canvas.focus();
@@ -468,6 +1057,64 @@ create6128().then(m => {
     }
   }
 
+  async function loadSnapshotFile(file) {
+    if (!file) return;
+    const path = "/uploaded.sna";
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      m.FS.writeFile(path, data);
+      const rc = m.ccall("poc_load_snapshot", "number", ["string"], [path]);
+      if (rc !== 0) throw new Error("unsupported or damaged snapshot");
+      m._poc_audio_reset();
+      if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+      releaseAllJoy();
+      m._poc_set_mouse(mouseEnabled ? 1 : 0);
+      snapshotnameEl.textContent = file.name;
+      mlDap.sync();
+      drainMlDapEvents();
+      setMlMessage("Snapshot loaded; breakpoints and write watches remain armed.");
+      updateMlState(true);
+      setStatus("Snapshot: " + file.name);
+      showToast("Snapshot loaded");
+      canvas.focus();
+    } catch (error) {
+      setStatus("Snapshot load failed: " + error.message);
+      showToast("Could not load " + file.name);
+    } finally {
+      snapshotfileEl.value = "";
+      try { m.FS.unlink(path); } catch (_) { /* File was not staged. */ }
+    }
+  }
+
+  function saveSnapshotFile() {
+    const path = "/download.sna";
+    try {
+      const rc = m.ccall("poc_save_snapshot", "number", ["string"], [path]);
+      if (rc !== 0) throw new Error("snapshot encoder rejected the machine state");
+      const data = new Uint8Array(m.FS.readFile(path));
+      const blob = new Blob([data], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = "1984-" + timestamp + ".sna";
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      snapshotnameEl.textContent = filename;
+      setStatus("Snapshot saved: " + filename);
+      showToast("Snapshot downloaded");
+    } catch (error) {
+      setStatus("Snapshot save failed: " + error.message);
+      showToast("Could not save snapshot");
+    } finally {
+      try { m.FS.unlink(path); } catch (_) { /* No snapshot was created. */ }
+    }
+  }
+
   diskfileEl.addEventListener("change", () => loadDiskFile(diskfileEl.files[0]));
   diskEjectEl.addEventListener("click", () => {
     m._poc_eject_disk();
@@ -481,6 +1128,10 @@ create6128().then(m => {
       setStatus("Default system cartridge restored");
     }
   });
+  snapshotfileEl.addEventListener("change", () => {
+    loadSnapshotFile(snapshotfileEl.files[0]);
+  });
+  snapshotSaveEl.addEventListener("click", saveSnapshotFile);
   updateCartUi();
 
   async function fetchServerMedia(url, kind) {
@@ -800,7 +1451,8 @@ create6128().then(m => {
     const lowerName = file.name.toLowerCase();
     if (lowerName.endsWith(".dsk")) loadDiskFile(file);
     else if (lowerName.endsWith(".cpr")) loadCartridgeFile(file);
-    else showToast("Use a DSK disk or CPR cartridge image");
+    else if (lowerName.endsWith(".sna")) loadSnapshotFile(file);
+    else showToast("Use a DSK disk, CPR cartridge, or SNA snapshot");
   });
 
   function updateLed() {
@@ -821,12 +1473,21 @@ create6128().then(m => {
       updateLed();
     }
 
+    pollMlWriteEvents();
+    mlDap.sync();
+    if (drainMlDapEvents()) {
+      updateMlState(true);
+    } else if (!mlMonitorPanelEl.hidden && time - mlLastRefresh >= 150) {
+      mlLastRefresh = time;
+      updateMlState(true);
+    }
+
     const pixels = m.HEAPU32.subarray(framebuffer >> 2, (framebuffer >> 2) + W * H);
     for (let i = 0, destination = 0; i < W * H; i++, destination += 4) {
       const color = pixels[i];
-      const red = (color >> 16) & 0xff;
-      const green = (color >> 8) & 0xff;
-      const blue = color & 0xff;
+      const red = crtRedLut[(color >> 16) & 0xff];
+      const green = crtGreenLut[(color >> 8) & 0xff];
+      const blue = crtBlueLut[color & 0xff];
       if (monochromeGreen) {
         // Rec. 709 integer luminance mapped onto a green phosphor response.
         const luminance = (red * 54 + green * 183 + blue * 19) >> 8;

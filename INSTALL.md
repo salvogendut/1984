@@ -1,6 +1,16 @@
 # Installing 1984
 
-Two paths: download a pre-built binary, or build from source.
+Run 1984 directly in a browser, download a pre-built native application, or
+build it from source.
+
+## Browser edition
+
+**[Launch Javascript 1984](https://salvogendut.github.io/chimeric/js1984/)**
+
+The WebAssembly edition requires no installation. It currently provides CPC
+6128 and CPC 6128 Plus machines with local DSK, CPR, and SNA loading. See
+[web/README.md](web/README.md) for browser controls, URL-based server media,
+current limitations, and self-hosting instructions.
 
 ## Pre-built binaries
 
