@@ -599,6 +599,18 @@ create6128().then(m => {
     return body.breakpoints;
   }
 
+  function adoptCoreMlBreakpoints() {
+    const addresses = [];
+    for (let slot = 0; slot < 16; slot++) {
+      if (!m._poc_debug_breakpoint_enabled(slot)) continue;
+      const address = m._poc_debug_breakpoint_addr(slot);
+      if (address >= 0 && !addresses.includes(address)) addresses.push(address);
+    }
+    createMlDapSession();
+    applyMlBreakpoints(addresses);
+    return addresses.length;
+  }
+
   function renderMlWatches() {
     const list = $("mlWatchList");
     list.replaceChildren();
@@ -1070,9 +1082,10 @@ create6128().then(m => {
       releaseAllJoy();
       m._poc_set_mouse(mouseEnabled ? 1 : 0);
       snapshotnameEl.textContent = file.name;
+      const breakpointCount = adoptCoreMlBreakpoints();
       mlDap.sync();
       drainMlDapEvents();
-      setMlMessage("Snapshot loaded; breakpoints and write watches remain armed.");
+      setMlMessage(`Snapshot loaded; ${breakpointCount} breakpoint channel(s) armed.`);
       updateMlState(true);
       setStatus("Snapshot: " + file.name);
       showToast("Snapshot loaded");

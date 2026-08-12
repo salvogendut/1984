@@ -19,7 +19,8 @@ are not uploaded by the application.
 - CPC 6128 and CPC 6128 Plus machines using the bundled firmware and system
   cartridge.
 - Local DSK loading in drive A, CPR cartridge loading on the Plus model, and
-  SNA v1-v3 snapshot loading with v3 snapshot downloads.
+  SNA v1-v3 snapshot loading with v3 snapshot downloads, including chunked
+  RASM supersnapshots and REMU labels/breakpoints.
 - Server-hosted DSK and CPR media selected through URL parameters.
 - CPC keyboard input from the physical keyboard or the collapsible on-screen
   keyboard, including latched Shift, Ctrl, and Copy modifiers.
@@ -110,6 +111,11 @@ stepping, disassembly, and base64 memory reads/writes. A CPC exposes one
 variable references expire whenever execution resumes. Label watches do not
 stop execution, so they are deliberately reported as DAP output and memory
 telemetry rather than falsely advertising data-breakpoint support.
+
+Loading an SNA with a RASM/ACE `REMU` chunk imports its labels into the
+disassembly and arms its execution breakpoints. Snapshot downloads preserve
+supported metadata and pass through records that 1984 does not yet execute.
+See [SNA REMU Debug Metadata](../docs/SNA-REMU.md).
 
 `dap.js` includes an incremental parser and serializer for standard
 `Content-Length` framed UTF-8 JSON messages. The browser UI currently uses the

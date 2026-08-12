@@ -27,8 +27,9 @@ parameters, limitations, and self-hosting instructions.
   controls, screenshots, GIF/WebM capture, and WAV recording.
 - M4, Net4CPC, Cyboard, SYMBiFACE IDE and mouse, Albireo, USIfAC II, Wi-Fi
   modem, ROM board, printer, and diagnostic-ROM support.
-- Native monitor/disassembler, SDCC symbols, trace options, headless runs, and
-  PTY automation interfaces. The browser edition also has a collapsible
+- Native monitor/disassembler, SDCC symbols, RASM/ACE REMU debug metadata,
+  trace options, headless runs, and PTY automation interfaces. The browser
+  edition also has a collapsible
   Debug Adapter Protocol based machine-language monitor.
 
 Detailed machine, media, expansion, web, and compatibility information is in
@@ -85,7 +86,8 @@ options or read [USAGE.md](USAGE.md) for the complete operating guide.
 - [M4](M4.md), [Cyboard](CYBOARD.md), [Albireo](ALBIREO.md), and
   [Net4CPC](NET4CPC.md) - expansion setup and behavior
 - [USIfAC](docs/USIFAC.md), [symbols](docs/SYMBOLS.md),
-  [activity LEDs](docs/LEDS.md), and [pilot automation](docs/PILOT.md)
+  [SNA REMU metadata](docs/SNA-REMU.md), [activity LEDs](docs/LEDS.md), and
+  [pilot automation](docs/PILOT.md)
 - [Flatpak](docs/FLATPAK.md) and [FUZIX](docs/FUZIX_BUILD.md) guides
 
 ## Related project

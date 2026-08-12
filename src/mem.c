@@ -191,10 +191,10 @@ void mem_unload_rom_ext(Mem *m, int slot) {
  * Read vs. write asymmetry: upper ROM always overlays the 0xC000 read path
  * (handled in mem_read); writes always go to the banked RAM page (here).
  * Video reads (mem_read_video) bypass ROM and use this function directly. */
-static u32 banked_ram_offset(const Mem *m, u16 addr) {
-    u8  mode      = m->ram_bank & 0x07;
-    u8  group     = (m->ram_bank >> 3) & 0x07;
-    u8  bank_high = (m->ram_bank >> 6) & 0x03;  /* Yarek upper bank group (0=DK'tronics) */
+u32 mem_ram_offset_for_config(u8 ram_bank, u16 addr) {
+    u8  mode      = ram_bank & 0x07;
+    u8  group     = (ram_bank >> 3) & 0x07;
+    u8  bank_high = (ram_bank >> 6) & 0x03;  /* Yarek upper bank group (0=DK'tronics) */
     u32 full_bg   = (u32)bank_high * 8u + group;
     u32 extra     = (full_bg + 1u) * 0x10000u;  /* start of romb4-romb7 */
 
@@ -224,6 +224,30 @@ static u32 banked_ram_offset(const Mem *m, u16 addr) {
                ? extra + 0xC000u + rel
                : (u32)addr;
     }
+}
+
+u32 mem_ram_offset(const Mem *m, u16 addr) {
+    return mem_ram_offset_for_config(m->ram_bank, addr);
+}
+
+int mem_visible_rom_bank(const Mem *m, u16 addr) {
+    if (m->plus && m->lower_rom_enabled &&
+            (addr >> 14) == m->plus_lower_bank)
+        return m->plus_lower_page;
+    if (!m->plus && addr < 0x4000 && m->lower_rom_enabled)
+        return 256; /* RASM's conventional lower-ROM bank number. */
+    if (addr >= 0xC000 && m->upper_rom_enabled)
+        return m->upper_rom_select;
+    return -1;
+}
+
+int mem_visible_ram_bank(const Mem *m, u16 addr) {
+    if (m->plus && m->plus_register_page && addr >= 0x4000 && addr < 0x8000)
+        return -1;
+    if (mem_visible_rom_bank(m, addr) >= 0)
+        return -1;
+    u32 off = mem_ram_offset(m, addr);
+    return off < (u32)m->ram_size ? (int)(off >> 14) : -1;
 }
 
 static inline u8 read_ram(const Mem *m, u32 off) {
@@ -273,7 +297,7 @@ u8 mem_read(Mem *m, u16 addr) {
 
     /* RAM read — apply banking for all regions when active */
     if (m->ram_bank)
-        return read_ram(m, banked_ram_offset(m, addr));
+        return read_ram(m, mem_ram_offset(m, addr));
     return m->ram[addr];
 }
 
@@ -298,7 +322,7 @@ void mem_write(Mem *m, u16 addr, u8 val) {
         return;
     }
     /* Writes always go to RAM at the banked page; ROM overlay never intercepts writes */
-    u32 off = m->ram_bank ? banked_ram_offset(m, addr) : (u32)addr;
+    u32 off = mem_ram_offset(m, addr);
     if (off < (u32)m->ram_size)
         m->ram[off] = val;
 }

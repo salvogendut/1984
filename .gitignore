@@ -35,6 +35,7 @@ roms/*
 /src/.deps/
 /src/.dirstamp
 /1984
+/tests/test-*
 /autom4te.cache/
 
 # Personal notes / scratch — never commit

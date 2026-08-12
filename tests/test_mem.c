@@ -119,6 +119,31 @@ static void test_plus_dma_ignores_cpu_ram_mapping(void) {
     assert(mem_read_dma(&mem, 0x4000) == 0x11);
 }
 
+static void test_debugger_physical_bank_visibility(void) {
+    Mem mem;
+    mem_init(&mem);
+    mem.ram_size = 0x20000;
+    mem.lower_rom_enabled = true;
+    mem.upper_rom_enabled = true;
+    mem.upper_rom_select = 7;
+
+    assert(mem_visible_rom_bank(&mem, 0x0000) == 256);
+    assert(mem_visible_rom_bank(&mem, 0xC000) == 7);
+    assert(mem_visible_ram_bank(&mem, 0x0000) == -1);
+    assert(mem_visible_ram_bank(&mem, 0x4000) == 1);
+
+    mem.lower_rom_enabled = false;
+    mem.upper_rom_enabled = false;
+    assert(mem_visible_ram_bank(&mem, 0x0000) == 0);
+    mem.ram_bank = 1;
+    assert(mem_visible_ram_bank(&mem, 0xC000) == 7);
+    assert(mem_ram_offset_for_config(4, 0x4000) == 0x10000);
+
+    mem.plus = true;
+    mem.plus_register_page = true;
+    assert(mem_visible_ram_bank(&mem, 0x4000) == -1);
+}
+
 int main(void) {
     test_absent_upper_rom_falls_back_to_basic();
     test_present_extension_rom_wins();
@@ -126,5 +151,6 @@ int main(void) {
     test_disabled_upper_rom_reads_ram();
     test_plus_cartridge_mapping();
     test_plus_dma_ignores_cpu_ram_mapping();
+    test_debugger_physical_bank_visibility();
     return 0;
 }

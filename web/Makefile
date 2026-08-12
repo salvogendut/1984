@@ -38,6 +38,8 @@ SRCS = \
 	../src/fat.c \
 	../src/config.c \
 	../src/cartridge.c \
+	../src/remu.c \
+	../src/symbols.c \
 	../src/snapshot.c \
 	../src/paste.c \
 	../src/cpc.c

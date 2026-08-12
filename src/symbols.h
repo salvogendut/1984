@@ -50,5 +50,9 @@ void symbols_format(u16 addr, u8 ram_bank, char *out, size_t out_sz);
  * skip the whole annotation path. */
 bool symbols_any_loaded(void);
 
+typedef void (*SymbolsVisitor)(const Symbol *symbol, int mmr_match,
+                               void *userdata);
+void symbols_visit(SymbolsVisitor visitor, void *userdata);
+
 /* Free all loaded symbols. Mostly for tests; not called in production. */
 void symbols_shutdown(void);

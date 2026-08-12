@@ -25,6 +25,7 @@
 #include "real_tape.h"
 #include "printer.h"
 #include "asic.h"
+#include "remu.h"
 
 typedef enum {
     MODEL_464,
@@ -92,7 +93,19 @@ static inline const char *cpc_model_config_name(CpcModel model) {
 typedef void (*CpcAudioSink)(void *userdata, const s16 *samples,
                              int frames, int sample_rate);
 
-typedef struct {
+typedef enum {
+    CPC_BP_ANY,
+    CPC_BP_RAM,
+    CPC_BP_ROM
+} CpcBreakpointKind;
+
+typedef enum {
+    CPC_BP_SOURCE_USER,
+    CPC_BP_SOURCE_SNAPSHOT,
+    CPC_BP_SOURCE_TEMPORARY
+} CpcBreakpointSource;
+
+typedef struct CPC {
     CpcModel   model;
     Z80        cpu;
     Z80Bus     bus;
@@ -199,6 +212,10 @@ typedef struct {
     bool step_once;
     u16  breakpoints[CPC_MAX_BREAKPOINTS];
     bool bp_enabled[CPC_MAX_BREAKPOINTS];
+    u16  bp_bank[CPC_MAX_BREAKPOINTS];
+    u8   bp_kind[CPC_MAX_BREAKPOINTS];
+    u8   bp_source[CPC_MAX_BREAKPOINTS];
+    RemuDebug remu_debug;
 } CPC;
 
 extern int cpc_trace_io;      /* set to 1 to log CRTC/GA writes to stderr */
@@ -236,6 +253,11 @@ void cpc_set_crtc_type(CPC *cpc, CrtcType type);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);
+int  cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
+                        u16 bank, CpcBreakpointSource source);
+void cpc_breakpoint_clear(CPC *cpc, int slot);
+void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source);
+bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr);
 /* Run until the monitor completes one video frame. Returns the number of
  * emulated CPU cycles consumed, or zero while paused. CRTC programs can make
  * a frame shorter or longer than the nominal 80,000 cycles, so frontends must

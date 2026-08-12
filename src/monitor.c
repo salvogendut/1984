@@ -198,7 +198,10 @@ static bool dis_emit_line(Monitor *mon) {
     /* Append a symbol annotation when available — checked cheaply via
      * the no-op short-circuit in symbols_format() when no .map loaded. */
     char sym[64];
-    symbols_format(addr, mon->cpc->mem.ram_bank, sym, sizeof(sym));
+    remu_symbol_format(&mon->cpc->remu_debug, &mon->cpc->mem,
+                       addr, sym, sizeof(sym));
+    if (!sym[0])
+        symbols_format(addr, mon->cpc->mem.ram_bank, sym, sizeof(sym));
     if (sym[0])
         snprintf(line, sizeof(line), "%04X  %-12s %-20s ; %s",
                  addr, hexbuf, mnem, sym);
@@ -343,7 +346,15 @@ static void mon_exec(Monitor *mon, const char *raw) {
             for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
                 if (mon->cpc->bp_enabled[i]) {
                     char line[MON_COLS + 32];
-                    snprintf(line, sizeof(line), "  BP%2d: %04X", i, mon->cpc->breakpoints[i]);
+                    if (mon->cpc->bp_kind[i] == CPC_BP_RAM ||
+                            mon->cpc->bp_kind[i] == CPC_BP_ROM)
+                        snprintf(line, sizeof(line), "  BP%2d: %04X %s=%u", i,
+                                 mon->cpc->breakpoints[i],
+                                 mon->cpc->bp_kind[i] == CPC_BP_RAM ? "RAM" : "ROM",
+                                 mon->cpc->bp_bank[i]);
+                    else
+                        snprintf(line, sizeof(line), "  BP%2d: %04X", i,
+                                 mon->cpc->breakpoints[i]);
                     screen_puts(mon, line);
                     any = true;
                 }
@@ -355,15 +366,11 @@ static void mon_exec(Monitor *mon, const char *raw) {
                 screen_puts(mon, "Usage: B <addr_hex>");
                 return;
             }
-            int slot = -1;
-            for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-                if (!mon->cpc->bp_enabled[i]) { slot = i; break; }
-            }
+            int slot = cpc_breakpoint_add(mon->cpc, (u16)addr, CPC_BP_ANY, 0,
+                                          CPC_BP_SOURCE_USER);
             if (slot < 0) {
                 screen_puts(mon, "No free breakpoint slots (max 16)");
             } else {
-                mon->cpc->breakpoints[slot] = (u16)addr;
-                mon->cpc->bp_enabled[slot]  = true;
                 char line[MON_COLS + 32];
                 snprintf(line, sizeof(line), "Breakpoint %d set at %04X", slot, (u16)addr);
                 screen_puts(mon, line);
@@ -373,7 +380,7 @@ static void mon_exec(Monitor *mon, const char *raw) {
     } else if (strcmp(cmd_buf, "BC") == 0) {
         unsigned n;
         if (sscanf(args, "%u", &n) == 1 && n < CPC_MAX_BREAKPOINTS) {
-            mon->cpc->bp_enabled[n] = false;
+            cpc_breakpoint_clear(mon->cpc, (int)n);
             char line[MON_COLS + 32];
             snprintf(line, sizeof(line), "Breakpoint %u cleared", n);
             screen_puts(mon, line);
@@ -440,8 +447,11 @@ static void mon_exec(Monitor *mon, const char *raw) {
          * S <name>     — show address of <name> + start disasm there */
         if (*args == '\0') {
             char buf[64];
-            symbols_format(mon->cpc->cpu.pc, mon->cpc->mem.ram_bank,
-                           buf, sizeof(buf));
+            remu_symbol_format(&mon->cpc->remu_debug, &mon->cpc->mem,
+                               mon->cpc->cpu.pc, buf, sizeof(buf));
+            if (!buf[0])
+                symbols_format(mon->cpc->cpu.pc, mon->cpc->mem.ram_bank,
+                               buf, sizeof(buf));
             char line[MON_COLS + 32];
             if (buf[0])
                 snprintf(line, sizeof(line), "PC %04X = %s",
@@ -451,14 +461,16 @@ static void mon_exec(Monitor *mon, const char *raw) {
                          mon->cpc->cpu.pc);
             screen_puts(mon, line);
         } else {
-            const Symbol *s = symbols_lookup_name(args);
-            if (!s) {
+            const RemuSymbol *rs = remu_symbol_lookup_name(&mon->cpc->remu_debug,
+                                                           args);
+            const Symbol *s = rs ? NULL : symbols_lookup_name(args);
+            if (!rs && !s) {
                 char line[MON_COLS + 32];
                 snprintf(line, sizeof(line), "symbol '%s' not found", args);
                 screen_puts(mon, line);
             } else {
                 take_mem_snap(mon);
-                mon->dis.addr       = s->addr;
+                mon->dis.addr       = (u16)(rs ? rs->value : s->addr);
                 mon->dis.has_end    = false;
                 mon->dis.lines_left = 10;
                 mon->dis.active     = true;
@@ -471,24 +483,33 @@ static void mon_exec(Monitor *mon, const char *raw) {
         if (*args == '\0') {
             screen_puts(mon, "Usage: BS <name>");
         } else {
-            const Symbol *s = symbols_lookup_name(args);
-            if (!s) {
+            const RemuSymbol *rs = remu_symbol_lookup_name(&mon->cpc->remu_debug,
+                                                           args);
+            const Symbol *s = rs ? NULL : symbols_lookup_name(args);
+            if (!rs && !s) {
                 char line[MON_COLS + 32];
                 snprintf(line, sizeof(line), "symbol '%s' not found", args);
                 screen_puts(mon, line);
             } else {
-                int slot = -1;
-                for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
-                    if (!mon->cpc->bp_enabled[i]) { slot = i; break; }
+                u16 addr = (u16)(rs ? rs->value : s->addr);
+                CpcBreakpointKind kind = CPC_BP_ANY;
+                u16 bank = 0;
+                if (rs && rs->kind == REMU_SYMBOL_RAM) {
+                    kind = CPC_BP_RAM;
+                    bank = rs->bank;
+                } else if (rs && rs->kind == REMU_SYMBOL_ROM) {
+                    kind = CPC_BP_ROM;
+                    bank = rs->bank;
+                }
+                int slot = cpc_breakpoint_add(mon->cpc, addr, kind, bank,
+                                              CPC_BP_SOURCE_USER);
                 if (slot < 0) {
                     screen_puts(mon, "No free breakpoint slots (max 16)");
                 } else {
-                    mon->cpc->breakpoints[slot] = s->addr;
-                    mon->cpc->bp_enabled[slot]  = true;
                     char line[MON_COLS + 32];
                     snprintf(line, sizeof(line),
                              "Breakpoint %d set at %04X (%s)",
-                             slot, s->addr, s->name);
+                             slot, addr, rs ? rs->name : s->name);
                     screen_puts(mon, line);
                 }
             }

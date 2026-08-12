@@ -10,6 +10,11 @@ static u16 le16(const u8 *p) {
     return (u16)p[0] | ((u16)p[1] << 8);
 }
 
+static u32 le32(const u8 *p) {
+    return (u32)p[0] | ((u32)p[1] << 8) |
+           ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
 #define SNA_CPC_MODEL           0x6D
 #define SNA_PSG_SELECT          0x5A
 #define SNA_PSG_REGS            0x5B
@@ -37,6 +42,107 @@ static u16 crtc_restore_next_row(const CRTC *crtc, u16 row_start) {
         crtc->hcc >= crtc->reg[1])
         return (u16)((row_start + crtc->reg[1]) & 0x3FFF);
     return row_start;
+}
+
+static int memory_chunk_index(const u8 id[4]) {
+    if (memcmp(id, "MEM", 3) != 0) return -1;
+    if (id[3] >= '0' && id[3] <= '9') return id[3] - '0';
+    if (id[3] >= 'A' && id[3] <= 'F') return 10 + id[3] - 'A';
+    if (id[3] >= 'a' && id[3] <= 'f') return 10 + id[3] - 'a';
+    return -1;
+}
+
+static int decode_memory_chunk(u8 *destination, const u8 *data, size_t len) {
+    if (len == 0x10000) {
+        memcpy(destination, data, len);
+        return 0;
+    }
+    size_t src = 0, dst = 0;
+    while (src < len && dst < 0x10000) {
+        u8 value = data[src++];
+        if (value != 0xE5) {
+            destination[dst++] = value;
+            continue;
+        }
+        if (src >= len) return -1;
+        u8 count = data[src++];
+        if (count == 0) {
+            destination[dst++] = 0xE5;
+            continue;
+        }
+        if (src >= len || dst + count > 0x10000) return -1;
+        memset(destination + dst, data[src++], count);
+        dst += count;
+    }
+    return src == len && dst == 0x10000 ? 0 : -1;
+}
+
+static int load_chunks(FILE *f, CPC *cpc, const char *path,
+                       bool memory_required, size_t *memory_size) {
+    bool saw_memory = false;
+    for (;;) {
+        u8 header[8];
+        size_t got = fread(header, 1, sizeof(header), f);
+        if (got == 0 && feof(f)) break;
+        if (got != sizeof(header)) {
+            fprintf(stderr, "snapshot: '%s' has a truncated chunk header\n", path);
+            return -1;
+        }
+        u32 length = le32(header + 4);
+        int mem_index = memory_chunk_index(header);
+        bool known = mem_index >= 0 || memcmp(header, "REMU", 4) == 0;
+        if (!known) {
+            u8 discard[4096];
+            u32 remaining = length;
+            while (remaining) {
+                size_t count = remaining < sizeof(discard) ? remaining
+                                                            : sizeof(discard);
+                if (fread(discard, 1, count, f) != count) {
+                    fprintf(stderr, "snapshot: '%s' has a truncated %.4s chunk\n",
+                            path, header);
+                    return -1;
+                }
+                remaining -= (u32)count;
+            }
+            continue;
+        }
+        if (length > 16u * 1024u * 1024u) {
+            fprintf(stderr, "snapshot: '%s' chunk %.4s is unreasonably large\n",
+                    path, header);
+            return -1;
+        }
+        u8 *payload = length ? malloc(length) : NULL;
+        if (length && (!payload || fread(payload, 1, length, f) != length)) {
+            fprintf(stderr, "snapshot: '%s' has a truncated %.4s chunk\n",
+                    path, header);
+            free(payload);
+            return -1;
+        }
+        if (mem_index >= 0) {
+            size_t offset = (size_t)mem_index * 0x10000;
+            if (offset + 0x10000 > RAM_SIZE ||
+                    decode_memory_chunk(cpc->mem.ram + offset,
+                                        payload, length) != 0) {
+                fprintf(stderr, "snapshot: '%s' has an invalid %.4s memory chunk\n",
+                        path, header);
+                free(payload);
+                return -1;
+            }
+            if (*memory_size < offset + 0x10000)
+                *memory_size = offset + 0x10000;
+            saw_memory = true;
+        } else if (remu_parse_chunk(cpc, payload, length) < 0) {
+            fprintf(stderr, "snapshot: '%s' REMU chunk is out of memory\n", path);
+            free(payload);
+            return -1;
+        }
+        free(payload);
+    }
+    if (memory_required && !saw_memory) {
+        fprintf(stderr, "snapshot: '%s' has no RAM dump or MEMx chunks\n", path);
+        return -1;
+    }
+    return 0;
 }
 
 int snapshot_load(CPC *cpc, const char *path) {
@@ -143,7 +249,8 @@ int snapshot_load(CPC *cpc, const char *path) {
 
     /* ---- RAM size (KB) ---- */
     u16 ram_kb = (version >= 2) ? le16(&hdr[0x6B]) : 64;
-    if (ram_kb == 0) ram_kb = 64;   /* v1 default */
+    bool chunked_memory = version >= 3 && ram_kb == 0;
+    if (version < 3 && ram_kb == 0) ram_kb = 64;
 
     if (version >= 3) {
         cpc->fdc.motor = hdr[SNA_V3_FDC_MOTOR] != 0;
@@ -210,24 +317,38 @@ int snapshot_load(CPC *cpc, const char *path) {
         fclose(f);
         return -1;
     }
-    if (want > (size_t)cpc->mem.ram_size) {
+    if (!chunked_memory && want > (size_t)cpc->mem.ram_size) {
         fprintf(stderr, "snapshot: '%s' wants %u KB RAM, expanding from %d KB\n",
                 path, ram_kb, cpc->mem.ram_size / 1024);
         cpc->mem.ram_size = (int)want;
     }
 
-    /* SNA stores RAM as a flat dump: bytes 0..64KB are the standard main bank,
-     * then 64..128KB are the 6128's extra bank, then optional extension banks
-     * (group 1, 2, 3...) follow contiguously. Our cpc->mem.ram[] uses the same
-     * linear layout so a direct fread works. */
-    size_t got = fread(cpc->mem.ram, 1, want, f);
-    if (got != want) {
-        fprintf(stderr, "snapshot: '%s' RAM short read (%zu / %zu bytes)\n",
-                path, got, want);
+    remu_debug_clear(&cpc->remu_debug);
+    cpc_breakpoint_clear_source(cpc, CPC_BP_SOURCE_SNAPSHOT);
+
+    if (chunked_memory) {
+        memset(cpc->mem.ram, 0, sizeof(cpc->mem.ram));
+        want = 0;
+    } else {
+        /* Flat SNA memory uses the same linear physical layout as Mem.ram. */
+        size_t got = fread(cpc->mem.ram, 1, want, f);
+        if (got != want) {
+            fprintf(stderr, "snapshot: '%s' RAM short read (%zu / %zu bytes)\n",
+                    path, got, want);
+            fclose(f);
+            return -1;
+        }
+    }
+    if (load_chunks(f, cpc, path, chunked_memory, &want) < 0) {
         fclose(f);
         return -1;
     }
     fclose(f);
+
+    if (chunked_memory) {
+        cpc->mem.ram_size = (int)want;
+        ram_kb = (u16)(want / 1024);
+    }
 
     fprintf(stderr, "snapshot: loaded '%s' (v%u, %u KB RAM, PC=%04X SP=%04X)\n",
             path, version, ram_kb, cpc->cpu.pc, cpc->cpu.sp);
@@ -235,6 +356,12 @@ int snapshot_load(CPC *cpc, const char *path) {
 }
 
 static void put16(u8 *p, u16 v) { p[0] = v & 0xFF; p[1] = v >> 8; }
+static void put32(u8 *p, u32 v) {
+    p[0] = v & 0xFF;
+    p[1] = (v >> 8) & 0xFF;
+    p[2] = (v >> 16) & 0xFF;
+    p[3] = (v >> 24) & 0xFF;
+}
 
 int snapshot_save(CPC *cpc, const char *path) {
     u8 hdr[256] = {0};
@@ -309,18 +436,39 @@ int snapshot_save(CPC *cpc, const char *path) {
     hdr[SNA_V3_DRVA_TRACK] = (u8)cpc->drive[0].cur_track;
     hdr[SNA_V3_DRVB_TRACK] = (u8)cpc->drive[1].cur_track;
 
+    size_t remu_len = 0;
+    char *remu = remu_build_chunk(cpc, &remu_len);
+    if (remu_len == (size_t)-1) {
+        fprintf(stderr, "snapshot: cannot allocate REMU metadata for '%s'\n", path);
+        return -1;
+    }
     FILE *f = fopen(path, "wb");
     if (!f) {
         fprintf(stderr, "snapshot: cannot create '%s'\n", path);
+        free(remu);
         return -1;
     }
     if (fwrite(hdr, 1, 256, f) != 256 ||
         fwrite(cpc->mem.ram, 1, (size_t)cpc->mem.ram_size, f) != (size_t)cpc->mem.ram_size) {
         fprintf(stderr, "snapshot: write to '%s' failed\n", path);
         fclose(f);
+        free(remu);
         return -1;
     }
+    if (remu_len) {
+        u8 chunk_header[8];
+        memcpy(chunk_header, "REMU", 4);
+        put32(chunk_header + 4, (u32)remu_len);
+        if (fwrite(chunk_header, 1, sizeof(chunk_header), f) != sizeof(chunk_header) ||
+                fwrite(remu, 1, remu_len, f) != remu_len) {
+            fprintf(stderr, "snapshot: REMU write to '%s' failed\n", path);
+            fclose(f);
+            free(remu);
+            return -1;
+        }
+    }
     fclose(f);
+    free(remu);
     fprintf(stderr, "snapshot: saved '%s' (%u KB, PC=%04X SP=%04X)\n",
             path, ram_kb, cpc->cpu.pc, cpc->cpu.sp);
     return 0;

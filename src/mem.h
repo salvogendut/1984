@@ -25,7 +25,7 @@
 #define RAM_SIZE       0x100000  /* 1024 KB max (Yarek ceiling); actual usable size is Mem.ram_size */
 #define ROM_EXT_COUNT  32        /* expansion ROM slots 0-31 */
 
-typedef struct {
+typedef struct Mem {
     u8   ram[RAM_SIZE];
     int  ram_size;              /* actual usable RAM in bytes (from config.memory_kb * 1024) */
     u8   rom_os[ROM_OS_SIZE];
@@ -76,6 +76,10 @@ void mem_unload_rom_ext(Mem *m, int slot);
 void mem_plus_reset_mapping(Mem *m);
 void mem_plus_set_rmr2(Mem *m, u8 value);
 void mem_plus_select_upper_rom(Mem *m, u8 value);
+u32  mem_ram_offset(const Mem *m, u16 addr);
+u32  mem_ram_offset_for_config(u8 ram_bank, u16 addr);
+int  mem_visible_ram_bank(const Mem *m, u16 addr);
+int  mem_visible_rom_bank(const Mem *m, u16 addr);
 u8   mem_read(Mem *m, u16 addr);
 u8   mem_read_video(const Mem *m, u16 addr); /* CRTC/GA reads RAM, bypassing ROM */
 u8   mem_read_dma(Mem *m, u16 addr);     /* Plus DMA sees physical base RAM */
