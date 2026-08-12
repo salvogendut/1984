@@ -109,10 +109,11 @@ html[data-theme="retro-crt"] .led { width: 12px; height: 12px; border-width: 2px
 html[data-theme="retro-crt"] .screen-stage {
   gap: 18px;
   align-items: stretch;
-  padding: 28px;
+  padding: 28px 28px 100px;
   background: transparent;
   box-shadow: none;
 }
+html[data-theme="retro-crt"] .display-dial-bank { right: 50%; bottom: 18px; border-color: #716956; background: #292a26; transform: translateX(50%); }
 html[data-theme="retro-crt"] .screen-brand {
   left: 37px;
   width: 82px;

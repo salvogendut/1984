@@ -84,12 +84,56 @@
                   aria-label="Amstrad CPC display"></canvas>
           <div class="scanline-overlay" aria-hidden="true"></div>
           <div id="screenHint" class="screen-hint">Click display for keyboard</div>
-          <div id="dropHint" class="drop-hint">Drop DSK or CPR media here</div>
+          <div id="dropHint" class="drop-hint">Drop DSK, CPR or SNA media here</div>
         </div>
         <div class="screen-badge">
           <span>RGB monitor</span>
           <span id="screenMode">768 x 576 / Sharp</span>
         </div>
+      </div>
+      <div class="display-dial-bank" aria-label="CRT picture adjustments">
+        <label class="display-dial-control">
+          <span>Scanlines</span>
+          <span class="display-dial-knob"><i id="scanlineNeedle"></i>
+            <input id="scanlineStrength" type="range" min="0" max="95" step="5" value="15" aria-label="Scanline visibility">
+          </span>
+          <strong id="scanlineValue">15%</strong>
+        </label>
+        <label class="display-dial-control">
+          <span>Brightness</span>
+          <span class="display-dial-knob"><i id="brightnessNeedle"></i>
+            <input id="crtBrightness" type="range" min="50" max="100" step="5" value="100" aria-label="Display brightness">
+          </span>
+          <strong id="brightnessValue">100%</strong>
+        </label>
+        <label class="display-dial-control">
+          <span>Contrast</span>
+          <span class="display-dial-knob"><i id="contrastNeedle"></i>
+            <input id="crtContrast" type="range" min="50" max="150" step="5" value="100" aria-label="Display contrast">
+          </span>
+          <strong id="contrastValue">100%</strong>
+        </label>
+        <label class="display-dial-control display-dial-red">
+          <span>Red</span>
+          <span class="display-dial-knob"><i id="redNeedle"></i>
+            <input id="crtRed" type="range" min="50" max="150" step="5" value="100" aria-label="Red channel gain">
+          </span>
+          <strong id="redValue">100%</strong>
+        </label>
+        <label class="display-dial-control display-dial-green">
+          <span>Green</span>
+          <span class="display-dial-knob"><i id="greenNeedle"></i>
+            <input id="crtGreen" type="range" min="50" max="150" step="5" value="100" aria-label="Green channel gain">
+          </span>
+          <strong id="greenValue">100%</strong>
+        </label>
+        <label class="display-dial-control display-dial-blue">
+          <span>Blue</span>
+          <span class="display-dial-knob"><i id="blueNeedle"></i>
+            <input id="crtBlue" type="range" min="50" max="150" step="5" value="100" aria-label="Blue channel gain">
+          </span>
+          <strong id="blueValue">100%</strong>
+        </label>
       </div>
     </div>
 
@@ -149,6 +193,21 @@
               <button id="cartDefault" class="small-key" type="button" disabled>Default</button>
             </div>
             <input class="visually-hidden" type="file" id="cartfile" accept=".cpr,.CPR" disabled>
+          </article>
+
+          <article class="media-slot snapshot-slot">
+            <div class="cassette-window snapshot-window" aria-hidden="true">
+              <span>SNA</span>
+            </div>
+            <div class="media-copy">
+              <strong>Snapshots</strong>
+              <span id="snapshotname">Machine state</span>
+            </div>
+            <div class="media-actions snapshot-actions">
+              <label class="small-key" for="snapshotfile">Load SNA</label>
+              <button id="snapshotSave" class="small-key" type="button">Save SNA</button>
+            </div>
+            <input class="visually-hidden" type="file" id="snapshotfile" accept=".sna,.SNA">
           </article>
         </div>
       </section>
@@ -313,9 +372,109 @@
   </section>
 </main>
 
+<aside id="mlMonitor" class="ml-monitor" data-open="false"
+       aria-label="Machine-language monitor">
+  <button id="mlMonitorToggle" class="ml-monitor-toggle" type="button"
+          aria-expanded="false" aria-controls="mlMonitorPanel">
+    <span>ML</span> Monitor
+  </button>
+  <section id="mlMonitorPanel" class="ml-monitor-panel" hidden>
+    <header class="ml-monitor-head">
+      <div>
+        <span class="ml-kicker">Z80 diagnostic console / DAP 1.71.0</span>
+        <strong>ML MONITOR</strong>
+      </div>
+      <div class="ml-run-state">
+        <i id="mlStateLamp" class="ml-state-lamp"></i>
+        <span id="mlState">RUN</span>
+      </div>
+    </header>
+
+    <div class="ml-register-bank" aria-label="Z80 registers">
+      <span>AF <b id="mlRegAF">0000</b></span>
+      <span>BC <b id="mlRegBC">0000</b></span>
+      <span>DE <b id="mlRegDE">0000</b></span>
+      <span>HL <b id="mlRegHL">0000</b></span>
+      <span>IX <b id="mlRegIX">0000</b></span>
+      <span>IY <b id="mlRegIY">0000</b></span>
+      <span>SP <b id="mlRegSP">0000</b></span>
+      <span>PC <b id="mlRegPC">0000</b></span>
+    </div>
+
+    <section class="ml-module ml-transport" aria-labelledby="mlTransportTitle">
+      <div class="ml-module-head">
+        <strong id="mlTransportTitle">Execution</strong>
+        <span id="mlStopReason">Live processor</span>
+      </div>
+      <div class="ml-transport-keys">
+        <button id="mlPause" type="button" class="ml-key ml-key-red"><b>BREAK</b><small>Pause</small></button>
+        <button id="mlContinue" type="button" class="ml-key ml-key-green"><b>CONT</b><small>Continue</small></button>
+        <button id="mlStepIn" type="button" class="ml-key"><b>IN</b><small>Step in</small></button>
+        <button id="mlNext" type="button" class="ml-key"><b>OVER</b><small>Step over</small></button>
+        <button id="mlStepOut" type="button" class="ml-key"><b>OUT</b><small>Step out</small></button>
+        <button id="mlStepBack" type="button" class="ml-key ml-key-blue"><b>BACK</b><small>Step back</small></button>
+      </div>
+      <pre id="mlDisassembly" class="ml-readout ml-disassembly" aria-label="Disassembly">Waiting for core...</pre>
+    </section>
+
+    <section class="ml-module" aria-labelledby="mlBreakpointTitle">
+      <div class="ml-module-head">
+        <strong id="mlBreakpointTitle">Breakpoints</strong>
+        <span>16 channels</span>
+      </div>
+      <div class="ml-address-control">
+        <button type="button" class="ml-encoder" data-encoder="mlBreakpointAddress" data-delta="-1" aria-label="Previous breakpoint address">-</button>
+        <label>Address<input id="mlBreakpointAddress" value="0000" inputmode="text" maxlength="6"></label>
+        <button type="button" class="ml-encoder" data-encoder="mlBreakpointAddress" data-delta="1" aria-label="Next breakpoint address">+</button>
+        <button id="mlBreakpointAdd" type="button" class="ml-action">Set</button>
+      </div>
+      <div id="mlBreakpointList" class="ml-channel-list"><span class="ml-empty">No breakpoints armed</span></div>
+    </section>
+
+    <section class="ml-module" aria-labelledby="mlWatchTitle">
+      <div class="ml-module-head">
+        <strong id="mlWatchTitle">Label write detector</strong>
+        <span>Memory watch</span>
+      </div>
+      <div class="ml-watch-entry">
+        <label>Label<input id="mlWatchLabel" placeholder="player_x" maxlength="32"></label>
+        <label>Address<input id="mlWatchAddress" value="0000" inputmode="text" maxlength="6"></label>
+        <button id="mlWatchAdd" type="button" class="ml-action">Arm</button>
+      </div>
+      <div id="mlWatchList" class="ml-channel-list"><span class="ml-empty">No labels watched</span></div>
+      <pre id="mlWriteLog" class="ml-readout ml-write-log" aria-live="polite">Write events will appear here.</pre>
+    </section>
+
+    <section class="ml-module" aria-labelledby="mlMemoryTitle">
+      <div class="ml-module-head">
+        <strong id="mlMemoryTitle">Memory slice</strong>
+        <span>Mapped CPU view</span>
+      </div>
+      <div class="ml-address-control ml-memory-control">
+        <button type="button" class="ml-encoder" data-encoder="mlMemoryAddress" data-delta="-8" aria-label="Previous memory row">-</button>
+        <label>Address<input id="mlMemoryAddress" value="0000" inputmode="text" maxlength="6"></label>
+        <button type="button" class="ml-encoder" data-encoder="mlMemoryAddress" data-delta="8" aria-label="Next memory row">+</button>
+        <label>Length<input id="mlMemoryLength" type="number" min="1" max="256" value="32"></label>
+        <button id="mlMemoryRead" type="button" class="ml-action">Read</button>
+      </div>
+      <pre id="mlMemoryDump" class="ml-readout ml-memory-dump">0000  -- -- -- -- -- -- -- --</pre>
+      <label class="ml-byte-editor">Hex bytes
+        <textarea id="mlMemoryBytes" rows="3" spellcheck="false" placeholder="00 01 02 FF"></textarea>
+      </label>
+      <button id="mlMemoryWrite" type="button" class="ml-action ml-write-action">Write slice</button>
+    </section>
+
+    <footer id="mlMonitorMessage" class="ml-monitor-message" aria-live="polite">
+      Opened without pausing the CPC.
+    </footer>
+  </section>
+</aside>
+
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script src="gamepad.js"></script>
 <script src="media-url.js"></script>
+<script src="ml-monitor.js"></script>
+<script src="dap.js"></script>
 <script src="6128.js"></script>
 <script src="app.js"></script>
 </body>

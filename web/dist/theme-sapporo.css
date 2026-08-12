@@ -121,13 +121,15 @@ html[data-theme="sapporo"] .activity-bank .led { width: 12px; height: 12px; bord
 
 html[data-theme="sapporo"] .screen-stage {
   position: relative;
-  padding: 38px clamp(18px, 3vw, 42px) 34px;
+  padding: 38px clamp(18px, 3vw, 42px) 105px;
   border-bottom: 7px solid #111415;
   background:
     linear-gradient(90deg, #00966f 0 33%, #1859a8 33% 66%, #d83d32 66%) left top / 100% 8px no-repeat,
     linear-gradient(135deg, #cdd0cd 0 52%, #c5c8c5 52%);
   box-shadow: none;
 }
+html[data-theme="sapporo"] .display-dial-bank { border: 3px solid #111415; border-radius: 0; background: #d4d7d4; box-shadow: 5px 5px #111415; }
+html[data-theme="sapporo"] .display-dial-control { color: #303637; }
 html[data-theme="sapporo"] .screen-brand {
   width: 96px;
   padding: 0;
