@@ -154,9 +154,18 @@ EMSCRIPTEN_KEEPALIVE void poc_audio_advance(int n) {
  * defaults to the bundled system cartridge when cartridge is NULL).
  * May be called repeatedly to switch machines. */
 
+static bool poc_memory_size_supported(int memory_kb) {
+    return memory_kb == 128 || memory_kb == 256 ||
+           memory_kb == 512 || memory_kb == 1024;
+}
+
 EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     int rc;
+    int memory_kb = g_cpc.mem.ram_size / 1024;
+    if (!poc_memory_size_supported(memory_kb))
+        memory_kb = 128;
     poc_cancel_paste();
+    tape_eject(&g_cpc.tape);
     remu_debug_clear(&g_cpc.remu_debug);
     if (model == 1) {
         rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
@@ -169,6 +178,7 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     }
     if (rc != 0)
         return -1;
+    g_cpc.mem.ram_size = memory_kb * 1024;
     cpc_set_audio_sink(&g_cpc, poc_audio_sink, NULL);
     poc_debug_reset_state();
     poc_debug_install_mem_hook();
@@ -193,6 +203,22 @@ EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
         cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
     g_debug_temp_bp_slot = -1;
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
+}
+
+/* Select an expansion size and cold-start RAM without replacing the current
+ * ROM/cartridge or mounted media. */
+EMSCRIPTEN_KEEPALIVE int poc_set_memory_kb(int memory_kb) {
+    if (!poc_memory_size_supported(memory_kb))
+        return -1;
+    memset(g_cpc.mem.ram, 0, sizeof(g_cpc.mem.ram));
+    g_cpc.mem.ram_size = memory_kb * 1024;
+    poc_reset();
+    poc_audio_reset();
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_memory_kb(void) {
+    return g_cpc.mem.ram_size / 1024;
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_load_snapshot(const char *path) {
@@ -540,6 +566,64 @@ EMSCRIPTEN_KEEPALIVE int poc_load_disk(const char *path) {
 
 EMSCRIPTEN_KEEPALIVE void poc_eject_disk(void) {
     disk_eject(&g_cpc.drive[0]);
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_load(const char *path) {
+    if (!tape_load(&g_cpc.tape, path))
+        return -1;
+    tape_set_paused(&g_cpc.tape, true);
+    poc_audio_reset();
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_tape_eject(void) {
+    tape_eject(&g_cpc.tape);
+    poc_audio_reset();
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_play(void) {
+    if (!tape_loaded(&g_cpc.tape) || g_cpc.tape.stage == TAPE_END)
+        return -1;
+    tape_set_paused(&g_cpc.tape, false);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_tape_stop(void) {
+    tape_set_paused(&g_cpc.tape, true);
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_tape_rewind(void) {
+    tape_set_paused(&g_cpc.tape, true);
+    tape_rewind(&g_cpc.tape);
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_tape_next(void) {
+    tape_set_paused(&g_cpc.tape, true);
+    tape_next_block(&g_cpc.tape);
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_loaded(void) {
+    return tape_loaded(&g_cpc.tape) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_motor(void) {
+    return g_cpc.tape.motor ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_playing(void) {
+    return tape_playing(&g_cpc.tape) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_paused(void) {
+    return g_cpc.tape.paused ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_ended(void) {
+    return g_cpc.tape.stage == TAPE_END ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_tape_counter(void) {
+    return (int)(tape_counter_seconds(&g_cpc.tape) % 1000u);
 }
 
 /* Queue RUN"filename" after a frame-counted boot delay. This mirrors the

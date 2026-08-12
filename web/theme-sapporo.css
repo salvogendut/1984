@@ -91,6 +91,7 @@ html[data-theme="sapporo"] .receiver-top {
   box-shadow: none;
 }
 html[data-theme="sapporo"] .model-bank > label,
+html[data-theme="sapporo"] .memory-slider label,
 html[data-theme="sapporo"] .display-label,
 html[data-theme="sapporo"] .activity-bank div {
   color: #111415;
@@ -108,6 +109,9 @@ html[data-theme="sapporo"] select {
   font-weight: 900;
   text-transform: uppercase;
 }
+html[data-theme="sapporo"] .memory-slider output { color: #111415; }
+html[data-theme="sapporo"] .memory-slider input[type="range"]::-webkit-slider-thumb { background: #00966f; }
+html[data-theme="sapporo"] .memory-slider input[type="range"]::-moz-range-thumb { background: #00966f; }
 html[data-theme="sapporo"] .select-shell::after { border-top-color: #ffdc00; }
 html[data-theme="sapporo"] .display-panel {
   border: 3px solid #111415;

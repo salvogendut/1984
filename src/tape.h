@@ -35,7 +35,9 @@ typedef struct {
 
     bool    present;        /* image is loaded */
     bool    motor;          /* PPI Port C bit 4 mirror */
+    bool    paused;         /* host deck transport gate; false by default */
     u8      level;          /* 0x00 or 0x80, OR'd into PPI Port B bit 7 */
+    u64     played_cycles;  /* transport counter, reset by rewind */
 
     TapeStage stage;
     int     cycles_until_next;   /* counts down via tape_step() */
@@ -72,7 +74,11 @@ void tape_eject(Tape *t);
 bool tape_loaded(const Tape *t);
 
 void tape_rewind(Tape *t);                    /* restart from first block */
+void tape_next_block(Tape *t);                /* skip current playable block */
 void tape_set_motor(Tape *t, bool on);
+void tape_set_paused(Tape *t, bool paused);
+bool tape_playing(const Tape *t);
+u32  tape_counter_seconds(const Tape *t);
 
 /* Call from the Z80 step loop with the instruction's T-state count.
  * Advances the tape state machine when motor is on. */

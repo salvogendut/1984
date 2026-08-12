@@ -90,6 +90,7 @@ html[data-theme="sapporo-dark"] .receiver-top {
   box-shadow: none;
 }
 html[data-theme="sapporo-dark"] .model-bank > label,
+html[data-theme="sapporo-dark"] .memory-slider label,
 html[data-theme="sapporo-dark"] .display-label,
 html[data-theme="sapporo-dark"] .activity-bank div {
   color: #002b36;
@@ -107,6 +108,9 @@ html[data-theme="sapporo-dark"] select {
   font-weight: 900;
   text-transform: uppercase;
 }
+html[data-theme="sapporo-dark"] .memory-slider output { color: #002b36; }
+html[data-theme="sapporo-dark"] .memory-slider input[type="range"]::-webkit-slider-thumb { background: #2aa198; }
+html[data-theme="sapporo-dark"] .memory-slider input[type="range"]::-moz-range-thumb { background: #2aa198; }
 html[data-theme="sapporo-dark"] .select-shell::after { border-top-color: #b58900; }
 html[data-theme="sapporo-dark"] .display-panel {
   border: 3px solid #eee8d5;

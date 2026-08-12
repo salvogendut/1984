@@ -28,6 +28,9 @@ are not uploaded by the application.
 - Stereo Web Audio, fullscreen, display scaling, sharp or smooth pixels,
   colour or green-monochrome output, and persistent CRT scanline, brightness,
   contrast, and RGB-gain adjustments.
+- CDT cassette loading through the CPC464 data recorder, with working Play,
+  Stop, Pause, Rewind, and block-forward controls, a tape counter, cassette
+  audio, and motor-driven reel animation.
 - CPC464, Retro CRT, Sapporo, and Sapporo Dark themes.
 - A collapsible machine-language monitor in the CPC464 theme with Z80
   registers and disassembly, breakpoints, continue, Step In, Step Out,
@@ -35,10 +38,9 @@ are not uploaded by the application.
   memory-slice reading and writing.
 
 The browser frontend does not currently expose the native F9 overlay,
-expansion devices, tape emulation, or additional CPC models. The CPC464 tape
-deck in the interface is a placeholder for future tape support. Disk writes
-and fetched media changes are held in browser memory and are lost when the
-page is reloaded; they are not uploaded to the server.
+expansion devices, cassette recording, or additional CPC models. Disk and
+tape changes are held in browser memory and are lost when the page is
+reloaded; they are not uploaded to the server.
 
 ## Build and self-host
 
@@ -68,6 +70,9 @@ starts after a user gesture, as required by modern autoplay policies. The
 **Show keyboard** button expands the on-screen CPC keyboard and tape-deck
 assembly; **Hide keyboard** collapses both. On-screen Shift, Ctrl, and Copy
 latch until the next key, which makes combinations practical with a mouse.
+Click the cassette door to load a CDT image. Press **PLAY**, then start the
+CPC tape loader; the transport waits for the CPC motor before advancing.
+**REW** returns to the beginning and **F.FWD** skips the current CDT block.
 
 Enable **Joystick** and press **Detect controller** after connecting a
 gamepad. Whether a device is available depends on the browser and its sandbox

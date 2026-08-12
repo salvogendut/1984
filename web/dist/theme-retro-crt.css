@@ -82,6 +82,7 @@ html[data-theme="retro-crt"] .receiver-top {
   box-shadow: inset 0 0 0 2px #1f201d, 0 3px rgba(255,255,255,.36);
 }
 html[data-theme="retro-crt"] .model-bank > label,
+html[data-theme="retro-crt"] .memory-slider label,
 html[data-theme="retro-crt"] .display-label,
 html[data-theme="retro-crt"] .activity-bank div { color: #ded4b8; }
 html[data-theme="retro-crt"] select {
@@ -93,6 +94,9 @@ html[data-theme="retro-crt"] select {
   font-weight: 700;
 }
 html[data-theme="retro-crt"] .select-shell::after { border-top-color: #7f2f27; }
+html[data-theme="retro-crt"] .memory-slider output { color: #ded4b8; }
+html[data-theme="retro-crt"] .memory-slider input[type="range"]::-webkit-slider-thumb { background: #7f2f27; }
+html[data-theme="retro-crt"] .memory-slider input[type="range"]::-moz-range-thumb { background: #7f2f27; }
 html[data-theme="retro-crt"] .display-panel {
   border: 3px solid #151611;
   border-radius: 6px;

@@ -155,7 +155,7 @@ const mlMonitorEl = $("mlMonitor");
 const mlMonitorPanelEl = $("mlMonitorPanel");
 const mlMonitorToggleEl = $("mlMonitorToggle");
 
-// Anchor the debugger to the GT65 chassis instead of the browser edge.
+// Anchor the debugger to the monitor chassis instead of the browser edge.
 $("screenStage").append(mlMonitorEl);
 
 function setMlMonitorOpen(open) {
@@ -384,6 +384,8 @@ create6128().then(m => {
 
   const framebuffer = m._poc_pixels();
   const modelEl = $("model");
+  const memoryEl = $("memory");
+  const memoryValueEl = $("memoryValue");
   const resetEl = $("reset");
   const diskfileEl = $("diskfile");
   const disknameEl = $("diskname");
@@ -396,6 +398,13 @@ create6128().then(m => {
   const snapshotfileEl = $("snapshotfile");
   const snapshotnameEl = $("snapshotname");
   const snapshotSaveEl = $("snapshotSave");
+  const tapefileEl = $("tapefile");
+  const tapeDoorEl = $("tapeDoor");
+  const tapeLabelEl = $("tapeLabel");
+  const tapeStatusEl = $("tapeDeckStatus");
+  const tapeCounterEl = $("tapeCounter");
+  const tapeEjectEl = $("tapeEject");
+  const tapeButtons = [...cpcTapeDeckEl.querySelectorAll("[data-tape-action]")];
   const joytoggleEl = $("joytoggle");
   const mousetoggleEl = $("mousetoggle");
   const joystatusEl = $("joystatus");
@@ -410,6 +419,8 @@ create6128().then(m => {
   let joyEnabled = true;
   let mouseEnabled = false;
   let ledState = 0;
+  let tapeFileName = "";
+  let tapeTransportState = "stop";
   const heldKeys = new Set();
   const virtualKeys = new Set();
   const latchedVirtualModifiers = new Set();
@@ -974,6 +985,81 @@ create6128().then(m => {
       cartnameEl.textContent = "Select CPC 6128 Plus";
   }
 
+  function clearTapeUi() {
+    tapeFileName = "";
+    tapeTransportState = "stop";
+    tapefileEl.value = "";
+    tapeLabelEl.textContent = "CPC DATA";
+    tapeStatusEl.textContent = "NO TAPE - CLICK DECK TO LOAD";
+    tapeCounterEl.textContent = "000";
+    tapeEjectEl.disabled = true;
+    cpcTapeDeckEl.classList.remove("tape-running");
+    for (const button of tapeButtons) {
+      const record = button.dataset.tapeAction === "record";
+      button.disabled = true;
+      button.classList.remove("active");
+      if (record) button.title = "Recording is not available yet";
+    }
+  }
+
+  function updateTapeDeck() {
+    const loaded = Boolean(m._poc_tape_loaded());
+    const motor = Boolean(m._poc_tape_motor());
+    const playing = Boolean(m._poc_tape_playing());
+    const paused = Boolean(m._poc_tape_paused());
+    const ended = Boolean(m._poc_tape_ended());
+
+    cpcTapeDeckEl.classList.toggle("tape-running", playing);
+    tapeCounterEl.textContent = String(m._poc_tape_counter()).padStart(3, "0");
+    tapeEjectEl.disabled = !loaded;
+
+    for (const button of tapeButtons) {
+      const action = button.dataset.tapeAction;
+      button.disabled = action === "record" || !loaded;
+      button.classList.toggle("active",
+        (action === "play" && !paused && !ended) ||
+        (action === "pause" && tapeTransportState === "pause") ||
+        (action === "stop" && tapeTransportState === "stop" && paused));
+    }
+
+    if (!loaded) {
+      tapeStatusEl.textContent = "NO TAPE - CLICK DECK TO LOAD";
+    } else if (ended) {
+      tapeStatusEl.textContent = "END OF TAPE";
+    } else if (playing) {
+      tapeStatusEl.textContent = "PLAYING - " + tapeFileName;
+    } else if (!paused && !motor) {
+      tapeStatusEl.textContent = "PLAY ARMED - CPC MOTOR OFF";
+    } else if (tapeTransportState === "pause") {
+      tapeStatusEl.textContent = "PAUSED - " + tapeFileName;
+    } else {
+      tapeStatusEl.textContent = "STOPPED - " + tapeFileName;
+    }
+  }
+
+  async function loadTapeFile(file) {
+    if (!file) return;
+    const path = "/tape.cdt";
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      m.FS.writeFile(path, data);
+      if (m.ccall("poc_tape_load", "number", ["string"], [path]) !== 0)
+        throw new Error("unsupported or damaged CDT image");
+      tapeFileName = file.name;
+      tapeTransportState = "stop";
+      tapeLabelEl.textContent = file.name.replace(/\.cdt$/i, "");
+      setStatus("Tape: " + file.name + " - press PLAY, then run the CPC loader");
+      showToast("CDT loaded into cassette deck");
+      updateTapeDeck();
+    } catch (error) {
+      setStatus("Tape load failed: " + error.message);
+      showToast("Could not load " + file.name);
+    } finally {
+      tapefileEl.value = "";
+      try { m.FS.unlink(path); } catch (_) { /* The tape decoder owns its copy. */ }
+    }
+  }
+
   function clearDiskUi() {
     disknameEl.textContent = "No disk loaded";
     diskEjectEl.disabled = true;
@@ -1001,6 +1087,7 @@ create6128().then(m => {
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
     clearDiskUi();
+    clearTapeUi();
     snapshotnameEl.textContent = "Machine state";
     createMlDapSession();
     resetMlUi();
@@ -1017,6 +1104,40 @@ create6128().then(m => {
       updateCartUi();
       showToast(model === 1 ? "CPC 6128 Plus selected" : "CPC 6128 selected");
     }
+  });
+
+  const memorySizes = [128, 256, 512, 1024];
+  function setMemorySlider(memoryKb) {
+    let index = memorySizes.indexOf(memoryKb);
+    if (index < 0) index = 0;
+    const label = memorySizes[index] === 1024 ? "1 MB" : memorySizes[index] + " KB";
+    memoryEl.value = String(index);
+    memoryEl.setAttribute("aria-valuetext", index === 0 ? label + " (Original)" : label);
+    memoryValueEl.textContent = label;
+  }
+
+  memoryEl.addEventListener("input", () => {
+    setMemorySlider(memorySizes[Number(memoryEl.value)]);
+  });
+
+  memoryEl.addEventListener("change", () => {
+    const memoryKb = memorySizes[Number(memoryEl.value)];
+    if (m._poc_set_memory_kb(memoryKb) !== 0) {
+      setMemorySlider(m._poc_memory_kb());
+      setStatus("Unsupported memory size");
+      return;
+    }
+    if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+    releaseAllJoy();
+    m._poc_set_mouse(mouseEnabled ? 1 : 0);
+    mlDap.sync();
+    drainMlDapEvents();
+    setMlMessage("Memory changed; breakpoints and write watches remain armed.");
+    updateMlState(true);
+    const memoryLabel = memoryKb === 1024 ? "1 MB" : memoryKb + " KB";
+    setStatus("Memory set to " + memoryLabel);
+    showToast(memoryLabel + " RAM selected");
+    canvas.focus();
   });
 
   resetEl.addEventListener("click", () => {
@@ -1087,6 +1208,9 @@ create6128().then(m => {
       if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
       releaseAllJoy();
       m._poc_set_mouse(mouseEnabled ? 1 : 0);
+      const snapshotMemoryKb = m._poc_memory_kb();
+      if ([128, 256, 512, 1024].includes(snapshotMemoryKb))
+        setMemorySlider(snapshotMemoryKb);
       snapshotnameEl.textContent = file.name;
       const breakpointCount = adoptCoreMlBreakpoints();
       mlDap.sync();
@@ -1151,7 +1275,49 @@ create6128().then(m => {
     loadSnapshotFile(snapshotfileEl.files[0]);
   });
   snapshotSaveEl.addEventListener("click", saveSnapshotFile);
+  tapeDoorEl.addEventListener("click", () => tapefileEl.click());
+  tapefileEl.addEventListener("change", () => loadTapeFile(tapefileEl.files[0]));
+  tapeEjectEl.addEventListener("click", () => {
+    m._poc_tape_eject();
+    clearTapeUi();
+    setStatus("Cassette ejected");
+    showToast("Tape ejected");
+  });
+  for (const button of tapeButtons) {
+    button.addEventListener("click", () => {
+      const action = button.dataset.tapeAction;
+      if (!m._poc_tape_loaded() || action === "record") return;
+      if (action === "play") {
+        startAudio();
+        if (m._poc_tape_play() !== 0) {
+          showToast("Rewind the tape before playing again");
+          return;
+        }
+        tapeTransportState = "play";
+      } else if (action === "rewind") {
+        m._poc_tape_rewind();
+        tapeTransportState = "stop";
+      } else if (action === "forward") {
+        m._poc_tape_next();
+        tapeTransportState = "stop";
+      } else if (action === "stop") {
+        m._poc_tape_stop();
+        tapeTransportState = "stop";
+      } else if (action === "pause") {
+        if (tapeTransportState === "pause") {
+          startAudio();
+          m._poc_tape_play();
+          tapeTransportState = "play";
+        } else {
+          m._poc_tape_stop();
+          tapeTransportState = "pause";
+        }
+      }
+      updateTapeDeck();
+    });
+  }
   updateCartUi();
+  clearTapeUi();
 
   async function fetchServerMedia(url, kind) {
     const name = JS1984Media.filenameFromUrl(url, kind);
@@ -1471,7 +1637,8 @@ create6128().then(m => {
     if (lowerName.endsWith(".dsk")) loadDiskFile(file);
     else if (lowerName.endsWith(".cpr")) loadCartridgeFile(file);
     else if (lowerName.endsWith(".sna")) loadSnapshotFile(file);
-    else showToast("Use a DSK disk, CPR cartridge, or SNA snapshot");
+    else if (lowerName.endsWith(".cdt")) loadTapeFile(file);
+    else showToast("Use a DSK, CDT, CPR, or SNA file");
   });
 
   function updateLed() {
@@ -1490,6 +1657,7 @@ create6128().then(m => {
       scheduleAudio();
       pollGamepad();
       updateLed();
+      updateTapeDeck();
     }
 
     pollMlWriteEvents();

@@ -44,6 +44,37 @@ async function main() {
   assert.match(module.ccall("poc_build_version", "string", [], []), /^\d+\.\d+\.\d+$/);
   assert.match(module.ccall("poc_build_commit", "string", [], []), /^(?:[0-9a-f]+|unknown)$/);
   assert.strictEqual(module._poc_init(), 0);
+  assert.strictEqual(module._poc_memory_kb(), 128);
+  assert.strictEqual(module._poc_set_memory_kb(1024), 0);
+  assert.strictEqual(module._poc_memory_kb(), 1024);
+  assert.strictEqual(module._poc_set_memory_kb(64), -1);
+  assert.strictEqual(module._poc_memory_kb(), 1024);
+  assert.strictEqual(module._poc_init_model(1, 0), 0);
+  assert.strictEqual(module._poc_memory_kb(), 1024);
+  assert.strictEqual(module._poc_init_model(0, 0), 0);
+  assert.strictEqual(module._poc_memory_kb(), 1024);
+  assert.strictEqual(module._poc_set_memory_kb(128), 0);
+
+  const tapeImage = Uint8Array.from([
+    0x5a, 0x58, 0x54, 0x61, 0x70, 0x65, 0x21, 0x1a, 1, 20,
+    0x12, 0xe8, 0x03, 0xa0, 0x0f,
+  ]);
+  module.FS.writeFile("/transport.cdt", tapeImage);
+  assert.strictEqual(module.ccall("poc_tape_load", "number", ["string"],
+                                  ["/transport.cdt"]), 0);
+  assert.strictEqual(module._poc_tape_loaded(), 1);
+  assert.strictEqual(module._poc_tape_paused(), 1);
+  assert.strictEqual(module._poc_tape_counter(), 0);
+  assert.strictEqual(module._poc_tape_play(), 0);
+  assert.strictEqual(module._poc_tape_paused(), 0);
+  module._poc_tape_stop();
+  assert.strictEqual(module._poc_tape_paused(), 1);
+  module._poc_tape_next();
+  assert.strictEqual(module._poc_tape_ended(), 1);
+  module._poc_tape_rewind();
+  assert.strictEqual(module._poc_tape_ended(), 0);
+  module._poc_tape_eject();
+  assert.strictEqual(module._poc_tape_loaded(), 0);
 
   const session = new DAP.Session({
     isPaused: () => Boolean(module._poc_debug_is_paused()),

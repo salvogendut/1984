@@ -1083,6 +1083,7 @@ void cpc_reset(CPC *cpc) {
     cpc->audio_frame_pos = 0;
     cpc->audio_sample_cycles = 0;
     real_tape_reset(&cpc->real_tape);
+    tape_set_motor(&cpc->tape, false);
 }
 
 void cpc_destroy(CPC *cpc) {
@@ -1424,7 +1425,7 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
             ppi_set_tape_level(&cpc->ppi,
                                real_tape_input_level(&cpc->real_tape));
         bool cdt_audio = virtual_tape_connected &&
-                         cpc->tape.present && cpc->tape.motor;
+                         tape_playing(&cpc->tape);
         if (cdt_audio &&
             real_tape_mode_has_output(cpc->real_tape.mode) &&
             cpc->real_tape.output_source ==
