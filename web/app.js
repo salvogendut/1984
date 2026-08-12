@@ -368,6 +368,12 @@ try {
 setDisplayColorMode(savedDisplayMode === "green", false);
 
 create6128().then(m => {
+  const buildVersion = m.ccall("poc_build_version", "string", [], []);
+  const buildCommit = m.ccall("poc_build_commit", "string", [], []);
+  const buildIdentityEl = $("buildIdentity");
+  buildIdentityEl.textContent = `Version ${buildVersion} / ${buildCommit}`;
+  buildIdentityEl.title = `1984 version ${buildVersion}, commit ${buildCommit}`;
+
   if (m._poc_init() !== 0) {
     setStatus("Emulator initialization failed");
     return;

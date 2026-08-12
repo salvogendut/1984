@@ -36,7 +36,18 @@ static void overlay_file_callback(void *userdata, const char * const *files, int
 #define DISK_AUTOSTART_VISIBLE_ROWS 16
 #define REAL_TAPE_ROWS 10
 
-#define ABOUT_TEXT "1984 Amstrad CPC emulator (c) 2026 salvogendut"
+#define ABOUT_TITLE     "1984 Amstrad CPC emulator"
+#define ABOUT_COPYRIGHT "(c) 2026 salvogendut"
+#define ABOUT_BUILD     "Version " PACKAGE_VERSION " (commit " PROG_GIT_COMMIT ")"
+
+static const char *const about_lines[] = {
+    ABOUT_TITLE,
+    ABOUT_COPYRIGHT,
+    ABOUT_BUILD
+};
+
+#define ABOUT_LINE_COUNT ((int)(sizeof(about_lines) / sizeof(about_lines[0])))
+#define ABOUT_LINE_GAP 4
 
 typedef struct {
     float x, y, w, h;               /* outer dialog box */
@@ -46,15 +57,22 @@ typedef struct {
 /* About dialog geometry in logical pixels. Shared by the renderer and the
  * mouse hit-test so the OK button is detected exactly where it is drawn. */
 static void about_rects(float lw, float lh, AboutRects *a) {
-    float tw = strlen(ABOUT_TEXT) * FONT_W;
+    float tw = 0;
+    for (int i = 0; i < ABOUT_LINE_COUNT; i++) {
+        float line_w = strlen(about_lines[i]) * FONT_W;
+        if (line_w > tw)
+            tw = line_w;
+    }
+    float text_h = ABOUT_LINE_COUNT * FONT_H +
+                   (ABOUT_LINE_COUNT - 1) * ABOUT_LINE_GAP;
     a->w = tw + 24;
-    a->h = FONT_H + 6 + (FONT_H + 8) + 16;
+    a->h = 8 + text_h + 8 + (FONT_H + 8) + 8;
     a->x = (lw - a->w) / 2.0f;
     a->y = (lh - a->h) / 2.0f;
     a->ok_w = 2 * FONT_W + 16;
     a->ok_h = FONT_H + 8;
     a->ok_x = a->x + (a->w - a->ok_w) / 2.0f;
-    a->ok_y = a->y + 8 + FONT_H + 6;
+    a->ok_y = a->y + 8 + text_h + 8;
 }
 
 typedef struct OverlayBrowserEntry {
@@ -71,7 +89,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 22 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 21 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
@@ -1330,11 +1348,6 @@ static void item_text(const Overlay *ov, int row,
             } else {
                 snprintf(val, vsz, "Type %d", ov->cfg->crtc_type);
             }
-            break;
-        case 21:
-            snprintf(lbl, lsz, "Version");
-            snprintf(val, vsz, "%s (commit %s)", PACKAGE_VERSION, PROG_GIT_COMMIT);
-            *readonly = true;
             break;
         }
         break;
@@ -3991,9 +4004,13 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         fill_rect(r, a.x, a.y, a.w, a.h, 25, 25, 60, 255);
         draw_rect_outline(r, a.x, a.y, a.w, a.h, 70, 90, 200);
 
-        int tw = strlen(ABOUT_TEXT) * FONT_W;
-        draw_text(r, a.x + (a.w - tw) / 2.0f, a.y + 8,
-                  ABOUT_TEXT, 255, 255, 255);
+        for (int i = 0; i < ABOUT_LINE_COUNT; i++) {
+            int tw = strlen(about_lines[i]) * FONT_W;
+            Uint8 shade = i == 0 ? 255 : (i == 2 ? 220 : 190);
+            draw_text(r, a.x + (a.w - tw) / 2.0f,
+                      a.y + 8 + i * (FONT_H + ABOUT_LINE_GAP),
+                      about_lines[i], shade, shade, shade);
+        }
 
         /* OK button — closes the dialog when clicked (or Enter/Esc). */
         fill_rect(r, a.ok_x, a.ok_y, a.ok_w, a.ok_h, 50, 60, 120, 255);

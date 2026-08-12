@@ -119,6 +119,7 @@ html[data-theme="retro-crt"] .screen-brand {
   width: 82px;
   filter: drop-shadow(0 4px 3px rgba(0,0,0,.65));
 }
+html[data-theme="retro-crt"] .screen-build-info { left: 37px; color: #c3a661; }
 html[data-theme="retro-crt"] .screen-stage::before,
 html[data-theme="retro-crt"] .screen-stage::after {
   flex: 0 0 96px;
@@ -256,8 +257,10 @@ html[data-theme="retro-crt"] .color-mode-key small { color: #514b3e; }
 
 @media (max-width: 1180px) {
   html[data-theme="retro-crt"] .screen-brand { left: 24px; width: 60px; }
+  html[data-theme="retro-crt"] .screen-build-info { left: 24px; }
 }
 
 @media (max-width: 560px) {
   html[data-theme="retro-crt"] .screen-brand { left: 14px; width: 48px; }
+  html[data-theme="retro-crt"] .screen-build-info { left: 14px; }
 }

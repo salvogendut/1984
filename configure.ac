@@ -87,7 +87,7 @@ AS_IF([test -n "$FFMPEG"],
        AC_MSG_NOTICE([video capture: WebM and GIF optimization enabled via $FFMPEG])],
       [AC_MSG_NOTICE([video capture: WebM and GIF optimization disabled (no ffmpeg found)])])
 
-# Short git commit shown in the Advanced overlay alongside PACKAGE_VERSION.
+# Short git commit shown in the About dialog alongside PACKAGE_VERSION.
 # Resolved at configure time so non-git source trees (dist tarballs, flatpak
 # tarball builds) still get a sensible "unknown" fallback.
 PROG_GIT_COMMIT=`git -C "$srcdir" rev-parse --short HEAD 2>/dev/null || echo unknown`

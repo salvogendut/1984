@@ -13,7 +13,10 @@
 EMCC      = emcc
 BUILD_DIR = build
 DIST_DIR  = dist
-CFLAGS    = -O2 -std=c11 -Wall -Wextra -I../src -Icompat -I.
+BUILD_VERSION ?= $(shell awk -F'[][]' '/^AC_INIT/ { print $$4; exit }' ../configure.ac)
+BUILD_COMMIT  ?= $(shell git -C .. rev-parse --short HEAD 2>/dev/null || echo unknown)
+CFLAGS    = -O2 -std=c11 -Wall -Wextra -I../src -Icompat -I. \
+	-DPACKAGE_VERSION=\"$(BUILD_VERSION)\" -DPROG_GIT_COMMIT=\"$(BUILD_COMMIT)\"
 
 SRCS = \
 	../src/z80.c \
@@ -75,7 +78,7 @@ test-wasm: $(WASM_ASSETS)
 $(WASM_ASSETS) &: $(OBJS) | $(DIST_DIR)
 	$(EMCC) $(CFLAGS) $(OBJS) -o $(DIST_DIR)/6128.js \
 	    -sMODULARIZE -sEXPORT_NAME=create6128 \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_load_snapshot,_poc_save_snapshot,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_load_disk,_poc_eject_disk,_poc_autorun,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_poc_debug_pause,_poc_debug_continue,_poc_debug_step_in,_poc_debug_next,_poc_debug_step_back,_poc_debug_step_out,_poc_debug_is_paused,_poc_debug_stop_reason,_poc_debug_can_step_back,_poc_debug_reg,_poc_debug_breakpoint_set,_poc_debug_breakpoint_clear,_poc_debug_breakpoint_enabled,_poc_debug_breakpoint_addr,_poc_debug_mem_read,_poc_debug_mem_write_byte,_poc_debug_disassemble,_poc_debug_watch_set,_poc_debug_watch_clear,_poc_debug_watch_serial,_poc_debug_watch_event_slot,_poc_debug_watch_event_addr,_poc_debug_watch_event_pc,_poc_debug_watch_event_old,_poc_debug_watch_event_new,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_load_snapshot,_poc_save_snapshot,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_load_disk,_poc_eject_disk,_poc_autorun,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_poc_build_version,_poc_build_commit,_poc_debug_pause,_poc_debug_continue,_poc_debug_step_in,_poc_debug_next,_poc_debug_step_back,_poc_debug_step_out,_poc_debug_is_paused,_poc_debug_stop_reason,_poc_debug_can_step_back,_poc_debug_reg,_poc_debug_breakpoint_set,_poc_debug_breakpoint_clear,_poc_debug_breakpoint_enabled,_poc_debug_breakpoint_addr,_poc_debug_mem_read,_poc_debug_mem_write_byte,_poc_debug_disassemble,_poc_debug_watch_set,_poc_debug_watch_clear,_poc_debug_watch_serial,_poc_debug_watch_event_slot,_poc_debug_watch_event_addr,_poc_debug_watch_event_pc,_poc_debug_watch_event_old,_poc_debug_watch_event_new,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \
