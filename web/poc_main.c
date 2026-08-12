@@ -604,3 +604,11 @@ EMSCRIPTEN_KEEPALIVE int poc_disk_motor(void) { return g_cpc.fdc.motor ? 1 : 0; 
 
 EMSCRIPTEN_KEEPALIVE int poc_width(void)  { return CPC_SCREEN_W; }
 EMSCRIPTEN_KEEPALIVE int poc_height(void) { return CPC_SCREEN_H; }
+
+EMSCRIPTEN_KEEPALIVE const char *poc_build_version(void) {
+    return PACKAGE_VERSION;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *poc_build_commit(void) {
+    return PROG_GIT_COMMIT;
+}

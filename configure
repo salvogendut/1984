@@ -5363,7 +5363,7 @@ printf "%s\n" "$as_me: video capture: WebM and GIF optimization disabled (no ffm
 esac
 fi
 
-# Short git commit shown in the Advanced overlay alongside PACKAGE_VERSION.
+# Short git commit shown in the About dialog alongside PACKAGE_VERSION.
 # Resolved at configure time so non-git source trees (dist tarballs, flatpak
 # tarball builds) still get a sensible "unknown" fallback.
 PROG_GIT_COMMIT=`git -C "$srcdir" rev-parse --short HEAD 2>/dev/null || echo unknown`

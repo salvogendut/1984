@@ -137,6 +137,7 @@ html[data-theme="sapporo-dark"] .screen-brand {
   box-shadow: none;
   filter: none;
 }
+html[data-theme="sapporo-dark"] .screen-build-info { color: #93a1a1; }
 html[data-theme="sapporo-dark"] .screen-frame {
   position: relative;
   padding: 16px;

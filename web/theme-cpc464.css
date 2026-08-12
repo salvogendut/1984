@@ -228,6 +228,14 @@ html[data-theme="cpc464"] .screen-brand {
   filter: drop-shadow(0 4px 4px rgba(0,0,0,.62));
 }
 
+html[data-theme="cpc464"] .screen-build-info {
+  bottom: 7px;
+  left: 38px;
+  color: #adb1a8;
+  font-size: 7px;
+  letter-spacing: .06em;
+}
+
 html[data-theme="cpc464"] .screen-frame {
   width: min(100%, calc(1024px * var(--screen-scale)));
   padding: 24px 25px 16px;
@@ -988,6 +996,7 @@ html[data-theme="cpc464"] .ml-monitor-message.error { color: #ef9b91; }
   html[data-theme="cpc464"] .screen-stage { width: 94%; }
   html[data-theme="cpc464"] .screen-stage { padding: 44px 32px 94px; }
   html[data-theme="cpc464"] .screen-brand { bottom: 17px; width: 80px; }
+  html[data-theme="cpc464"] .screen-build-info { bottom: 4px; }
   html[data-theme="cpc464"] .control-deck { grid-template-columns: .8fr 1.5fr 1.15fr; }
   html[data-theme="cpc464"] .screen-module { grid-column: 1 / -1; }
   html[data-theme="cpc464"] .cpc464-keyboard { grid-template-columns: minmax(0, 1fr) 245px; }
@@ -1018,6 +1027,7 @@ html[data-theme="cpc464"] .ml-monitor-message.error { color: #ef9b91; }
   html[data-theme="cpc464"] .screen-stage::before { top: 13px; left: 15px; font-size: 15px; }
   html[data-theme="cpc464"] .screen-stage::after { top: 15px; right: 14px; font-size: 7px; }
   html[data-theme="cpc464"] .screen-brand { bottom: 91px; left: 17px; width: 54px; }
+  html[data-theme="cpc464"] .screen-build-info { bottom: 78px; left: 17px; font-size: 6px; }
   html[data-theme="cpc464"] .display-dial-bank { right: 50%; bottom: 12px; transform: translateX(50%); }
   html[data-theme="cpc464"] .screen-frame { padding: 9px; border-radius: 8px; }
   html[data-theme="cpc464"] .screen-glass { border-width: 4px; border-radius: 6% / 5%; }

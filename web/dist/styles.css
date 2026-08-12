@@ -216,6 +216,20 @@ select {
   user-select: none;
 }
 
+.screen-build-info {
+  position: absolute;
+  z-index: 5;
+  bottom: 10px;
+  left: clamp(18px, 2.6vw, 38px);
+  color: #87908d;
+  font: 700 8px/1 ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
 .screen-frame {
   width: min(100%, calc(1024px * var(--screen-scale)));
   padding: clamp(8px, 1.2vw, 15px);
@@ -425,6 +439,7 @@ button:disabled, [aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
 @media (max-width: 1180px) {
   .screen-stage { padding-bottom: 86px; }
   .screen-brand { bottom: 12px; width: 64px; }
+  .screen-build-info { bottom: 1px; }
   .control-deck { grid-template-columns: .8fr 1.6fr 1.2fr; }
   .screen-module { grid-column: 1 / -1; border-top: 1px solid #080909; }
   .screen-module .module-heading { margin-bottom: 11px; }
@@ -457,6 +472,7 @@ button:disabled, [aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
   .activity-bank { justify-content: flex-start; }
   .screen-stage { padding: 8px 8px 142px; }
   .screen-brand { bottom: 86px; left: 14px; width: 48px; }
+  .screen-build-info { bottom: 72px; left: 14px; font-size: 7px; }
   .display-dial-bank { right: 50%; bottom: 10px; grid-template-columns: repeat(6, 41px); gap: 3px; padding-inline: 6px; transform: translateX(50%); }
   .screen-frame { padding: 6px; border-radius: 7px; }
   .screen-badge { display: none; }

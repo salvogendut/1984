@@ -41,6 +41,8 @@ async function main() {
     print: () => {},
     printErr: () => {},
   });
+  assert.match(module.ccall("poc_build_version", "string", [], []), /^\d+\.\d+\.\d+$/);
+  assert.match(module.ccall("poc_build_commit", "string", [], []), /^(?:[0-9a-f]+|unknown)$/);
   assert.strictEqual(module._poc_init(), 0);
 
   const session = new DAP.Session({
