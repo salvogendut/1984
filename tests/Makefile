@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config
+TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-snapshot
 
 .PHONY: all check clean
 
@@ -77,6 +77,14 @@ test-config: test_config.c ../src/config.c ../src/config.h ../src/real_tape.c ..
 		test_config.c ../src/config.c ../src/real_tape.c ../src/tape.c \
 		$(SDL3_LIBS) -o $@
 
+test-snapshot: test_snapshot.c ../src/snapshot.c ../src/remu.c ../src/symbols.c \
+		../src/mem.c ../src/cartridge.c ../src/gate_array.c ../src/crtc.c \
+		../src/ppi.c ../src/psg.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_snapshot.c ../src/snapshot.c ../src/remu.c ../src/symbols.c \
+		../src/mem.c ../src/cartridge.c ../src/gate_array.c ../src/crtc.c \
+		../src/ppi.c ../src/psg.c -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -94,6 +102,7 @@ check: $(TESTS)
 	./test-asic
 	./test-model
 	./test-config
+	./test-snapshot
 
 clean:
 	rm -f $(TESTS)

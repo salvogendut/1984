@@ -1094,12 +1094,62 @@ void cpc_destroy(CPC *cpc) {
     ch376_close(&cpc->ch376_b);
     tape_eject(&cpc->tape);
     real_tape_shutdown(&cpc->real_tape);
+    remu_debug_clear(&cpc->remu_debug);
     display_destroy(&cpc->display);
 }
 
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata) {
     cpc->audio_sink = sink;
     cpc->audio_sink_user = userdata;
+}
+
+int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
+                       u16 bank, CpcBreakpointSource source) {
+    if (source != CPC_BP_SOURCE_TEMPORARY) {
+        for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+            if (cpc->bp_enabled[i] && cpc->breakpoints[i] == addr &&
+                    cpc->bp_kind[i] == (u8)kind && cpc->bp_bank[i] == bank)
+                return i;
+        }
+    }
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
+        if (cpc->bp_enabled[i]) continue;
+        cpc->breakpoints[i] = addr;
+        cpc->bp_kind[i] = (u8)kind;
+        cpc->bp_bank[i] = bank;
+        cpc->bp_source[i] = (u8)source;
+        cpc->bp_enabled[i] = true;
+        return i;
+    }
+    return -1;
+}
+
+void cpc_breakpoint_clear(CPC *cpc, int slot) {
+    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS) return;
+    cpc->bp_enabled[slot] = false;
+    cpc->bp_kind[slot] = CPC_BP_ANY;
+    cpc->bp_bank[slot] = 0;
+    cpc->bp_source[slot] = CPC_BP_SOURCE_USER;
+}
+
+void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source) {
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
+        if (cpc->bp_enabled[i] && cpc->bp_source[i] == (u8)source)
+            cpc_breakpoint_clear(cpc, i);
+}
+
+bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr) {
+    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !cpc->bp_enabled[slot] ||
+            cpc->breakpoints[slot] != addr)
+        return false;
+    switch ((CpcBreakpointKind)cpc->bp_kind[slot]) {
+    case CPC_BP_RAM:
+        return mem_visible_ram_bank(&cpc->mem, addr) == cpc->bp_bank[slot];
+    case CPC_BP_ROM:
+        return mem_visible_rom_bank(&cpc->mem, addr) == cpc->bp_bank[slot];
+    default:
+        return true;
+    }
 }
 
 /* ---- Pixel rendering ----
@@ -1967,7 +2017,7 @@ int cpc_frame(CPC *cpc) {
 
         /* Breakpoint check */
         for (int b = 0; b < CPC_MAX_BREAKPOINTS; b++) {
-            if (cpc->bp_enabled[b] && cpc->cpu.pc == cpc->breakpoints[b]) {
+            if (cpc_breakpoint_matches(cpc, b, cpc->cpu.pc)) {
                 cpc->paused   = true;
                 stop_early    = true;
                 break;

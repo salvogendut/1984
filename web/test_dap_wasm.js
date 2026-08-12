@@ -12,6 +12,24 @@ function ok(session, command, args) {
   return response.body || {};
 }
 
+function chunk(id, payload) {
+  const output = new Uint8Array(8 + payload.length);
+  output.set(Buffer.from(id, "ascii"), 0);
+  new DataView(output.buffer).setUint32(4, payload.length, true);
+  output.set(payload, 8);
+  return output;
+}
+
+function concat(parts) {
+  const output = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
 async function main() {
   const dist = path.join(__dirname, "dist");
   const source = fs.readFileSync(path.join(dist, "6128.js"), "utf8");
@@ -118,6 +136,37 @@ async function main() {
   });
   assert.strictEqual(breakpoints.breakpoints[0].verified, true);
   ok(session, "setInstructionBreakpoints", { breakpoints: [] });
+
+  /* A RASM-style v3 supersnapshot stores RAM in MEMx chunks and debugger
+   * metadata in a REMU chunk. Exercise that exact path in the wasm core. */
+  assert.strictEqual(module.ccall("poc_save_snapshot", "number", ["string"],
+                                  ["/base.sna"]), 0);
+  const flat = new Uint8Array(module.FS.readFile("/base.sna"));
+  const header = flat.slice(0, 256);
+  const ramKb = header[0x6b] | (header[0x6c] << 8);
+  assert.strictEqual(ramKb % 64, 0);
+  header[0x6b] = 0;
+  header[0x6c] = 0;
+  const parts = [header];
+  for (let bank = 0; bank < ramKb / 64; bank++) {
+    const start = 256 + bank * 0x10000;
+    parts.push(chunk(`MEM${bank.toString(16).toUpperCase()}`,
+                     flat.slice(start, start + 0x10000)));
+  }
+  const snapshotPc = header[0x23] | (header[0x24] << 8);
+  const remu = new TextEncoder().encode(
+    `romlabel wasm_entry ${snapshotPc} 256;rombrk ${snapshotPc} 256;`
+  );
+  parts.push(chunk("REMU", remu));
+  module.FS.writeFile("/remu.sna", concat(parts));
+  assert.strictEqual(module.ccall("poc_load_snapshot", "number", ["string"],
+                                  ["/remu.sna"]), 0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
+  assert.strictEqual(module._poc_debug_breakpoint_addr(0), snapshotPc);
+  const labelled = module.ccall(
+    "poc_debug_disassemble", "string", ["number", "number"], [snapshotPc, 1]
+  );
+  assert.match(labelled, /wasm_entry/);
 
   console.log("DAP WebAssembly integration tests passed");
 }

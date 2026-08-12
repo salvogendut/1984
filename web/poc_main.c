@@ -25,6 +25,7 @@
 #include "mem.h"
 #include "paste.h"
 #include "snapshot.h"
+#include "symbols.h"
 #include "z80dis.h"
 
 static CPC g_cpc;
@@ -156,6 +157,7 @@ EMSCRIPTEN_KEEPALIVE void poc_audio_advance(int n) {
 EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     int rc;
     poc_cancel_paste();
+    remu_debug_clear(&g_cpc.remu_debug);
     if (model == 1) {
         rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
                       cartridge ? cartridge : "roms/system.cpr", 1);
@@ -188,7 +190,7 @@ EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
     g_debug_checkpoint_valid = false;
     g_debug_stop_reason = POC_DEBUG_RUNNING;
     if (g_debug_temp_bp_slot >= 0)
-        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
     g_debug_temp_bp_slot = -1;
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
 }
@@ -197,13 +199,13 @@ EMSCRIPTEN_KEEPALIVE int poc_load_snapshot(const char *path) {
     if (!path || !path[0])
         return -1;
     poc_cancel_paste();
+    if (g_debug_temp_bp_slot >= 0)
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
+    g_debug_temp_bp_slot = -1;
     int rc = snapshot_load(&g_cpc, path);
     if (rc != 0)
         return rc;
 
-    if (g_debug_temp_bp_slot >= 0)
-        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
-    g_debug_temp_bp_slot = -1;
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
     g_debug_checkpoint_valid = false;
     g_debug_stop_reason = POC_DEBUG_RUNNING;
@@ -228,15 +230,15 @@ EMSCRIPTEN_KEEPALIVE int poc_step(void) {
     if (g_cpc.paused) {
         if (g_debug_temp_bp_slot >= 0 &&
                 g_cpc.cpu.pc == g_debug_temp_bp_addr) {
-            g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+            cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
             g_debug_temp_bp_slot = -1;
             g_debug_stop_reason = g_debug_temp_bp_reason;
             g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
         } else {
             bool user_breakpoint = false;
             for (int slot = 0; slot < CPC_MAX_BREAKPOINTS; slot++) {
-                if (slot != g_debug_temp_bp_slot && g_cpc.bp_enabled[slot] &&
-                        g_cpc.breakpoints[slot] == g_cpc.cpu.pc) {
+                if (slot != g_debug_temp_bp_slot &&
+                        cpc_breakpoint_matches(&g_cpc, slot, g_cpc.cpu.pc)) {
                     user_breakpoint = true;
                     break;
                 }
@@ -254,7 +256,7 @@ EMSCRIPTEN_KEEPALIVE int poc_step(void) {
 
 EMSCRIPTEN_KEEPALIVE void poc_debug_pause(void) {
     if (g_debug_temp_bp_slot >= 0) {
-        g_cpc.bp_enabled[g_debug_temp_bp_slot] = false;
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
         g_debug_temp_bp_slot = -1;
         g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
     }
@@ -296,20 +298,13 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_step_back(void) {
 EMSCRIPTEN_KEEPALIVE int poc_debug_step_out(void) {
     if (!g_cpc.paused || g_debug_temp_bp_slot >= 0)
         return -1;
-    int slot = -1;
-    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-        if (!g_cpc.bp_enabled[i]) {
-            slot = i;
-            break;
-        }
-    }
-    if (slot < 0)
-        return -2;
     u16 sp = g_cpc.cpu.sp;
     u16 target = (u16)mem_read(&g_cpc.mem, sp) |
                  ((u16)mem_read(&g_cpc.mem, (u16)(sp + 1)) << 8);
-    g_cpc.breakpoints[slot] = target;
-    g_cpc.bp_enabled[slot] = true;
+    int slot = cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
+                                  CPC_BP_SOURCE_TEMPORARY);
+    if (slot < 0)
+        return -2;
     g_debug_temp_bp_slot = slot;
     g_debug_temp_bp_addr = target;
     g_debug_temp_bp_reason = POC_DEBUG_STEP_OUT;
@@ -343,21 +338,14 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_next(void) {
     int bytes = z80dis(g_debug_dis_memory, pc, mnemonic, sizeof(mnemonic));
     if (bytes <= 0) bytes = 1;
 
-    int slot = -1;
-    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-        if (!g_cpc.bp_enabled[i]) {
-            slot = i;
-            break;
-        }
-    }
+    u16 target = (u16)(pc + bytes);
+    int slot = cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
+                                  CPC_BP_SOURCE_TEMPORARY);
     if (slot < 0) {
         g_debug_checkpoint_valid = false;
         return -2;
     }
 
-    u16 target = (u16)(pc + bytes);
-    g_cpc.breakpoints[slot] = target;
-    g_cpc.bp_enabled[slot] = true;
     g_debug_temp_bp_slot = slot;
     g_debug_temp_bp_addr = target;
     g_debug_temp_bp_reason = POC_DEBUG_NEXT;
@@ -405,20 +393,14 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_set(int addr) {
                 g_cpc.breakpoints[i] == target)
             return i;
     }
-    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-        if (!g_cpc.bp_enabled[i]) {
-            g_cpc.breakpoints[i] = target;
-            g_cpc.bp_enabled[i] = true;
-            return i;
-        }
-    }
-    return -1;
+    return cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
+                              CPC_BP_SOURCE_USER);
 }
 
 EMSCRIPTEN_KEEPALIVE void poc_debug_breakpoint_clear(int slot) {
     if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS)
         return;
-    g_cpc.bp_enabled[slot] = false;
+    cpc_breakpoint_clear(&g_cpc, slot);
     if (slot == g_debug_temp_bp_slot) {
         g_debug_temp_bp_slot = -1;
         g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
@@ -459,6 +441,7 @@ EMSCRIPTEN_KEEPALIVE const char *poc_debug_disassemble(int addr, int lines) {
     g_debug_disassembly[0] = '\0';
     for (int line = 0; line < lines; line++) {
         char mnemonic[64];
+        char symbol[128];
         int bytes = z80dis(g_debug_dis_memory, pc, mnemonic,
                            sizeof(mnemonic));
         if (bytes <= 0) bytes = 1;
@@ -477,9 +460,14 @@ EMSCRIPTEN_KEEPALIVE const char *poc_debug_disassemble(int addr, int lines) {
                 return g_debug_disassembly;
             used += (size_t)written;
         }
+        remu_symbol_format(&g_cpc.remu_debug, &g_cpc.mem, pc,
+                           symbol, sizeof(symbol));
+        if (!symbol[0])
+            symbols_format(pc, g_cpc.mem.ram_bank, symbol, sizeof(symbol));
         written = snprintf(g_debug_disassembly + used,
                            sizeof(g_debug_disassembly) - used,
-                           " %s\n", mnemonic);
+                           " %s%s%s\n", mnemonic,
+                           symbol[0] ? " ; " : "", symbol);
         if (written < 0 || (size_t)written >= sizeof(g_debug_disassembly) - used)
             break;
         used += (size_t)written;

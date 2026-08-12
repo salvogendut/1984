@@ -32,6 +32,7 @@ dist_man1_MANS = 1984.1
 	src/ide.c \
 	src/fat.c \
 	src/real_tape.c \
+	src/remu.c \
 	src/ch376.c \
 	src/usifac.c \
 	src/perryfi.c \
@@ -98,6 +99,7 @@ noinst_HEADERS = \
 	src/psg.h \
 	src/rtc.h \
 	src/real_tape.h \
+	src/remu.h \
 	src/screen_text.h \
 	src/shutter_wav.h \
 	src/snapshot.h \

@@ -32,6 +32,13 @@ static SymbolMap *g_maps = NULL;
 
 bool symbols_any_loaded(void) { return g_maps != NULL; }
 
+void symbols_visit(SymbolsVisitor visitor, void *userdata) {
+    if (!visitor) return;
+    for (SymbolMap *m = g_maps; m; m = m->next)
+        for (size_t i = 0; i < m->n; i++)
+            visitor(&m->syms[i], m->mmr_match, userdata);
+}
+
 /* ---- SDCC .map parser --------------------------------------------------
  *
  * SDCC (asxxxx linker) emits lines like:

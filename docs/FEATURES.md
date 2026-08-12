@@ -39,7 +39,8 @@ See [issue-62-fuzix-notes.md](issue-62-fuzix-notes.md) and
   banking.
 - A 32-slot expansion ROM board, automatic removal of AMSDOS headers from ROM
   images, and board-tagged ROM and image profiles.
-- Amstrad SNA v1-v3 loading and v3 saving, plus an F8 monitor and disassembler
+- Amstrad SNA v1-v3 loading and v3 saving, including chunked `MEMx` memory and
+  RASM/ACE `REMU` labels and breakpoints, plus an F8 monitor and disassembler
   with breakpoints and optional SDCC symbol maps.
 
 The F9 overlay provides General, Media, Extensions, and Advanced tabs. MX4
