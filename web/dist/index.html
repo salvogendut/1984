@@ -61,6 +61,12 @@
             <option value="1">CPC 6128 Plus</option>
           </select>
         </div>
+        <div class="memory-slider">
+          <label for="memory">Memory</label>
+          <input id="memory" type="range" min="0" max="3" step="1" value="0"
+                 aria-valuetext="128 KB (Original)">
+          <output id="memoryValue" for="memory">128 KB</output>
+        </div>
       </div>
 
       <div class="display-panel" role="status" aria-live="polite">
@@ -85,7 +91,7 @@
                   aria-label="Amstrad CPC display"></canvas>
           <div class="scanline-overlay" aria-hidden="true"></div>
           <div id="screenHint" class="screen-hint">Click display for keyboard</div>
-          <div id="dropHint" class="drop-hint">Drop DSK, CPR or SNA media here</div>
+          <div id="dropHint" class="drop-hint">Drop DSK, CDT, CPR or SNA media here</div>
         </div>
         <div class="screen-badge">
           <span>RGB monitor</span>
@@ -347,21 +353,28 @@
         </div>
       </div>
 
-      <section id="tapeDeckMock" class="cpc464-tape-deck" data-future-control="tape"
-               aria-hidden="true" hidden>
+      <section id="tapeDeckMock" class="cpc464-tape-deck"
+               aria-label="CDT cassette deck" hidden>
         <div class="tape-deck-heading">
           <strong>DATA RECORDER</strong>
-          <span>FUTURE TAPE SUPPORT</span>
+          <span id="tapeDeckStatus" role="status">NO TAPE - CLICK DECK TO LOAD</span>
+          <button id="tapeEject" type="button" disabled>EJECT</button>
         </div>
-        <div class="tape-door">
-          <span class="tape-label">CPC DATA</span>
+        <button id="tapeDoor" class="tape-door" type="button"
+                aria-label="Load or replace CDT tape">
+          <span id="tapeLabel" class="tape-label">CPC DATA</span>
           <div class="tape-reels"><i></i><b></b><i></i></div>
           <span class="tape-window-line"></span>
-        </div>
-        <div class="tape-counter">000</div>
+        </button>
+        <input class="visually-hidden" type="file" id="tapefile" accept=".cdt,.CDT">
+        <div id="tapeCounter" class="tape-counter" aria-label="Tape counter">000</div>
         <div class="tape-transport">
-          <span>REC</span><span>PLAY</span><span>REW</span>
-          <span>F.FWD</span><span>STOP</span><span>PAUSE</span>
+          <button type="button" data-tape-action="record" disabled>REC</button>
+          <button type="button" data-tape-action="play">PLAY</button>
+          <button type="button" data-tape-action="rewind">REW</button>
+          <button type="button" data-tape-action="forward">F.FWD</button>
+          <button type="button" data-tape-action="stop">STOP</button>
+          <button type="button" data-tape-action="pause">PAUSE</button>
         </div>
       </section>
     </div>

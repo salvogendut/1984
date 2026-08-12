@@ -365,6 +365,8 @@ void tape_eject(Tape *t) {
     t->image = NULL;
     t->image_size = 0;
     t->present = false;
+    t->paused = false;
+    t->played_cycles = 0;
     t->stage = TAPE_END;
     t->level = TAPE_LEVEL_LOW;
 }
@@ -384,15 +386,38 @@ void tape_rewind(Tape *t) {
     t->data_bits = 0;
     t->bits_to_shift = 0;
     t->pulse_count = 0;
+    t->played_cycles = 0;
     if (!next_block(t)) t->stage = TAPE_END;
+}
+
+void tape_next_block(Tape *t) {
+    if (!t->present || t->block >= t->block_end)
+        return;
+    t->cycles_until_next = 0;
+    t->level = TAPE_LEVEL_LOW;
+    block_done(t);
 }
 
 void tape_set_motor(Tape *t, bool on) {
     t->motor = on;
 }
 
+void tape_set_paused(Tape *t, bool paused) {
+    t->paused = paused;
+}
+
+bool tape_playing(const Tape *t) {
+    return t && t->present && t->motor && !t->paused &&
+           t->stage != TAPE_END;
+}
+
+u32 tape_counter_seconds(const Tape *t) {
+    return t ? (u32)(t->played_cycles / 4000000u) : 0;
+}
+
 void tape_step(Tape *t, int cycles) {
-    if (!t->present || !t->motor || t->stage == TAPE_END) return;
+    if (!tape_playing(t)) return;
+    t->played_cycles += (u32)cycles;
     t->cycles_until_next -= cycles;
     while (t->cycles_until_next <= 0 && t->stage != TAPE_END) {
         update_level(t);

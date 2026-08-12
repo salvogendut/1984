@@ -150,6 +150,7 @@ html[data-theme="cpc464"] .receiver-top {
 }
 
 html[data-theme="cpc464"] .model-bank > label,
+html[data-theme="cpc464"] .memory-slider label,
 html[data-theme="cpc464"] .display-label,
 html[data-theme="cpc464"] .activity-bank div {
   color: #d3d3cb;
@@ -168,6 +169,10 @@ html[data-theme="cpc464"] select {
   font-weight: 800;
   text-transform: uppercase;
 }
+
+html[data-theme="cpc464"] .memory-slider output { color: #f1d37f; }
+html[data-theme="cpc464"] .memory-slider input[type="range"]::-webkit-slider-thumb { background: #e8b150; }
+html[data-theme="cpc464"] .memory-slider input[type="range"]::-moz-range-thumb { background: #e8b150; }
 
 html[data-theme="cpc464"] .display-panel {
   border: 2px solid #151715;
@@ -211,7 +216,7 @@ html[data-theme="cpc464"] .screen-stage::after {
   position: absolute;
   top: 17px;
   right: 43px;
-  content: "GT65  COLOUR MONITOR";
+  content: "COLOR MONITOR";
   color: #b6b8b0;
   font: 800 10px/1 Arial, Helvetica, sans-serif;
   letter-spacing: .2em;
@@ -568,28 +573,55 @@ html[data-theme="cpc464"] .tape-deck-heading {
 }
 
 html[data-theme="cpc464"] .tape-deck-heading span {
+  overflow: hidden;
+  flex: 1;
+  margin-left: 10px;
   color: #777b74;
   font-size: 7px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme="cpc464"] .tape-deck-heading button {
+  margin: -4px 0 -3px 8px;
+  padding: 3px 6px;
+  border: 1px solid #080908;
+  border-radius: 2px;
+  color: #b8bbb3;
+  background: #303330;
+  cursor: pointer;
+  font: 800 6px/1 Arial, Helvetica, sans-serif;
 }
 
 html[data-theme="cpc464"] .tape-door {
   position: relative;
   grid-column: 1 / -1;
   height: 92px;
+  width: 100%;
+  padding: 0;
   overflow: hidden;
   border: 3px solid #080908;
   border-radius: 4px;
   background: linear-gradient(155deg, #0b0c0b, #242624 58%, #121412);
   box-shadow: inset 0 0 13px #000, 0 1px #4a4d48;
+  cursor: pointer;
 }
+
+html[data-theme="cpc464"] .tape-door:hover { filter: brightness(1.08); }
 
 html[data-theme="cpc464"] .tape-label {
   position: absolute;
   top: 10px;
   left: 50%;
+  overflow: hidden;
+  width: calc(100% - 28px);
   color: #b0b3ab;
   font: 800 8px/1 Arial, Helvetica, sans-serif;
   letter-spacing: .15em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transform: translateX(-50%);
 }
 
@@ -609,6 +641,14 @@ html[data-theme="cpc464"] .tape-reels i {
   border: 7px dotted #777b73;
   border-radius: 50%;
   box-shadow: 0 0 0 2px #111311;
+}
+
+html[data-theme="cpc464"] .cpc464-tape-deck.tape-running .tape-reels i:first-child {
+  animation: tape-reel-spin .72s linear infinite;
+}
+
+html[data-theme="cpc464"] .cpc464-tape-deck.tape-running .tape-reels i:last-child {
+  animation: tape-reel-spin-reverse .72s linear infinite;
 }
 
 html[data-theme="cpc464"] .tape-reels b { width: 20px; height: 8px; background: #8d9088; clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); }
@@ -638,7 +678,7 @@ html[data-theme="cpc464"] .tape-transport {
   gap: 4px;
 }
 
-html[data-theme="cpc464"] .tape-transport span {
+html[data-theme="cpc464"] .tape-transport button {
   display: grid;
   min-height: 29px;
   padding: 3px;
@@ -648,10 +688,27 @@ html[data-theme="cpc464"] .tape-transport span {
   color: #b8bbb3;
   background: linear-gradient(#464946, #292c29 58%, #202220 59%);
   box-shadow: 0 3px #080908;
+  cursor: pointer;
   font: 800 6px/1 Arial, Helvetica, sans-serif;
 }
 
-html[data-theme="cpc464"] .tape-transport span:first-child { color: #f2d4d0; background: linear-gradient(#a54a42, #692f2a); }
+html[data-theme="cpc464"] .tape-transport button:first-child { color: #f2d4d0; background: linear-gradient(#a54a42, #692f2a); }
+html[data-theme="cpc464"] .tape-transport button:not(:disabled):active,
+html[data-theme="cpc464"] .tape-transport button.active {
+  transform: translateY(2px);
+  color: #fff4ca;
+  background: linear-gradient(#686c66, #3c403b 58%, #30332f 59%);
+  box-shadow: 0 1px #080908, inset 0 0 7px rgba(214,155,54,.35);
+}
+
+@keyframes tape-reel-spin { to { transform: rotate(360deg); } }
+@keyframes tape-reel-spin-reverse { to { transform: rotate(-360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="cpc464"] .cpc464-tape-deck.tape-running .tape-reels i {
+    animation: none;
+  }
+}
 
 html[data-theme="cpc464"] .receiver-footer {
   padding: 12px 26px 15px;

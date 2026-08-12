@@ -151,8 +151,8 @@ label.small-key:focus-within {
   box-shadow: inset 0 -1px rgba(255,255,255,.06);
 }
 
-.model-bank { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
-.model-bank > label, .display-label { color: #a8aaa5; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .17em; text-transform: uppercase; }
+.model-bank { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px; row-gap: 5px; }
+.model-bank > label, .memory-slider label, .display-label { color: #a8aaa5; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .17em; text-transform: uppercase; }
 .select-shell { position: relative; }
 .select-shell::after { position: absolute; top: 50%; right: 11px; content: ""; width: 0; height: 0; border: 4px solid transparent; border-top-color: var(--amber); transform: translateY(-15%); pointer-events: none; }
 select {
@@ -166,6 +166,61 @@ select {
   background: linear-gradient(#161a19, #080a0a);
   box-shadow: inset 0 1px 5px #000, 0 1px rgba(255,255,255,.08);
   font: 600 12px/1 ui-monospace, monospace;
+}
+
+.memory-slider {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(54px, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+  min-height: 10px;
+}
+.memory-slider label { font-size: 7px; }
+.memory-slider output {
+  color: var(--amber);
+  font: 700 8px/1 ui-monospace, monospace;
+  text-align: right;
+  white-space: nowrap;
+}
+.memory-slider input[type="range"] {
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.memory-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border: 0;
+  background: #080909;
+  box-shadow: 0 1px rgba(255,255,255,.14);
+}
+.memory-slider input[type="range"]::-webkit-slider-thumb {
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
+  border: 1px solid #080909;
+  border-radius: 1px;
+  appearance: none;
+  background: var(--amber);
+  box-shadow: 0 0 4px rgba(255,183,67,.45);
+}
+.memory-slider input[type="range"]::-moz-range-track {
+  height: 2px;
+  border: 0;
+  background: #080909;
+  box-shadow: 0 1px rgba(255,255,255,.14);
+}
+.memory-slider input[type="range"]::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: 1px solid #080909;
+  border-radius: 1px;
+  background: var(--amber);
+  box-shadow: 0 0 4px rgba(255,183,67,.45);
 }
 
 .display-panel {
