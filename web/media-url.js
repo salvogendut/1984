@@ -27,13 +27,17 @@
 
   function parseStartupMedia(search, baseUrl) {
     const params = new URLSearchParams(search || '');
+    /* `disk` remains a compatibility alias for links published before drive B
+     * support. The canonical parameter is now `diska`. */
+    const diskAParameter = params.has('diska') ? 'diska' : 'disk';
     const media = {
-      disk: resolveHttpUrl(params.get('disk'), baseUrl, 'disk'),
+      diskA: resolveHttpUrl(params.get(diskAParameter), baseUrl, diskAParameter),
+      diskB: resolveHttpUrl(params.get('diskb'), baseUrl, 'diskb'),
       cartridge: resolveHttpUrl(params.get('cartridge'), baseUrl, 'cartridge'),
       autorun: validateAutorun(params.get('autorun')),
     };
-    if (media.autorun && !media.disk)
-      throw new Error('autorun requires a disk URL');
+    if (media.autorun && !media.diskA)
+      throw new Error('autorun requires a diska URL');
     return media;
   }
 

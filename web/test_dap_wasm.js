@@ -68,6 +68,27 @@ async function main() {
   assert.strictEqual(module._poc_memory_kb(), 1024);
   assert.strictEqual(module._poc_set_memory_kb(128), 0);
 
+  const blankDisk = new Uint8Array(256);
+  blankDisk.set(Buffer.from("MV - CPC", "ascii"));
+  module.FS.writeFile("/drive-a.dsk", blankDisk);
+  module.FS.writeFile("/drive-b.dsk", blankDisk);
+  assert.strictEqual(module.ccall(
+    "poc_load_disk", "number", ["number", "string"], [0, "/drive-a.dsk"]
+  ), 0);
+  assert.strictEqual(module.ccall(
+    "poc_load_disk", "number", ["number", "string"], [1, "/drive-b.dsk"]
+  ), 0);
+  assert.strictEqual(module._poc_disk_inserted(0), 1);
+  assert.strictEqual(module._poc_disk_inserted(1), 1);
+  assert.strictEqual(module._poc_eject_disk(1), 0);
+  assert.strictEqual(module._poc_disk_inserted(0), 1);
+  assert.strictEqual(module._poc_disk_inserted(1), 0);
+  assert.strictEqual(module._poc_eject_disk(2), -1);
+  assert.strictEqual(module.ccall(
+    "poc_load_disk", "number", ["number", "string"], [2, "/drive-b.dsk"]
+  ), -1);
+  assert.strictEqual(module._poc_eject_disk(0), 0);
+
   const tapeImage = Uint8Array.from([
     0x5a, 0x58, 0x54, 0x61, 0x70, 0x65, 0x21, 0x1a, 1, 20,
     0x12, 0xe8, 0x03, 0xa0, 0x0f,

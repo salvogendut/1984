@@ -156,10 +156,10 @@ mode submits the PDF to the host's default CUPS printer.
 
 - **Javascript 1984** is the static WebAssembly edition. It can be used at
   <https://salvogendut.github.io/chimeric/js1984/> or self-hosted from
-  `web/dist`. It provides CPC 6128 and 6128 Plus, local and server-hosted DSK
-  and CPR media, SNA loading and downloading, Web Audio, keyboard, gamepad,
-  AMX mouse, CRT controls, themes, and a DAP-based ML monitor. Guest media
-  changes remain in browser memory.
+  `web/dist`. It provides CPC 6128 and 6128 Plus, independent drives A and B
+  with local or server-hosted DSK media, CPR media, SNA loading and
+  downloading, Web Audio, keyboard, gamepad, AMX mouse, CRT controls, themes,
+  and a DAP-based ML monitor. Guest media changes remain in browser memory.
 - **Web GUI** mirrors the CPC running in the native SDL application. It streams
   video and browser-started stereo audio and accepts keyboard, mouse, touch
   joystick, paste, reset, and DSK uploads. Enable it under Advanced or with

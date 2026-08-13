@@ -5,7 +5,7 @@
  *   - poc_step():     run one emulated frame (monitor completes one frame)
  *   - poc_pixels():   pointer to the 768x272 framebuffer (u32 0x00RRGGBB)
  *   - poc_key():      SDL_Scancode key down/up
- *   - poc_load_disk(): mount a .dsk into drive A from the virtual FS
+ *   - poc_load_disk(): mount a .dsk into drive A or B from the virtual FS
  *   - poc_*_snapshot(): load or save an SNA through the virtual FS
  *   - poc_autorun():  queue RUN"file" after a frame-counted boot delay
  *   - poc_mouse_*():  browser pointer input through the AMX adapter
@@ -566,15 +566,25 @@ EMSCRIPTEN_KEEPALIVE void poc_key(int scancode, int pressed) {
     kbd_sdl_key(&g_cpc.kbd, (SDL_Scancode)scancode, pressed != 0);
 }
 
-EMSCRIPTEN_KEEPALIVE int poc_load_disk(const char *path) {
-    disk_eject(&g_cpc.drive[0]);
-    if (disk_load(&g_cpc.drive[0], path) != 0)
+static bool poc_valid_drive(int drive) { return drive == 0 || drive == 1; }
+
+EMSCRIPTEN_KEEPALIVE int poc_load_disk(int drive, const char *path) {
+    if (!poc_valid_drive(drive) || !path)
+        return -1;
+    if (disk_load(&g_cpc.drive[drive], path) != 0)
         return -1;
     return 0;
 }
 
-EMSCRIPTEN_KEEPALIVE void poc_eject_disk(void) {
-    disk_eject(&g_cpc.drive[0]);
+EMSCRIPTEN_KEEPALIVE int poc_eject_disk(int drive) {
+    if (!poc_valid_drive(drive))
+        return -1;
+    disk_eject(&g_cpc.drive[drive]);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_disk_inserted(int drive) {
+    return poc_valid_drive(drive) && g_cpc.drive[drive].inserted ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_tape_load(const char *path) {
@@ -692,8 +702,13 @@ EMSCRIPTEN_KEEPALIVE void poc_mouse_button(int button, int pressed) {
         amx_button(&g_cpc.amx, &g_cpc.kbd, button, pressed != 0);
 }
 
-/* Disk activity: the FDC motor spins while a floppy is being accessed. */
-EMSCRIPTEN_KEEPALIVE int poc_disk_motor(void) { return g_cpc.fdc.motor ? 1 : 0; }
+/* The CPC motor signal is shared. Attribute it to the drive selected by the
+ * current or most recently completed FDC command for the front-panel LEDs. */
+EMSCRIPTEN_KEEPALIVE int poc_disk_motor(int drive) {
+    if (!poc_valid_drive(drive) || !g_cpc.fdc.motor)
+        return 0;
+    return (g_cpc.fdc.cmd[1] & 0x01) == drive ? 1 : 0;
+}
 
 EMSCRIPTEN_KEEPALIVE int poc_width(void)  { return CPC_SCREEN_W; }
 EMSCRIPTEN_KEEPALIVE int poc_height(void) { return CPC_SCREEN_H; }

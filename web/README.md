@@ -10,18 +10,19 @@ process runs on the server after the files have been published.
 
 Open **[Javascript 1984](https://salvogendut.github.io/chimeric/js1984/)** to
 run it directly. No download or installation is required. Click the CPC
-display to give it keyboard focus, then use the Media Deck to select a local
-DSK, CPR, or SNA file. Local files and guest changes stay in browser memory and
-are not uploaded by the application.
+display to give it keyboard focus, then use the Media Deck to select local DSK
+images independently for drives A and B, or load a CPR or SNA file. Local files
+and guest changes stay in browser memory and are not uploaded by the
+application.
 
 ## Current capabilities
 
 - CPC 6128 and CPC 6128 Plus machines using the bundled firmware and system
   cartridge.
-- Local DSK loading in drive A, CPR cartridge loading on the Plus model, and
-  SNA v1-v3 snapshot loading with v3 snapshot downloads, including chunked
-  RASM supersnapshots, embedded ROMs, and REMU labels, comments, and
-  breakpoints.
+- Independent local DSK loading in drives A and B, CPR cartridge loading on
+  the Plus model, and SNA v1-v3 snapshot loading with v3 snapshot downloads,
+  including chunked RASM supersnapshots, embedded ROMs, and REMU labels,
+  comments, and breakpoints.
 - Server-hosted DSK and CPR media selected through URL parameters.
 - CPC keyboard input from the physical keyboard or the collapsible on-screen
   keyboard, including latched Shift, Ctrl, and Copy modifiers.
@@ -80,12 +81,14 @@ gamepad. Whether a device is available depends on the browser and its sandbox
 permissions. Enable **Mouse** and click the display to capture the pointer;
 press Escape to release browser pointer lock.
 
-The media deck loads local DSK, CPR, and SNA files using the browser file
-chooser. **Save SNA** downloads the current machine state as an Amstrad SNA v3
-file. Reset, fullscreen, fit-to-window, pixel filtering, display size, and
-colour mode are available from the front panel. The six controls under the
-display adjust scanline visibility, brightness, contrast, and individual red,
-green, and blue gain. Their values are retained in browser local storage.
+The media deck has separate local DSK file choosers and eject controls for
+drives A and B, plus CPR and SNA file controls. Dropping a DSK on the display
+loads it into drive A. **Save SNA** downloads the current machine state as an
+Amstrad SNA v3 file. Reset, fullscreen, fit-to-window, pixel filtering,
+display size, and colour mode are available from the front panel. The six
+controls under the display adjust scanline visibility, brightness, contrast,
+and individual red, green, and blue gain. Their values are retained in browser
+local storage.
 
 ## ML Monitor
 
@@ -157,19 +160,29 @@ in browser local storage; a URL parameter overrides it for that page load.
 
 ## Server-hosted media
 
-Media URLs are resolved relative to the page URL. A disk can be mounted in
-drive A at startup:
+Media URLs are resolved relative to the page URL. Use `diska` or `diskb` to
+mount a disk in either drive at startup:
 
 ```text
-http://localhost:8080/?disk=media/thisdisk.dsk
+http://localhost:8080/?diska=media/system.dsk
+http://localhost:8080/?diskb=media/data.dsk
 ```
 
-Add `autorun` to reset the CPC after mounting and inject `RUN"filename"` after
-the same 42-frame boot delay used by native 1984:
+Both drives can be populated by one URL:
 
 ```text
-http://localhost:8080/?disk=media/thisdisk.dsk&autorun=disc.bas
+http://localhost:8080/?diska=media/system.dsk&diskb=media/data.dsk
 ```
+
+Add `autorun` alongside `diska` to reset the CPC after mounting both images and
+inject `RUN"filename"` after the same 42-frame boot delay used by native 1984:
+
+```text
+http://localhost:8080/?diska=media/system.dsk&diskb=media/data.dsk&autorun=disc.bas
+```
+
+The former `disk` parameter remains accepted as a compatibility alias for
+`diska`, but new links should use the drive-specific spelling.
 
 A CPR cartridge URL starts the CPC 6128 Plus model:
 

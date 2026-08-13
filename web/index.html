@@ -76,6 +76,7 @@
 
       <div class="activity-bank" aria-label="Activity indicators">
         <div><i id="ledA" class="led led-red"></i><span>Drive A</span></div>
+        <div><i id="ledB" class="led led-red"></i><span>Drive B</span></div>
         <div><i id="ledInput" class="led led-amber"></i><span>Input</span></div>
         <div><i id="ledAudio" class="led led-green"></i><span>Audio</span></div>
       </div>
@@ -91,7 +92,7 @@
                   aria-label="Amstrad CPC display"></canvas>
           <div class="scanline-overlay" aria-hidden="true"></div>
           <div id="screenHint" class="screen-hint">Click display for keyboard</div>
-          <div id="dropHint" class="drop-hint">Drop DSK, CDT, CPR or SNA media here</div>
+          <div id="dropHint" class="drop-hint">Drop DSK to Drive A, or CDT, CPR or SNA media here</div>
         </div>
         <div class="screen-badge">
           <span>RGB monitor</span>
@@ -172,19 +173,34 @@
           <small>Virtual transport</small>
         </div>
         <div class="media-slots">
-          <article id="diskSlot" class="media-slot">
+          <article id="diskASlot" class="media-slot">
             <div class="cassette-window" aria-hidden="true">
               <i></i><span>DSK</span><i></i>
             </div>
             <div class="media-copy">
               <strong>Drive A</strong>
-              <span id="diskname">No disk loaded</span>
+              <span id="diskAname">No disk loaded</span>
             </div>
             <div class="media-actions">
-              <label class="small-key" for="diskfile">Load</label>
-              <button id="diskEject" class="small-key" type="button" disabled>Eject</button>
+              <label class="small-key" for="diskAfile">Load</label>
+              <button id="diskAEject" class="small-key" type="button" disabled>Eject</button>
             </div>
-            <input class="visually-hidden" type="file" id="diskfile" accept=".dsk,.DSK">
+            <input class="visually-hidden" type="file" id="diskAfile" accept=".dsk,.DSK">
+          </article>
+
+          <article id="diskBSlot" class="media-slot">
+            <div class="cassette-window" aria-hidden="true">
+              <i></i><span>DSK</span><i></i>
+            </div>
+            <div class="media-copy">
+              <strong>Drive B</strong>
+              <span id="diskBname">No disk loaded</span>
+            </div>
+            <div class="media-actions">
+              <label class="small-key" for="diskBfile">Load</label>
+              <button id="diskBEject" class="small-key" type="button" disabled>Eject</button>
+            </div>
+            <input class="visually-hidden" type="file" id="diskBfile" accept=".dsk,.DSK">
           </article>
 
           <article id="cartSlot" class="media-slot media-slot-disabled">

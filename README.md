@@ -11,10 +11,10 @@ and the browser edition compiles the same core to WebAssembly.
 **[Launch Javascript 1984](https://salvogendut.github.io/chimeric/js1984/)**
 
 The browser edition needs no installation. It runs entirely in the browser,
-supports CPC 6128 and 6128 Plus software, and can load local DSK, CPR, and SNA
-files. Local media remains on your device. See the
-[browser edition guide](web/README.md) for controls, server-hosted media URL
-parameters, limitations, and self-hosting instructions.
+supports CPC 6128 and 6128 Plus software, and can load local DSK images in
+drives A and B, plus CPR and SNA files. Local media remains on your device. See
+the [browser edition guide](web/README.md) for controls, server-hosted media
+URL parameters, limitations, and self-hosting instructions.
 
 ## Highlights
 
