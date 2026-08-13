@@ -704,7 +704,8 @@ Background colour: dark green when running, dark red when paused.
 |---------|-------------|
 | `D <addr> [<end>]` | Disassemble Z80. Without end address, prints 10 lines. Pageable with ENTER/SPACE. |
 | `M <addr> [<end>]` | Hex + ASCII dump. Without end address, fills the screen. ASCII column is shown in reverse video. |
-| `B [<addr>]` | Set a breakpoint at `addr`, or list all active breakpoints. |
+| `B [<addr>]` | Set a breakpoint at `addr`, or list all breakpoint slots. |
+| `BE <n>` / `BD <n>` | Arm or disarm breakpoint slot `n`. Snapshot breakpoints load disarmed. |
 | `BC <n>` | Clear breakpoint slot `n` (0 – 15). |
 | `N` | Single-step one Z80 instruction (emulator must be paused). |
 | `G` / `GO` | Resume execution (clear pause). |
@@ -737,6 +738,7 @@ bool paused;
 bool step_once;
 u16  breakpoints[CPC_MAX_BREAKPOINTS];
 bool bp_enabled[CPC_MAX_BREAKPOINTS];
+bool bp_armed[CPC_MAX_BREAKPOINTS];
 ```
 
 ### `cpc_frame()` logic

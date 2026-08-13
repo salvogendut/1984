@@ -118,8 +118,10 @@ stop execution, so they are deliberately reported as DAP output and memory
 telemetry rather than falsely advertising data-breakpoint support.
 
 Loading an SNA with a RASM/ACE `REMU` chunk imports its labels into the
-disassembly and arms its execution breakpoints. Snapshot downloads preserve
-supported metadata and pass through records that 1984 does not yet execute.
+disassembly. Embedded execution breakpoints remain dormant until explicitly
+added in the ML Monitor, so assembler debug state cannot stop ordinary
+snapshot playback. Snapshot downloads preserve supported metadata and pass
+through records that 1984 does not yet execute.
 See [SNA REMU Debug Metadata](../docs/SNA-REMU.md).
 
 `dap.js` includes an incremental parser and serializer for standard

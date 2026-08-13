@@ -1109,8 +1109,13 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
     if (source != CPC_BP_SOURCE_TEMPORARY) {
         for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
             if (cpc->bp_enabled[i] && cpc->breakpoints[i] == addr &&
-                    cpc->bp_kind[i] == (u8)kind && cpc->bp_bank[i] == bank)
+                    cpc->bp_kind[i] == (u8)kind && cpc->bp_bank[i] == bank) {
+                if (source != CPC_BP_SOURCE_SNAPSHOT) {
+                    cpc->bp_armed[i] = true;
+                    cpc->bp_source[i] = (u8)source;
+                }
                 return i;
+            }
         }
     }
     for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
@@ -1120,6 +1125,9 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
         cpc->bp_bank[i] = bank;
         cpc->bp_source[i] = (u8)source;
         cpc->bp_enabled[i] = true;
+        /* Snapshot debug records describe a saved debug session. Keep them
+         * available without unexpectedly stopping ordinary SNA playback. */
+        cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT;
         return i;
     }
     return -1;
@@ -1128,6 +1136,7 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
 void cpc_breakpoint_clear(CPC *cpc, int slot) {
     if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS) return;
     cpc->bp_enabled[slot] = false;
+    cpc->bp_armed[slot] = false;
     cpc->bp_kind[slot] = CPC_BP_ANY;
     cpc->bp_bank[slot] = 0;
     cpc->bp_source[slot] = CPC_BP_SOURCE_USER;
@@ -1139,8 +1148,15 @@ void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source) {
             cpc_breakpoint_clear(cpc, i);
 }
 
+void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed) {
+    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !cpc->bp_enabled[slot])
+        return;
+    cpc->bp_armed[slot] = armed;
+}
+
 bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr) {
     if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !cpc->bp_enabled[slot] ||
+            !cpc->bp_armed[slot] ||
             cpc->breakpoints[slot] != addr)
         return false;
     switch ((CpcBreakpointKind)cpc->bp_kind[slot]) {

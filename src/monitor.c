@@ -348,13 +348,15 @@ static void mon_exec(Monitor *mon, const char *raw) {
                     char line[MON_COLS + 32];
                     if (mon->cpc->bp_kind[i] == CPC_BP_RAM ||
                             mon->cpc->bp_kind[i] == CPC_BP_ROM)
-                        snprintf(line, sizeof(line), "  BP%2d: %04X %s=%u", i,
+                        snprintf(line, sizeof(line), "  BP%2d: %04X %s=%u %s", i,
                                  mon->cpc->breakpoints[i],
                                  mon->cpc->bp_kind[i] == CPC_BP_RAM ? "RAM" : "ROM",
-                                 mon->cpc->bp_bank[i]);
+                                 mon->cpc->bp_bank[i],
+                                 mon->cpc->bp_armed[i] ? "armed" : "dormant");
                     else
-                        snprintf(line, sizeof(line), "  BP%2d: %04X", i,
-                                 mon->cpc->breakpoints[i]);
+                        snprintf(line, sizeof(line), "  BP%2d: %04X %s", i,
+                                 mon->cpc->breakpoints[i],
+                                 mon->cpc->bp_armed[i] ? "armed" : "dormant");
                     screen_puts(mon, line);
                     any = true;
                 }
@@ -375,6 +377,20 @@ static void mon_exec(Monitor *mon, const char *raw) {
                 snprintf(line, sizeof(line), "Breakpoint %d set at %04X", slot, (u16)addr);
                 screen_puts(mon, line);
             }
+        }
+
+    } else if (strcmp(cmd_buf, "BE") == 0 || strcmp(cmd_buf, "BD") == 0) {
+        unsigned n;
+        if (sscanf(args, "%u", &n) == 1 && n < CPC_MAX_BREAKPOINTS &&
+                mon->cpc->bp_enabled[n]) {
+            bool armed = strcmp(cmd_buf, "BE") == 0;
+            cpc_breakpoint_set_armed(mon->cpc, (int)n, armed);
+            char line[MON_COLS + 32];
+            snprintf(line, sizeof(line), "Breakpoint %u %s", n,
+                     armed ? "armed" : "disarmed");
+            screen_puts(mon, line);
+        } else {
+            screen_puts(mon, "Usage: BE|BD <n>  (existing slot 0..15)");
         }
 
     } else if (strcmp(cmd_buf, "BC") == 0) {
@@ -525,6 +541,7 @@ static void mon_exec(Monitor *mon, const char *raw) {
         screen_puts(mon, "  D <addr> [<end>]    disassemble Z80");
         screen_puts(mon, "  M <addr> [<end>]    hex+ASCII dump");
         screen_puts(mon, "  B [<addr>]          set / list breakpoints");
+        screen_puts(mon, "  BE|BD <n>           arm/disarm breakpoint");
         screen_puts(mon, "  BC <n>              clear breakpoint n");
         screen_puts(mon, "  S [<name>]          show PC symbol / disasm at <name>");
         screen_puts(mon, "  BS <name>           breakpoint at symbol <name>");

@@ -416,6 +416,7 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_set(int addr) {
     u16 target = (u16)addr;
     for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
         if (i != g_debug_temp_bp_slot && g_cpc.bp_enabled[i] &&
+                g_cpc.bp_armed[i] &&
                 g_cpc.breakpoints[i] == target)
             return i;
     }
@@ -435,7 +436,7 @@ EMSCRIPTEN_KEEPALIVE void poc_debug_breakpoint_clear(int slot) {
 
 EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_enabled(int slot) {
     return slot >= 0 && slot < CPC_MAX_BREAKPOINTS &&
-           g_cpc.bp_enabled[slot] ? 1 : 0;
+           g_cpc.bp_enabled[slot] && g_cpc.bp_armed[slot] ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_addr(int slot) {
