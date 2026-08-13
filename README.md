@@ -27,7 +27,8 @@ parameters, limitations, and self-hosting instructions.
   controls, screenshots, GIF/WebM capture, and WAV recording.
 - M4, Net4CPC, Cyboard, SYMBiFACE IDE and mouse, Albireo, USIfAC II, Wi-Fi
   modem, ROM board, printer, and diagnostic-ROM support.
-- Native monitor/disassembler, SDCC symbols, RASM/ACE REMU debug metadata,
+- Native monitor/disassembler, SDCC symbols, RASM supersnapshot ROMs and
+  RASM/ACE REMU debug metadata,
   trace options, headless runs, and PTY automation interfaces. The browser
   edition also has a collapsible
   Debug Adapter Protocol based machine-language monitor.

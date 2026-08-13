@@ -49,6 +49,34 @@ static void test_amsdos_slot_still_wins(void) {
     assert(mem_read(&mem, 0xC000) == 0x01);
 }
 
+static void test_snapshot_rom_overlays_are_sparse_and_reversible(void) {
+    Mem mem;
+    mem_init(&mem);
+    seed_basic_header(&mem);
+    memset(mem.rom_os, 0x11, sizeof(mem.rom_os));
+
+    u8 lower[ROM_OS_SIZE];
+    u8 upper[ROM_BASIC_SIZE];
+    memset(lower, 0x22, sizeof(lower));
+    memset(upper, 0x33, sizeof(upper));
+    assert(mem_set_snapshot_rom(&mem, SNAPSHOT_ROM_COUNT, lower) == 0);
+    assert(mem_set_snapshot_rom(&mem, 0xFE, upper) == 0);
+
+    mem.lower_rom_enabled = true;
+    mem.upper_rom_enabled = true;
+    mem.upper_rom_select = 0xFE;
+    assert(mem_read(&mem, 0x0000) == 0x22);
+    assert(mem_read(&mem, 0xC000) == 0x33);
+    assert(mem_get_snapshot_rom(&mem, SNAPSHOT_ROM_COUNT));
+    assert(mem_get_snapshot_rom(&mem, 0xFE));
+
+    mem_clear_snapshot_roms(&mem);
+    assert(mem_read(&mem, 0x0000) == 0x11);
+    assert(mem_read(&mem, 0xC000) == 0x80);
+    assert(!mem_get_snapshot_rom(&mem, SNAPSHOT_ROM_COUNT));
+    assert(!mem_get_snapshot_rom(&mem, 0xFE));
+}
+
 static void test_disabled_upper_rom_reads_ram(void) {
     Mem mem;
     mem_init(&mem);
@@ -148,6 +176,7 @@ int main(void) {
     test_absent_upper_rom_falls_back_to_basic();
     test_present_extension_rom_wins();
     test_amsdos_slot_still_wins();
+    test_snapshot_rom_overlays_are_sparse_and_reversible();
     test_disabled_upper_rom_reads_ram();
     test_plus_cartridge_mapping();
     test_plus_dma_ignores_cpu_ram_mapping();

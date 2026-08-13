@@ -20,7 +20,8 @@ are not uploaded by the application.
   cartridge.
 - Local DSK loading in drive A, CPR cartridge loading on the Plus model, and
   SNA v1-v3 snapshot loading with v3 snapshot downloads, including chunked
-  RASM supersnapshots and REMU labels/breakpoints.
+  RASM supersnapshots, embedded ROMs, and REMU labels, comments, and
+  breakpoints.
 - Server-hosted DSK and CPR media selected through URL parameters.
 - CPC keyboard input from the physical keyboard or the collapsible on-screen
   keyboard, including latched Shift, Ctrl, and Copy modifiers.
@@ -117,11 +118,12 @@ variable references expire whenever execution resumes. Label watches do not
 stop execution, so they are deliberately reported as DAP output and memory
 telemetry rather than falsely advertising data-breakpoint support.
 
-Loading an SNA with a RASM/ACE `REMU` chunk imports its labels into the
-disassembly. Embedded execution breakpoints remain dormant until explicitly
-added in the ML Monitor, so assembler debug state cannot stop ordinary
-snapshot playback. Snapshot downloads preserve supported metadata and pass
-through records that 1984 does not yet execute.
+Loading a RASM supersnapshot maps its `LOWR` and `RMxx` ROM chunks and imports
+`REMU` labels and source comments into the disassembly. Embedded execution
+breakpoints remain dormant until explicitly added in the ML Monitor, so
+assembler debug state cannot stop ordinary snapshot playback. Snapshot
+downloads preserve the ROM context, supported metadata, and debug records or
+chunks that 1984 does not yet execute.
 See [SNA REMU Debug Metadata](../docs/SNA-REMU.md).
 
 `dap.js` includes an incremental parser and serializer for standard

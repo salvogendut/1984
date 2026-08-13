@@ -197,14 +197,20 @@ static bool dis_emit_line(Monitor *mon) {
     char line[MON_COLS + 32];
     /* Append a symbol annotation when available — checked cheaply via
      * the no-op short-circuit in symbols_format() when no .map loaded. */
-    char sym[64];
+    char sym[64], comment[64], annotation[128];
     remu_symbol_format(&mon->cpc->remu_debug, &mon->cpc->mem,
                        addr, sym, sizeof(sym));
     if (!sym[0])
         symbols_format(addr, mon->cpc->mem.ram_bank, sym, sizeof(sym));
-    if (sym[0])
+    remu_comment_format(&mon->cpc->remu_debug, &mon->cpc->mem,
+                        addr, comment, sizeof(comment));
+    if (sym[0] && comment[0])
+        snprintf(annotation, sizeof(annotation), "%s | %s", sym, comment);
+    else
+        snprintf(annotation, sizeof(annotation), "%s%s", sym, comment);
+    if (annotation[0])
         snprintf(line, sizeof(line), "%04X  %-12s %-20s ; %s",
-                 addr, hexbuf, mnem, sym);
+                 addr, hexbuf, mnem, annotation);
     else
         snprintf(line, sizeof(line), "%04X  %-12s %s",
                  addr, hexbuf, mnem);

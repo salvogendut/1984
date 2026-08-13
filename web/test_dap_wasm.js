@@ -30,6 +30,19 @@ function concat(parts) {
   return output;
 }
 
+function findChunk(image, offset, wanted) {
+  const view = new DataView(image.buffer, image.byteOffset, image.byteLength);
+  while (offset + 8 <= image.length) {
+    const id = Buffer.from(image.slice(offset, offset + 4)).toString("ascii");
+    const length = view.getUint32(offset + 4, true);
+    offset += 8;
+    assert(offset + length <= image.length, `truncated ${id} chunk`);
+    if (id === wanted) return image.slice(offset, offset + length);
+    offset += length;
+  }
+  return null;
+}
+
 async function main() {
   const dist = path.join(__dirname, "dist");
   const source = fs.readFileSync(path.join(dist, "6128.js"), "utf8");
@@ -186,25 +199,41 @@ async function main() {
     parts.push(chunk(`MEM${bank.toString(16).toUpperCase()}`,
                      flat.slice(start, start + 0x10000)));
   }
-  const snapshotPc = header[0x23] | (header[0x24] << 8);
+  header[0x55] = 0xfe;
+  const lowerRom = new Uint8Array(0x4000).fill(0x31);
+  const upperRom = new Uint8Array(0x4000).fill(0x42);
+  parts.push(chunk("LOWR", lowerRom));
+  parts.push(chunk("RMFE", upperRom));
   const remu = new TextEncoder().encode(
-    `romlabel wasm_entry ${snapshotPc} 256;rombrk ${snapshotPc} 256;`
+    "romlabel wasm_entry 0 256;romcomz 0 256 lower firmware;rombrk 0 256;"
   );
   parts.push(chunk("REMU", remu));
   module.FS.writeFile("/remu.sna", concat(parts));
   assert.strictEqual(module.ccall("poc_load_snapshot", "number", ["string"],
                                   ["/remu.sna"]), 0);
+  assert.strictEqual(module._poc_debug_mem_read(0) & 0xff, 0x31);
+  assert.strictEqual(module._poc_debug_mem_read(0xc000) & 0xff, 0x42);
   /* Embedded debugger state must not stop normal snapshot playback. */
   assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 0);
-  assert.strictEqual(module._poc_debug_breakpoint_addr(0), snapshotPc);
-  const armedSlot = module._poc_debug_breakpoint_set(snapshotPc);
+  assert.strictEqual(module._poc_debug_breakpoint_addr(0), 0);
+  const armedSlot = module._poc_debug_breakpoint_set(0);
   assert(armedSlot >= 0);
   assert.strictEqual(module._poc_debug_breakpoint_enabled(armedSlot), 1);
   module._poc_debug_breakpoint_clear(armedSlot);
   const labelled = module.ccall(
-    "poc_debug_disassemble", "string", ["number", "number"], [snapshotPc, 1]
+    "poc_debug_disassemble", "string", ["number", "number"], [0, 1]
   );
   assert.match(labelled, /wasm_entry/);
+  assert.match(labelled, /lower firmware/);
+
+  assert.strictEqual(module.ccall("poc_save_snapshot", "number", ["string"],
+                                  ["/remu-roundtrip.sna"]), 0);
+  const roundtrip = new Uint8Array(module.FS.readFile("/remu-roundtrip.sna"));
+  const roundtripRamKb = roundtrip[0x6b] | (roundtrip[0x6c] << 8);
+  const chunkOffset = 256 + roundtripRamKb * 1024;
+  assert(findChunk(roundtrip, chunkOffset, "LOWR"));
+  assert(findChunk(roundtrip, chunkOffset, "RMFE"));
+  assert(findChunk(roundtrip, chunkOffset, "REMU"));
 
   console.log("DAP WebAssembly integration tests passed");
 }
