@@ -25,6 +25,13 @@
     return value;
   }
 
+  function validateMemory(value) {
+    if (value === null) return null;
+    if (!/^(128|256|512|1024)$/.test(value))
+      throw new Error('memory must be 128, 256, 512, or 1024');
+    return Number(value);
+  }
+
   function parseStartupMedia(search, baseUrl) {
     const params = new URLSearchParams(search || '');
     /* `disk` remains a compatibility alias for links published before drive B
@@ -35,6 +42,7 @@
       diskB: resolveHttpUrl(params.get('diskb'), baseUrl, 'diskb'),
       cartridge: resolveHttpUrl(params.get('cartridge'), baseUrl, 'cartridge'),
       autorun: validateAutorun(params.get('autorun')),
+      memoryKb: validateMemory(params.get('memory')),
     };
     if (media.autorun && !media.diskA)
       throw new Error('autorun requires a diska URL');

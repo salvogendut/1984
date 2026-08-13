@@ -6,7 +6,7 @@ const { parseStartupMedia, filenameFromUrl } = require('./media-url.js');
 const base = 'https://example.test/1984/';
 
 let media = parseStartupMedia(
-  '?theme=sapporo-dark&diska=media%2Fsystem.dsk&diskb=media%2Fdata.dsk&autorun=disc.bas',
+  '?theme=sapporo-dark&memory=512&diska=media%2Fsystem.dsk&diskb=media%2Fdata.dsk&autorun=disc.bas',
   base
 );
 assert.deepStrictEqual(media, {
@@ -14,6 +14,7 @@ assert.deepStrictEqual(media, {
   diskB: 'https://example.test/1984/media/data.dsk',
   cartridge: null,
   autorun: 'disc.bas',
+  memoryKb: 512,
 });
 
 media = parseStartupMedia(
@@ -24,6 +25,7 @@ assert.strictEqual(media.diskA, null);
 assert.strictEqual(media.diskB, null);
 assert.strictEqual(media.cartridge, 'https://cdn.example.test/games/Sonic.cpr');
 assert.strictEqual(media.autorun, null);
+assert.strictEqual(media.memoryKb, null);
 
 assert.strictEqual(
   filenameFromUrl('https://example.test/media/Bomb%20Jack.dsk', 'disk.dsk'),
@@ -34,7 +36,13 @@ assert.deepStrictEqual(parseStartupMedia('?theme=default', base), {
   diskB: null,
   cartridge: null,
   autorun: null,
+  memoryKb: null,
 });
+
+for (const memoryKb of [128, 256, 512, 1024]) {
+  media = parseStartupMedia('?memory=' + memoryKb, base);
+  assert.strictEqual(media.memoryKb, memoryKb);
+}
 
 /* Keep old published links functional while documenting diska as canonical. */
 media = parseStartupMedia('?disk=legacy.dsk', base);
@@ -59,6 +67,14 @@ assert.throws(
 assert.throws(
   () => parseStartupMedia('?diska=game.dsk&autorun=bad%22name', base),
   /unsupported characters/
+);
+assert.throws(
+  () => parseStartupMedia('?memory=64', base),
+  /memory must be 128, 256, 512, or 1024/
+);
+assert.throws(
+  () => parseStartupMedia('?memory=512KB', base),
+  /memory must be 128, 256, 512, or 1024/
 );
 
 console.log('server media URL tests passed');

@@ -1124,17 +1124,13 @@ create6128().then(m => {
     memoryValueEl.textContent = label;
   }
 
-  memoryEl.addEventListener("input", () => {
-    setMemorySlider(memorySizes[Number(memoryEl.value)]);
-  });
-
-  memoryEl.addEventListener("change", () => {
-    const memoryKb = memorySizes[Number(memoryEl.value)];
+  function applyMemorySize(memoryKb, notify = true, focus = true) {
     if (m._poc_set_memory_kb(memoryKb) !== 0) {
       setMemorySlider(m._poc_memory_kb());
       setStatus("Unsupported memory size");
-      return;
+      return false;
     }
+    setMemorySlider(memoryKb);
     if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
@@ -1144,8 +1140,18 @@ create6128().then(m => {
     updateMlState(true);
     const memoryLabel = memoryKb === 1024 ? "1 MB" : memoryKb + " KB";
     setStatus("Memory set to " + memoryLabel);
-    showToast(memoryLabel + " RAM selected");
-    canvas.focus();
+    if (notify) showToast(memoryLabel + " RAM selected");
+    if (focus) canvas.focus();
+    return true;
+  }
+
+  memoryEl.addEventListener("input", () => {
+    setMemorySlider(memorySizes[Number(memoryEl.value)]);
+  });
+
+  memoryEl.addEventListener("change", () => {
+    const memoryKb = memorySizes[Number(memoryEl.value)];
+    applyMemorySize(memoryKb);
   });
 
   resetEl.addEventListener("click", () => {
@@ -1358,10 +1364,12 @@ create6128().then(m => {
         document.baseURI
       );
     } catch (error) {
-      setStatus("Media URL error: " + error.message);
-      showToast("Invalid server media URL");
+      setStatus("Startup URL error: " + error.message);
+      showToast("Invalid startup URL");
       return;
     }
+    if (media.memoryKb !== null &&
+        !applyMemorySize(media.memoryKb, false, false)) return;
     if (!media.diskA && !media.diskB && !media.cartridge) return;
 
     try {
