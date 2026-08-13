@@ -158,6 +158,21 @@ https://salvogendut.github.io/chimeric/js1984/?theme=Sapporo%20Dark
 An unknown theme name falls back to CPC464. A front-panel choice is retained
 in browser local storage; a URL parameter overrides it for that page load.
 
+## Memory size
+
+Use the `memory` parameter to select one of the RAM sizes supported by the
+front-panel slider at startup:
+
+```text
+http://localhost:8080/?memory=128
+http://localhost:8080/?memory=256
+http://localhost:8080/?memory=512
+http://localhost:8080/?memory=1024
+```
+
+The value is in kilobytes. An unsupported value is rejected instead of being
+silently rounded. Memory, theme, and media parameters can be combined.
+
 ## Server-hosted media
 
 Media URLs are resolved relative to the page URL. Use `diska` or `diskb` to
@@ -178,7 +193,7 @@ Add `autorun` alongside `diska` to reset the CPC after mounting both images and
 inject `RUN"filename"` after the same 42-frame boot delay used by native 1984:
 
 ```text
-http://localhost:8080/?diska=media/system.dsk&diskb=media/data.dsk&autorun=disc.bas
+http://localhost:8080/?memory=512&diska=media/system.dsk&diskb=media/data.dsk&autorun=disc.bas
 ```
 
 The former `disk` parameter remains accepted as a compatibility alias for
