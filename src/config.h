@@ -190,6 +190,7 @@ typedef struct {
                               * dumps, text capture). Off by default; when off,
                               * setting ONE_K_TRACE_* / ONE_K_CAP_TEXT / etc.
                               * has no effect at all. */
+    bool snapshot_breakpoints; /* arm supported execution breaks from SNA */
 } Config;
 
 /* Build a CPC instance from cfg: ROM/board/mouse/serial/printer setup and

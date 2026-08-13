@@ -28,6 +28,8 @@ static void test_disk_autostart_round_trip(void) {
 
     Config cfg;
     config_defaults(&cfg);
+    assert(cfg.snapshot_breakpoints);
+    cfg.snapshot_breakpoints = false;
     assert(config_disk_autostart_find(&cfg, disk_a) == NULL);
     assert(config_disk_autostart_set(&cfg, disk_a, 0, "OLD.BAS") == 1);
     assert(config_disk_autostart_set(&cfg, disk_a, 0, "game.bas") == 1);
@@ -39,6 +41,7 @@ static void test_disk_autostart_round_trip(void) {
 
     Config loaded;
     assert(config_load(&loaded) == 0);
+    assert(!loaded.snapshot_breakpoints);
     assert(loaded.disk_autostart_count == 2);
     const ConfigDiskAutostart *entry =
         config_disk_autostart_find(&loaded, disk_a);

@@ -859,6 +859,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
     if (!g_pen_tables_built) build_pen_tables();
     memset(cpc, 0, sizeof(*cpc));
     cpc->model = model;
+    cpc->snapshot_breakpoints = true;
     cpc->cpu_clk_hz = 4000000;
     /* 50 Hz PAL: 4 MHz / 50 = 80 000 cycles per frame */
     cpc->cycles_per_frame = cpc->cpu_clk_hz / 50;
@@ -949,6 +950,7 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
     psg_set_volume(&cpc->psg, cfg->audio_volume);
     psg_set_stereo(&cpc->psg, cfg->audio_stereo_sep);
     cpc->mem.ram_size = cfg->memory_kb * 1024;
+    cpc->snapshot_breakpoints = cfg->snapshot_breakpoints;
     cpc->mx4          = cfg->mx4;
     cpc->net4cpc      = cfg->net4cpc;
     cpc->rtc          = cfg->rtc;
@@ -1126,9 +1128,8 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
         cpc->bp_bank[i] = bank;
         cpc->bp_source[i] = (u8)source;
         cpc->bp_enabled[i] = true;
-        /* Snapshot debug records describe a saved debug session. Keep them
-         * available without unexpectedly stopping ordinary SNA playback. */
-        cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT;
+        cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT ||
+                           cpc->snapshot_breakpoints;
         return i;
     }
     return -1;
@@ -1153,6 +1154,15 @@ void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed) {
     if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !cpc->bp_enabled[slot])
         return;
     cpc->bp_armed[slot] = armed;
+}
+
+void cpc_set_snapshot_breakpoints(CPC *cpc, bool enabled) {
+    if (!cpc) return;
+    cpc->snapshot_breakpoints = enabled;
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
+        if (cpc->bp_enabled[i] &&
+                cpc->bp_source[i] == CPC_BP_SOURCE_SNAPSHOT)
+            cpc->bp_armed[i] = enabled;
 }
 
 bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr) {
