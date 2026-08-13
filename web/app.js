@@ -23,6 +23,7 @@ const statusEl = $("status");
 const toastEl = $("toast");
 const ledPowerEl = $("ledPower");
 const ledAEl = $("ledA");
+const ledBEl = $("ledB");
 const ledInputEl = $("ledInput");
 const ledAudioEl = $("ledAudio");
 const ctx = canvas.getContext("2d");
@@ -387,9 +388,10 @@ create6128().then(m => {
   const memoryEl = $("memory");
   const memoryValueEl = $("memoryValue");
   const resetEl = $("reset");
-  const diskfileEl = $("diskfile");
-  const disknameEl = $("diskname");
-  const diskEjectEl = $("diskEject");
+  const diskUi = [
+    { file: $("diskAfile"), name: $("diskAname"), eject: $("diskAEject") },
+    { file: $("diskBfile"), name: $("diskBname"), eject: $("diskBEject") },
+  ];
   const cartfileEl = $("cartfile");
   const cartnameEl = $("cartname");
   const cartSlotEl = $("cartSlot");
@@ -418,7 +420,7 @@ create6128().then(m => {
   let prevGamepad = null;
   let joyEnabled = true;
   let mouseEnabled = false;
-  let ledState = 0;
+  const ledState = [0, 0];
   let tapeFileName = "";
   let tapeTransportState = "stop";
   const heldKeys = new Set();
@@ -1060,10 +1062,16 @@ create6128().then(m => {
     }
   }
 
-  function clearDiskUi() {
-    disknameEl.textContent = "No disk loaded";
-    diskEjectEl.disabled = true;
-    diskfileEl.value = "";
+  function clearDiskUi(drive) {
+    const ui = diskUi[drive];
+    ui.name.textContent = "No disk loaded";
+    ui.eject.disabled = true;
+    ui.file.value = "";
+  }
+
+  function clearDisksUi() {
+    clearDiskUi(0);
+    clearDiskUi(1);
   }
 
   function releaseAllJoy() {
@@ -1086,7 +1094,7 @@ create6128().then(m => {
     if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
-    clearDiskUi();
+    clearDisksUi();
     clearTapeUi();
     snapshotnameEl.textContent = "Machine state";
     createMlDapSession();
@@ -1155,14 +1163,17 @@ create6128().then(m => {
     canvas.focus();
   });
 
-  function mountDisk(data, name, path) {
+  function mountDisk(drive, data, name, path) {
+    const label = drive === 0 ? "A" : "B";
     m.FS.writeFile(path, data);
-    const rc = m.ccall("poc_load_disk", "number", ["string"], [path]);
+    const rc = m.ccall(
+      "poc_load_disk", "number", ["number", "string"], [drive, path]
+    );
     if (rc !== 0) throw new Error("unsupported or damaged disk image");
-    disknameEl.textContent = name;
-    diskEjectEl.disabled = false;
-    setStatus("Drive A: " + name);
-    showToast("Disk loaded into Drive A");
+    diskUi[drive].name.textContent = name;
+    diskUi[drive].eject.disabled = false;
+    setStatus("Drive " + label + ": " + name);
+    showToast("Disk loaded into Drive " + label);
   }
 
   function mountCartridge(data, name, path) {
@@ -1174,14 +1185,18 @@ create6128().then(m => {
     showToast("Cartridge loaded and CPC 6128 Plus started");
   }
 
-  async function loadDiskFile(file) {
+  async function loadDiskFile(file, drive = 0) {
     if (!file) return;
+    const label = drive === 0 ? "A" : "B";
+    const path = drive === 0 ? "/drive-a.dsk" : "/drive-b.dsk";
     try {
       const data = new Uint8Array(await file.arrayBuffer());
-      mountDisk(data, file.name, "/disk.dsk");
+      mountDisk(drive, data, file.name, path);
     } catch (error) {
-      setStatus("Disk load failed: " + error.message);
+      setStatus("Drive " + label + " load failed: " + error.message);
       showToast("Could not load " + file.name);
+    } finally {
+      diskUi[drive].file.value = "";
     }
   }
 
@@ -1258,12 +1273,17 @@ create6128().then(m => {
     }
   }
 
-  diskfileEl.addEventListener("change", () => loadDiskFile(diskfileEl.files[0]));
-  diskEjectEl.addEventListener("click", () => {
-    m._poc_eject_disk();
-    clearDiskUi();
-    setStatus("Drive A ejected");
-  });
+  for (let drive = 0; drive < diskUi.length; drive++) {
+    const ui = diskUi[drive];
+    const label = drive === 0 ? "A" : "B";
+    ui.file.addEventListener("change", () => loadDiskFile(ui.file.files[0], drive));
+    ui.eject.addEventListener("click", () => {
+      m._poc_eject_disk(drive);
+      clearDiskUi(drive);
+      setStatus("Drive " + label + " ejected");
+      showToast("Drive " + label + " ejected");
+    });
+  }
   cartfileEl.addEventListener("change", () => loadCartridgeFile(cartfileEl.files[0]));
   cartDefaultEl.addEventListener("click", () => {
     if (reinit(1)) {
@@ -1342,34 +1362,39 @@ create6128().then(m => {
       showToast("Invalid server media URL");
       return;
     }
-    if (!media.disk && !media.cartridge) return;
+    if (!media.diskA && !media.diskB && !media.cartridge) return;
 
     try {
       if (media.cartridge) {
         const cartridge = await fetchServerMedia(media.cartridge, "cartridge");
         mountCartridge(cartridge.data, cartridge.name, "/server-cartridge.cpr");
       }
-      if (media.disk) {
-        const disk = await fetchServerMedia(media.disk, "disk");
-        mountDisk(disk.data, disk.name, "/server-disk.dsk");
-        if (media.autorun) {
-          m._poc_reset();
-          m._poc_audio_reset();
-          if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
-          releaseAllJoy();
-          m._poc_set_mouse(mouseEnabled ? 1 : 0);
-          const rc = m.ccall(
-            "poc_autorun",
-            "number",
-            ["string", "number"],
-            [media.autorun, 42]
-          );
-          if (rc !== 0) throw new Error("invalid autorun filename");
-          setStatus(
-            "Drive A: " + disk.name + " - autorun " + media.autorun + " armed"
-          );
-          showToast("Autorun " + media.autorun + " armed");
-        }
+      let diskA = null;
+      if (media.diskA) {
+        diskA = await fetchServerMedia(media.diskA, "drive A disk");
+        mountDisk(0, diskA.data, diskA.name, "/server-drive-a.dsk");
+      }
+      if (media.diskB) {
+        const diskB = await fetchServerMedia(media.diskB, "drive B disk");
+        mountDisk(1, diskB.data, diskB.name, "/server-drive-b.dsk");
+      }
+      if (media.autorun) {
+        m._poc_reset();
+        m._poc_audio_reset();
+        if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+        releaseAllJoy();
+        m._poc_set_mouse(mouseEnabled ? 1 : 0);
+        const rc = m.ccall(
+          "poc_autorun",
+          "number",
+          ["string", "number"],
+          [media.autorun, 42]
+        );
+        if (rc !== 0) throw new Error("invalid autorun filename");
+        setStatus(
+          "Drive A: " + diskA.name + " - autorun " + media.autorun + " armed"
+        );
+        showToast("Autorun " + media.autorun + " armed");
       }
     } catch (error) {
       setStatus("Server media failed: " + error.message);
@@ -1634,7 +1659,7 @@ create6128().then(m => {
     const file = event.dataTransfer.files[0];
     if (!file) return;
     const lowerName = file.name.toLowerCase();
-    if (lowerName.endsWith(".dsk")) loadDiskFile(file);
+    if (lowerName.endsWith(".dsk")) loadDiskFile(file, 0);
     else if (lowerName.endsWith(".cpr")) loadCartridgeFile(file);
     else if (lowerName.endsWith(".sna")) loadSnapshotFile(file);
     else if (lowerName.endsWith(".cdt")) loadTapeFile(file);
@@ -1642,10 +1667,13 @@ create6128().then(m => {
   });
 
   function updateLed() {
-    const on = m._poc_disk_motor();
-    if (on !== ledState) {
-      ledState = on;
-      ledAEl.classList.toggle("on", Boolean(on));
+    const elements = [ledAEl, ledBEl];
+    for (let drive = 0; drive < elements.length; drive++) {
+      const on = m._poc_disk_motor(drive);
+      if (on !== ledState[drive]) {
+        ledState[drive] = on;
+        elements[drive].classList.toggle("on", Boolean(on));
+      }
     }
   }
 
