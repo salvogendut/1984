@@ -20,6 +20,7 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
             cpc->bp_bank[i] = bank;
             cpc->bp_source[i] = source;
             cpc->bp_enabled[i] = true;
+            cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT;
             return i;
         }
     }
@@ -27,14 +28,23 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
 }
 
 void cpc_breakpoint_clear(CPC *cpc, int slot) {
-    if (slot >= 0 && slot < CPC_MAX_BREAKPOINTS)
+    if (slot >= 0 && slot < CPC_MAX_BREAKPOINTS) {
         cpc->bp_enabled[slot] = false;
+        cpc->bp_armed[slot] = false;
+    }
 }
 
 void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source) {
     for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
-        if (cpc->bp_enabled[i] && cpc->bp_source[i] == source)
+        if (cpc->bp_enabled[i] && cpc->bp_source[i] == source) {
             cpc->bp_enabled[i] = false;
+            cpc->bp_armed[i] = false;
+        }
+}
+
+void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed) {
+    if (slot >= 0 && slot < CPC_MAX_BREAKPOINTS && cpc->bp_enabled[slot])
+        cpc->bp_armed[slot] = armed;
 }
 
 bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr) {
@@ -131,10 +141,11 @@ static void test_chunked_snapshot(void) {
            strstr(cpc->remu_debug.passthrough, "acebreak MEM") &&
            strstr(cpc->remu_debug.passthrough, "comz source-note;"));
     assert(cpc->bp_enabled[0] && cpc->bp_kind[0] == CPC_BP_RAM &&
-           cpc->bp_bank[0] == 1);
+           cpc->bp_bank[0] == 1 && !cpc->bp_armed[0]);
     assert(cpc->bp_enabled[1] && cpc->bp_kind[1] == CPC_BP_ROM &&
-           cpc->bp_bank[1] == 256);
-    assert(cpc->bp_enabled[2] && cpc->bp_kind[2] == CPC_BP_ANY);
+           cpc->bp_bank[1] == 256 && !cpc->bp_armed[1]);
+    assert(cpc->bp_enabled[2] && cpc->bp_kind[2] == CPC_BP_ANY &&
+           !cpc->bp_armed[2]);
 
     cpc->mem.lower_rom_enabled = false;
     cpc->mem.upper_rom_enabled = false;

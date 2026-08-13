@@ -194,8 +194,13 @@ async function main() {
   module.FS.writeFile("/remu.sna", concat(parts));
   assert.strictEqual(module.ccall("poc_load_snapshot", "number", ["string"],
                                   ["/remu.sna"]), 0);
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
+  /* Embedded debugger state must not stop normal snapshot playback. */
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 0);
   assert.strictEqual(module._poc_debug_breakpoint_addr(0), snapshotPc);
+  const armedSlot = module._poc_debug_breakpoint_set(snapshotPc);
+  assert(armedSlot >= 0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(armedSlot), 1);
+  module._poc_debug_breakpoint_clear(armedSlot);
   const labelled = module.ccall(
     "poc_debug_disassemble", "string", ["number", "number"], [snapshotPc, 1]
   );
