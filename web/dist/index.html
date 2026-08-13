@@ -450,7 +450,10 @@
     <section class="ml-module" aria-labelledby="mlBreakpointTitle">
       <div class="ml-module-head">
         <strong id="mlBreakpointTitle">Breakpoints</strong>
-        <span>16 channels</span>
+        <button id="mlSnapshotBreakpoints" type="button" class="ml-action ml-snapshot-breaks"
+                aria-pressed="true" title="Arm execution breakpoints embedded in loaded snapshots">
+          SNA Breaks: On
+        </button>
       </div>
       <div class="ml-address-control">
         <button type="button" class="ml-encoder" data-encoder="mlBreakpointAddress" data-delta="-1" aria-label="Previous breakpoint address">-</button>

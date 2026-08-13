@@ -89,7 +89,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 21 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 22 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
@@ -113,14 +113,19 @@ static int general_logical_row(const Overlay *ov, int row) {
 }
 
 static int tinker_logical_row(const Overlay *ov, int row) {
-    if (!ov->cfg->real_crt)
+    if (!ov->cfg->real_crt) {
+        if (row == 4) return -7;  /* Snapshot Breakpoints */
+        if (row >= 5) return row - 1;
         return row;
+    }
     if (row == 2) return -1;  /* Scanlines */
     if (row == 3) return -2;  /* Brightness */
     if (row == 4) return -3;  /* Contrast */
     if (row == 5) return -4;  /* Red */
     if (row == 6) return -5;  /* Green */
     if (row == 7) return -6;  /* Blue */
+    if (row == 10) return -7; /* Snapshot Breakpoints */
+    if (row >= 11) return row - 7;
     if (row >= 8) return row - 6;
     return row;
 }
@@ -253,6 +258,7 @@ static bool reset_tinker_item(Overlay *ov) {
     int old_gif_fps = ov->cfg->gif_fps;
     bool old_gif_ffmpeg = ov->cfg->gif_ffmpeg;
     CrtcType old_crtc_type = ov->cfg->crtc_type;
+    bool old_snapshot_breakpoints = ov->cfg->snapshot_breakpoints;
 
     switch (tinker_logical_row(ov, ov->row)) {
     case -6:
@@ -294,6 +300,9 @@ static bool reset_tinker_item(Overlay *ov) {
     case 20:
         ov->cfg->crtc_type = CRTC_TYPE_AUTO;
         break;
+    case -7:
+        ov->cfg->snapshot_breakpoints = true;
+        break;
     default:
         return false;
     }
@@ -308,12 +317,16 @@ static bool reset_tinker_item(Overlay *ov) {
     bool changed = crt_changed || old_gif_width != ov->cfg->gif_width ||
                    old_gif_fps != ov->cfg->gif_fps ||
                    old_gif_ffmpeg != ov->cfg->gif_ffmpeg ||
-                   old_crtc_type != ov->cfg->crtc_type;
+                   old_crtc_type != ov->cfg->crtc_type ||
+                   old_snapshot_breakpoints != ov->cfg->snapshot_breakpoints;
     if (changed) {
         if (crt_changed)
             overlay_apply_crt(ov);
         if (old_crtc_type != ov->cfg->crtc_type && ov->cpc)
             cpc_set_crtc_type(ov->cpc, ov->cfg->crtc_type);
+        if (old_snapshot_breakpoints != ov->cfg->snapshot_breakpoints && ov->cpc)
+            cpc_set_snapshot_breakpoints(ov->cpc,
+                                         ov->cfg->snapshot_breakpoints);
         ov->dirty = true;
     }
     return true;
@@ -1349,6 +1362,11 @@ static void item_text(const Overlay *ov, int row,
                 snprintf(val, vsz, "Type %d", ov->cfg->crtc_type);
             }
             break;
+        case -7:
+            snprintf(lbl, lsz, "Snapshot Breakpoints");
+            snprintf(val, vsz, "%s",
+                     ov->cfg->snapshot_breakpoints ? "enabled" : "disabled");
+            break;
         }
         break;
 
@@ -2320,6 +2338,14 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             }
             if (ov->cpc)
                 cpc_set_crtc_type(ov->cpc, ov->cfg->crtc_type);
+            ov->dirty = true;
+            break;
+        case -7:
+            ov->cfg->snapshot_breakpoints =
+                !ov->cfg->snapshot_breakpoints;
+            if (ov->cpc)
+                cpc_set_snapshot_breakpoints(ov->cpc,
+                                             ov->cfg->snapshot_breakpoints);
             ov->dirty = true;
             break;
         }

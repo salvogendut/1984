@@ -20,7 +20,8 @@ int cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
             cpc->bp_bank[i] = bank;
             cpc->bp_source[i] = source;
             cpc->bp_enabled[i] = true;
-            cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT;
+            cpc->bp_armed[i] = source != CPC_BP_SOURCE_SNAPSHOT ||
+                               cpc->snapshot_breakpoints;
             return i;
         }
     }
@@ -45,6 +46,14 @@ void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source) {
 void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed) {
     if (slot >= 0 && slot < CPC_MAX_BREAKPOINTS && cpc->bp_enabled[slot])
         cpc->bp_armed[slot] = armed;
+}
+
+void cpc_set_snapshot_breakpoints(CPC *cpc, bool enabled) {
+    cpc->snapshot_breakpoints = enabled;
+    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++)
+        if (cpc->bp_enabled[i] &&
+                cpc->bp_source[i] == CPC_BP_SOURCE_SNAPSHOT)
+            cpc->bp_armed[i] = enabled;
 }
 
 bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr) {
@@ -104,6 +113,7 @@ static char *read_named_chunk(FILE *file, const char wanted[4], u32 *out_len) {
 }
 
 static void init_cpc(CPC *cpc) {
+    cpc->snapshot_breakpoints = true;
     mem_init(&cpc->mem);
     cpc->mem.ram_size = 0x10000;
     ga_init(&cpc->ga);
@@ -223,11 +233,15 @@ static void test_chunked_snapshot(void) {
            strstr(cpc->remu_debug.passthrough, "acebreak MEM") &&
            strstr(cpc->remu_debug.passthrough, "futuretag source-note;"));
     assert(cpc->bp_enabled[0] && cpc->bp_kind[0] == CPC_BP_RAM &&
-           cpc->bp_bank[0] == 1 && !cpc->bp_armed[0]);
+           cpc->bp_bank[0] == 1 && cpc->bp_armed[0]);
     assert(cpc->bp_enabled[1] && cpc->bp_kind[1] == CPC_BP_ROM &&
-           cpc->bp_bank[1] == 256 && !cpc->bp_armed[1]);
+           cpc->bp_bank[1] == 256 && cpc->bp_armed[1]);
     assert(cpc->bp_enabled[2] && cpc->bp_kind[2] == CPC_BP_ANY &&
-           !cpc->bp_armed[2]);
+           cpc->bp_armed[2]);
+    cpc_set_snapshot_breakpoints(cpc, false);
+    assert(!cpc->bp_armed[0] && !cpc->bp_armed[1] && !cpc->bp_armed[2]);
+    cpc_set_snapshot_breakpoints(cpc, true);
+    assert(cpc->bp_armed[0] && cpc->bp_armed[1] && cpc->bp_armed[2]);
 
     const RemuComment *comment = remu_comment_lookup(&cpc->remu_debug,
                                                       &cpc->mem, 0x0010);

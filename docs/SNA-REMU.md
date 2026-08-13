@@ -35,9 +35,9 @@ The following semicolon-terminated `REMU` records are understood by 1984:
 | `alias NAME VALUE` | Adds a named value for exact symbol lookup. |
 | `comz ADDRESS BANK TEXT` | Adds a physical RAM-bank source comment. |
 | `romcomz ADDRESS BANK TEXT` | Adds a ROM-bank source comment. Bank 256 is the lower ROM. |
-| `brk ADDRESS BANK` | Imports a dormant RAM-bank-qualified execution breakpoint. |
-| `rombrk ADDRESS BANK` | Imports a dormant ROM-bank-qualified execution breakpoint. |
-| `acebreak EXEC,...,STOP,...` | Imports a dormant unconditional execution breakpoint when it has a full address mask, size 1, and no condition or stepping expression. |
+| `brk ADDRESS BANK` | Imports a RAM-bank-qualified execution breakpoint. |
+| `rombrk ADDRESS BANK` | Imports a ROM-bank-qualified execution breakpoint. |
+| `acebreak EXEC,...,STOP,...` | Imports an unconditional execution breakpoint when it has a full address mask, size 1, and no condition or stepping expression. |
 
 Labels and comments for the currently mapped physical bank annotate native and
 browser disassembly. Other REMU records, including memory/IO watches,
@@ -51,24 +51,28 @@ therefore describe the original tool's debug session rather than edits made in
 
 1984 has 16 shared execution-breakpoint channels. Snapshot breakpoints use
 the same channels as breakpoints created in the native F8 monitor or the web
-ML Monitor, but they start dormant. Debug metadata often describes the
-assembler author's session and must not unexpectedly pause normal snapshot
-playback. Loading another snapshot removes the prior snapshot's breakpoint
-channels but retains breakpoints created by the user.
+ML Monitor. They start armed by default to match RASM/ACE debug-session
+playback: the snapshot resumes and stops when an embedded breakpoint is
+reached. **Snapshot Breakpoints** can be disabled when a snapshot should run
+without debugger stops. Loading another snapshot removes the prior snapshot's
+breakpoint channels but retains breakpoints created by the user.
 
 ## Native SDL3
 
 Load the SNA normally with `--load-sna=PATH`, the Media overlay, or the F8
 monitor. Imported labels annotate disassembly. The monitor's `S NAME` and
 `BS NAME` commands resolve REMU labels and aliases, while `B` lists imported
-RAM/ROM bank qualifiers and their state. Use `BE N` to arm an imported
-breakpoint and `BD N` to disarm it.
+RAM/ROM bank qualifiers and their state. A recognized embedded breakpoint
+automatically opens the monitor when hit. Use `BD N` to disarm one channel or
+disable **Advanced -> Snapshot Breakpoints** to disarm all snapshot channels.
 
 ## WebAssembly
 
 Use **Load SNA** in the web media deck. The ML Monitor uses imported labels and
-comments for disassembly while imported breakpoints remain dormant. Add an
-imported address to the ML Monitor breakpoint list to arm it explicitly.
+comments for disassembly and adopts recognized embedded execution breakpoints
+as armed DAP instruction breakpoints. Its **SNA Breaks** button globally arms
+or disarms snapshot channels. The ML Monitor opens and a toast reports when an
+armed breakpoint is hit.
 Downloaded snapshots retain the supported metadata and preserved debug chunks.
 
 ## Saving

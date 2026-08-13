@@ -201,6 +201,7 @@ void config_defaults(Config *cfg) {
     cfg->crt_blue = DISPLAY_CRT_RGB_DEFAULT;
     cfg->tinker    = false;
     cfg->debug     = false;
+    cfg->snapshot_breakpoints = true;
     cfg->gif_width = GIF_CAPTURE_WIDTH_DEFAULT;
     cfg->gif_fps   = GIF_CAPTURE_FPS_DEFAULT;
     cfg->gif_ffmpeg = false;
@@ -583,6 +584,8 @@ static void config_create_default(const char *path) {
         "# text capture, etc.). Off by default; when off, none of the\n"
         "# debug machinery runs and ONE_K_* trace env vars are no-ops.\n"
         "debug=false\n"
+        "# Arm supported execution breakpoints embedded in SNA debug metadata.\n"
+        "snapshot_breakpoints=true\n"
         "# Animated GIF profile used by F6 and --gif-out. Resolution must be\n"
         "# 768x576, 576x432, 384x288, 256x192, or 192x144; fps must be\n"
         "# 25, 20, 10, or 5. FFmpeg mode falls back to the built-in encoder.\n"
@@ -989,6 +992,10 @@ int config_load_from(Config *cfg, const char *path_override) {
                 bool b;
                 if (parse_bool(val, &b)) cfg->debug = b;
                 else { fprintf(stderr, "1984.conf:%d: debug must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "snapshot_breakpoints")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->snapshot_breakpoints = b;
+                else { fprintf(stderr, "1984.conf:%d: snapshot_breakpoints must be true/false\n", lineno); rc = -1; }
             } else if (!strcmp(key, "gif_resolution")) {
                 int w = 0, h = 0;
                 char trailing = '\0';
@@ -1218,6 +1225,7 @@ int config_save(const Config *cfg) {
         "[advanced]\n"
         "tinker=%s\n"
         "debug=%s\n"
+        "snapshot_breakpoints=%s\n"
         "gif_resolution=%dx%d\n"
         "gif_fps=%d\n"
         "gif_ffmpeg=%s\n"
@@ -1284,6 +1292,7 @@ int config_save(const Config *cfg) {
         cfg->real_tape_visual_monitor ? "true" : "false",
         cfg->tinker     ? "true" : "false",
         cfg->debug      ? "true" : "false",
+        cfg->snapshot_breakpoints ? "true" : "false",
         cfg->gif_width,
         (cfg->gif_width * 3) / 4,
         cfg->gif_fps,

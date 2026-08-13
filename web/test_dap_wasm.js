@@ -234,13 +234,16 @@ async function main() {
                                   ["/remu.sna"]), 0);
   assert.strictEqual(module._poc_debug_mem_read(0) & 0xff, 0x31);
   assert.strictEqual(module._poc_debug_mem_read(0xc000) & 0xff, 0x42);
-  /* Embedded debugger state must not stop normal snapshot playback. */
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 0);
+  /* RASM/ACE execution breakpoints start armed but can be globally disabled. */
+  assert.strictEqual(module._poc_snapshot_breakpoints(), 1);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
   assert.strictEqual(module._poc_debug_breakpoint_addr(0), 0);
-  const armedSlot = module._poc_debug_breakpoint_set(0);
-  assert(armedSlot >= 0);
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(armedSlot), 1);
-  module._poc_debug_breakpoint_clear(armedSlot);
+  module._poc_set_snapshot_breakpoints(0);
+  assert.strictEqual(module._poc_snapshot_breakpoints(), 0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 0);
+  module._poc_set_snapshot_breakpoints(1);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
+  module._poc_debug_breakpoint_clear(0);
   const labelled = module.ccall(
     "poc_debug_disassemble", "string", ["number", "number"], [0, 1]
   );

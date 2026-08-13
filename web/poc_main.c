@@ -445,6 +445,14 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_addr(int slot) {
     return g_cpc.breakpoints[slot];
 }
 
+EMSCRIPTEN_KEEPALIVE void poc_set_snapshot_breakpoints(int enabled) {
+    cpc_set_snapshot_breakpoints(&g_cpc, enabled != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_snapshot_breakpoints(void) {
+    return g_cpc.snapshot_breakpoints ? 1 : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE int poc_debug_mem_read(int addr) {
     return mem_read(&g_cpc.mem, (u16)addr);
 }

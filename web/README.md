@@ -123,10 +123,12 @@ telemetry rather than falsely advertising data-breakpoint support.
 
 Loading a RASM supersnapshot maps its `LOWR` and `RMxx` ROM chunks and imports
 `REMU` labels and source comments into the disassembly. Embedded execution
-breakpoints remain dormant until explicitly added in the ML Monitor, so
-assembler debug state cannot stop ordinary snapshot playback. Snapshot
-downloads preserve the ROM context, supported metadata, and debug records or
-chunks that 1984 does not yet execute.
+breakpoints are armed by default and adopted by the ML Monitor, matching
+RASM/ACE debug-session playback. Use **SNA Breaks** to arm or disarm all
+snapshot-provided breakpoint channels without affecting breakpoints created in
+the ML Monitor. The collapsed monitor opens automatically when a breakpoint is
+hit. Snapshot downloads preserve the ROM context, supported
+metadata, and debug records or chunks that 1984 does not yet execute.
 See [SNA REMU Debug Metadata](../docs/SNA-REMU.md).
 
 `dap.js` includes an incremental parser and serializer for standard

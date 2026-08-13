@@ -216,6 +216,7 @@ typedef struct CPC {
     u16  bp_bank[CPC_MAX_BREAKPOINTS];
     u8   bp_kind[CPC_MAX_BREAKPOINTS];
     u8   bp_source[CPC_MAX_BREAKPOINTS];
+    bool snapshot_breakpoints; /* arm execution breakpoints imported from SNA */
     RemuDebug remu_debug;
 } CPC;
 
@@ -259,6 +260,7 @@ int  cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
 void cpc_breakpoint_clear(CPC *cpc, int slot);
 void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source);
 void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed);
+void cpc_set_snapshot_breakpoints(CPC *cpc, bool enabled);
 bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr);
 /* Run until the monitor completes one video frame. Returns the number of
  * emulated CPU cycles consumed, or zero while paused. CRTC programs can make

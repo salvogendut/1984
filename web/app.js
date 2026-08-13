@@ -412,6 +412,7 @@ create6128().then(m => {
   const joystatusEl = $("joystatus");
   const joymatrixEl = $("joymatrix");
   const mousestatusEl = $("mousestatus");
+  const mlSnapshotBreakpointsEl = $("mlSnapshotBreakpoints");
 
   let currentModel = 0;
   let audioCtx = null;
@@ -433,6 +434,7 @@ create6128().then(m => {
   let mlLastRefresh = 0;
   let mlDap = null;
   let mlStopDescription = "Live processor";
+  let snapshotBreakpointsEnabled = Boolean(m._poc_snapshot_breakpoints());
 
   const mlRegisterIds = [
     "mlRegAF", "mlRegBC", "mlRegDE", "mlRegHL",
@@ -499,6 +501,7 @@ create6128().then(m => {
         executionChanged = true;
         if (event.body.reason === "instruction breakpoint") {
           const pc = m._poc_debug_reg(7);
+          setMlMonitorOpen(true);
           showToast("ML Monitor breakpoint hit at &" + JS1984Monitor.hex(pc, 4));
         }
       } else if (event.event === "continued") {
@@ -629,6 +632,26 @@ create6128().then(m => {
     applyMlBreakpoints(addresses);
     return addresses.length;
   }
+
+  function updateSnapshotBreakpointControl() {
+    mlSnapshotBreakpointsEl.setAttribute(
+      "aria-pressed", snapshotBreakpointsEnabled ? "true" : "false"
+    );
+    mlSnapshotBreakpointsEl.textContent =
+      "SNA Breaks: " + (snapshotBreakpointsEnabled ? "On" : "Off");
+  }
+
+  mlSnapshotBreakpointsEl.addEventListener("click", () => {
+    snapshotBreakpointsEnabled = !snapshotBreakpointsEnabled;
+    m._poc_set_snapshot_breakpoints(snapshotBreakpointsEnabled ? 1 : 0);
+    updateSnapshotBreakpointControl();
+    const breakpointCount = adoptCoreMlBreakpoints();
+    setMlMessage(
+      `Snapshot breakpoints ${snapshotBreakpointsEnabled ? "armed" : "disarmed"}; ` +
+      `${breakpointCount} breakpoint channel(s) active.`
+    );
+    updateMlState(true);
+  });
 
   function renderMlWatches() {
     const list = $("mlWatchList");
@@ -865,6 +888,7 @@ create6128().then(m => {
 
   renderMlBreakpoints();
   renderMlWatches();
+  updateSnapshotBreakpointControl();
   createMlDapSession();
   updateMlState(true);
   mlMonitorToggleEl.addEventListener("click", () => {
@@ -1090,6 +1114,7 @@ create6128().then(m => {
     }
     currentModel = model;
     modelEl.value = String(model);
+    m._poc_set_snapshot_breakpoints(snapshotBreakpointsEnabled ? 1 : 0);
     m._poc_audio_reset();
     if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
     releaseAllJoy();

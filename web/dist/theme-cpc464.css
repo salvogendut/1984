@@ -997,6 +997,17 @@ html[data-theme="cpc464"] .ml-action {
   letter-spacing: .06em;
 }
 
+html[data-theme="cpc464"] .ml-snapshot-breaks {
+  min-height: 24px;
+  color: #dcebd8;
+  background: linear-gradient(#668161, #40543c 55%, #30402d 56%);
+}
+
+html[data-theme="cpc464"] .ml-snapshot-breaks[aria-pressed="false"] {
+  color: #999c95;
+  background: linear-gradient(#494c48, #2b2e2b 55%, #222422 56%);
+}
+
 html[data-theme="cpc464"] .ml-channel-list { display: grid; gap: 4px; margin-top: 9px; }
 html[data-theme="cpc464"] .ml-empty { padding: 7px; color: #666b63; font-size: 7px; text-align: center; text-transform: uppercase; }
 
