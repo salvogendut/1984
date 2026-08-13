@@ -22,6 +22,8 @@ void mem_init(Mem *m) {
     m->amsdos_present    = false;
     memset(m->rom_ext, 0xFF, sizeof(m->rom_ext));
     memset(m->rom_ext_present, 0, sizeof(m->rom_ext_present));
+    m->snapshot_lower_rom = NULL;
+    memset(m->snapshot_upper_rom, 0, sizeof(m->snapshot_upper_rom));
     m->lower_rom_enabled = true;
     m->upper_rom_enabled = true;
     m->upper_rom_select  = 0;
@@ -164,6 +166,35 @@ void mem_unload_rom_ext(Mem *m, int slot) {
     m->rom_ext_present[slot] = false;
 }
 
+int mem_set_snapshot_rom(Mem *m, int bank, const u8 *data) {
+    if (!m || !data || bank < 0 || bank > SNAPSHOT_ROM_COUNT)
+        return -1;
+    u8 **target = bank == SNAPSHOT_ROM_COUNT
+                ? &m->snapshot_lower_rom : &m->snapshot_upper_rom[bank];
+    u8 *copy = malloc(ROM_BASIC_SIZE);
+    if (!copy) return -1;
+    memcpy(copy, data, ROM_BASIC_SIZE);
+    free(*target);
+    *target = copy;
+    return 0;
+}
+
+const u8 *mem_get_snapshot_rom(const Mem *m, int bank) {
+    if (!m || bank < 0 || bank > SNAPSHOT_ROM_COUNT) return NULL;
+    return bank == SNAPSHOT_ROM_COUNT
+         ? m->snapshot_lower_rom : m->snapshot_upper_rom[bank];
+}
+
+void mem_clear_snapshot_roms(Mem *m) {
+    if (!m) return;
+    free(m->snapshot_lower_rom);
+    m->snapshot_lower_rom = NULL;
+    for (int slot = 0; slot < SNAPSHOT_ROM_COUNT; slot++) {
+        free(m->snapshot_upper_rom[slot]);
+        m->snapshot_upper_rom[slot] = NULL;
+    }
+}
+
 /* Translate a Z80 address to its physical RAM offset under the current
  * Gate Array banking configuration.  Only called when ram_bank != 0.
  *
@@ -270,6 +301,8 @@ u8 mem_read(Mem *m, u16 addr) {
     if (!m->plus && addr < 0x4000 && m->lower_rom_enabled) {
         if (m->lower_rom_override)
             return m->lower_rom_override[addr];
+        if (m->snapshot_lower_rom)
+            return m->snapshot_lower_rom[addr];
         return m->rom_os[addr];
     }
 
@@ -277,6 +310,8 @@ u8 mem_read(Mem *m, u16 addr) {
      * even when banking is active (writes still go to banked RAM). */
     if (addr >= 0xC000 && m->upper_rom_enabled) {
         u8 slot = m->upper_rom_select;
+        if (m->snapshot_upper_rom[slot])
+            return m->snapshot_upper_rom[slot][addr - 0xC000];
         if (m->plus) {
             const u8 *page = cartridge_page(&m->cartridge, slot);
             if (!page) page = cartridge_page(&m->cartridge, 1);

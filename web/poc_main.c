@@ -469,6 +469,8 @@ EMSCRIPTEN_KEEPALIVE const char *poc_debug_disassemble(int addr, int lines) {
     for (int line = 0; line < lines; line++) {
         char mnemonic[64];
         char symbol[128];
+        char comment[128];
+        char annotation[256];
         int bytes = z80dis(g_debug_dis_memory, pc, mnemonic,
                            sizeof(mnemonic));
         if (bytes <= 0) bytes = 1;
@@ -491,10 +493,16 @@ EMSCRIPTEN_KEEPALIVE const char *poc_debug_disassemble(int addr, int lines) {
                            symbol, sizeof(symbol));
         if (!symbol[0])
             symbols_format(pc, g_cpc.mem.ram_bank, symbol, sizeof(symbol));
+        remu_comment_format(&g_cpc.remu_debug, &g_cpc.mem, pc,
+                            comment, sizeof(comment));
+        if (symbol[0] && comment[0])
+            snprintf(annotation, sizeof(annotation), "%s | %s", symbol, comment);
+        else
+            snprintf(annotation, sizeof(annotation), "%s%s", symbol, comment);
         written = snprintf(g_debug_disassembly + used,
                            sizeof(g_debug_disassembly) - used,
                            " %s%s%s\n", mnemonic,
-                           symbol[0] ? " ; " : "", symbol);
+                           annotation[0] ? " ; " : "", annotation);
         if (written < 0 || (size_t)written >= sizeof(g_debug_disassembly) - used)
             break;
         used += (size_t)written;

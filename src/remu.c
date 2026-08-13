@@ -60,6 +60,29 @@ static bool preserve_record(RemuDebug *debug, const char *record) {
            append_bytes(&debug->passthrough, &debug->passthrough_len, ";", 1);
 }
 
+bool remu_preserve_opaque_chunk(RemuDebug *debug, const u8 id[4],
+                                const u8 *data, size_t len) {
+    if (!debug || !id || (!data && len)) return false;
+    if (debug->opaque_chunk_count == debug->opaque_chunk_capacity) {
+        size_t cap = debug->opaque_chunk_capacity
+                   ? debug->opaque_chunk_capacity * 2 : 4;
+        RemuOpaqueChunk *grown = realloc(debug->opaque_chunks,
+                                         cap * sizeof(*grown));
+        if (!grown) return false;
+        debug->opaque_chunks = grown;
+        debug->opaque_chunk_capacity = cap;
+    }
+    u8 *copy = len ? malloc(len) : NULL;
+    if (len && !copy) return false;
+    if (len) memcpy(copy, data, len);
+    RemuOpaqueChunk *chunk =
+        &debug->opaque_chunks[debug->opaque_chunk_count++];
+    memcpy(chunk->id, id, 4);
+    chunk->data = copy;
+    chunk->length = len;
+    return true;
+}
+
 static bool add_symbol(RemuDebug *debug, RemuSymbolKind kind,
                        const char *name, u32 value, u16 bank) {
     if (!name || !*name) return false;
@@ -82,11 +105,38 @@ static bool add_symbol(RemuDebug *debug, RemuSymbolKind kind,
     return true;
 }
 
+static bool add_comment(RemuDebug *debug, RemuCommentKind kind, u16 address,
+                        u16 bank, const char *text) {
+    if (debug->comment_count == debug->comment_capacity) {
+        size_t cap = debug->comment_capacity ? debug->comment_capacity * 2 : 32;
+        RemuComment *grown = realloc(debug->comments, cap * sizeof(*grown));
+        if (!grown) return false;
+        debug->comments = grown;
+        debug->comment_capacity = cap;
+    }
+    RemuComment *comment = &debug->comments[debug->comment_count++];
+    comment->kind = kind;
+    comment->address = address;
+    comment->bank = bank;
+    comment->text = strdup(text ? text : "");
+    if (!comment->text) {
+        debug->comment_count--;
+        return false;
+    }
+    return true;
+}
+
 void remu_debug_clear(RemuDebug *debug) {
     if (!debug) return;
     for (size_t i = 0; i < debug->symbol_count; i++)
         free(debug->symbols[i].name);
+    for (size_t i = 0; i < debug->comment_count; i++)
+        free(debug->comments[i].text);
+    for (size_t i = 0; i < debug->opaque_chunk_count; i++)
+        free(debug->opaque_chunks[i].data);
     free(debug->symbols);
+    free(debug->comments);
+    free(debug->opaque_chunks);
     free(debug->passthrough);
     memset(debug, 0, sizeof(*debug));
 }
@@ -124,6 +174,20 @@ static bool parse_symbol_record(RemuDebug *debug, char *args,
     return parse_number(value_text, &value) && value <= 0xFFFF &&
            parse_number(bank_text, &bank) && bank <= 0xFFFF &&
            add_symbol(debug, kind, name, value, (u16)bank);
+}
+
+static bool parse_comment_record(RemuDebug *debug, char *args,
+                                 RemuCommentKind kind) {
+    char address_text[64], bank_text[64];
+    int consumed = 0;
+    if (sscanf(args, "%63s %63s %n", address_text, bank_text, &consumed) != 2)
+        return false;
+    u32 address, bank;
+    if (!parse_number(address_text, &address) || address > 0xFFFF ||
+            !parse_number(bank_text, &bank) || bank > 0xFFFF)
+        return false;
+    return add_comment(debug, kind, (u16)address, (u16)bank,
+                       trim(args + consumed));
 }
 
 static bool parse_ace_break(CPC *cpc, char *record) {
@@ -183,6 +247,12 @@ static bool parse_record(CPC *cpc, char *record) {
     if (strncasecmp(text, "alias ", 6) == 0)
         return parse_symbol_record(&cpc->remu_debug, trim(text + 6),
                                    REMU_SYMBOL_ALIAS);
+    if (strncasecmp(text, "romcomz ", 8) == 0)
+        return parse_comment_record(&cpc->remu_debug, trim(text + 8),
+                                    REMU_COMMENT_ROM);
+    if (strncasecmp(text, "comz ", 5) == 0)
+        return parse_comment_record(&cpc->remu_debug, trim(text + 5),
+                                    REMU_COMMENT_RAM);
     if (strncasecmp(text, "rombrk ", 7) == 0)
         return parse_break(cpc, trim(text + 7), CPC_BP_ROM);
     if (strncasecmp(text, "brk ", 4) == 0)
@@ -296,6 +366,14 @@ char *remu_build_chunk(const CPC *cpc, size_t *out_len) {
     }
     symbols_visit(export_symbol, &builder);
 
+    for (size_t i = 0; i < cpc->remu_debug.comment_count; i++) {
+        const RemuComment *comment = &cpc->remu_debug.comments[i];
+        builder_printf(&builder, "%s %u %u %s;",
+                       comment->kind == REMU_COMMENT_ROM ? "romcomz" : "comz",
+                       (unsigned)comment->address, (unsigned)comment->bank,
+                       comment->text);
+    }
+
     for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
         if (!cpc->bp_enabled[i] ||
                 cpc->bp_source[i] == CPC_BP_SOURCE_TEMPORARY)
@@ -379,4 +457,28 @@ void remu_symbol_format(const RemuDebug *debug, const Mem *mem, u16 addr,
         snprintf(out, out_sz, "%s+0x%X", symbol->name, (unsigned)offset);
     else
         snprintf(out, out_sz, "%s", symbol->name);
+}
+
+const RemuComment *remu_comment_lookup(const RemuDebug *debug, const Mem *mem,
+                                       u16 addr) {
+    if (!debug || !mem) return NULL;
+    int ram_bank = mem_visible_ram_bank(mem, addr);
+    int rom_bank = mem_visible_rom_bank(mem, addr);
+    for (size_t i = 0; i < debug->comment_count; i++) {
+        const RemuComment *comment = &debug->comments[i];
+        if (comment->address != addr) continue;
+        if (comment->kind == REMU_COMMENT_RAM && ram_bank == comment->bank)
+            return comment;
+        if (comment->kind == REMU_COMMENT_ROM && rom_bank == comment->bank)
+            return comment;
+    }
+    return NULL;
+}
+
+void remu_comment_format(const RemuDebug *debug, const Mem *mem, u16 addr,
+                         char *out, size_t out_sz) {
+    if (!out_sz) return;
+    out[0] = '\0';
+    const RemuComment *comment = remu_comment_lookup(debug, mem, addr);
+    if (comment) snprintf(out, out_sz, "%s", comment->text);
 }

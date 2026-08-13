@@ -24,6 +24,7 @@
 #define ROM_BASIC_SIZE 0x4000
 #define RAM_SIZE       0x100000  /* 1024 KB max (Yarek ceiling); actual usable size is Mem.ram_size */
 #define ROM_EXT_COUNT  32        /* expansion ROM slots 0-31 */
+#define SNAPSHOT_ROM_COUNT 256   /* RASM RM00-RMFF upper-ROM chunks */
 
 typedef struct Mem {
     u8   ram[RAM_SIZE];
@@ -35,6 +36,11 @@ typedef struct Mem {
     /* expansion ROMs: slot 0=BASIC fallback, 7=AMSDOS fallback, 1-6/8-31 free */
     u8   rom_ext[ROM_EXT_COUNT][ROM_BASIC_SIZE];
     bool rom_ext_present[ROM_EXT_COUNT];
+    /* Sparse RASM supersnapshot ROM overlays. These remain separate from
+     * configured ROMs so loading a normal SNA can reveal the user's ROM
+     * setup again without reinitialising the machine. */
+    u8  *snapshot_lower_rom;
+    u8  *snapshot_upper_rom[SNAPSHOT_ROM_COUNT];
     bool lower_rom_enabled;
     bool upper_rom_enabled;
     u8   upper_rom_select;  /* current upper ROM slot (written via port 0xDFxx) */
@@ -73,6 +79,9 @@ int  mem_load_amsdos(Mem *m, const char *path);        /* slot 7 default; non-fa
 void mem_unload_amsdos(Mem *m);                        /* clear slot 7 default */
 int  mem_load_rom_ext(Mem *m, int slot, const char *path);  /* expansion slot 0-31 */
 void mem_unload_rom_ext(Mem *m, int slot);
+int  mem_set_snapshot_rom(Mem *m, int bank, const u8 *data);
+const u8 *mem_get_snapshot_rom(const Mem *m, int bank);
+void mem_clear_snapshot_roms(Mem *m);
 void mem_plus_reset_mapping(Mem *m);
 void mem_plus_set_rmr2(Mem *m, u8 value);
 void mem_plus_select_upper_rom(Mem *m, u8 value);

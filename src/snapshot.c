@@ -52,13 +52,28 @@ static int memory_chunk_index(const u8 id[4]) {
     return -1;
 }
 
-static int decode_memory_chunk(u8 *destination, const u8 *data, size_t len) {
-    if (len == 0x10000) {
+static int extended_memory_chunk_index(const u8 id[4]) {
+    if (id[0] != 'M' || id[1] != 'X') return -1;
+    int high, low;
+    if (id[2] >= '0' && id[2] <= '9') high = id[2] - '0';
+    else if (id[2] >= 'A' && id[2] <= 'F') high = 10 + id[2] - 'A';
+    else if (id[2] >= 'a' && id[2] <= 'f') high = 10 + id[2] - 'a';
+    else return -1;
+    if (id[3] >= '0' && id[3] <= '9') low = id[3] - '0';
+    else if (id[3] >= 'A' && id[3] <= 'F') low = 10 + id[3] - 'A';
+    else if (id[3] >= 'a' && id[3] <= 'f') low = 10 + id[3] - 'a';
+    else return -1;
+    return high * 16 + low;
+}
+
+static int decode_rle_chunk(u8 *destination, size_t output_size,
+                            const u8 *data, size_t len) {
+    if (len == output_size) {
         memcpy(destination, data, len);
         return 0;
     }
     size_t src = 0, dst = 0;
-    while (src < len && dst < 0x10000) {
+    while (src < len && dst < output_size) {
         u8 value = data[src++];
         if (value != 0xE5) {
             destination[dst++] = value;
@@ -70,11 +85,31 @@ static int decode_memory_chunk(u8 *destination, const u8 *data, size_t len) {
             destination[dst++] = 0xE5;
             continue;
         }
-        if (src >= len || dst + count > 0x10000) return -1;
+        if (src >= len || dst + count > output_size) return -1;
         memset(destination + dst, data[src++], count);
         dst += count;
     }
-    return src == len && dst == 0x10000 ? 0 : -1;
+    return src == len && dst == output_size ? 0 : -1;
+}
+
+static int rom_chunk_bank(const u8 id[4]) {
+    if (memcmp(id, "LOWR", 4) == 0) return SNAPSHOT_ROM_COUNT;
+    if (id[0] != 'R' || id[1] != 'M') return -1;
+    int high, low;
+    if (id[2] >= '0' && id[2] <= '9') high = id[2] - '0';
+    else if (id[2] >= 'A' && id[2] <= 'F') high = 10 + id[2] - 'A';
+    else if (id[2] >= 'a' && id[2] <= 'f') high = 10 + id[2] - 'a';
+    else return -1;
+    if (id[3] >= '0' && id[3] <= '9') low = id[3] - '0';
+    else if (id[3] >= 'A' && id[3] <= 'F') low = 10 + id[3] - 'A';
+    else if (id[3] >= 'a' && id[3] <= 'f') low = 10 + id[3] - 'a';
+    else return -1;
+    return high * 16 + low;
+}
+
+static bool is_opaque_debug_chunk(const u8 id[4]) {
+    return memcmp(id, "BRKS", 4) == 0 || memcmp(id, "BRKC", 4) == 0 ||
+           memcmp(id, "SYMB", 4) == 0;
 }
 
 static int load_chunks(FILE *f, CPC *cpc, const char *path,
@@ -90,7 +125,11 @@ static int load_chunks(FILE *f, CPC *cpc, const char *path,
         }
         u32 length = le32(header + 4);
         int mem_index = memory_chunk_index(header);
-        bool known = mem_index >= 0 || memcmp(header, "REMU", 4) == 0;
+        if (mem_index < 0) mem_index = extended_memory_chunk_index(header);
+        int rom_bank = rom_chunk_bank(header);
+        bool opaque_debug = is_opaque_debug_chunk(header);
+        bool known = mem_index >= 0 || rom_bank >= 0 ||
+                     memcmp(header, "REMU", 4) == 0 || opaque_debug;
         if (!known) {
             u8 discard[4096];
             u32 remaining = length;
@@ -121,8 +160,8 @@ static int load_chunks(FILE *f, CPC *cpc, const char *path,
         if (mem_index >= 0) {
             size_t offset = (size_t)mem_index * 0x10000;
             if (offset + 0x10000 > RAM_SIZE ||
-                    decode_memory_chunk(cpc->mem.ram + offset,
-                                        payload, length) != 0) {
+                    decode_rle_chunk(cpc->mem.ram + offset, 0x10000,
+                                     payload, length) != 0) {
                 fprintf(stderr, "snapshot: '%s' has an invalid %.4s memory chunk\n",
                         path, header);
                 free(payload);
@@ -131,6 +170,27 @@ static int load_chunks(FILE *f, CPC *cpc, const char *path,
             if (*memory_size < offset + 0x10000)
                 *memory_size = offset + 0x10000;
             saw_memory = true;
+        } else if (rom_bank >= 0) {
+            u8 decoded[ROM_BASIC_SIZE];
+            if (decode_rle_chunk(decoded, sizeof(decoded), payload, length) != 0) {
+                fprintf(stderr, "snapshot: '%s' has an invalid %.4s ROM chunk\n",
+                        path, header);
+                free(payload);
+                return -1;
+            }
+            if (mem_set_snapshot_rom(&cpc->mem, rom_bank, decoded) < 0) {
+                fprintf(stderr, "snapshot: cannot allocate %.4s ROM chunk\n",
+                        header);
+                free(payload);
+                return -1;
+            }
+        } else if (opaque_debug) {
+            if (!remu_preserve_opaque_chunk(&cpc->remu_debug, header,
+                                            payload, length)) {
+                fprintf(stderr, "snapshot: cannot preserve %.4s chunk\n", header);
+                free(payload);
+                return -1;
+            }
         } else if (remu_parse_chunk(cpc, payload, length) < 0) {
             fprintf(stderr, "snapshot: '%s' REMU chunk is out of memory\n", path);
             free(payload);
@@ -325,6 +385,7 @@ int snapshot_load(CPC *cpc, const char *path) {
 
     remu_debug_clear(&cpc->remu_debug);
     cpc_breakpoint_clear_source(cpc, CPC_BP_SOURCE_SNAPSHOT);
+    mem_clear_snapshot_roms(&cpc->mem);
 
     if (chunked_memory) {
         memset(cpc->mem.ram, 0, sizeof(cpc->mem.ram));
@@ -361,6 +422,58 @@ static void put32(u8 *p, u32 v) {
     p[1] = (v >> 8) & 0xFF;
     p[2] = (v >> 16) & 0xFF;
     p[3] = (v >> 24) & 0xFF;
+}
+
+static u8 *encode_rle_chunk(const u8 *data, size_t size, size_t *out_len) {
+    u8 *encoded = malloc(size * 2);
+    if (!encoded) {
+        *out_len = (size_t)-1;
+        return NULL;
+    }
+    size_t src = 0, dst = 0;
+    while (src < size) {
+        size_t run = 1;
+        while (run < 255 && src + run < size && data[src + run] == data[src])
+            run++;
+        if (data[src] == 0xE5 && run == 1) {
+            encoded[dst++] = 0xE5;
+            encoded[dst++] = 0;
+            src++;
+        } else if (run >= 3 || data[src] == 0xE5) {
+            encoded[dst++] = 0xE5;
+            encoded[dst++] = (u8)run;
+            encoded[dst++] = data[src];
+            src += run;
+        } else {
+            encoded[dst++] = data[src++];
+        }
+    }
+    if (dst >= size) {
+        free(encoded);
+        *out_len = size;
+        return NULL;
+    }
+    *out_len = dst;
+    return encoded;
+}
+
+static int write_chunk(FILE *file, const char id[4], const u8 *data,
+                       size_t length) {
+    if (length > 0xFFFFFFFFu) return -1;
+    u8 header[8];
+    memcpy(header, id, 4);
+    put32(header + 4, (u32)length);
+    return fwrite(header, 1, sizeof(header), file) == sizeof(header) &&
+           (length == 0 || fwrite(data, 1, length, file) == length) ? 0 : -1;
+}
+
+static int write_rom_chunk(FILE *file, const char id[4], const u8 *data) {
+    size_t encoded_len;
+    u8 *encoded = encode_rle_chunk(data, ROM_BASIC_SIZE, &encoded_len);
+    if (encoded_len == (size_t)-1) return -1;
+    int result = write_chunk(file, id, encoded ? encoded : data, encoded_len);
+    free(encoded);
+    return result;
 }
 
 int snapshot_save(CPC *cpc, const char *path) {
@@ -455,13 +568,39 @@ int snapshot_save(CPC *cpc, const char *path) {
         free(remu);
         return -1;
     }
+    const u8 *lower = mem_get_snapshot_rom(&cpc->mem, SNAPSHOT_ROM_COUNT);
+    if (lower && write_rom_chunk(f, "LOWR", lower) < 0) {
+        fprintf(stderr, "snapshot: LOWR write to '%s' failed\n", path);
+        fclose(f);
+        free(remu);
+        return -1;
+    }
+    for (int slot = 0; slot < SNAPSHOT_ROM_COUNT; slot++) {
+        const u8 *rom = mem_get_snapshot_rom(&cpc->mem, slot);
+        if (!rom) continue;
+        char id[5];
+        snprintf(id, sizeof(id), "RM%02X", slot);
+        if (write_rom_chunk(f, id, rom) < 0) {
+            fprintf(stderr, "snapshot: %.4s write to '%s' failed\n", id, path);
+            fclose(f);
+            free(remu);
+            return -1;
+        }
+    }
     if (remu_len) {
-        u8 chunk_header[8];
-        memcpy(chunk_header, "REMU", 4);
-        put32(chunk_header + 4, (u32)remu_len);
-        if (fwrite(chunk_header, 1, sizeof(chunk_header), f) != sizeof(chunk_header) ||
-                fwrite(remu, 1, remu_len, f) != remu_len) {
+        if (write_chunk(f, "REMU", (const u8 *)remu, remu_len) < 0) {
             fprintf(stderr, "snapshot: REMU write to '%s' failed\n", path);
+            fclose(f);
+            free(remu);
+            return -1;
+        }
+    }
+    for (size_t i = 0; i < cpc->remu_debug.opaque_chunk_count; i++) {
+        const RemuOpaqueChunk *chunk = &cpc->remu_debug.opaque_chunks[i];
+        if (write_chunk(f, (const char *)chunk->id, chunk->data,
+                        chunk->length) < 0) {
+            fprintf(stderr, "snapshot: %.4s write to '%s' failed\n",
+                    chunk->id, path);
             fclose(f);
             free(remu);
             return -1;

@@ -1095,6 +1095,7 @@ void cpc_destroy(CPC *cpc) {
     ch376_close(&cpc->ch376_b);
     tape_eject(&cpc->tape);
     real_tape_shutdown(&cpc->real_tape);
+    mem_clear_snapshot_roms(&cpc->mem);
     remu_debug_clear(&cpc->remu_debug);
     display_destroy(&cpc->display);
 }
