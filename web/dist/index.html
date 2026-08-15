@@ -71,7 +71,7 @@
           <span><strong>Internet access</strong><small id="m4NetState" aria-live="polite">Disabled</small></span>
         </label>
         <p class="extension-help">Browsers cannot open TCP sockets. Traffic is
-          tunneled through the shared 1983-msx-unapi-relay service, which only
+          tunneled through the shared ws-unapi-relay service, which only
           permits public IPv4 hosts on common ports (23, 70, 80, 443, 2323).</p>
         <label class="expansion-text-field" for="m4Endpoint">
           <span>Relay endpoint</span>
@@ -87,10 +87,11 @@
           <button id="m4Certificate" class="extension-small-key" type="button" disabled>Trust certificate</button>
           <span>Opens the relay health page. Approve its certificate, then return here; reconnection is automatic.</span>
         </div>
+        <p class="relay-details-link">For details see <a href="https://github.com/salvogendut/ws-unapi-relay" target="_blank" rel="noopener noreferrer">ws-unapi-relay</a>.</p>
         <p class="extension-help">One shared relay instance serves the 1983 and
           1984 emulators. Run it with <code>npm start</code> from the
-          1983-msx-unapi-relay repository (defaults to
-          <code>ws://host:1983/unapi</code>); or serve this page and the relay
+          ws-unapi-relay repository (defaults to
+          <code>ws://host:9380/unapi</code>); or serve this page and the relay
           from one origin.</p>
       </div>
     </section>

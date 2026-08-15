@@ -1,6 +1,7 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
+  root.JSWsUnapiRelayProtocol = api;
   root.JS1984M4Protocol = api;
 }(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
@@ -8,7 +9,7 @@
   /* Shared relay protocol (magic 0x83) spoken by the M4 internet bridge.
    *
    * This is the same versioned binary protocol used by the standalone
-   * 1983-msx-unapi-relay service, so a single deployed relay instance can
+   * ws-unapi-relay service, so a single deployed relay instance can
    * serve both the 1983 MSX UNAPI bridge and the 1984 M4 bridge. Frame
    * layout (8-byte header + payload):
    *   byte 0  magic     0x83
