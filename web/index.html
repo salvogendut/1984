@@ -12,6 +12,91 @@
 <link rel="stylesheet" href="theme-cpc464.css">
 </head>
 <body>
+<div id="expansionBackdrop" class="expansion-backdrop" aria-hidden="true"></div>
+<aside id="expansionPanel" class="expansion-panel" role="dialog" aria-modal="true"
+       aria-labelledby="expansionTitle" aria-hidden="true">
+  <header class="expansion-panel-header">
+    <div>
+      <span>Auxiliary bus</span>
+      <h2 id="expansionTitle">Expansion bay</h2>
+    </div>
+    <button id="expansionClose" class="expansion-close" type="button"
+            aria-label="Close expansion bay"><i aria-hidden="true"></i></button>
+  </header>
+
+  <div class="expansion-device-list">
+    <section class="expansion-device m4-device" aria-labelledby="m4Title">
+      <div class="expansion-device-heading">
+        <span class="expansion-device-mark" aria-hidden="true">M4</span>
+        <div>
+          <h3 id="m4Title">M4 expansion</h3>
+          <span>MX4 bus / SD card + WiFi</span>
+        </div>
+      </div>
+      <div class="expansion-device-controls">
+        <label class="toggle-control expansion-device-toggle">
+          <input type="checkbox" id="m4Toggle">
+          <span class="toggle-track"><i></i></span>
+          <span><strong>Board power</strong><small id="m4State" aria-live="polite">Disabled</small></span>
+        </label>
+        <p class="firmware-note"><strong>Firmware</strong><span>M4ROM (bundled)</span></p>
+        <div class="extension-media-list">
+          <article id="m4SdSlot" class="extension-media-slot">
+            <i id="m4SdLed" class="extension-activity-lamp" aria-hidden="true"></i>
+            <div><strong>SD card</strong><span id="m4SdName">No image loaded</span></div>
+            <label class="extension-small-key" for="m4SdFile">Load</label>
+            <button id="m4SdEject" class="extension-small-key" type="button" disabled>Eject</button>
+            <input class="visually-hidden" type="file" id="m4SdFile"
+                   accept=".img,.IMG,.bin,.BIN,.raw,.RAW">
+          </article>
+        </div>
+        <p class="extension-help">Raw FAT image (FAT16/FAT32), held in browser
+          memory. Ejecting a read/write image downloads any changes the guest
+          wrote.</p>
+      </div>
+    </section>
+
+    <section class="expansion-device m4-net-device" aria-labelledby="m4NetTitle">
+      <div class="expansion-device-heading">
+        <span class="expansion-device-mark" aria-hidden="true">NET</span>
+        <div>
+          <h3 id="m4NetTitle">M4 internet</h3>
+          <span>Relay bridge / TCP + DNS</span>
+        </div>
+      </div>
+      <div class="expansion-device-controls">
+        <label class="toggle-control expansion-device-toggle">
+          <input type="checkbox" id="m4NetToggle">
+          <span class="toggle-track"><i></i></span>
+          <span><strong>Internet access</strong><small id="m4NetState" aria-live="polite">Disabled</small></span>
+        </label>
+        <p class="extension-help">Browsers cannot open TCP sockets. Traffic is
+          tunneled through the shared 1983-msx-unapi-relay service, which only
+          permits public IPv4 hosts on common ports (23, 70, 80, 443, 2323).</p>
+        <label class="expansion-text-field" for="m4Endpoint">
+          <span>Relay endpoint</span>
+          <input id="m4Endpoint" type="url" inputmode="url"
+                 autocomplete="off" spellcheck="false"
+                 placeholder="wss://host/unapi">
+        </label>
+        <div class="relay-state" data-state="offline" aria-live="polite">
+          <i id="m4RelayLamp" aria-hidden="true"></i>
+          <span id="m4RelayState">Relay disabled</span>
+        </div>
+        <div class="relay-certificate-action">
+          <button id="m4Certificate" class="extension-small-key" type="button" disabled>Trust certificate</button>
+          <span>Opens the relay health page. Approve its certificate, then return here; reconnection is automatic.</span>
+        </div>
+        <p class="extension-help">One shared relay instance serves the 1983 and
+          1984 emulators. Run it with <code>npm start</code> from the
+          1983-msx-unapi-relay repository (defaults to
+          <code>ws://host:1983/unapi</code>); or serve this page and the relay
+          from one origin.</p>
+      </div>
+    </section>
+  </div>
+</aside>
+
 <main class="workbench">
   <header class="masthead">
     <div class="brand-lockup">
@@ -508,6 +593,8 @@
 <script src="media-url.js"></script>
 <script src="ml-monitor.js"></script>
 <script src="dap.js"></script>
+<script src="m4-relay-protocol.js"></script>
+<script src="m4-bridge.js"></script>
 <script src="6128.js"></script>
 <script src="app.js"></script>
 </body>

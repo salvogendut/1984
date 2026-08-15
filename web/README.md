@@ -38,9 +38,11 @@ application.
   registers and disassembly, breakpoints, continue, Step In, Step Out,
   one-instruction Step Back, labelled memory-write notifications, and mapped
   memory-slice reading and writing.
+- An M4 expansion bay (AUX) with SD-card image loading and a relay-backed
+  internet bridge.
 
 The browser frontend does not currently expose the native F9 overlay,
-expansion devices, cassette recording, or additional CPC models. Disk and
+cassette recording, or additional CPC models. Disk and
 tape changes are held in browser memory and are lost when the page is
 reloaded; they are not uploaded to the server.
 
@@ -214,3 +216,58 @@ request with CORS headers.
 
 The fetched image lives in the browser's in-memory filesystem. Guest writes
 are not uploaded to the server.
+
+## M4 expansion bay
+
+The **AUX** button opens the Expansion bay, which exposes the native 1984 **M4
+board** (SD card + WiFi) through the same C emulation core the SDL3 build uses.
+
+- **Board power** installs the bundled M4ROM into expansion slot 6, attaches
+  the MX4 bus, and enables the M4 trap ports. Toggling it off unloads the ROM.
+- **SD card** mounts a raw FAT image (FAT12/FAT16/FAT32, `.img`/`.bin`/`.raw`)
+  written into the browser's in-memory filesystem. The guest can use it
+  through the M4 file API (`C_OPEN`/`C_READ`/`C_READDIR`/...) or the raw
+  sector API (`C_SDREAD`/`C_SDWRITE`). **Eject** flushes the image and
+  downloads any changes the guest wrote.
+- **Internet access** tunnels M4 `C_NETHOSTIP`/`C_NETSOCKET`/`C_NETCONNECT`/
+  `C_NETSEND`/`C_NETRECV` traffic over a WebSocket to the shared relay
+  described below. Browser pages cannot open TCP sockets, so the relay is
+  required.
+
+Board, SD image, and internet settings are retained in browser local storage;
+the machine re-applies them automatically after a model switch or page load.
+
+### Relay
+
+The M4 bridge speaks the same binary relay protocol as the standalone
+[1983-msx-unapi-relay](https://github.com/salvogendut/1983-msx-unapi-relay)
+service, so one deployed instance serves both the 1983 and 1984 emulators. The
+relay performs DNS lookups and TCP connections on behalf of the page. It only
+accepts IPv4 destinations on public addresses and allowlisted ports (23, 70,
+80, 443, 2323 by default), so the guest cannot reach private networks.
+Connections are limited to the M4's four TCP sockets, with bounded payloads,
+socket buffers, connect timeouts, heartbeats, and an idle sweep.
+
+```bash
+git clone https://github.com/salvogendut/1983-msx-unapi-relay
+cd 1983-msx-unapi-relay
+npm ci
+UNAPI_ORIGINS=http://127.0.0.1:8000 npm start
+# relay ready at ws://127.0.0.1:1983/unapi (health check: curl :1983/healthz)
+```
+
+Open the 1984 page (e.g. `python3 -m http.server 8000 --directory web/dist`),
+enable **Internet access** in the Expansion bay, and the panel connects to the
+relay. The default endpoint is same-origin `ws(s)://host/unapi`; a `?m4Relay=`
+URL parameter overrides it for that page load (for a separately hosted relay,
+set it to `ws(s)://relay-host:1983/unapi` and add the page origin to the
+relay's `UNAPI_ORIGINS`). On HTTPS pages the relay must use `wss:`; the
+**Trust certificate** button opens the relay's `/healthz` page so you can
+approve a self-signed certificate. Deployment guidance, WSS reverse-proxy
+setups, and the systemd/RPM packaging are documented in that repository.
+
+The C transport seam is `web/m4_web.c` (EM_JS) backed by `web/m4-bridge.js`;
+the frame-sharing protocol lives in `web/m4-relay-protocol.js`, byte-identical
+to the standalone relay's. Tests: `node test_m4_bridge.js` and
+`node test_m4_wasm.js` (the last needs a built `dist/`).
+
