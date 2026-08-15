@@ -17,6 +17,7 @@
  * SDL_Scancode).
  */
 #include <emscripten.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include "cpc.h"
@@ -67,7 +68,7 @@ static unsigned int g_debug_event_serial;
 static CPC g_debug_checkpoint;
 static bool g_debug_checkpoint_valid;
 static int g_debug_stop_reason;
-static int g_debug_temp_bp_slot = -1;
+static CpcBreakpointId g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
 static u16 g_debug_temp_bp_addr;
 static int g_debug_temp_bp_reason;
 static int g_debug_step_reason;
@@ -81,7 +82,7 @@ static void poc_debug_reset_state(void) {
     g_debug_event_serial = 0;
     g_debug_checkpoint_valid = false;
     g_debug_stop_reason = POC_DEBUG_RUNNING;
-    g_debug_temp_bp_slot = -1;
+    g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
     g_debug_temp_bp_addr = 0;
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
     g_debug_step_reason = POC_DEBUG_STEP_IN;
@@ -167,6 +168,7 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     poc_cancel_paste();
     tape_eject(&g_cpc.tape);
     remu_debug_clear(&g_cpc.remu_debug);
+    cpc_breakpoints_destroy(&g_cpc);
     if (model == 1) {
         rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
                       cartridge ? cartridge : "roms/system.cpr", 1);
@@ -199,9 +201,9 @@ EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
     g_cpc.step_once = false;
     g_debug_checkpoint_valid = false;
     g_debug_stop_reason = POC_DEBUG_RUNNING;
-    if (g_debug_temp_bp_slot >= 0)
-        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
-    g_debug_temp_bp_slot = -1;
+    if (g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID)
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_id);
+    g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
 }
 
@@ -225,9 +227,9 @@ EMSCRIPTEN_KEEPALIVE int poc_load_snapshot(const char *path) {
     if (!path || !path[0])
         return -1;
     poc_cancel_paste();
-    if (g_debug_temp_bp_slot >= 0)
-        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
-    g_debug_temp_bp_slot = -1;
+    if (g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID)
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_id);
+    g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
     int rc = snapshot_load(&g_cpc, path);
     if (rc != 0)
         return rc;
@@ -254,21 +256,16 @@ EMSCRIPTEN_KEEPALIVE int poc_step(void) {
     bool stepping = g_cpc.step_once;
     int cycles = cpc_frame(&g_cpc);
     if (g_cpc.paused) {
-        if (g_debug_temp_bp_slot >= 0 &&
+        if (g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID &&
                 g_cpc.cpu.pc == g_debug_temp_bp_addr) {
-            cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
-            g_debug_temp_bp_slot = -1;
+            cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_id);
+            g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
             g_debug_stop_reason = g_debug_temp_bp_reason;
             g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
         } else {
-            bool user_breakpoint = false;
-            for (int slot = 0; slot < CPC_MAX_BREAKPOINTS; slot++) {
-                if (slot != g_debug_temp_bp_slot &&
-                        cpc_breakpoint_matches(&g_cpc, slot, g_cpc.cpu.pc)) {
-                    user_breakpoint = true;
-                    break;
-                }
-            }
+            bool user_breakpoint = cpc_breakpoint_match(
+                &g_cpc, g_cpc.cpu.pc, g_debug_temp_bp_id) !=
+                CPC_BREAKPOINT_INVALID_ID;
             if (user_breakpoint)
                 g_debug_stop_reason = POC_DEBUG_BREAKPOINT;
             else if (stepping)
@@ -281,9 +278,9 @@ EMSCRIPTEN_KEEPALIVE int poc_step(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE void poc_debug_pause(void) {
-    if (g_debug_temp_bp_slot >= 0) {
-        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_slot);
-        g_debug_temp_bp_slot = -1;
+    if (g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID) {
+        cpc_breakpoint_clear(&g_cpc, g_debug_temp_bp_id);
+        g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
         g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
     }
     g_cpc.paused = true;
@@ -312,7 +309,9 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_step_in(void) {
 EMSCRIPTEN_KEEPALIVE int poc_debug_step_back(void) {
     if (!g_cpc.paused || !g_debug_checkpoint_valid)
         return -1;
+    CpcBreakpointManager breakpoint_manager = g_cpc.breakpoint_manager;
     memcpy(&g_cpc, &g_debug_checkpoint, sizeof(g_cpc));
+    g_cpc.breakpoint_manager = breakpoint_manager;
     g_cpc.paused = true;
     g_cpc.step_once = false;
     g_debug_checkpoint_valid = false;
@@ -322,16 +321,16 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_step_back(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_debug_step_out(void) {
-    if (!g_cpc.paused || g_debug_temp_bp_slot >= 0)
+    if (!g_cpc.paused || g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID)
         return -1;
     u16 sp = g_cpc.cpu.sp;
     u16 target = (u16)mem_read(&g_cpc.mem, sp) |
                  ((u16)mem_read(&g_cpc.mem, (u16)(sp + 1)) << 8);
-    int slot = cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
-                                  CPC_BP_SOURCE_TEMPORARY);
-    if (slot < 0)
+    CpcBreakpointId id = cpc_breakpoint_add(
+        &g_cpc, target, CPC_BP_ANY, 0, CPC_BP_SOURCE_TEMPORARY);
+    if (id == CPC_BREAKPOINT_INVALID_ID)
         return -2;
-    g_debug_temp_bp_slot = slot;
+    g_debug_temp_bp_id = id;
     g_debug_temp_bp_addr = target;
     g_debug_temp_bp_reason = POC_DEBUG_STEP_OUT;
     g_debug_checkpoint_valid = false;
@@ -341,7 +340,7 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_step_out(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_debug_next(void) {
-    if (!g_cpc.paused || g_debug_temp_bp_slot >= 0)
+    if (!g_cpc.paused || g_debug_temp_bp_id != CPC_BREAKPOINT_INVALID_ID)
         return -1;
 
     memcpy(&g_debug_checkpoint, &g_cpc, sizeof(g_cpc));
@@ -365,14 +364,14 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_next(void) {
     if (bytes <= 0) bytes = 1;
 
     u16 target = (u16)(pc + bytes);
-    int slot = cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
-                                  CPC_BP_SOURCE_TEMPORARY);
-    if (slot < 0) {
+    CpcBreakpointId id = cpc_breakpoint_add(
+        &g_cpc, target, CPC_BP_ANY, 0, CPC_BP_SOURCE_TEMPORARY);
+    if (id == CPC_BREAKPOINT_INVALID_ID) {
         g_debug_checkpoint_valid = false;
         return -2;
     }
 
-    g_debug_temp_bp_slot = slot;
+    g_debug_temp_bp_id = id;
     g_debug_temp_bp_addr = target;
     g_debug_temp_bp_reason = POC_DEBUG_NEXT;
     g_debug_stop_reason = POC_DEBUG_RUNNING;
@@ -413,36 +412,54 @@ EMSCRIPTEN_KEEPALIVE int poc_debug_reg(int reg) {
 }
 
 EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_set(int addr) {
-    u16 target = (u16)addr;
-    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-        if (i != g_debug_temp_bp_slot && g_cpc.bp_enabled[i] &&
-                g_cpc.bp_armed[i] &&
-                g_cpc.breakpoints[i] == target)
-            return i;
+    CpcBreakpointId id = cpc_breakpoint_add(
+        &g_cpc, (u16)addr, CPC_BP_ANY, 0, CPC_BP_SOURCE_DAP);
+    if (id == CPC_BREAKPOINT_INVALID_ID) return -1;
+    if (id > INT_MAX) {
+        cpc_breakpoint_clear(&g_cpc, id);
+        return -1;
     }
-    return cpc_breakpoint_add(&g_cpc, target, CPC_BP_ANY, 0,
-                              CPC_BP_SOURCE_USER);
+    return (int)id;
 }
 
-EMSCRIPTEN_KEEPALIVE void poc_debug_breakpoint_clear(int slot) {
-    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS)
-        return;
-    cpc_breakpoint_clear(&g_cpc, slot);
-    if (slot == g_debug_temp_bp_slot) {
-        g_debug_temp_bp_slot = -1;
+EMSCRIPTEN_KEEPALIVE void poc_debug_breakpoint_clear(int id) {
+    if (id <= 0) return;
+    cpc_breakpoint_clear(&g_cpc, (CpcBreakpointId)id);
+    if ((CpcBreakpointId)id == g_debug_temp_bp_id) {
+        g_debug_temp_bp_id = CPC_BREAKPOINT_INVALID_ID;
         g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
     }
 }
 
-EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_enabled(int slot) {
-    return slot >= 0 && slot < CPC_MAX_BREAKPOINTS &&
-           g_cpc.bp_enabled[slot] && g_cpc.bp_armed[slot] ? 1 : 0;
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_enabled(int id) {
+    const CpcBreakpoint *breakpoint = id > 0
+        ? cpc_breakpoint_get(&g_cpc, (CpcBreakpointId)id) : NULL;
+    return breakpoint && breakpoint->armed ? 1 : 0;
 }
 
-EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_addr(int slot) {
-    if (slot < 0 || slot >= CPC_MAX_BREAKPOINTS || !g_cpc.bp_enabled[slot])
-        return -1;
-    return g_cpc.breakpoints[slot];
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_addr(int id) {
+    const CpcBreakpoint *breakpoint = id > 0
+        ? cpc_breakpoint_get(&g_cpc, (CpcBreakpointId)id) : NULL;
+    return breakpoint ? breakpoint->address : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_count(void) {
+    size_t count = cpc_breakpoint_count(&g_cpc);
+    return count <= INT_MAX ? (int)count : INT_MAX;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_id_at(int index) {
+    if (index < 0) return -1;
+    const CpcBreakpoint *breakpoint =
+        cpc_breakpoint_at(&g_cpc, (size_t)index);
+    return breakpoint && breakpoint->id <= INT_MAX
+        ? (int)breakpoint->id : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_debug_breakpoint_source(int id) {
+    const CpcBreakpoint *breakpoint = id > 0
+        ? cpc_breakpoint_get(&g_cpc, (CpcBreakpointId)id) : NULL;
+    return breakpoint ? breakpoint->source : -1;
 }
 
 EMSCRIPTEN_KEEPALIVE void poc_set_snapshot_breakpoints(int enabled) {

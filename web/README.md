@@ -100,8 +100,8 @@ framing rules. Use **BREAK** to pause between Z80 instructions before
 inspecting registers, disassembling, or accessing memory; **CONT** resumes
 execution.
 
-Breakpoints accept hexadecimal CPU addresses and remain armed across a warm
-reset. Step In executes one instruction and Step Over uses the DAP `next`
+Breakpoints accept hexadecimal CPU addresses, use dynamically allocated stable
+IDs, and remain armed across a warm reset. Step In executes one instruction and Step Over uses the DAP `next`
 request; both create a single rollback point for Step Back. Step Out runs to the
 return address currently found at the top of the Z80 stack; this is intended
 for use immediately after entering a CALL or where SP points at the routine
@@ -123,9 +123,9 @@ telemetry rather than falsely advertising data-breakpoint support.
 
 Loading a RASM supersnapshot maps its `LOWR` and `RMxx` ROM chunks and imports
 `REMU` labels and source comments into the disassembly. Embedded execution
-breakpoints are armed by default and adopted by the ML Monitor, matching
+breakpoints are armed by default and observed by the ML Monitor, matching
 RASM/ACE debug-session playback. Use **SNA Breaks** to arm or disarm all
-snapshot-provided breakpoint channels without affecting breakpoints created in
+snapshot-provided breakpoint records without affecting breakpoints created in
 the ML Monitor. The collapsed monitor opens automatically when a breakpoint is
 hit. Snapshot downloads preserve the ROM context, supported
 metadata, and debug records or chunks that 1984 does not yet execute.

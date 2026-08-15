@@ -101,9 +101,32 @@ typedef enum {
 
 typedef enum {
     CPC_BP_SOURCE_USER,
+    CPC_BP_SOURCE_DAP,
     CPC_BP_SOURCE_SNAPSHOT,
     CPC_BP_SOURCE_TEMPORARY
 } CpcBreakpointSource;
+
+typedef u32 CpcBreakpointId;
+
+#define CPC_BREAKPOINT_INVALID_ID 0
+#define CPC_BREAKPOINT_ADDRESS_MAP_SIZE (0x10000 / 8)
+
+typedef struct {
+    CpcBreakpointId id;
+    u16 address;
+    u16 bank;
+    u8 kind;
+    u8 source;
+    bool armed;
+} CpcBreakpoint;
+
+typedef struct {
+    CpcBreakpoint *items;
+    size_t count;
+    size_t capacity;
+    CpcBreakpointId next_id;
+    u8 address_map[CPC_BREAKPOINT_ADDRESS_MAP_SIZE];
+} CpcBreakpointManager;
 
 typedef struct CPC {
     CpcModel   model;
@@ -207,15 +230,9 @@ typedef struct CPC {
     int  bus_ticked_in_step;
 
     /* Debugger */
-#define CPC_MAX_BREAKPOINTS 16
     bool paused;
     bool step_once;
-    u16  breakpoints[CPC_MAX_BREAKPOINTS];
-    bool bp_enabled[CPC_MAX_BREAKPOINTS];
-    bool bp_armed[CPC_MAX_BREAKPOINTS];
-    u16  bp_bank[CPC_MAX_BREAKPOINTS];
-    u8   bp_kind[CPC_MAX_BREAKPOINTS];
-    u8   bp_source[CPC_MAX_BREAKPOINTS];
+    CpcBreakpointManager breakpoint_manager;
     bool snapshot_breakpoints; /* arm execution breakpoints imported from SNA */
     RemuDebug remu_debug;
 } CPC;
@@ -255,13 +272,19 @@ void cpc_set_crtc_type(CPC *cpc, CrtcType type);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);
-int  cpc_breakpoint_add(CPC *cpc, u16 addr, CpcBreakpointKind kind,
-                        u16 bank, CpcBreakpointSource source);
-void cpc_breakpoint_clear(CPC *cpc, int slot);
+CpcBreakpointId cpc_breakpoint_add(CPC *cpc, u16 addr,
+                                   CpcBreakpointKind kind, u16 bank,
+                                   CpcBreakpointSource source);
+void cpc_breakpoint_clear(CPC *cpc, CpcBreakpointId id);
 void cpc_breakpoint_clear_source(CPC *cpc, CpcBreakpointSource source);
-void cpc_breakpoint_set_armed(CPC *cpc, int slot, bool armed);
+void cpc_breakpoint_set_armed(CPC *cpc, CpcBreakpointId id, bool armed);
 void cpc_set_snapshot_breakpoints(CPC *cpc, bool enabled);
-bool cpc_breakpoint_matches(const CPC *cpc, int slot, u16 addr);
+size_t cpc_breakpoint_count(const CPC *cpc);
+const CpcBreakpoint *cpc_breakpoint_at(const CPC *cpc, size_t index);
+const CpcBreakpoint *cpc_breakpoint_get(const CPC *cpc, CpcBreakpointId id);
+CpcBreakpointId cpc_breakpoint_match(const CPC *cpc, u16 addr,
+                                     CpcBreakpointId exclude_id);
+void cpc_breakpoints_destroy(CPC *cpc);
 /* Run until the monitor completes one video frame. Returns the number of
  * emulated CPU cycles consumed, or zero while paused. CRTC programs can make
  * a frame shorter or longer than the nominal 80,000 cycles, so frontends must
