@@ -763,6 +763,9 @@ button.extension-small-key:disabled { opacity: .35; }
 .relay-certificate-action { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; }
 .relay-certificate-action .extension-small-key { min-width: 112px; min-height: 30px; }
 .relay-certificate-action span { color: #777d78; font: 600 8px/1.4 ui-monospace, monospace; }
+.relay-details-link { margin: -6px 0 0; color: #777d78; font: 600 8px/1.4 ui-monospace, monospace; }
+.relay-details-link a { color: #b7cbbb; text-underline-offset: 2px; }
+.relay-details-link a:hover { color: #d9e6db; }
 .extension-help { margin: 0; color: #777d78; font: 600 8px/1.45 ui-monospace, monospace; }
 .extension-help code { color: #aeb4ae; font: inherit; }
 

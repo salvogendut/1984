@@ -4,8 +4,19 @@
  * Run with: node test_m4_bridge.js */
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const P = require("./m4-relay-protocol.js");
 const { M4Bridge, relayHealthEndpoint, validEndpoint, POLL } = require("./m4-bridge.js");
+
+assert.equal(globalThis.JSWsUnapiRelayProtocol, P);
+assert.equal(globalThis.JS1984M4Protocol, P);
+
+const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+assert.match(
+  html,
+  /For details see <a href="https:\/\/github\.com\/salvogendut\/ws-unapi-relay" target="_blank" rel="noopener noreferrer">ws-unapi-relay<\/a>/
+);
 
 assert.equal(
   relayHealthEndpoint("wss://relay.example:1984/m4?token=secret#fragment"),

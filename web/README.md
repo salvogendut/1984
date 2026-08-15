@@ -240,7 +240,7 @@ the machine re-applies them automatically after a model switch or page load.
 ### Relay
 
 The M4 bridge speaks the same binary relay protocol as the standalone
-[1983-msx-unapi-relay](https://github.com/salvogendut/1983-msx-unapi-relay)
+[ws-unapi-relay](https://github.com/salvogendut/ws-unapi-relay)
 service, so one deployed instance serves both the 1983 and 1984 emulators. The
 relay performs DNS lookups and TCP connections on behalf of the page. It only
 accepts IPv4 destinations on public addresses and allowlisted ports (23, 70,
@@ -249,18 +249,18 @@ Connections are limited to the M4's four TCP sockets, with bounded payloads,
 socket buffers, connect timeouts, heartbeats, and an idle sweep.
 
 ```bash
-git clone https://github.com/salvogendut/1983-msx-unapi-relay
-cd 1983-msx-unapi-relay
+git clone https://github.com/salvogendut/ws-unapi-relay
+cd ws-unapi-relay
 npm ci
 UNAPI_ORIGINS=http://127.0.0.1:8000 npm start
-# relay ready at ws://127.0.0.1:1983/unapi (health check: curl :1983/healthz)
+# relay ready at ws://127.0.0.1:9380/unapi (health check: curl :9380/healthz)
 ```
 
 Open the 1984 page (e.g. `python3 -m http.server 8000 --directory web/dist`),
 enable **Internet access** in the Expansion bay, and the panel connects to the
 relay. The default endpoint is same-origin `ws(s)://host/unapi`; a `?m4Relay=`
 URL parameter overrides it for that page load (for a separately hosted relay,
-set it to `ws(s)://relay-host:1983/unapi` and add the page origin to the
+set it to `ws(s)://relay-host:9380/unapi` and add the page origin to the
 relay's `UNAPI_ORIGINS`). On HTTPS pages the relay must use `wss:`; the
 **Trust certificate** button opens the relay's `/healthz` page so you can
 approve a self-signed certificate. Deployment guidance, WSS reverse-proxy
@@ -270,4 +270,3 @@ The C transport seam is `web/m4_web.c` (EM_JS) backed by `web/m4-bridge.js`;
 the frame-sharing protocol lives in `web/m4-relay-protocol.js`, byte-identical
 to the standalone relay's. Tests: `node test_m4_bridge.js` and
 `node test_m4_wasm.js` (the last needs a built `dist/`).
-

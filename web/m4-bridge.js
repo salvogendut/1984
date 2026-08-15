@@ -8,7 +8,7 @@
  * synchronously while the relay I/O happens between emulator frames.
  */
 (function (root, factory) {
-  const P = root.JS1984M4Protocol ||
+  const P = root.JSWsUnapiRelayProtocol || root.JS1984M4Protocol ||
     (typeof require === "function" ? require("./m4-relay-protocol.js") : null);
   const api = factory(P);
   if (typeof module === "object" && module.exports) module.exports = api;
