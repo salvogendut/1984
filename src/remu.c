@@ -150,8 +150,9 @@ static bool parse_break(CPC *cpc, char *args, CpcBreakpointKind kind) {
             addr > 0xFFFF || bank > 0xFFFF)
         return false;
     if (cpc_breakpoint_add(cpc, (u16)addr, kind, (u16)bank,
-                           CPC_BP_SOURCE_SNAPSHOT) < 0) {
-        fprintf(stderr, "snapshot: REMU breakpoint limit reached; ignoring %04X\n",
+                           CPC_BP_SOURCE_SNAPSHOT) ==
+            CPC_BREAKPOINT_INVALID_ID) {
+        fprintf(stderr, "snapshot: cannot allocate REMU breakpoint; ignoring %04X\n",
                 (unsigned)addr);
     }
     return true;
@@ -229,8 +230,9 @@ static bool parse_ace_break(CPC *cpc, char *record) {
     if (!have_addr || addr > 0xFFFF || mask != 0xFFFF || size != 1)
         return false;
     if (cpc_breakpoint_add(cpc, (u16)addr, CPC_BP_ANY, 0,
-                           CPC_BP_SOURCE_SNAPSHOT) < 0)
-        fprintf(stderr, "snapshot: REMU breakpoint limit reached; ignoring %04X\n",
+                           CPC_BP_SOURCE_SNAPSHOT) ==
+            CPC_BREAKPOINT_INVALID_ID)
+        fprintf(stderr, "snapshot: cannot allocate REMU breakpoint; ignoring %04X\n",
                 (unsigned)addr);
     return true;
 }
@@ -374,22 +376,34 @@ char *remu_build_chunk(const CPC *cpc, size_t *out_len) {
                        comment->text);
     }
 
-    for (int i = 0; i < CPC_MAX_BREAKPOINTS; i++) {
-        if (!cpc->bp_enabled[i] ||
-                cpc->bp_source[i] == CPC_BP_SOURCE_TEMPORARY)
+    for (size_t i = 0; i < cpc_breakpoint_count(cpc); i++) {
+        const CpcBreakpoint *breakpoint = cpc_breakpoint_at(cpc, i);
+        if (breakpoint->source == CPC_BP_SOURCE_TEMPORARY)
             continue;
-        if (cpc->bp_kind[i] == CPC_BP_RAM)
+        bool duplicate = false;
+        for (size_t previous = 0; previous < i; previous++) {
+            const CpcBreakpoint *other = cpc_breakpoint_at(cpc, previous);
+            if (other->source != CPC_BP_SOURCE_TEMPORARY &&
+                    other->address == breakpoint->address &&
+                    other->kind == breakpoint->kind &&
+                    other->bank == breakpoint->bank) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) continue;
+        if (breakpoint->kind == CPC_BP_RAM)
             builder_printf(&builder, "brk %u %u;",
-                           (unsigned)cpc->breakpoints[i],
-                           (unsigned)cpc->bp_bank[i]);
-        else if (cpc->bp_kind[i] == CPC_BP_ROM)
+                           (unsigned)breakpoint->address,
+                           (unsigned)breakpoint->bank);
+        else if (breakpoint->kind == CPC_BP_ROM)
             builder_printf(&builder, "rombrk %u %u;",
-                           (unsigned)cpc->breakpoints[i],
-                           (unsigned)cpc->bp_bank[i]);
+                           (unsigned)breakpoint->address,
+                           (unsigned)breakpoint->bank);
         else
             builder_printf(&builder,
                 "acebreak EXEC,RW,STOP,addr=%u,mask=65535,size=1,value=0,valmask=0,name=1984;",
-                (unsigned)cpc->breakpoints[i]);
+                (unsigned)breakpoint->address);
     }
     if (cpc->remu_debug.passthrough_len) {
         if (!builder_reserve(&builder, cpc->remu_debug.passthrough_len)) {

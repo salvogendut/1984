@@ -413,6 +413,7 @@ create6128().then(m => {
   const joymatrixEl = $("joymatrix");
   const mousestatusEl = $("mousestatus");
   const mlSnapshotBreakpointsEl = $("mlSnapshotBreakpoints");
+  const CPC_BP_SOURCE_DAP = 1;
 
   let currentModel = 0;
   let audioCtx = null;
@@ -622,15 +623,21 @@ create6128().then(m => {
   }
 
   function adoptCoreMlBreakpoints() {
-    const addresses = [];
-    for (let slot = 0; slot < 16; slot++) {
-      if (!m._poc_debug_breakpoint_enabled(slot)) continue;
-      const address = m._poc_debug_breakpoint_addr(slot);
-      if (address >= 0 && !addresses.includes(address)) addresses.push(address);
+    const dapAddresses = [];
+    let active = 0;
+    const count = m._poc_debug_breakpoint_count();
+    for (let index = 0; index < count; index++) {
+      const id = m._poc_debug_breakpoint_id_at(index);
+      if (id <= 0 || !m._poc_debug_breakpoint_enabled(id)) continue;
+      active++;
+      if (m._poc_debug_breakpoint_source(id) !== CPC_BP_SOURCE_DAP) continue;
+      const address = m._poc_debug_breakpoint_addr(id);
+      if (address >= 0 && !dapAddresses.includes(address))
+        dapAddresses.push(address);
     }
     createMlDapSession();
-    applyMlBreakpoints(addresses);
-    return addresses.length;
+    applyMlBreakpoints(dapAddresses);
+    return active;
   }
 
   function updateSnapshotBreakpointControl() {

@@ -467,7 +467,7 @@
           if (!Number.isInteger(address) || address < 0 || address > MAX_ADDRESS)
             throw new Error("instruction address is outside the Z80 address space");
           const slot = this.backend.setBreakpoint(address);
-          if (slot < 0) throw new Error("all 16 breakpoint channels are in use");
+          if (slot < 0) throw new Error("the breakpoint could not be allocated");
           this.breakpointSlots.set(address, slot);
           if (!this.breakpointIds.has(address))
             this.breakpointIds.set(address, this.nextBreakpointId++);

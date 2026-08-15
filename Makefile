@@ -121,30 +121,31 @@ PROGRAMS = $(bin_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_1984_OBJECTS = src/1984-config.$(OBJEXT) \
 	src/1984-cartridge.$(OBJEXT) src/1984-asic.$(OBJEXT) \
-	src/1984-cpc.$(OBJEXT) src/1984-monitor.$(OBJEXT) \
-	src/1984-net4cpc.$(OBJEXT) src/1984-z80dis.$(OBJEXT) \
-	src/1984-crtc.$(OBJEXT) src/1984-disk.$(OBJEXT) \
-	src/1984-amx.$(OBJEXT) src/1984-display.$(OBJEXT) \
-	src/1984-fdc.$(OBJEXT) src/1984-gate_array.$(OBJEXT) \
-	src/1984-joy.$(OBJEXT) src/1984-kbd.$(OBJEXT) \
-	src/1984-main.$(OBJEXT) src/1984-mem.$(OBJEXT) \
-	src/1984-overlay.$(OBJEXT) src/1984-paste.$(OBJEXT) \
-	src/1984-kbd_pty.$(OBJEXT) src/1984-printer.$(OBJEXT) \
-	src/1984-screen_text.$(OBJEXT) src/1984-ppi.$(OBJEXT) \
-	src/1984-psg.$(OBJEXT) src/1984-rtc.$(OBJEXT) \
-	src/1984-ide.$(OBJEXT) src/1984-fat.$(OBJEXT) \
-	src/1984-real_tape.$(OBJEXT) src/1984-remu.$(OBJEXT) \
-	src/1984-ch376.$(OBJEXT) src/1984-usifac.$(OBJEXT) \
-	src/1984-perryfi.$(OBJEXT) src/1984-symbols.$(OBJEXT) \
-	src/1984-gifcap.$(OBJEXT) src/1984-ffmpeg_gif.$(OBJEXT) \
-	src/1984-webmcap.$(OBJEXT) src/1984-webgui.$(OBJEXT) \
-	src/1984-websvc.$(OBJEXT) src/1984-host_mount.$(OBJEXT) \
-	src/1984-leds.$(OBJEXT) src/1984-m4.$(OBJEXT) \
-	src/1984-symbnet.$(OBJEXT) src/1984-symbos_trace.$(OBJEXT) \
-	src/1984-mouse.$(OBJEXT) src/1984-n4c_stack.$(OBJEXT) \
-	src/1984-notify.$(OBJEXT) src/1984-pilot.$(OBJEXT) \
-	src/1984-snapshot.$(OBJEXT) src/1984-tap.$(OBJEXT) \
-	src/1984-tape.$(OBJEXT) src/1984-z80.$(OBJEXT)
+	src/1984-cpc.$(OBJEXT) src/1984-cpc_breakpoint.$(OBJEXT) \
+	src/1984-monitor.$(OBJEXT) src/1984-net4cpc.$(OBJEXT) \
+	src/1984-z80dis.$(OBJEXT) src/1984-crtc.$(OBJEXT) \
+	src/1984-disk.$(OBJEXT) src/1984-amx.$(OBJEXT) \
+	src/1984-display.$(OBJEXT) src/1984-fdc.$(OBJEXT) \
+	src/1984-gate_array.$(OBJEXT) src/1984-joy.$(OBJEXT) \
+	src/1984-kbd.$(OBJEXT) src/1984-main.$(OBJEXT) \
+	src/1984-mem.$(OBJEXT) src/1984-overlay.$(OBJEXT) \
+	src/1984-paste.$(OBJEXT) src/1984-kbd_pty.$(OBJEXT) \
+	src/1984-printer.$(OBJEXT) src/1984-screen_text.$(OBJEXT) \
+	src/1984-ppi.$(OBJEXT) src/1984-psg.$(OBJEXT) \
+	src/1984-rtc.$(OBJEXT) src/1984-ide.$(OBJEXT) \
+	src/1984-fat.$(OBJEXT) src/1984-real_tape.$(OBJEXT) \
+	src/1984-remu.$(OBJEXT) src/1984-ch376.$(OBJEXT) \
+	src/1984-usifac.$(OBJEXT) src/1984-perryfi.$(OBJEXT) \
+	src/1984-symbols.$(OBJEXT) src/1984-gifcap.$(OBJEXT) \
+	src/1984-ffmpeg_gif.$(OBJEXT) src/1984-webmcap.$(OBJEXT) \
+	src/1984-webgui.$(OBJEXT) src/1984-websvc.$(OBJEXT) \
+	src/1984-host_mount.$(OBJEXT) src/1984-leds.$(OBJEXT) \
+	src/1984-m4.$(OBJEXT) src/1984-symbnet.$(OBJEXT) \
+	src/1984-symbos_trace.$(OBJEXT) src/1984-mouse.$(OBJEXT) \
+	src/1984-n4c_stack.$(OBJEXT) src/1984-notify.$(OBJEXT) \
+	src/1984-pilot.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
+	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
+	src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -167,10 +168,10 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = src/$(DEPDIR)/1984-amx.Po \
 	src/$(DEPDIR)/1984-asic.Po src/$(DEPDIR)/1984-cartridge.Po \
 	src/$(DEPDIR)/1984-ch376.Po src/$(DEPDIR)/1984-config.Po \
-	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-crtc.Po \
-	src/$(DEPDIR)/1984-disk.Po src/$(DEPDIR)/1984-display.Po \
-	src/$(DEPDIR)/1984-fat.Po src/$(DEPDIR)/1984-fdc.Po \
-	src/$(DEPDIR)/1984-ffmpeg_gif.Po \
+	src/$(DEPDIR)/1984-cpc.Po src/$(DEPDIR)/1984-cpc_breakpoint.Po \
+	src/$(DEPDIR)/1984-crtc.Po src/$(DEPDIR)/1984-disk.Po \
+	src/$(DEPDIR)/1984-display.Po src/$(DEPDIR)/1984-fat.Po \
+	src/$(DEPDIR)/1984-fdc.Po src/$(DEPDIR)/1984-ffmpeg_gif.Po \
 	src/$(DEPDIR)/1984-gate_array.Po src/$(DEPDIR)/1984-gifcap.Po \
 	src/$(DEPDIR)/1984-host_mount.Po src/$(DEPDIR)/1984-ide.Po \
 	src/$(DEPDIR)/1984-joy.Po src/$(DEPDIR)/1984-kbd.Po \
@@ -346,7 +347,7 @@ PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PROG_GIT_COMMIT = c73ab7f
+PROG_GIT_COMMIT = 4ceb209
 SDL3_CFLAGS = 
 SDL3_LIBS = -lSDL3
 SET_MAKE = 
@@ -417,6 +418,7 @@ dist_man1_MANS = 1984.1
 	src/cartridge.c \
 	src/asic.c \
 	src/cpc.c \
+	src/cpc_breakpoint.c \
 	src/monitor.c \
 	src/net4cpc.c \
 	src/z80dis.c \
@@ -679,6 +681,8 @@ src/1984-asic.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-cpc.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-cpc_breakpoint.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-monitor.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-net4cpc.$(OBJEXT): src/$(am__dirstamp) \
@@ -791,6 +795,7 @@ include src/$(DEPDIR)/1984-cartridge.Po # am--include-marker
 include src/$(DEPDIR)/1984-ch376.Po # am--include-marker
 include src/$(DEPDIR)/1984-config.Po # am--include-marker
 include src/$(DEPDIR)/1984-cpc.Po # am--include-marker
+include src/$(DEPDIR)/1984-cpc_breakpoint.Po # am--include-marker
 include src/$(DEPDIR)/1984-crtc.Po # am--include-marker
 include src/$(DEPDIR)/1984-disk.Po # am--include-marker
 include src/$(DEPDIR)/1984-display.Po # am--include-marker
@@ -914,6 +919,20 @@ src/1984-cpc.obj: src/cpc.c
 #	$(AM_V_CC)source='src/cpc.c' object='src/1984-cpc.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-cpc.obj `if test -f 'src/cpc.c'; then $(CYGPATH_W) 'src/cpc.c'; else $(CYGPATH_W) '$(srcdir)/src/cpc.c'; fi`
+
+src/1984-cpc_breakpoint.o: src/cpc_breakpoint.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-cpc_breakpoint.o -MD -MP -MF src/$(DEPDIR)/1984-cpc_breakpoint.Tpo -c -o src/1984-cpc_breakpoint.o `test -f 'src/cpc_breakpoint.c' || echo '$(srcdir)/'`src/cpc_breakpoint.c
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-cpc_breakpoint.Tpo src/$(DEPDIR)/1984-cpc_breakpoint.Po
+#	$(AM_V_CC)source='src/cpc_breakpoint.c' object='src/1984-cpc_breakpoint.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-cpc_breakpoint.o `test -f 'src/cpc_breakpoint.c' || echo '$(srcdir)/'`src/cpc_breakpoint.c
+
+src/1984-cpc_breakpoint.obj: src/cpc_breakpoint.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-cpc_breakpoint.obj -MD -MP -MF src/$(DEPDIR)/1984-cpc_breakpoint.Tpo -c -o src/1984-cpc_breakpoint.obj `if test -f 'src/cpc_breakpoint.c'; then $(CYGPATH_W) 'src/cpc_breakpoint.c'; else $(CYGPATH_W) '$(srcdir)/src/cpc_breakpoint.c'; fi`
+	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-cpc_breakpoint.Tpo src/$(DEPDIR)/1984-cpc_breakpoint.Po
+#	$(AM_V_CC)source='src/cpc_breakpoint.c' object='src/1984-cpc_breakpoint.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-cpc_breakpoint.obj `if test -f 'src/cpc_breakpoint.c'; then $(CYGPATH_W) 'src/cpc_breakpoint.c'; else $(CYGPATH_W) '$(srcdir)/src/cpc_breakpoint.c'; fi`
 
 src/1984-monitor.o: src/monitor.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-monitor.o -MD -MP -MF src/$(DEPDIR)/1984-monitor.Tpo -c -o src/1984-monitor.o `test -f 'src/monitor.c' || echo '$(srcdir)/'`src/monitor.c
@@ -2134,6 +2153,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
+	-rm -f src/$(DEPDIR)/1984-cpc_breakpoint.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po
 	-rm -f src/$(DEPDIR)/1984-disk.Po
 	-rm -f src/$(DEPDIR)/1984-display.Po
@@ -2237,6 +2257,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-ch376.Po
 	-rm -f src/$(DEPDIR)/1984-config.Po
 	-rm -f src/$(DEPDIR)/1984-cpc.Po
+	-rm -f src/$(DEPDIR)/1984-cpc_breakpoint.Po
 	-rm -f src/$(DEPDIR)/1984-crtc.Po
 	-rm -f src/$(DEPDIR)/1984-disk.Po
 	-rm -f src/$(DEPDIR)/1984-display.Po

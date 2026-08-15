@@ -8,6 +8,7 @@ dist_man1_MANS = 1984.1
 	src/cartridge.c \
 	src/asic.c \
 	src/cpc.c \
+	src/cpc_breakpoint.c \
 	src/monitor.c \
 	src/net4cpc.c \
 	src/z80dis.c \

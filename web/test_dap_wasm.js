@@ -204,6 +204,16 @@ async function main() {
   assert.strictEqual(breakpoints.breakpoints[0].verified, true);
   ok(session, "setInstructionBreakpoints", { breakpoints: [] });
 
+  const manyBreakpoints = ok(session, "setInstructionBreakpoints", {
+    breakpoints: Array.from({ length: 48 }, (_, index) => ({
+      instructionReference: DAP.addressReference(0x2000 + index),
+    })),
+  });
+  assert(manyBreakpoints.breakpoints.every(breakpoint => breakpoint.verified));
+  assert.strictEqual(module._poc_debug_breakpoint_count(), 48);
+  ok(session, "setInstructionBreakpoints", { breakpoints: [] });
+  assert.strictEqual(module._poc_debug_breakpoint_count(), 0);
+
   /* A RASM-style v3 supersnapshot stores RAM in MEMx chunks and debugger
    * metadata in a REMU chunk. Exercise that exact path in the wasm core. */
   assert.strictEqual(module.ccall("poc_save_snapshot", "number", ["string"],
@@ -236,14 +246,23 @@ async function main() {
   assert.strictEqual(module._poc_debug_mem_read(0xc000) & 0xff, 0x42);
   /* RASM/ACE execution breakpoints start armed but can be globally disabled. */
   assert.strictEqual(module._poc_snapshot_breakpoints(), 1);
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
-  assert.strictEqual(module._poc_debug_breakpoint_addr(0), 0);
+  let snapshotId = -1;
+  for (let index = 0; index < module._poc_debug_breakpoint_count(); index++) {
+    const id = module._poc_debug_breakpoint_id_at(index);
+    if (module._poc_debug_breakpoint_source(id) === 2 &&
+        module._poc_debug_breakpoint_addr(id) === 0) {
+      snapshotId = id;
+      break;
+    }
+  }
+  assert(snapshotId > 0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(snapshotId), 1);
   module._poc_set_snapshot_breakpoints(0);
   assert.strictEqual(module._poc_snapshot_breakpoints(), 0);
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(snapshotId), 0);
   module._poc_set_snapshot_breakpoints(1);
-  assert.strictEqual(module._poc_debug_breakpoint_enabled(0), 1);
-  module._poc_debug_breakpoint_clear(0);
+  assert.strictEqual(module._poc_debug_breakpoint_enabled(snapshotId), 1);
+  module._poc_debug_breakpoint_clear(snapshotId);
   const labelled = module.ccall(
     "poc_debug_disassemble", "string", ["number", "number"], [0, 1]
   );

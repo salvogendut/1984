@@ -49,13 +49,14 @@ a save, but 1984 does not currently interpret them. Their contents may
 therefore describe the original tool's debug session rather than edits made in
 1984.
 
-1984 has 16 shared execution-breakpoint channels. Snapshot breakpoints use
-the same channels as breakpoints created in the native F8 monitor or the web
-ML Monitor. They start armed by default to match RASM/ACE debug-session
-playback: the snapshot resumes and stops when an embedded breakpoint is
-reached. **Snapshot Breakpoints** can be disabled when a snapshot should run
-without debugger stops. Loading another snapshot removes the prior snapshot's
-breakpoint channels but retains breakpoints created by the user.
+1984 stores execution breakpoints dynamically and assigns each one a stable
+ID, with no fixed record-count limit. Native-monitor, DAP, snapshot, and
+temporary stepping records retain separate ownership, so replacing DAP
+breakpoints or loading another snapshot
+does not remove breakpoints belonging to another source. Snapshot breakpoints
+start armed by default to match RASM/ACE debug-session playback: the snapshot
+resumes and stops when an embedded breakpoint is reached. **Snapshot
+Breakpoints** can disable those records without affecting user or DAP records.
 
 ## Native SDL3
 
@@ -63,16 +64,16 @@ Load the SNA normally with `--load-sna=PATH`, the Media overlay, or the F8
 monitor. Imported labels annotate disassembly. The monitor's `S NAME` and
 `BS NAME` commands resolve REMU labels and aliases, while `B` lists imported
 RAM/ROM bank qualifiers and their state. A recognized embedded breakpoint
-automatically opens the monitor when hit. Use `BD N` to disarm one channel or
-disable **Advanced -> Snapshot Breakpoints** to disarm all snapshot channels.
+automatically opens the monitor when hit. Use `BD ID` to disarm one breakpoint
+or disable **Advanced -> Snapshot Breakpoints** to disarm all snapshot records.
 
 ## WebAssembly
 
 Use **Load SNA** in the web media deck. The ML Monitor uses imported labels and
-comments for disassembly and adopts recognized embedded execution breakpoints
-as armed DAP instruction breakpoints. Its **SNA Breaks** button globally arms
-or disarms snapshot channels. The ML Monitor opens and a toast reports when an
-armed breakpoint is hit.
+comments for disassembly. Recognized embedded execution breakpoints remain
+snapshot-owned records, independently of breakpoints created through DAP. Its
+**SNA Breaks** button globally arms or disarms snapshot records. The ML Monitor
+opens and a toast reports when an armed breakpoint is hit.
 Downloaded snapshots retain the supported metadata and preserved debug chunks.
 
 ## Saving

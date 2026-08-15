@@ -704,9 +704,9 @@ Background colour: dark green when running, dark red when paused.
 |---------|-------------|
 | `D <addr> [<end>]` | Disassemble Z80. Without end address, prints 10 lines. Pageable with ENTER/SPACE. |
 | `M <addr> [<end>]` | Hex + ASCII dump. Without end address, fills the screen. ASCII column is shown in reverse video. |
-| `B [<addr>]` | Set a breakpoint at `addr`, or list all breakpoint slots. |
-| `BE <n>` / `BD <n>` | Arm or disarm breakpoint slot `n`. Snapshot breakpoints load disarmed. |
-| `BC <n>` | Clear breakpoint slot `n` (0 – 15). |
+| `B [<addr>]` | Set a breakpoint at `addr`, or list all breakpoint IDs. |
+| `BE <id>` / `BD <id>` | Arm or disarm a breakpoint by stable ID. |
+| `BC <id>` | Clear a breakpoint by stable ID. |
 | `N` | Single-step one Z80 instruction (emulator must be paused). |
 | `G` / `GO` | Resume execution (clear pause). |
 | `GA` | Dump Gate Array: screen mode, border ink, all 16 inks. |
@@ -728,18 +728,24 @@ Decodes using the standard Z80 bit-field decomposition (`x = op>>6`, `y = (op>>3
 
 ---
 
-## Breakpoints & Single-Step (`src/cpc.h` / `src/cpc.c`)
+## Breakpoints & Single-Step (`src/cpc_breakpoint.c` / `src/cpc.c`)
 
-### CPC struct additions
+### Breakpoint storage
 
 ```c
-#define CPC_MAX_BREAKPOINTS 16
 bool paused;
 bool step_once;
-u16  breakpoints[CPC_MAX_BREAKPOINTS];
-bool bp_enabled[CPC_MAX_BREAKPOINTS];
-bool bp_armed[CPC_MAX_BREAKPOINTS];
+CpcBreakpointManager breakpoint_manager;
 ```
+
+The manager uses a dynamically resized record vector and stable 32-bit IDs.
+There is no fixed breakpoint-count limit; additions fail only if host memory
+cannot grow the vector or the ID space is exhausted.
+An 8 KB bitmap covers the Z80's 65,536 logical addresses, allowing the hot CPU
+path to reject addresses with no armed breakpoint in constant time. Only an
+address present in that bitmap requires scanning records for RAM/ROM bank
+qualifiers. User, DAP, snapshot, and temporary step records have distinct
+source ownership.
 
 ### `cpc_frame()` logic
 
