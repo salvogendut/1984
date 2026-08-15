@@ -48,6 +48,142 @@ const crtBlueLut = new Uint8Array(256);
 let toastTimer = 0;
 let inputLedTimer = 0;
 
+// ---- expansion bay (M4 board + internet relay) ----
+const expansionButtonEl = $("expansion");
+const expansionPanelEl = $("expansionPanel");
+const expansionBackdropEl = $("expansionBackdrop");
+const expansionCloseEl = $("expansionClose");
+const m4ToggleEl = $("m4Toggle");
+const m4StateEl = $("m4State");
+const m4SdSlotEl = $("m4SdSlot");
+const m4SdLedEl = $("m4SdLed");
+const m4SdNameEl = $("m4SdName");
+const m4SdFileEl = $("m4SdFile");
+const m4SdEjectEl = $("m4SdEject");
+const m4NetToggleEl = $("m4NetToggle");
+const m4NetStateEl = $("m4NetState");
+const m4EndpointEl = $("m4Endpoint");
+const m4RelayStateEl = $("m4RelayState");
+const m4RelayStateWrapEl = m4RelayStateEl.closest(".relay-state");
+const m4RelayLampEl = $("m4RelayLamp");
+const m4CertificateEl = $("m4Certificate");
+const m4Api = globalThis.JS1984M4 || null;
+const m4Bridge = globalThis.JS1984M4Bridge || null;
+
+const M4_STORAGE_KEY = "javascript1984.expansion.m4";
+const M4_NET_STORAGE_KEY = "javascript1984.expansion.m4Net";
+const M4_ENDPOINT_STORAGE_KEY = "javascript1984.expansion.m4Endpoint";
+let m4Enabled = false;
+let m4NetEnabled = false;
+let m4Endpoint = m4Bridge ? m4Bridge.endpoint : "";
+let m4CertificateUrl = "";
+let m4SdImage = null;
+let applyM4Hardware = () => {};
+try {
+  m4Enabled = localStorage.getItem(M4_STORAGE_KEY) === "true";
+  m4NetEnabled = localStorage.getItem(M4_NET_STORAGE_KEY) === "true";
+  const storedEndpoint = localStorage.getItem(M4_ENDPOINT_STORAGE_KEY);
+  if (storedEndpoint !== null) m4Endpoint = storedEndpoint;
+} catch (_) {
+  // Keep the default M4 settings when storage is unavailable.
+}
+
+function updateExpansionIndicator() {
+  expansionButtonEl.classList.toggle("has-expansion", m4Enabled || m4NetEnabled);
+}
+
+function updateM4Ui() {
+  m4ToggleEl.checked = m4Enabled;
+  m4StateEl.textContent = m4Enabled ? "Enabled" : "Disabled";
+  m4SdSlotEl.setAttribute("aria-disabled", String(!m4Enabled));
+  m4SdFileEl.disabled = !m4Enabled;
+  m4SdEjectEl.disabled = !m4Enabled || !m4SdImage;
+  updateExpansionIndicator();
+}
+
+function setM4Enabled(enabled, persist = true, announce = false) {
+  m4Enabled = Boolean(enabled);
+  applyM4Hardware(m4Enabled);
+  updateM4Ui();
+  if (persist) {
+    try { localStorage.setItem(M4_STORAGE_KEY, String(m4Enabled)); } catch (_) {}
+  }
+  if (announce) showToast("M4 expansion " + (m4Enabled ? "enabled" : "disabled"));
+}
+
+function updateM4NetUi() {
+  m4NetToggleEl.checked = m4NetEnabled;
+  m4NetStateEl.textContent = m4NetEnabled ? "Enabled" : "Disabled";
+  updateExpansionIndicator();
+}
+
+function setM4NetEnabled(enabled, persist = true, announce = false) {
+  m4NetEnabled = Boolean(enabled);
+  if (m4Bridge) m4Bridge.setDevice(m4NetEnabled);
+  updateM4NetUi();
+  if (persist) {
+    try { localStorage.setItem(M4_NET_STORAGE_KEY, String(m4NetEnabled)); } catch (_) {}
+  }
+  if (announce) showToast("M4 internet " + (m4NetEnabled ? "enabled" : "disabled"));
+}
+
+function updateM4RelayStatus(status, detail = "") {
+  const labels = {
+    disabled: "Relay disabled",
+    offline: "Relay offline",
+    connecting: "Connecting to relay",
+    online: "Relay online",
+    error: "Relay error",
+  };
+  m4RelayStateWrapEl.dataset.state = status;
+  let text = labels[status] || "Relay offline";
+  if (status === "offline" && detail)
+    text += " \u2014 " + detail;
+  m4RelayStateEl.textContent = text;
+  m4RelayStateEl.title = detail;
+}
+
+function applyM4Endpoint(value, persist = true) {
+  if (!m4Bridge || !m4Api) return false;
+  m4Endpoint = value.trim();
+  const accepted = m4Bridge.setEndpoint(m4Endpoint);
+  m4EndpointEl.setAttribute("aria-invalid", String(!accepted));
+  m4CertificateUrl = "";
+  if (accepted) {
+    try {
+      const healthUrl = m4Api.relayHealthEndpoint(m4Endpoint);
+      if (healthUrl.startsWith("https:")) m4CertificateUrl = healthUrl;
+    } catch (_) {
+      // Non-secure relays have no certificate step.
+    }
+  }
+  m4CertificateEl.disabled = !m4CertificateUrl;
+  if (persist) {
+    try { localStorage.setItem(M4_ENDPOINT_STORAGE_KEY, m4Endpoint); } catch (_) {}
+  }
+  return accepted;
+}
+
+function expansionFocusableElements() {
+  return [...expansionPanelEl.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )];
+}
+
+function setExpansionPanelOpen(open, restoreFocus = true) {
+  const isOpen = Boolean(open);
+  document.body.classList.toggle("expansion-open", isOpen);
+  expansionButtonEl.setAttribute("aria-expanded", String(isOpen));
+  expansionPanelEl.setAttribute("aria-hidden", String(!isOpen));
+  expansionPanelEl.inert = !isOpen;
+  if (isOpen) {
+    setThemeMenu(false);
+    requestAnimationFrame(() => expansionCloseEl.focus());
+  } else if (restoreFocus) {
+    expansionButtonEl.focus();
+  }
+}
+
 function setStatus(message) {
   statusEl.textContent = message;
 }
@@ -332,9 +468,62 @@ $("fullscreen").addEventListener("click", async () => {
     setStatus("Fullscreen unavailable: " + error.message);
   }
 });
-$("expansion").addEventListener("click", () => {
-  showToast("Expansion bay reserved for future browser devices");
+expansionButtonEl.addEventListener("click", () => {
+  setExpansionPanelOpen(
+    expansionButtonEl.getAttribute("aria-expanded") !== "true"
+  );
 });
+expansionCloseEl.addEventListener("click", () => setExpansionPanelOpen(false));
+expansionBackdropEl.addEventListener("click", () => setExpansionPanelOpen(false));
+expansionPanelEl.addEventListener("keydown", event => {
+  if (event.key !== "Tab") return;
+  const focusable = expansionFocusableElements();
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" &&
+      expansionButtonEl.getAttribute("aria-expanded") === "true") {
+    event.preventDefault();
+    setExpansionPanelOpen(false);
+  }
+});
+m4ToggleEl.addEventListener("change", () => {
+  setM4Enabled(m4ToggleEl.checked, true, true);
+});
+m4NetToggleEl.addEventListener("change", () => {
+  setM4NetEnabled(m4NetToggleEl.checked, true, true);
+});
+m4EndpointEl.addEventListener("change", () => {
+  if (!applyM4Endpoint(m4EndpointEl.value, true))
+    showToast("Invalid M4 relay endpoint");
+});
+m4CertificateEl.addEventListener("click", () => {
+  if (!m4CertificateUrl) {
+    showToast("Enter a valid secure WSS relay endpoint first");
+    return;
+  }
+  window.open(m4CertificateUrl, "_blank", "noopener,noreferrer");
+  showToast("Approve the relay certificate, then return; reconnection is automatic");
+});
+try {
+  const queryEndpoint = new URLSearchParams(window.location.search).get("m4Relay");
+  if (queryEndpoint !== null) m4Endpoint = queryEndpoint;
+} catch (_) {}
+m4EndpointEl.value = m4Endpoint;
+applyM4Endpoint(m4Endpoint, false);
+if (m4Bridge) m4Bridge.onStatus(updateM4RelayStatus);
+setExpansionPanelOpen(false, false);
+updateM4Ui();
+updateM4NetUi();
 setScreenScale(100);
 let savedScanlineStrength = null;
 try {
@@ -1105,6 +1294,117 @@ create6128().then(m => {
     clearDiskUi(1);
   }
 
+  /* ---- M4 expansion board ---- */
+
+  function downloadM4SdImage() {
+    if (!m4SdImage) return;
+    try {
+      const data = m.FS.readFile(m4SdImage.path);
+      const blob = new Blob([data], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = m4SdImage.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+      setStatus("Could not save " + m4SdImage.name + ": " + error.message);
+    }
+  }
+
+  function clearM4SdUi() {
+    m4SdImage = null;
+    m4SdNameEl.textContent = "No image loaded";
+    m4SdEjectEl.disabled = true;
+  }
+
+  function ejectM4Sd(options = {}) {
+    const clear = options.clear !== false;
+    const download = options.download !== false;
+    if (m4SdImage) {
+      m._poc_eject_m4_sd();
+      if (download) downloadM4SdImage();
+    }
+    if (clear) clearM4SdUi();
+  }
+
+  function mountM4SdData(data, name, path) {
+    if (!m4Enabled)
+      throw new Error("enable the M4 board first");
+    if (m4SdImage) ejectM4Sd();
+    m.FS.writeFile(path, data);
+    if (m.ccall("poc_mount_m4_sd", "number", ["string"], [path]) !== 0)
+      throw new Error("unsupported or damaged SD image");
+    m4SdImage = { name, path };
+    m4SdNameEl.textContent = name;
+    m4SdEjectEl.disabled = false;
+    setStatus("M4 SD card: " + name);
+  }
+
+  function remountM4Sd() {
+    if (!m4Enabled || !m4SdImage) return;
+    if (m.ccall("poc_mount_m4_sd", "number", ["string"], [m4SdImage.path]) !== 0) {
+      setStatus("M4 SD image could not be remounted");
+      clearM4SdUi();
+    }
+  }
+
+  applyM4Hardware = enabled => {
+    const requested = Boolean(enabled);
+    if (!requested) {
+      try {
+        ejectM4Sd();
+      } catch (error) {
+        setStatus("SD eject failed: " + error.message);
+        m4Enabled = true;
+        updateM4Ui();
+        return;
+      }
+      if (m4Bridge) m4Bridge.resetChannels();
+    }
+    if (Boolean(m._poc_m4_enabled()) !== requested)
+      m._poc_set_m4(requested ? 1 : 0);
+    m4Enabled = Boolean(m._poc_m4_enabled());
+    if (m4Enabled) remountM4Sd();
+    updateM4Ui();
+    if (requested && !m4Enabled)
+      setStatus("M4 board firmware could not be installed");
+  };
+
+  m4SdFileEl.addEventListener("change", () => {
+    const file = m4SdFileEl.files[0];
+    if (!file) return;
+    file.arrayBuffer().then(buf => {
+      try {
+        mountM4SdData(new Uint8Array(buf), file.name, "/m4.img");
+        showToast("M4 SD image loaded");
+      } catch (error) {
+        setStatus("SD image load failed: " + error.message);
+        showToast("Could not load " + file.name);
+      } finally {
+        m4SdFileEl.value = "";
+      }
+    });
+  });
+
+  m4SdEjectEl.addEventListener("click", () => {
+    try {
+      const wasMounted = Boolean(m4SdImage);
+      ejectM4Sd();
+      if (wasMounted) {
+        setStatus("M4 SD card ejected safely");
+        showToast("Updated SD image downloaded");
+      } else {
+        setStatus("No M4 SD image loaded");
+      }
+    } catch (error) {
+      setStatus("SD eject failed: " + error.message);
+      showToast("Could not eject SD image safely");
+    }
+  });
+
   function releaseAllJoy() {
     for (let column = 0; column < 6; column++)
       m._poc_joy(column, 0);
@@ -1126,6 +1426,7 @@ create6128().then(m => {
     if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
+    applyM4Hardware(m4Enabled);
     clearDisksUi();
     clearTapeUi();
     snapshotnameEl.textContent = "Machine state";
@@ -1718,6 +2019,21 @@ create6128().then(m => {
   }
 
   let lastFrame = 0;
+  let m4SdLedTimer = 0;
+  let m4NetLedTimer = 0;
+  function updateM4Activity() {
+    if (m._poc_m4_sd_activity()) {
+      m4SdLedEl.classList.add("on");
+      clearTimeout(m4SdLedTimer);
+      m4SdLedTimer = setTimeout(() => m4SdLedEl.classList.remove("on"), 120);
+    }
+    if (m._poc_m4_net_activity()) {
+      m4RelayLampEl.classList.add("activity");
+      clearTimeout(m4NetLedTimer);
+      m4NetLedTimer = setTimeout(() => m4RelayLampEl.classList.remove("activity"), 120);
+    }
+  }
+
   function frame(time) {
     while (time - lastFrame >= 20) {
       m._poc_step();
@@ -1726,6 +2042,7 @@ create6128().then(m => {
       pollGamepad();
       updateLed();
       updateTapeDeck();
+      updateM4Activity();
     }
 
     pollMlWriteEvents();
@@ -1763,6 +2080,9 @@ create6128().then(m => {
   }
 
   requestAnimationFrame(frame);
+  // Apply persisted expansion settings now that the core module is ready.
+  applyM4Hardware(m4Enabled);
+  setM4NetEnabled(m4NetEnabled, false);
   bootstrapServerMedia();
 }).catch(error => {
   setStatus("Failed to start: " + error);

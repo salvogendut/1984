@@ -207,6 +207,43 @@ EMSCRIPTEN_KEEPALIVE void poc_reset(void) {
     g_debug_temp_bp_reason = POC_DEBUG_RUNNING;
 }
 
+/* ---- M4 expansion board ---- */
+
+EMSCRIPTEN_KEEPALIVE int poc_set_m4(int enabled) {
+    if (!enabled) {
+        g_cpc.m4 = false;
+        mem_unload_rom_ext(&g_cpc.mem, M4_ROM_SLOT);
+        return 0;
+    }
+    if (mem_load_rom_ext(&g_cpc.mem, M4_ROM_SLOT, "roms/M4ROM.ROM") != 0)
+        return -1;
+    g_cpc.mx4 = true;
+    g_cpc.m4 = true;
+    memcpy(g_cpc.m4_card.cfg_mem,
+           &g_cpc.mem.rom_ext[M4_ROM_SLOT][0xF400 - 0xC000],
+           sizeof(g_cpc.m4_card.cfg_mem));
+    m4_install_helper_shim(&g_cpc.m4_card, &g_cpc.mem);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_m4_enabled(void) {
+    return g_cpc.m4 ? 1 : 0;
+}
+
+/* Mount a raw FAT SD image already written to the virtual filesystem. The
+ * image bytes are held in browser memory (MEMFS); guest writes are kept in
+ * that file until the JS downloads it on eject. */
+EMSCRIPTEN_KEEPALIVE int poc_mount_m4_sd(const char *path) {
+    if (!path || !path[0])
+        return -1;
+    m4_set_image(&g_cpc.m4_card, path);
+    return g_cpc.m4_card.image_mounted ? 0 : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_eject_m4_sd(void) {
+    m4_set_image(&g_cpc.m4_card, "");
+}
+
 /* Select an expansion size and cold-start RAM without replacing the current
  * ROM/cartridge or mounted media. */
 EMSCRIPTEN_KEEPALIVE int poc_set_memory_kb(int memory_kb) {

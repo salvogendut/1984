@@ -14,13 +14,32 @@
 #include "usifac.h"
 #include "perryfi.h"
 #include "leds.h"
+#include <emscripten.h>
+
+/* ---- M4 activity latching (no host LEDs in the browser) ----
+ * The native main drives SD/network LEDs from leds_ping_*; the web UI polls
+ * these latches each frame instead. */
+static int g_m4_disk_activity;
+static int g_m4_net_activity;
+
+EMSCRIPTEN_KEEPALIVE int poc_m4_sd_activity(void) {
+    int v = g_m4_disk_activity;
+    g_m4_disk_activity = 0;
+    return v;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_m4_net_activity(void) {
+    int v = g_m4_net_activity;
+    g_m4_net_activity = 0;
+    return v;
+}
 
 /* ---- LEDs ---- */
 void leds_set_enabled(LedId id, bool enabled) { (void)id; (void)enabled; }
 void leds_ping(LedId id) { (void)id; }
 void leds_ping_split(LedId id, bool tx) { (void)id; (void)tx; }
-void leds_ping_m4_disk(void) {}
-void leds_ping_m4_net(void) {}
+void leds_ping_m4_disk(void) { g_m4_disk_activity = 1; }
+void leds_ping_m4_net(void) { g_m4_net_activity = 1; }
 void leds_set_mouse_position(int x, int y, bool inside) { (void)x; (void)y; (void)inside; }
 
 /* ---- SDL audio stream (cpc.c's audio output path; POC has no audio yet) ---- */

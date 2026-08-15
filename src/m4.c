@@ -2,6 +2,9 @@
 #include "compat_win.h"   /* sockets/fnmatch/statvfs shims; Winsock before windows.h */
 #include "m4.h"
 #include "leds.h"
+#ifdef __EMSCRIPTEN__
+#include "m4_web.h"   /* relay-backed socket transport for the browser build */
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -15,6 +18,13 @@
 #include <libgen.h>
 
 int m4_trace = 0;
+
+#ifdef __EMSCRIPTEN__
+/* The browser build has no host DNS; resolution goes through the relay
+ * bridge asynchronously and lands on socket 0 the next time the sockets
+ * are polled (see net_poll_socket / m4_tick). */
+static bool g_m4_dns_pending;
+#endif
 
 /* M4 command IDs (from m4cmds.i) */
 #define C_OPEN        0x4301
@@ -300,7 +310,12 @@ static void sync_sock_mem(M4 *m, int s) {
 
 static void net_close_socket(M4 *m, int s) {
     if (s < 0 || s >= M4_NSOCKS) return;
-    if (m->sockets[s].fd >= 0) close(m->sockets[s].fd);
+    if (m->sockets[s].fd >= 0)
+#ifdef __EMSCRIPTEN__
+        m4_web_close(m->sockets[s].fd);
+#else
+        close(m->sockets[s].fd);
+#endif
     memset(&m->sockets[s], 0, sizeof(m->sockets[s]));
     m->sockets[s].fd     = -1;
     m->sockets[s].status = 0;
@@ -352,6 +367,40 @@ static u16 telnet_filter_inplace(u8 *buf, u16 len) {
 static void net_poll_socket(M4 *m, int s) {
     if (s < 0 || s >= M4_NSOCKS) return;
     M4Socket *sk = &m->sockets[s];
+#ifdef __EMSCRIPTEN__
+    /* Socket 0 is the DNS slot: finish an async relay lookup here. */
+    if (s == 0 && g_m4_dns_pending) {
+        u8 ip[4];
+        int r = m4_web_dns_poll(ip);
+        if (r != 0) {
+            g_m4_dns_pending = false;
+            if (r > 0) {
+                m4_ip_reverse(sk->peer_ip, ip);
+                sk->status = 0;
+            } else {
+                sk->status = 0xF0;
+            }
+            sync_sock_mem(m, s);
+        }
+        return;
+    }
+    if (sk->fd < 0) return;
+    int flags = m4_web_poll(sk->fd);
+    if (sk->connecting && (flags & (M4_WEB_POLL_CONNECTED | M4_WEB_POLL_FAILED))) {
+        sk->connecting = false;
+        sk->status = (flags & M4_WEB_POLL_FAILED) ? 240 : 0;
+    }
+    if (sk->status == 0 || sk->status == 5) {
+        int avail = m4_web_avail(sk->fd);
+        if (avail < 0) avail = 0;
+        if (avail > 0xFFFF) avail = 0xFFFF;
+        sk->rx_count = (u16)avail;
+        if (flags & M4_WEB_POLL_CLOSED)
+            sk->status = 3; /* remote closed */
+    }
+    sync_sock_mem(m, s);
+    return;
+#else
     if (sk->fd < 0) return;
     if (sk->connecting) {
         struct pollfd pfd = { .fd = sk->fd, .events = POLLOUT };
@@ -379,6 +428,7 @@ static void net_poll_socket(M4 *m, int s) {
         }
     }
     sync_sock_mem(m, s);
+#endif
 }
 
 void m4_init(M4 *m, const char *root) {
@@ -403,6 +453,9 @@ void m4_tick(M4 *m) {
     /* Polled from cpc_frame so the sock_info bytes (visible to CPC code via
      * the bus bypass at 0xFE00) stay current while applications busy-loop on
      * the status byte without sending any M4 commands. */
+#ifdef __EMSCRIPTEN__
+    if (g_m4_dns_pending) net_poll_socket(m, 0);
+#endif
     for (int i = 0; i < M4_NSOCKS; i++)
         if (m->sockets[i].fd >= 0) net_poll_socket(m, i);
 }
@@ -425,6 +478,9 @@ void m4_reset(M4 *m) {
     m4_open_image(m);
     /* Tear down any open TCP sockets and clear sock_info */
     for (int i = 0; i < M4_NSOCKS; i++) net_close_socket(m, i);
+#ifdef __EMSCRIPTEN__
+    g_m4_dns_pending = false;
+#endif
     m->nmi_enabled = false;
     m->last_error = M4_OK;
 }
@@ -1309,6 +1365,18 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             if (m->sockets[i].fd < 0) { idx = i; break; }
         u8 sid = 0xFF;
         if (idx > 0) {
+#ifdef __EMSCRIPTEN__
+            /* The bridge keys channels on the M4 socket id itself; reserve the
+             * slot by setting fd. TCP is only dialed on C_NETCONNECT. */
+            m->sockets[idx].fd      = idx;
+            m->sockets[idx].status  = 0;
+            m->sockets[idx].lastcmd = 0;
+            m->sockets[idx].rx_count = 0;
+            m->sockets[idx].telnet_mode = false;
+            sync_sock_mem(m, idx);
+            sid = (u8)idx;
+            m->last_tcp_sock = idx;
+#else
             int s = socket(AF_INET, SOCK_STREAM, 0);
             if (s >= 0) {
                 sock_set_nonblocking(s);
@@ -1323,6 +1391,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 sid = (u8)idx;
                 m->last_tcp_sock = idx;
             }
+#endif
         }
         err = M4_OK;
         resp_u8(m, &roff, sid);
@@ -1346,16 +1415,31 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                     && m->sockets[m->last_tcp_sock].fd >= 0)
                 s = m->last_tcp_sock;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
+                memcpy(m->sockets[s].peer_ip, &p[1], 4);
+                m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
+                m->sockets[s].telnet_mode = (m->sockets[s].peer_port == 23);
+                m->sockets[s].lastcmd = 3;
+#ifdef __EMSCRIPTEN__
+                /* Dial through the relay bridge. The connect completes on a
+                 * later poll tick (status transition is preserved so the
+                 * SymbOS daemon still observes a real NET_TCPEVT). */
+                u8 ip[4];
+                m4_ip_reverse(ip, &p[1]);
+                if (m4_web_connect(s, ip,
+                                   (u16)p[5] | ((u16)p[6] << 8)) >= 0) {
+                    m->sockets[s].connecting = true;
+                    m->sockets[s].status = 1;
+                    ok = 0;
+                } else {
+                    m->sockets[s].status = 240;
+                }
+#else
                 struct sockaddr_in sa = {0};
                 u8 ip[4];
                 sa.sin_family = AF_INET;
                 m4_ip_reverse(ip, &p[1]);
                 memcpy(&sa.sin_addr.s_addr, ip, 4);
                 sa.sin_port = htons((u16)p[5] | ((u16)p[6] << 8));
-                memcpy(m->sockets[s].peer_ip, &p[1], 4);
-                m->sockets[s].peer_port = (u16)p[5] | ((u16)p[6] << 8);
-                m->sockets[s].telnet_mode = (m->sockets[s].peer_port == 23);
-                m->sockets[s].lastcmd = 3;
                 int r = connect(m->sockets[s].fd, (struct sockaddr *)&sa, sizeof(sa));
                 bool inprog = sock_in_progress();
                 if (r == 0 || inprog) {
@@ -1370,6 +1454,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 } else {
                     m->sockets[s].status = 240;
                 }
+#endif
                 sync_sock_mem(m, s);
             }
         }
@@ -1420,8 +1505,12 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u16 sz = (u16)p[1] | ((u16)p[2] << 8);
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0
                     && (int)sz <= plen - 3) {
+#ifdef __EMSCRIPTEN__
+                if (m4_web_send(s, &p[3], sz) == 0) ok = 0;
+#else
                 ssize_t n = send(m->sockets[s].fd, (const char *)&p[3], sz, MSG_NOSIGNAL);
                 if (n == (ssize_t)sz) ok = 0;
+#endif
                 m->sockets[s].lastcmd = 1;
                 sync_sock_mem(m, s);
             }
@@ -1456,6 +1545,20 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             u16 want = (u16)p[1] | ((u16)p[2] << 8);
             if (want > 0x800) want = 0x800;
             if (s > 0 && s < M4_NSOCKS && m->sockets[s].fd >= 0) {
+#ifdef __EMSCRIPTEN__
+                /* recv()==0 from the bridge means "nothing buffered yet" —
+                 * remote close is reported by the poll path instead. */
+                int n = m4_web_recv(s, &m->bus_mem[6], want);
+                if (n >= 0) {
+                    actual = (u16)n;
+                    if (actual > 0 && m->sockets[s].telnet_mode)
+                        actual = telnet_filter_inplace(&m->bus_mem[6], actual);
+                    result = 0;
+                } else {
+                    actual = 0;
+                    result = 0xFF;
+                }
+#else
                 ssize_t n = recv(m->sockets[s].fd, (char *)&m->bus_mem[6], want,
                                  MSG_DONTWAIT);
                 if (n >= 0) {
@@ -1467,8 +1570,11 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                     actual = 0;
                     result = 0;
                 }
+#endif
                 m->sockets[s].lastcmd = 5;
+#ifndef __EMSCRIPTEN__
                 if (n == 0) m->sockets[s].status = 3; /* remote closed */
+#endif
                 m->sockets[s].rx_count = (m->sockets[s].rx_count > actual)
                                           ? (u16)(m->sockets[s].rx_count - actual) : 0;
                 sync_sock_mem(m, s);
@@ -1496,6 +1602,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
 
         struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM };
         struct addrinfo *res = NULL;
+#ifndef __EMSCRIPTEN__
         if (getaddrinfo(host, NULL, &hints, &res) == 0 && res) {
             struct sockaddr_in *sa = (struct sockaddr_in *)res->ai_addr;
             m4_ip_reverse(m->sockets[0].peer_ip,
@@ -1505,6 +1612,17 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         } else {
             m->sockets[0].status = 0xF0; /* error */
         }
+#else
+        /* Resolution goes through the relay asynchronously; socket 0 shows
+         * "in progress" until the result lands on a poll tick. */
+        (void)hints; (void)res;
+        if (m4_web_dns(host)) {
+            g_m4_dns_pending = true;
+            m->sockets[0].status = 1; /* lookup in progress */
+        } else {
+            m->sockets[0].status = 0xF0; /* error */
+        }
+#endif
         m->sockets[0].lastcmd = 2;
         sync_sock_mem(m, 0);
         err = M4_OK;
