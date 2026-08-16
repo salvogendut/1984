@@ -1364,8 +1364,26 @@ create6128().then(m => {
       }
       if (m4Bridge) m4Bridge.resetChannels();
     }
-    if (Boolean(m._poc_m4_enabled()) !== requested)
-      m._poc_set_m4(requested ? 1 : 0);
+    const wasEnabled = Boolean(m._poc_m4_enabled());
+    if (wasEnabled !== requested) {
+      if (m._poc_set_m4(requested ? 1 : 0) !== 0) {
+        m4Enabled = wasEnabled;
+        updateM4Ui();
+        setStatus("M4 board firmware could not be installed");
+        return;
+      }
+      // The ROM layout changed; reset the machine (the web equivalent of the
+      // native overlay's cold boot on M4 toggle) so the boot sequence
+      // re-probes the MX4 bus and M4ROM slot.
+      m._poc_reset();
+      m._poc_audio_reset();
+      if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+      releaseAllJoy();
+      m._poc_set_mouse(mouseEnabled ? 1 : 0);
+      setStatus(requested
+        ? "M4 enabled - machine reset"
+        : "M4 disabled - machine reset");
+    }
     m4Enabled = Boolean(m._poc_m4_enabled());
     if (m4Enabled) remountM4Sd();
     updateM4Ui();
