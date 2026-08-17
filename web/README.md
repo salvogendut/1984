@@ -40,6 +40,7 @@ application.
   memory-slice reading and writing.
 - An M4 expansion bay (AUX) with SD-card image loading and a relay-backed
   internet bridge.
+- A ROM-slot panel (AUX) that loads 16 KB upper-ROM images into slots 0-31.
 
 The browser frontend does not currently expose the native F9 overlay,
 cassette recording, or additional CPC models. Disk and
@@ -270,3 +271,26 @@ The C transport seam is `web/m4_web.c` (EM_JS) backed by `web/m4-bridge.js`;
 the frame-sharing protocol lives in `web/m4-relay-protocol.js`, byte-identical
 to the standalone relay's. Tests: `node test_m4_bridge.js` and
 `node test_m4_wasm.js` (the last needs a built `dist/`).
+
+### ROM slots
+
+The **ROM slots** device in the same Expansion bay exposes the upper-ROM board
+mirroring the native F9 overlay. Fit the **ROM board**, then load a 16 KB ROM
+image (`.rom`/`.bin`, a 128-byte AMSDOS header is skipped automatically) into
+any of slots 0-31; **Eject** clears a slot and restores the default. The
+slots follow the native semantics:
+
+- Slot 6 shows `M4ROM` and is read-only while the M4 board is enabled.
+- Slot 7 shows `(AMSDOS)` when empty; a custom ROM there overrides AMSDOS.
+- Slot 0 shows `(BASIC)` when empty; the CPC firmware falls back to BASIC for
+  any unpopulated slot.
+
+Loading, ejecting, or toggling the ROM board resets the machine (the native
+overlay cold-boots on ROM changes). Loaded slots are re-applied after a model
+switch within the same page session; they are held in browser memory and are
+not persisted across reloads. On the CPC 6128 Plus the upper ROM reads come
+from the cartridge, so the slots are only visible on the plain 6128 model.
+
+The WASM exports are `poc_rom_slot_load` / `poc_rom_slot_unload` /
+`poc_rom_slot_present` (see `web/poc_main.c`). Tests: `node
+test_rom_slots_wasm.js` (needs a built `dist/`).

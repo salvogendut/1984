@@ -774,3 +774,36 @@ button.extension-small-key:disabled { opacity: .35; }
   .expansion-panel-header { min-height: 96px; padding: 23px 20px 19px; }
   .expansion-device { padding: 23px 20px; }
 }
+
+/* ---- ROM slots ---- */
+.rom-slot-list {
+  display: grid;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.rom-slot-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid #101311;
+  border-radius: 3px;
+  background: #131715;
+}
+.rom-slot-row[aria-disabled="true"] { opacity: .5; }
+.rom-slot-row[aria-disabled="true"] button { pointer-events: none; }
+.rom-slot-num { color: #7f8580; font: 800 8px/1 ui-monospace, monospace; }
+.rom-slot-name {
+  overflow: hidden;
+  color: #cfd2cc;
+  font: 600 8px/1.2 ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rom-slot-name.empty { color: #5d635e; }
+.rom-slot-name.reserved { color: #c6a84a; }
+.rom-slot-row .extension-small-key { min-height: 22px; }

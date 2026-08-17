@@ -79,6 +79,40 @@ let m4Endpoint = m4Bridge ? m4Bridge.endpoint : "";
 let m4CertificateUrl = "";
 let m4SdImage = null;
 let applyM4Hardware = () => {};
+
+// ---- expansion bay: ROM slots ----
+const romBoardToggleEl = $("romBoardToggle");
+const romBoardStateEl = $("romBoardState");
+const romLowerNameEl = $("romLowerName");
+const romSlotListEl = $("romSlotList");
+const romfileEl = $("romfile");
+const ROM_BOARD_STORAGE_KEY = "javascript1984.expansion.romBoard";
+let romBoardEnabled = false;
+let romSlots = new Map();   // slot -> { name, path }
+let pendingRomSlot = -1;
+let applyRomBoard = () => {};
+try {
+  romBoardEnabled = localStorage.getItem(ROM_BOARD_STORAGE_KEY) === "true";
+} catch (_) {
+  // Keep the ROM board disabled when storage is unavailable.
+}
+
+function updateRomBoardUi() {
+  romBoardToggleEl.checked = romBoardEnabled;
+  romBoardStateEl.textContent = romBoardEnabled ? "Enabled" : "Disabled";
+  updateExpansionIndicator();
+}
+
+function setRomBoardEnabled(enabled, persist = true, announce = false) {
+  romBoardEnabled = Boolean(enabled);
+  applyRomBoard(romBoardEnabled);
+  updateRomBoardUi();
+  if (persist) {
+    try { localStorage.setItem(ROM_BOARD_STORAGE_KEY, String(romBoardEnabled)); } catch (_) {}
+  }
+  if (announce) showToast("ROM board " + (romBoardEnabled ? "fitted" : "removed"));
+}
+
 try {
   m4Enabled = localStorage.getItem(M4_STORAGE_KEY) === "true";
   m4NetEnabled = localStorage.getItem(M4_NET_STORAGE_KEY) === "true";
@@ -89,7 +123,8 @@ try {
 }
 
 function updateExpansionIndicator() {
-  expansionButtonEl.classList.toggle("has-expansion", m4Enabled || m4NetEnabled);
+  expansionButtonEl.classList.toggle(
+    "has-expansion", m4Enabled || m4NetEnabled || romBoardEnabled);
 }
 
 function updateM4Ui() {
@@ -502,6 +537,9 @@ m4ToggleEl.addEventListener("change", () => {
 m4NetToggleEl.addEventListener("change", () => {
   setM4NetEnabled(m4NetToggleEl.checked, true, true);
 });
+romBoardToggleEl.addEventListener("change", () => {
+  setRomBoardEnabled(romBoardToggleEl.checked, true, true);
+});
 m4EndpointEl.addEventListener("change", () => {
   if (!applyM4Endpoint(m4EndpointEl.value, true))
     showToast("Invalid M4 relay endpoint");
@@ -524,6 +562,7 @@ if (m4Bridge) m4Bridge.onStatus(updateM4RelayStatus);
 setExpansionPanelOpen(false, false);
 updateM4Ui();
 updateM4NetUi();
+updateRomBoardUi();
 setScreenScale(100);
 let savedScanlineStrength = null;
 try {
@@ -1387,6 +1426,7 @@ create6128().then(m => {
     m4Enabled = Boolean(m._poc_m4_enabled());
     if (m4Enabled) remountM4Sd();
     updateM4Ui();
+    renderRomSlots();
     if (requested && !m4Enabled)
       setStatus("M4 board firmware could not be installed");
   };
@@ -1423,6 +1463,147 @@ create6128().then(m => {
     }
   });
 
+  /* ---- ROM slots ---- */
+
+  function warmReset(status) {
+    m._poc_reset();
+    m._poc_audio_reset();
+    if (audioCtx) nextAudioStart = audioCtx.currentTime + 0.3;
+    releaseAllJoy();
+    m._poc_set_mouse(mouseEnabled ? 1 : 0);
+    if (status) setStatus(status);
+  }
+
+  const romSlotRows = new Map();
+
+  function buildRomSlotRows() {
+    if (romSlotRows.size) return;
+    for (let slot = 0; slot < 32; slot++) {
+      const row = document.createElement("div");
+      row.className = "rom-slot-row";
+      const num = document.createElement("span");
+      num.className = "rom-slot-num";
+      num.textContent = "Slot " + String(slot).padStart(2, "0");
+      const name = document.createElement("span");
+      name.className = "rom-slot-name";
+      const load = document.createElement("button");
+      load.type = "button";
+      load.className = "extension-small-key";
+      load.textContent = "Load";
+      const eject = document.createElement("button");
+      eject.type = "button";
+      eject.className = "extension-small-key";
+      eject.textContent = "Eject";
+      eject.disabled = true;
+      row.append(num, name, load, eject);
+      romSlotListEl.append(row);
+      romSlotRows.set(slot, { name, load, eject });
+      load.addEventListener("click", () => {
+        pendingRomSlot = slot;
+        romfileEl.value = "";
+        romfileEl.click();
+      });
+      eject.addEventListener("click", () => unloadRomSlot(slot));
+    }
+  }
+
+  function romSlotState(slot) {
+    if (slot === 6 && m4Enabled)
+      return { name: "M4ROM", empty: false, reserved: true, readonly: true };
+    const loaded = romSlots.get(slot);
+    if (loaded)
+      return { name: loaded.name, empty: false, reserved: false, readonly: false };
+    if (slot === 0)
+      return { name: "(BASIC)", empty: true, reserved: false, readonly: false };
+    if (slot === 7)
+      return { name: "(AMSDOS)", empty: true, reserved: false, readonly: false };
+    return { name: "[empty]", empty: true, reserved: false, readonly: false };
+  }
+
+  function renderRomSlots() {
+    if (!romSlotRows.size) return;
+    const boardOn = romBoardEnabled;
+    for (let slot = 0; slot < 32; slot++) {
+      const row = romSlotRows.get(slot);
+      if (!row) continue;
+      const state = romSlotState(slot);
+      row.name.textContent = state.name;
+      row.name.classList.toggle("empty", state.empty);
+      row.name.classList.toggle("reserved", state.reserved);
+      const locked = !boardOn || state.readonly;
+      row.name.parentElement.setAttribute("aria-disabled", String(locked));
+      row.load.disabled = locked;
+      row.eject.disabled = locked || state.empty || state.readonly;
+    }
+    romLowerNameEl.textContent = currentModel === 1 ? "Plus OS" : "OS_6128.ROM";
+  }
+
+  function loadRomIntoSlot(slot, file) {
+    if (!romBoardEnabled)
+      throw new Error("fit the ROM board first");
+    const path = "/roms/user_" + slot + ".rom";
+    file.arrayBuffer().then(buf => {
+      try {
+        m.FS.writeFile(path, new Uint8Array(buf));
+        if (m.ccall("poc_rom_slot_load", "number",
+                    ["number", "string"], [slot, path]) !== 0)
+          throw new Error("unsupported or damaged ROM image");
+        romSlots.set(slot, { name: file.name, path });
+        warmReset("Slot " + slot + " loaded: " + file.name);
+        showToast("ROM loaded into slot " + slot);
+      } catch (error) {
+        setStatus("ROM slot " + slot + " load failed: " + error.message);
+        showToast("Could not load " + file.name);
+      } finally {
+        renderRomSlots();
+      }
+    });
+  }
+
+  function unloadRomSlot(slot) {
+    m._poc_rom_slot_unload(slot);
+    romSlots.delete(slot);
+    try { m.FS.unlink("/roms/user_" + slot + ".rom"); } catch (_) {}
+    warmReset("Slot " + slot + " cleared");
+    renderRomSlots();
+  }
+
+  function reapplyRomSlots() {
+    for (const [slot, entry] of romSlots) {
+      if (m.ccall("poc_rom_slot_load", "number",
+                  ["number", "string"], [slot, entry.path]) !== 0) {
+        romSlots.delete(slot);
+        setStatus("ROM slot " + slot + " could not be reloaded");
+      }
+    }
+    renderRomSlots();
+  }
+
+  applyRomBoard = (enabled, options = {}) => {
+    const requested = Boolean(enabled);
+    const doReset = options.reset !== false;
+    if (!requested) {
+      for (const slot of [...romSlots.keys()]) {
+        m._poc_rom_slot_unload(slot);
+        try { m.FS.unlink("/roms/user_" + slot + ".rom"); } catch (_) {}
+      }
+      romSlots.clear();
+    }
+    if (doReset)
+      warmReset(requested
+        ? "ROM board fitted - machine reset"
+        : "ROM board removed - machine reset");
+    renderRomSlots();
+  };
+
+  romfileEl.addEventListener("change", () => {
+    const file = romfileEl.files[0];
+    const slot = pendingRomSlot;
+    pendingRomSlot = -1;
+    if (!file || slot < 0) return;
+    loadRomIntoSlot(slot, file);
+  });
+
   function releaseAllJoy() {
     for (let column = 0; column < 6; column++)
       m._poc_joy(column, 0);
@@ -1445,6 +1626,7 @@ create6128().then(m => {
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
     applyM4Hardware(m4Enabled);
+    reapplyRomSlots();
     clearDisksUi();
     clearTapeUi();
     snapshotnameEl.textContent = "Machine state";
@@ -2099,7 +2281,10 @@ create6128().then(m => {
 
   requestAnimationFrame(frame);
   // Apply persisted expansion settings now that the core module is ready.
+  buildRomSlotRows();
+  renderRomSlots();
   applyM4Hardware(m4Enabled);
+  applyRomBoard(romBoardEnabled, { reset: false });
   setM4NetEnabled(m4NetEnabled, false);
   bootstrapServerMedia();
 }).catch(error => {
