@@ -244,6 +244,28 @@ EMSCRIPTEN_KEEPALIVE void poc_eject_m4_sd(void) {
     m4_set_image(&g_cpc.m4_card, "");
 }
 
+/* ---- ROM slots (upper-ROM board) ----
+ * Load/unload a 16 KB ROM image into an expansion slot 0-31. Slot 6 holds the
+ * M4ROM when the M4 board is enabled; slot 7 falls back to AMSDOS when empty.
+ * Note: on the 6128 Plus, upper-ROM reads come from the cartridge instead, so
+ * these slots are only visible on the plain 6128 model. */
+
+EMSCRIPTEN_KEEPALIVE int poc_rom_slot_load(int slot, const char *path) {
+    if (slot < 0 || slot >= ROM_EXT_COUNT || !path || !path[0])
+        return -1;
+    return mem_load_rom_ext(&g_cpc.mem, slot, path);
+}
+
+EMSCRIPTEN_KEEPALIVE void poc_rom_slot_unload(int slot) {
+    if (slot >= 0 && slot < ROM_EXT_COUNT)
+        mem_unload_rom_ext(&g_cpc.mem, slot);
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_rom_slot_present(int slot) {
+    return (slot >= 0 && slot < ROM_EXT_COUNT &&
+            g_cpc.mem.rom_ext_present[slot]) ? 1 : 0;
+}
+
 /* Select an expansion size and cold-start RAM without replacing the current
  * ROM/cartridge or mounted media. */
 EMSCRIPTEN_KEEPALIVE int poc_set_memory_kb(int memory_kb) {

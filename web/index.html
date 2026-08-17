@@ -90,9 +90,34 @@
         <p class="relay-details-link">For details see <a href="https://github.com/salvogendut/ws-unapi-relay" target="_blank" rel="noopener noreferrer">ws-unapi-relay</a>.</p>
         <p class="extension-help">One shared relay instance serves the 1983 and
           1984 emulators. Run it with <code>npm start</code> from the
-          ws-unapi-relay repository (defaults to
-          <code>ws://host:9380/unapi</code>); or serve this page and the relay
+          1983-msx-unapi-relay repository (defaults to
+          <code>ws://host:1983/unapi</code>); or serve this page and the relay
           from one origin.</p>
+      </div>
+    </section>
+
+    <section class="expansion-device roms-device" aria-labelledby="romsTitle">
+      <div class="expansion-device-heading">
+        <span class="expansion-device-mark" aria-hidden="true">ROM</span>
+        <div>
+          <h3 id="romsTitle">ROM slots</h3>
+          <span>Upper ROM board / slots 0-31</span>
+        </div>
+      </div>
+      <div class="expansion-device-controls">
+        <label class="toggle-control expansion-device-toggle">
+          <input type="checkbox" id="romBoardToggle">
+          <span class="toggle-track"><i></i></span>
+          <span><strong>ROM board fitted</strong><small id="romBoardState" aria-live="polite">Disabled</small></span>
+        </label>
+        <p class="firmware-note"><strong>Lower ROM</strong><span id="romLowerName">OS_6128.ROM</span></p>
+        <div id="romSlotList" class="rom-slot-list" role="list"></div>
+        <p class="extension-help">16 KB ROM images (a 128-byte AMSDOS header is
+          skipped automatically). Loading or ejecting a slot resets the
+          machine. On the 6128 Plus, upper ROM reads come from the cartridge,
+          so these slots are only visible on the CPC 6128.</p>
+        <input class="visually-hidden" type="file" id="romfile"
+               accept=".rom,.ROM,.bin,.BIN">
       </div>
     </section>
   </div>
