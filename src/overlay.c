@@ -89,7 +89,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 14, 22 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 16, 22 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
@@ -1155,6 +1155,32 @@ static void item_text(const Overlay *ov, int row,
                          ov->cfg->perryfi ? "enabled" : "disabled");
             }
             break;
+        case 14:
+            snprintf(lbl, lsz, "PowerGraph V9990");
+            if (!ov->cfg->mx4) {
+                snprintf(val, vsz, "[needs MX4]");
+                *readonly = true;
+            } else {
+                snprintf(val, vsz, "%s",
+                         ov->cfg->powergraph_v9990 ? "enabled" : "disabled");
+            }
+            break;
+        case 15:
+            snprintf(lbl, lsz, "PowerGraph output");
+            if (!ov->cfg->mx4 || !ov->cfg->powergraph_v9990) {
+                snprintf(val, vsz, "[needs PowerGraph]");
+                *readonly = true;
+            } else if (ov->cfg->powergraph_video_source ==
+                       CPC_VIDEO_SOURCE_AUTO && ov->cpc) {
+                snprintf(val, vsz, "Auto (%s active)",
+                         cpc_video_output_is_powergraph(ov->cpc)
+                             ? "V9990" : "CPC");
+            } else {
+                snprintf(val, vsz, "%s",
+                         cpc_video_source_name(
+                             ov->cfg->powergraph_video_source));
+            }
+            break;
         }
         break;
 
@@ -1659,6 +1685,10 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             ov->cfg->mx4 = !ov->cfg->mx4;
             if (ov->cpc) {
                 ov->cpc->mx4 = ov->cfg->mx4;
+                if (cpc_set_powergraph_v9990(
+                        ov->cpc, ov->cfg->mx4 &&
+                                 ov->cfg->powergraph_v9990) != 0)
+                    ov->cfg->powergraph_v9990 = false;
                 printer_set_connected(&ov->cpc->printer, ov->cfg->mx4);
             }
             leds_set_enabled(LED_PRINTER, ov->cfg->mx4);
@@ -1795,7 +1825,8 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
          * have their own gating; the rest are nailed down here. */
         if (!ov->cfg->mx4 &&
             (ov->row == 0 || ov->row == 7 || ov->row == 8 ||
-             ov->row == 9 || ov->row == 10 || ov->row == 11))
+             ov->row == 9 || ov->row == 10 || ov->row == 11 ||
+             ov->row == 14 || ov->row == 15))
             break;
         switch (ov->row) {
         case 0:
@@ -2113,6 +2144,25 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
                 perryfi_shutdown(&ov->cpc->perryfi);
                 perryfi_init(&ov->cpc->perryfi, ov->cfg->perryfi);
             }
+            ov->dirty = true;
+            break;
+        case 14: {
+            bool enabled = !ov->cfg->powergraph_v9990;
+            if (ov->cpc && cpc_set_powergraph_v9990(
+                    ov->cpc, ov->cfg->mx4 && enabled) != 0)
+                break;
+            ov->cfg->powergraph_v9990 = enabled;
+            ov->dirty = true;
+            break;
+        }
+        case 15:
+            if (!ov->cfg->powergraph_v9990) break;
+            ov->cfg->powergraph_video_source =
+                (CpcVideoSource)((ov->cfg->powergraph_video_source + 1) %
+                                 CPC_VIDEO_SOURCE_COUNT);
+            if (ov->cpc)
+                cpc_set_video_source(
+                    ov->cpc, ov->cfg->powergraph_video_source);
             ov->dirty = true;
             break;
         }
@@ -3138,6 +3188,15 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         }
         case SDL_SCANCODE_ESCAPE:
             *ov->cfg    = ov->saved;  /* revert */
+            if (ov->cpc) {
+                ov->cpc->mx4 = ov->cfg->mx4;
+                cpc_set_video_source(
+                    ov->cpc, ov->cfg->powergraph_video_source);
+                if (cpc_set_powergraph_v9990(
+                        ov->cpc, ov->cfg->mx4 &&
+                                 ov->cfg->powergraph_v9990) != 0)
+                    ov->cfg->powergraph_v9990 = false;
+            }
             overlay_apply_crt(ov);
             overlay_apply_real_tape(ov);
             ov->dirty   = false;

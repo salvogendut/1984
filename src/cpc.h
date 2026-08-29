@@ -26,6 +26,7 @@
 #include "printer.h"
 #include "asic.h"
 #include "remu.h"
+#include "v9990.h"
 
 typedef enum {
     MODEL_464,
@@ -35,6 +36,13 @@ typedef enum {
     MODEL_464_PLUS,   /* internal extension; SNA stores this as Plus/3 */
     MODEL_GX4000      /* console extension; SNA stores this as Plus/3 */
 } CpcModel;
+
+typedef enum {
+    CPC_VIDEO_SOURCE_AUTO = 0,
+    CPC_VIDEO_SOURCE_INTERNAL,
+    CPC_VIDEO_SOURCE_POWERGRAPH,
+    CPC_VIDEO_SOURCE_COUNT
+} CpcVideoSource;
 
 static inline bool cpc_model_is_plus(CpcModel model) {
     return model == MODEL_464_PLUS || model == MODEL_6128_PLUS ||
@@ -144,6 +152,8 @@ typedef struct CPC {
     Disk       drive[2];    /* drive[0]=A, drive[1]=B */
     FDC        fdc;
     bool       mx4;           /* MX4 expansion bus (all extension I/O gated on this) */
+    V9990      v9990;         /* PowerGraph V9990 at &FF60-&FF6F */
+    CpcVideoSource video_source;
     bool       net4cpc;       /* Net4CPC W5100S Ethernet add-on present */
     bool       rtc;           /* Real-time clock add-on present */
     RTC        rtc_chip;
@@ -212,6 +222,7 @@ typedef struct CPC {
     bool monitor_frame_completed;
     bool prev_hsync;
     bool prev_vsync;
+    bool ga_irq_asserted;
 
     /* Pre-tick snapshot of CRTC state used by the per-char-clock render
      * loop. Lives in the struct (rather than as cpc_frame() locals) so
@@ -269,6 +280,10 @@ void audiocap_write(const s16 *samples, int frames, int sample_rate);
 int  cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
               const char *rom_basic, const char *cartridge, int scale);
 void cpc_set_crtc_type(CPC *cpc, CrtcType type);
+int  cpc_set_powergraph_v9990(CPC *cpc, bool enabled);
+void cpc_set_video_source(CPC *cpc, CpcVideoSource source);
+bool cpc_video_output_is_powergraph(const CPC *cpc);
+const char *cpc_video_source_name(CpcVideoSource source);
 void cpc_reset(CPC *cpc);
 void cpc_destroy(CPC *cpc);
 void cpc_set_audio_sink(CPC *cpc, CpcAudioSink sink, void *userdata);

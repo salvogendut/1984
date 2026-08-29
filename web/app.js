@@ -67,18 +67,27 @@ const m4RelayStateEl = $("m4RelayState");
 const m4RelayStateWrapEl = m4RelayStateEl.closest(".relay-state");
 const m4RelayLampEl = $("m4RelayLamp");
 const m4CertificateEl = $("m4Certificate");
+const powergraphToggleEl = $("powergraphToggle");
+const powergraphStateEl = $("powergraphState");
+const powergraphOutputEl = $("powergraphOutput");
 const m4Api = globalThis.JS1984M4 || null;
 const m4Bridge = globalThis.JS1984M4Bridge || null;
 
 const M4_STORAGE_KEY = "javascript1984.expansion.m4";
 const M4_NET_STORAGE_KEY = "javascript1984.expansion.m4Net";
 const M4_ENDPOINT_STORAGE_KEY = "javascript1984.expansion.m4Endpoint";
+const POWERGRAPH_STORAGE_KEY = "javascript1984.expansion.powergraph";
+const POWERGRAPH_OUTPUT_STORAGE_KEY = "javascript1984.expansion.powergraphOutput";
 let m4Enabled = false;
 let m4NetEnabled = false;
 let m4Endpoint = m4Bridge ? m4Bridge.endpoint : "";
 let m4CertificateUrl = "";
 let m4SdImage = null;
 let applyM4Hardware = () => {};
+let powergraphEnabled = false;
+let powergraphOutput = "auto";
+let applyPowergraphHardware = () => {};
+let applyPowergraphOutputHardware = () => {};
 
 // ---- expansion bay: ROM slots ----
 const romBoardToggleEl = $("romBoardToggle");
@@ -118,13 +127,47 @@ try {
   m4NetEnabled = localStorage.getItem(M4_NET_STORAGE_KEY) === "true";
   const storedEndpoint = localStorage.getItem(M4_ENDPOINT_STORAGE_KEY);
   if (storedEndpoint !== null) m4Endpoint = storedEndpoint;
+  powergraphEnabled = localStorage.getItem(POWERGRAPH_STORAGE_KEY) === "true";
+  const storedPowergraphOutput = localStorage.getItem(POWERGRAPH_OUTPUT_STORAGE_KEY);
+  if (["auto", "cpc", "v9990"].includes(storedPowergraphOutput))
+    powergraphOutput = storedPowergraphOutput;
 } catch (_) {
   // Keep the default M4 settings when storage is unavailable.
 }
 
 function updateExpansionIndicator() {
   expansionButtonEl.classList.toggle(
-    "has-expansion", m4Enabled || m4NetEnabled || romBoardEnabled);
+    "has-expansion", m4Enabled || m4NetEnabled || powergraphEnabled || romBoardEnabled);
+}
+
+function updatePowergraphUi() {
+  powergraphToggleEl.checked = powergraphEnabled;
+  powergraphStateEl.textContent = powergraphEnabled ? "Enabled" : "Disabled";
+  powergraphOutputEl.disabled = !powergraphEnabled;
+  powergraphOutputEl.value = powergraphOutput;
+  updateExpansionIndicator();
+}
+
+function setPowergraphEnabled(enabled, persist = true, announce = false) {
+  powergraphEnabled = Boolean(enabled);
+  applyPowergraphHardware(powergraphEnabled);
+  updatePowergraphUi();
+  if (persist) {
+    try { localStorage.setItem(POWERGRAPH_STORAGE_KEY, String(powergraphEnabled)); } catch (_) {}
+  }
+  if (announce)
+    showToast("PowerGraph V9990 " + (powergraphEnabled ? "enabled" : "disabled"));
+}
+
+function setPowergraphOutput(output, persist = true, announce = false) {
+  if (!["auto", "cpc", "v9990"].includes(output)) output = "auto";
+  powergraphOutput = output;
+  applyPowergraphOutputHardware(powergraphOutput);
+  updatePowergraphUi();
+  if (persist) {
+    try { localStorage.setItem(POWERGRAPH_OUTPUT_STORAGE_KEY, powergraphOutput); } catch (_) {}
+  }
+  if (announce) showToast("PowerGraph output: " + powergraphOutput.toUpperCase());
 }
 
 function updateM4Ui() {
@@ -537,6 +580,12 @@ m4ToggleEl.addEventListener("change", () => {
 m4NetToggleEl.addEventListener("change", () => {
   setM4NetEnabled(m4NetToggleEl.checked, true, true);
 });
+powergraphToggleEl.addEventListener("change", () => {
+  setPowergraphEnabled(powergraphToggleEl.checked, true, true);
+});
+powergraphOutputEl.addEventListener("change", () => {
+  setPowergraphOutput(powergraphOutputEl.value, true, true);
+});
 romBoardToggleEl.addEventListener("change", () => {
   setRomBoardEnabled(romBoardToggleEl.checked, true, true);
 });
@@ -562,6 +611,7 @@ if (m4Bridge) m4Bridge.onStatus(updateM4RelayStatus);
 setExpansionPanelOpen(false, false);
 updateM4Ui();
 updateM4NetUi();
+updatePowergraphUi();
 updateRomBoardUi();
 setScreenScale(100);
 let savedScanlineStrength = null;
@@ -1431,6 +1481,32 @@ create6128().then(m => {
       setStatus("M4 board firmware could not be installed");
   };
 
+  applyPowergraphHardware = enabled => {
+    const requested = Boolean(enabled);
+    const result = m._poc_set_powergraph_v9990(requested ? 1 : 0);
+    if (result < 0) {
+      powergraphEnabled = Boolean(m._poc_powergraph_v9990_enabled());
+      setStatus("PowerGraph V9990 could not be initialized");
+    } else {
+      powergraphEnabled = Boolean(result);
+      setStatus(powergraphEnabled
+        ? "PowerGraph V9990 enabled"
+        : "PowerGraph V9990 disabled");
+    }
+    updatePowergraphUi();
+  };
+
+  applyPowergraphOutputHardware = output => {
+    const sources = { auto: 0, cpc: 1, v9990: 2 };
+    const source = sources[output] ?? 0;
+    if (m._poc_set_powergraph_video_source(source) < 0) {
+      powergraphOutput = "auto";
+      m._poc_set_powergraph_video_source(0);
+      setStatus("Unsupported PowerGraph output selection");
+    }
+    updatePowergraphUi();
+  };
+
   m4SdFileEl.addEventListener("change", () => {
     const file = m4SdFileEl.files[0];
     if (!file) return;
@@ -1626,6 +1702,8 @@ create6128().then(m => {
     releaseAllJoy();
     m._poc_set_mouse(mouseEnabled ? 1 : 0);
     applyM4Hardware(m4Enabled);
+    applyPowergraphHardware(powergraphEnabled);
+    applyPowergraphOutputHardware(powergraphOutput);
     reapplyRomSlots();
     clearDisksUi();
     clearTapeUi();
@@ -2284,6 +2362,8 @@ create6128().then(m => {
   buildRomSlotRows();
   renderRomSlots();
   applyM4Hardware(m4Enabled);
+  applyPowergraphHardware(powergraphEnabled);
+  applyPowergraphOutputHardware(powergraphOutput);
   applyRomBoard(romBoardEnabled, { reset: false });
   setM4NetEnabled(m4NetEnabled, false);
   bootstrapServerMedia();

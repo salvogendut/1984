@@ -190,6 +190,7 @@ void config_defaults(Config *cfg) {
     cfg->scale     = 1;
     cfg->crtc_type = CRTC_TYPE_AUTO;
     cfg->mx4       = true;   /* expansion bus connected by default */
+    cfg->powergraph_video_source = CPC_VIDEO_SOURCE_AUTO;
     cfg->rom_board = true;   /* ROM Board fitted by default */
     cfg->fullscreen_smoothing = true;  /* preserve historic linear-scale behaviour */
     cfg->real_crt = false;
@@ -492,13 +493,17 @@ static void config_create_default(const char *path) {
         "# mx4: MX4 expansion bus — when false, all extension peripherals\n"
         "# (M4, Net4CPC, RTC, SYMBiFACE, Albireo, …) are disconnected.\n"
         "mx4=true\n"
+        "# PowerGraph V9990 graphics card. Auto keeps the CPC display until\n"
+        "# software enables the V9990 output; source may be auto, cpc, or v9990.\n"
+        "powergraph_v9990=false\n"
+        "powergraph_video_source=auto\n"
         "# rom_board: emulate the generic expansion ROM board (32 user upper-ROM\n"
         "# slots). When false, user slot_N entries are remembered but ignored;\n"
         "# MX4 cards (M4, SYMBiFACE, Albireo) still map their own onboard ROMs.\n"
         "rom_board=true\n"
         "# dd1: CPC 464 only — DDI-1 floppy interface (enables drives + AMSDOS)\n"
         "dd1=false\n"
-        "# Optional expansion hardware (not yet implemented)\n"
+        "# Optional expansion hardware\n"
         "m4=false\n"
         "m4_path=\n"
         "m4_image=\n"
@@ -777,6 +782,20 @@ int config_load_from(Config *cfg, const char *path_override) {
             if (!strcmp(key, "mx4")) {
                 if (parse_bool(val, &b)) cfg->mx4 = b;
                 else { fprintf(stderr, "1984.conf:%d: mx4 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "powergraph_v9990")) {
+                if (parse_bool(val, &b)) cfg->powergraph_v9990 = b;
+                else { fprintf(stderr, "1984.conf:%d: powergraph_v9990 must be true/false\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "powergraph_video_source")) {
+                if (!strcmp(val, "auto"))
+                    cfg->powergraph_video_source = CPC_VIDEO_SOURCE_AUTO;
+                else if (!strcmp(val, "cpc") || !strcmp(val, "internal"))
+                    cfg->powergraph_video_source = CPC_VIDEO_SOURCE_INTERNAL;
+                else if (!strcmp(val, "v9990") || !strcmp(val, "powergraph"))
+                    cfg->powergraph_video_source = CPC_VIDEO_SOURCE_POWERGRAPH;
+                else {
+                    fprintf(stderr, "1984.conf:%d: powergraph_video_source must be auto, cpc, or v9990\n", lineno);
+                    rc = -1;
+                }
             } else if (!strcmp(key, "rom_board")) {
                 if (parse_bool(val, &b)) cfg->rom_board = b;
                 else { fprintf(stderr, "1984.conf:%d: rom_board must be true/false\n", lineno); rc = -1; }
@@ -1167,6 +1186,8 @@ int config_save(const Config *cfg) {
         "external_tape=%s\n\n"
         "[hardware]\n"
         "mx4=%s\n"
+        "powergraph_v9990=%s\n"
+        "powergraph_video_source=%s\n"
         "rom_board=%s\n"
         "dd1=%s\n"
         "m4=%s\n"
@@ -1238,6 +1259,10 @@ int config_save(const Config *cfg) {
         cfg->tape,
         cfg->external_tape ? "true" : "false",
         cfg->mx4        ? "true" : "false",
+        cfg->powergraph_v9990 ? "true" : "false",
+        cfg->powergraph_video_source == CPC_VIDEO_SOURCE_INTERNAL ? "cpc" :
+            cfg->powergraph_video_source == CPC_VIDEO_SOURCE_POWERGRAPH
+                ? "v9990" : "auto",
         cfg->rom_board  ? "true" : "false",
         cfg->dd1        ? "true" : "false",
         cfg->m4      ? "true" : "false",
@@ -1358,6 +1383,7 @@ void config_apply_model_constraints(Config *cfg) {
     cfg->external_tape = false;
     cfg->fallback_input = FALLBACK_JOYSTICK;
     cfg->mx4 = false;
+    cfg->powergraph_v9990 = false;
     cfg->rom_board = false;
 }
 

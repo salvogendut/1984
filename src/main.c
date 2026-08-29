@@ -383,6 +383,7 @@ static void usage(const char *prog, int code) {
         "  --trace-io          Log CRTC/Gate Array register writes to stderr\n"
         "  --trace-palette     Log palette writes and the firmware-flush fallback to stderr\n"
         "  --trace-input       Log keyboard and joystick events to stderr (row 9 scans, gamepad/joystick events, key up/down)\n"
+        "  --trace-v9990       Log PowerGraph display-mode and output changes to stderr\n"
         "  --trace-m4          Log every M4 board command and response to stderr\n"
         "  --trace-symbos-msg  Log SymbOS RST #10 message sends (net-daemon range) to stderr\n"
         "  --trace-albireo     Log every Albireo (CH376) command and response to stderr\n"
@@ -513,6 +514,7 @@ int main(int argc, char *argv[]) {
     const char *printer_pdf_dir_arg = NULL; /* --printer-pdf=DIR */
     bool        printer_real_arg = false;   /* --printer-real */
     bool        trace_io         = false;
+    bool        trace_v9990      = false;
     bool        monitor_pty      = false;
     bool        web_cli          = false;   /* --web[=PORT] */
     int         web_cli_port     = 0;       /* 0 = use config value */
@@ -657,6 +659,8 @@ int main(int argc, char *argv[]) {
             cpc_trace_palette = 1;
         } else if (strcmp(argv[i], "--trace-input") == 0) {
             cpc_trace_input = 1;
+        } else if (strcmp(argv[i], "--trace-v9990") == 0) {
+            trace_v9990 = true;
         } else if (strcmp(argv[i], "--trace-m4") == 0) {
             m4_trace = 1;
         } else if (strcmp(argv[i], "--trace-symbos-msg") == 0) {
@@ -1355,6 +1359,13 @@ int main(int argc, char *argv[]) {
             }
             SDL_SetWindowTitle(cpc.display.window, title_for_model(cpc.model));
             cpc.mx4              = cfg.mx4;
+            cpc_set_video_source(&cpc, cfg.powergraph_video_source);
+            if (cpc_set_powergraph_v9990(
+                    &cpc, cfg.mx4 && cfg.powergraph_v9990) != 0) {
+                fprintf(stderr,
+                        "1984: failed to initialise PowerGraph V9990\n");
+                cfg.powergraph_v9990 = false;
+            }
             cpc.net4cpc          = cfg.net4cpc;
             cpc.rtc              = cfg.rtc;
             net4cpc_tap_sync(&cfg, tap_dev_arg);
@@ -1431,6 +1442,40 @@ int main(int argc, char *argv[]) {
         printer_tick(&cpc.printer);
         real_tape_pump(&cpc.real_tape);
         int emulated_cycles = cpc_frame(&cpc);
+        if (trace_v9990 && cpc.v9990.enabled) {
+            static u8 previous_regs[4];
+            static unsigned previous_width;
+            static unsigned previous_height;
+            static bool previous_active;
+            static bool trace_seen;
+            const u8 current_regs[4] = {
+                cpc.v9990.registers[6], cpc.v9990.registers[7],
+                cpc.v9990.registers[8], cpc.v9990.registers[13]
+            };
+            bool active = cpc_video_output_is_powergraph(&cpc);
+
+            if (!trace_seen ||
+                    memcmp(previous_regs, current_regs,
+                           sizeof(previous_regs)) != 0 ||
+                    previous_width != cpc.v9990.render_width ||
+                    previous_height != cpc.v9990.render_height ||
+                    previous_active != active) {
+                fprintf(stderr,
+                        "V9990: mode=%s render=%ux%u display=%s "
+                        "output=%s R6=%02X R7=%02X R8=%02X R13=%02X\n",
+                        v9990_mode_name(&cpc.v9990),
+                        cpc.v9990.render_width, cpc.v9990.render_height,
+                        v9990_display_active(&cpc.v9990) ? "on" : "off",
+                        active ? "V9990" : "CPC",
+                        current_regs[0], current_regs[1],
+                        current_regs[2], current_regs[3]);
+                memcpy(previous_regs, current_regs, sizeof(previous_regs));
+                previous_width = cpc.v9990.render_width;
+                previous_height = cpc.v9990.render_height;
+                previous_active = active;
+                trace_seen = true;
+            }
+        }
         Uint64 emulated_frame_ns = cpc_cycles_to_ns(&cpc, emulated_cycles);
         if (cpc.paused)
             emulated_frame_ns = FRAME_NS;

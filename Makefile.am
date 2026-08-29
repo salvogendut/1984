@@ -55,6 +55,7 @@ dist_man1_MANS = 1984.1
 	src/snapshot.c \
 	src/tap.c \
 	src/tape.c \
+	src/v9990.c \
 	src/z80.c
 
 noinst_HEADERS = \
@@ -112,6 +113,7 @@ noinst_HEADERS = \
 	src/types.h \
 	src/usifac.h \
 	src/perryfi.h \
+	src/v9990.h \
 	src/z80.h \
 	src/z80dis.h
 

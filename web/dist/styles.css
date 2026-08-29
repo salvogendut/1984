@@ -652,6 +652,7 @@ body.expansion-open .expansion-panel {
 }
 .m4-device { min-height: 400px; }
 .m4-net-device { min-height: 380px; }
+.powergraph-device { min-height: 290px; }
 .expansion-device-heading {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
@@ -768,6 +769,8 @@ button.extension-small-key:disabled { opacity: .35; }
 .relay-details-link a:hover { color: #d9e6db; }
 .extension-help { margin: 0; color: #777d78; font: 600 8px/1.45 ui-monospace, monospace; }
 .extension-help code { color: #aeb4ae; font: inherit; }
+.powergraph-output { display: grid; gap: 7px; color: #aeb2ad; font: 700 8px/1 ui-monospace, monospace; text-transform: uppercase; }
+.powergraph-output select:disabled { opacity: .42; cursor: not-allowed; }
 
 @media (max-width: 560px) {
   .expansion-panel { width: min(360px, calc(100vw - 12px)); }
