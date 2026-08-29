@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot
+TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot test-v9990
 
 .PHONY: all check clean
 
@@ -91,6 +91,10 @@ test-snapshot: test_snapshot.c ../src/snapshot.c ../src/remu.c ../src/symbols.c 
 		../src/mem.c ../src/cartridge.c ../src/gate_array.c ../src/crtc.c \
 		../src/ppi.c ../src/psg.c -o $@
 
+test-v9990: test_v9990.c ../src/v9990.c ../src/v9990.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_v9990.c ../src/v9990.c -o $@
+
 check: $(TESTS)
 	./test-gate-array
 	./test-crtc
@@ -110,6 +114,7 @@ check: $(TESTS)
 	./test-config
 	./test-breakpoint
 	./test-snapshot
+	./test-v9990
 
 clean:
 	rm -f $(TESTS)
