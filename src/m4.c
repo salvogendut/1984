@@ -230,7 +230,7 @@ static bool m4_use_fat(const M4 *m) {
 
 /* Build an absolute FAT path from a caller-supplied CPC path (which may be
  * relative or absolute) and the current cwd. */
-static void fat_abs_path(const M4 *m, const char *cpc_path,
+static bool fat_abs_path(const M4 *m, const char *cpc_path,
                          char *out, size_t outsz) {
     /* Normalise backslashes to forward slashes */
     char clean[M4_PATH_MAX];
@@ -238,16 +238,19 @@ static void fat_abs_path(const M4 *m, const char *cpc_path,
     for (size_t i = 0; cpc_path[i] && ci < sizeof(clean) - 1; i++)
         clean[ci++] = (cpc_path[i] == '\\') ? '/' : cpc_path[i];
     clean[ci] = '\0';
+    bool complete = !cpc_path[ci];
 
+    int n;
     if (clean[0] == '/') {
-        snprintf(out, outsz, "%s", clean);
+        n = snprintf(out, outsz, "%s", clean);
     } else {
         const char *cwd = m->cwd[0] ? m->cwd : "/";
         if (strcmp(cwd, "/") == 0)
-            snprintf(out, outsz, "/%s", clean);
+            n = snprintf(out, outsz, "/%s", clean);
         else
-            snprintf(out, outsz, "%s/%s", cwd, clean);
+            n = snprintf(out, outsz, "%s/%s", cwd, clean);
     }
+    return complete && n >= 0 && (size_t)n < outsz;
 }
 
 /* Host directories have no DOS alias table. Publish an SFN only when the
@@ -265,6 +268,17 @@ static void host_short_name(const char *name, char out[13]) {
               (ch >= '0' && ch <= '9') || strchr("!#$%&'()-@^_`{}~", ch))) return;
     }
     for (size_t i = 0; i <= strlen(name); i++) out[i] = (char)toupper((unsigned char)name[i]);
+}
+
+static u8 m4_fat_open_error(FatOpenStatus status) {
+    switch (status) {
+    case FAT_OPEN_OK: return M4_OK;
+    case FAT_OPEN_NOT_FOUND: return M4_ERR_NOFILE;
+    case FAT_OPEN_NO_PATH: return M4_ERR_NOPATH;
+    case FAT_OPEN_DENIED: return M4_ERR_DENIED;
+    case FAT_OPEN_BAD_NAME: return M4_ERR_BADNAME;
+    default: return M4_ERR_IO;
+    }
 }
 
 static u8 m4_stat_path(M4 *m, const char *name, FatInfo *info) {
@@ -935,6 +949,10 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
          *   mode with FA_REALMODE: dynamic fd from a pool (fds 3..M4_MAX_FDS).
          * Response: resp+3 = fd, resp+4 = 0 on success, non-zero error otherwise. */
         u8 open_fd = 0xFF, open_err = M4_ERR_IO;
+        if (plen < 2 || !memchr(p+1, 0, (size_t)plen-1) || !p[1]) {
+            open_err = M4_ERR_BADNAME;
+            goto m4_open_done;
+        }
         if ((m->root[0] || m4_use_fat(m)) && plen >= 2) {
             u8 mode = p[0];
             const char *name = (const char *)&p[1];
@@ -943,29 +961,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
             bool open_always = (mode & 0x10) != 0;
 
             if (m4_use_fat(m)) {
-                /* Image-mode: route through the FAT volume. */
-                char abs[M4_PATH_MAX];
-                fat_abs_path(m, name, abs, sizeof(abs));
-                FatFile *ff = NULL;
-                if (is_write && open_always && !create_always) {
-                    ff = fat_open(&m->image_vol, abs, false);
-                    if (ff) {
-                        ff->write_mode = true;
-                    } else {
-                        ff = fat_open(&m->image_vol, abs, true);
-                    }
-                } else {
-                    ff = fat_open(&m->image_vol, abs, is_write);
-                }
-                if (!ff && !is_write && !strchr(name, '.')) {
-                    /* Try .BAS / .BIN auto-extension for read mode. */
-                    static const char *exts[] = { ".BAS", ".BIN", NULL };
-                    for (int e = 0; exts[e] && !ff; e++) {
-                        char tryabs[M4_PATH_MAX];
-                        snprintf(tryabs, sizeof(tryabs), "%s%s", abs, exts[e]);
-                        ff = fat_open(&m->image_vol, tryabs, false);
-                    }
-                }
+                /* Reserve a descriptor BEFORE any destructive open. */
                 int idx;
                 if (mode & 0x80) {
                     idx = -1;
@@ -973,6 +969,22 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                         if (!m->fds[i].in_use) { idx = i + 1; break; }
                 } else {
                     idx = (mode & 0x02) ? 2 : 1;
+                }
+                if (idx < 0) {
+                    open_err = M4_ERR_FULL;
+                    goto m4_open_done;
+                }
+                if (is_write && m->image_read_only) {
+                    open_err = M4_ERR_RDONLY;
+                    goto m4_open_done;
+                }
+                char abs[M4_PATH_MAX];
+                if (!fat_abs_path(m, name, abs, sizeof(abs))) {
+                    open_err = M4_ERR_BADNAME; /* never open a truncated alias */
+                    goto m4_open_done;
+                }
+                if (!(mode & 0x80)) {
+                    /* Preserve the AMSDOS fixed-descriptor replacement rule. */
                     if (m->fds[idx - 1].in_use) {
                         if (m->fds[idx - 1].fp)   fclose(m->fds[idx - 1].fp);
                         if (m->fds[idx - 1].fatf) fat_close(m->fds[idx - 1].fatf);
@@ -981,11 +993,26 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                         m->fds[idx - 1].in_use = false;
                     }
                 }
+                FatOpenStatus result;
+                FatOpenMode access = !is_write ? FAT_OPEN_READ :
+                    open_always && !create_always ? FAT_OPEN_ALWAYS : FAT_OPEN_REPLACE;
+                FatFile *ff = fat_open_mode(&m->image_vol, abs, access, &result);
+                /* Only a missing read may try an automatic extension. A denied
+                 * open is final; OPEN_ALWAYS itself creates only missing files. */
+                if (!ff && result == FAT_OPEN_NOT_FOUND && !is_write && !strchr(name, '.')) {
+                    static const char *exts[] = { ".BAS", ".BIN", NULL };
+                    for (int e = 0; exts[e] && !ff && result == FAT_OPEN_NOT_FOUND; e++) {
+                        char tryabs[M4_PATH_MAX];
+                        int n = snprintf(tryabs, sizeof(tryabs), "%s%s", abs, exts[e]);
+                        if (n < 0 || (size_t)n >= sizeof(tryabs)) {
+                            result = FAT_OPEN_BAD_NAME;
+                            break;
+                        }
+                        ff = fat_open_mode(&m->image_vol, tryabs, FAT_OPEN_READ, &result);
+                    }
+                }
                 if (!ff) {
-                    open_err = M4_ERR_NOFILE;
-                } else if (idx < 0) {
-                    fat_close(ff);
-                    open_err = M4_ERR_FULL;
+                    open_err = m4_fat_open_error(result);
                 } else {
                     m->fds[idx - 1].fatf   = ff;
                     m->fds[idx - 1].in_use = true;
@@ -1059,6 +1086,7 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 }
             }
         }
+    m4_open_done:
         err = open_err;
         resp_u8(m, &roff, open_fd);
         resp_u8(m, &roff, open_err);
