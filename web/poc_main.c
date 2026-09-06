@@ -33,6 +33,8 @@ static CPC g_cpc;
 static Paste g_paste;
 static int g_autorun_frames;
 static char g_autorun_command[256];
+static bool g_powergraph_enabled;
+static CpcVideoSource g_powergraph_video_source = CPC_VIDEO_SOURCE_AUTO;
 
 /* ---- browser machine-language monitor ---- */
 #define POC_DEBUG_WATCH_MAX 16
@@ -169,6 +171,7 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     tape_eject(&g_cpc.tape);
     remu_debug_clear(&g_cpc.remu_debug);
     cpc_breakpoints_destroy(&g_cpc);
+    v9990_destroy(&g_cpc.v9990);
     if (model == 1) {
         rc = cpc_init(&g_cpc, MODEL_6128_PLUS, NULL, NULL,
                       cartridge ? cartridge : "roms/system.cpr", 1);
@@ -181,6 +184,10 @@ EMSCRIPTEN_KEEPALIVE int poc_init_model(int model, const char *cartridge) {
     if (rc != 0)
         return -1;
     g_cpc.mem.ram_size = memory_kb * 1024;
+    g_cpc.mx4 = g_powergraph_enabled;
+    cpc_set_video_source(&g_cpc, g_powergraph_video_source);
+    if (cpc_set_powergraph_v9990(&g_cpc, g_powergraph_enabled) != 0)
+        return -1;
     cpc_set_audio_sink(&g_cpc, poc_audio_sink, NULL);
     poc_debug_reset_state();
     poc_debug_install_mem_hook();
@@ -228,6 +235,39 @@ EMSCRIPTEN_KEEPALIVE int poc_set_m4(int enabled) {
 
 EMSCRIPTEN_KEEPALIVE int poc_m4_enabled(void) {
     return g_cpc.m4 ? 1 : 0;
+}
+
+/* ---- PowerGraph V9990 graphics extension ---- */
+
+EMSCRIPTEN_KEEPALIVE int poc_set_powergraph_v9990(int enabled) {
+    bool requested = enabled != 0;
+
+    if (cpc_set_powergraph_v9990(&g_cpc, requested) != 0)
+        return -1;
+    g_powergraph_enabled = requested;
+    if (requested)
+        g_cpc.mx4 = true;
+    return requested ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_powergraph_v9990_enabled(void) {
+    return g_powergraph_enabled && g_cpc.v9990.enabled ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_set_powergraph_video_source(int source) {
+    if (source < 0 || source >= CPC_VIDEO_SOURCE_COUNT)
+        return -1;
+    g_powergraph_video_source = (CpcVideoSource)source;
+    cpc_set_video_source(&g_cpc, g_powergraph_video_source);
+    return source;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_powergraph_video_source(void) {
+    return g_powergraph_video_source;
+}
+
+EMSCRIPTEN_KEEPALIVE int poc_powergraph_output_active(void) {
+    return cpc_video_output_is_powergraph(&g_cpc) ? 1 : 0;
 }
 
 /* Mount a raw FAT SD image already written to the virtual filesystem. The

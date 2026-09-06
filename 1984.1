@@ -185,6 +185,9 @@ Log palette writes and the firmware-flush fallback.
 .B --trace-input
 Log keyboard, joystick, and gamepad events.
 .TP
+.B --trace-v9990
+Log PowerGraph display-mode and output changes.
+.TP
 .B --trace-m4
 Log every M4 board command and response.
 .TP
@@ -367,7 +370,8 @@ Net4CPC, USIfAC II, the
 USIfAC data port and answers Hayes AT commands, dialling
 .B ATDT host:port
 out to host TCP),
-SymbNet, expansion ROM slots 0\(en31, and
+SymbNet, PowerGraph V9990 graphics with automatic or forced video output,
+expansion ROM slots 0\(en31, and
 the Centronics PDF printer / Real-printer (CUPS) sink (gated on
 the MX4 expansion bus).
 .TP

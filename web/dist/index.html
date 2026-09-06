@@ -96,6 +96,37 @@
       </div>
     </section>
 
+    <section class="expansion-device powergraph-device" aria-labelledby="powergraphTitle">
+      <div class="expansion-device-heading">
+        <span class="expansion-device-mark" aria-hidden="true">V9K</span>
+        <div>
+          <h3 id="powergraphTitle">PowerGraph V9990</h3>
+          <span>MX4 bus / 512 KB video RAM</span>
+        </div>
+      </div>
+      <div class="expansion-device-controls">
+        <label class="toggle-control expansion-device-toggle">
+          <input type="checkbox" id="powergraphToggle">
+          <span class="toggle-track"><i></i></span>
+          <span><strong>Board power</strong><small id="powergraphState" aria-live="polite">Disabled</small></span>
+        </label>
+        <p class="firmware-note"><strong>I/O window</strong><span>&amp;FF60-&amp;FF6F</span></p>
+        <label class="powergraph-output" for="powergraphOutput">
+          <span>Video output</span>
+          <span class="select-shell">
+            <select id="powergraphOutput" disabled>
+              <option value="auto">Auto</option>
+              <option value="cpc">CPC</option>
+              <option value="v9990">V9990</option>
+            </select>
+          </span>
+        </label>
+        <p class="extension-help">Auto retains the CPC display until software
+          enables the V9990 output. CPC and V9990 force either monitor source
+          for diagnostics. No firmware image is required.</p>
+      </div>
+    </section>
+
     <section class="expansion-device roms-device" aria-labelledby="romsTitle">
       <div class="expansion-device-heading">
         <span class="expansion-device-mark" aria-hidden="true">ROM</span>

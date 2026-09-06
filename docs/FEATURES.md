@@ -133,12 +133,26 @@ hardware remains available.
 | Albireo | CH376 USB mass storage plus optional CH376-A HID mouse, usable from UNIDOS and FUZIX |
 | USIfAC II | Wire-level serial pipe at `&FBD0`/`&FBD1`, backed by a PTY or localhost TCP listener on POSIX hosts |
 | Wi-Fi Modem | PerryFi-inspired Hayes AT modem over USIfAC, with TCP dial-out through `ATDT host:port` |
+| PowerGraph V9990 | 512 KB VRAM, `&FF60-&FF6F` register window, pattern/bitmap graphics, sprites/cursors, command engine, and shared IRQ |
 | Printer | Centronics output at `&EFxx`, captured to PDF with Cairo or spooled to `lp` |
 | Diagnostics | Bundled Amstrad Diagnostics lower ROM selectable from the overlay |
 
 M4 can coexist with Net4CPC, RTC, SYMBiFACE IDE, and the SYMBiFACE mouse,
 including the Cyboard group. M4 and Albireo remain mutually exclusive because
 both decode the `0xFExx` range and their firmware stacks conflict.
+
+PowerGraph is disabled by default and requires MX4. Its video source defaults
+to **Auto**: the normal CPC image remains visible until software enables the
+V9990 display through register 8, at which point 1984 switches to the card's
+output. The Extensions tab can also force either the CPC or V9990 output. The
+card needs no firmware image.
+
+The implementation is validated end to end with SymbOS 4.0 for CPC. Its
+`RUN"SYMG9K` launcher selects V9990 B3 mode at 512x212 with a 16-colour
+palette, exercises the command engine and interrupts, and switches the Auto
+output to PowerGraph. When testing from a prepared M4 image, disable any
+`AUTOEXEC.BAS` that launches `SYM`; otherwise standard CPC SymbOS starts before
+the SYMG9K command reaches BASIC and can give a false-positive boot result.
 
 Net4CPC's default backend maps W5100S operations to host sockets. Its TAP
 backend makes the CPC a layer-2 endpoint with ARP, ICMP, TCP, UDP, DHCP, and

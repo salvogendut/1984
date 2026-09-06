@@ -74,6 +74,8 @@ typedef struct {
 
     /* [hardware] */
     bool mx4;        /* MX4 expansion bus connected (gates all extension I/O) */
+    bool powergraph_v9990; /* PowerGraph V9990 video extension at &FF60-&FF6F */
+    CpcVideoSource powergraph_video_source;
     bool rom_board;  /* ROM Board fitted — when false, ignore rom_ext[] at boot */
     bool dd1;      /* CPC 464 only: DDI-1 floppy interface + AMSDOS ROM */
     bool m4;

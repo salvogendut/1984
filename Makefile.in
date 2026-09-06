@@ -145,7 +145,7 @@ am_1984_OBJECTS = src/1984-config.$(OBJEXT) \
 	src/1984-n4c_stack.$(OBJEXT) src/1984-notify.$(OBJEXT) \
 	src/1984-pilot.$(OBJEXT) src/1984-snapshot.$(OBJEXT) \
 	src/1984-tap.$(OBJEXT) src/1984-tape.$(OBJEXT) \
-	src/1984-z80.$(OBJEXT)
+	src/1984-v9990.$(OBJEXT) src/1984-z80.$(OBJEXT)
 1984_OBJECTS = $(am_1984_OBJECTS)
 am__DEPENDENCIES_1 =
 1984_LINK = $(CCLD) $(1984_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
@@ -190,9 +190,9 @@ am__depfiles_remade = src/$(DEPDIR)/1984-amx.Po \
 	src/$(DEPDIR)/1984-symbols.Po \
 	src/$(DEPDIR)/1984-symbos_trace.Po src/$(DEPDIR)/1984-tap.Po \
 	src/$(DEPDIR)/1984-tape.Po src/$(DEPDIR)/1984-usifac.Po \
-	src/$(DEPDIR)/1984-webgui.Po src/$(DEPDIR)/1984-webmcap.Po \
-	src/$(DEPDIR)/1984-websvc.Po src/$(DEPDIR)/1984-z80.Po \
-	src/$(DEPDIR)/1984-z80dis.Po
+	src/$(DEPDIR)/1984-v9990.Po src/$(DEPDIR)/1984-webgui.Po \
+	src/$(DEPDIR)/1984-webmcap.Po src/$(DEPDIR)/1984-websvc.Po \
+	src/$(DEPDIR)/1984-z80.Po src/$(DEPDIR)/1984-z80dis.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -465,6 +465,7 @@ dist_man1_MANS = 1984.1
 	src/snapshot.c \
 	src/tap.c \
 	src/tape.c \
+	src/v9990.c \
 	src/z80.c
 
 noinst_HEADERS = \
@@ -522,6 +523,7 @@ noinst_HEADERS = \
 	src/types.h \
 	src/usifac.h \
 	src/perryfi.h \
+	src/v9990.h \
 	src/z80.h \
 	src/z80dis.h
 
@@ -775,6 +777,8 @@ src/1984-tap.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-tape.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
+src/1984-v9990.$(OBJEXT): src/$(am__dirstamp) \
+	src/$(DEPDIR)/$(am__dirstamp)
 src/1984-z80.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 
@@ -836,6 +840,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-tap.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-tape.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-usifac.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-v9990.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-webgui.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-webmcap.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/1984-websvc.Po@am__quote@ # am--include-marker
@@ -1578,6 +1583,20 @@ src/1984-tape.obj: src/tape.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-tape.obj `if test -f 'src/tape.c'; then $(CYGPATH_W) 'src/tape.c'; else $(CYGPATH_W) '$(srcdir)/src/tape.c'; fi`
 
+src/1984-v9990.o: src/v9990.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-v9990.o -MD -MP -MF src/$(DEPDIR)/1984-v9990.Tpo -c -o src/1984-v9990.o `test -f 'src/v9990.c' || echo '$(srcdir)/'`src/v9990.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-v9990.Tpo src/$(DEPDIR)/1984-v9990.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/v9990.c' object='src/1984-v9990.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-v9990.o `test -f 'src/v9990.c' || echo '$(srcdir)/'`src/v9990.c
+
+src/1984-v9990.obj: src/v9990.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-v9990.obj -MD -MP -MF src/$(DEPDIR)/1984-v9990.Tpo -c -o src/1984-v9990.obj `if test -f 'src/v9990.c'; then $(CYGPATH_W) 'src/v9990.c'; else $(CYGPATH_W) '$(srcdir)/src/v9990.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-v9990.Tpo src/$(DEPDIR)/1984-v9990.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/v9990.c' object='src/1984-v9990.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -c -o src/1984-v9990.obj `if test -f 'src/v9990.c'; then $(CYGPATH_W) 'src/v9990.c'; else $(CYGPATH_W) '$(srcdir)/src/v9990.c'; fi`
+
 src/1984-z80.o: src/z80.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(1984_CFLAGS) $(CFLAGS) -MT src/1984-z80.o -MD -MP -MF src/$(DEPDIR)/1984-z80.Tpo -c -o src/1984-z80.o `test -f 'src/z80.c' || echo '$(srcdir)/'`src/z80.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/1984-z80.Tpo src/$(DEPDIR)/1984-z80.Po
@@ -2194,6 +2213,7 @@ distclean: distclean-am
 	-rm -f src/$(DEPDIR)/1984-tap.Po
 	-rm -f src/$(DEPDIR)/1984-tape.Po
 	-rm -f src/$(DEPDIR)/1984-usifac.Po
+	-rm -f src/$(DEPDIR)/1984-v9990.Po
 	-rm -f src/$(DEPDIR)/1984-webgui.Po
 	-rm -f src/$(DEPDIR)/1984-webmcap.Po
 	-rm -f src/$(DEPDIR)/1984-websvc.Po
@@ -2298,6 +2318,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/$(DEPDIR)/1984-tap.Po
 	-rm -f src/$(DEPDIR)/1984-tape.Po
 	-rm -f src/$(DEPDIR)/1984-usifac.Po
+	-rm -f src/$(DEPDIR)/1984-v9990.Po
 	-rm -f src/$(DEPDIR)/1984-webgui.Po
 	-rm -f src/$(DEPDIR)/1984-webmcap.Po
 	-rm -f src/$(DEPDIR)/1984-websvc.Po

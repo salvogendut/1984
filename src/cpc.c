@@ -257,7 +257,8 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
             asic_register_write(&cpc->asic, &cpc->ga, &cpc->mem, addr, val);
         if (!asic_irq_pending(&cpc->asic)) {
             cpc->ga.interrupt_pending = false;
-            cpc->cpu.pending_irq = false;
+            cpc->ga_irq_asserted = false;
+            cpc->cpu.pending_irq = cpc->v9990.irq;
         }
     } else {
         mem_write(&cpc->mem, addr, val);
@@ -375,7 +376,8 @@ static void gate_array_bus_write(CPC *cpc, u16 port, u8 val) {
         fprintf(stderr, "[GA-bank] frame=%d  val=%02X  PC=%04X  was=%02X\n",
                 cpc_frame_count, val, cpc->cpu.pc, cpc->mem.ram_bank);
     if ((val & 0xC0) == 0x80 && (val & 0x10)) {
-        cpc->cpu.pending_irq = false;
+        cpc->ga_irq_asserted = false;
+        cpc->cpu.pending_irq = cpc->v9990.irq;
         if (cpc_model_is_plus(cpc->model))
             asic_clear_raster_irq(&cpc->asic, &cpc->mem);
     }
@@ -488,7 +490,14 @@ static u8 bus_io_read(void *ctx, u16 port) {
              hi == 0xFE && (port & 0xFE) == 0x40) {
         return ch376_read(&cpc->ch376_b, (u8)(port & 0x01));
     }
-    /* M4 DATAPORT: hi=0xFE or 0xFF (read = ready/status) */
+    /* CPC PowerGraph adapters expose the GFX9000-compatible V9990 window
+     * at &FF60-&FF6F. It must be claimed before M4's broad &FFxx alias. */
+    else if (cpc->mx4 && hi == 0xFF && (u8)port >= 0x60 &&
+             (u8)port <= 0x6F &&
+             v9990_io_read(&cpc->v9990, port, &result)) {
+        return result;
+    }
+    /* M4 DATAPORT: hi=0xFE or remaining 0xFF aliases (read = ready/status) */
     else if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
         return m4_dataport_read(&cpc->m4_card);
     }
@@ -648,7 +657,18 @@ static void bus_io_write(void *ctx, u16 port, u8 val) {
         ch376_write(&cpc->ch376_b, (u8)(port & 0x01), val);
         return;
     }
-    /* M4 DATAPORT: hi=0xFE or 0xFF — accumulate command byte */
+    /* CPC PowerGraph V9990 exact window takes priority over M4's broad
+     * &FFxx alias. Clearing V9990 interrupt flags also releases the CPU
+     * line when no Gate Array interrupt is waiting. */
+    if (cpc->mx4 && hi == 0xFF && (u8)port >= 0x60 &&
+            (u8)port <= 0x6F &&
+            v9990_io_write(&cpc->v9990, port, val)) {
+        if (!cpc->v9990.irq && !cpc->ga_irq_asserted &&
+                !cpc->ga.interrupt_pending)
+            cpc->cpu.pending_irq = false;
+        return;
+    }
+    /* M4 DATAPORT: hi=0xFE or remaining 0xFF aliases. */
     if (cpc->mx4 && cpc->m4 && (hi == 0xFE || hi == 0xFF)) {
         m4_dataport_write(&cpc->m4_card, val); return;
     }
@@ -812,6 +832,42 @@ void cpc_set_crtc_type(CPC *cpc, CrtcType type) {
                   type == CRTC_TYPE_AUTO ? default_crtc_type(cpc->model) : type);
 }
 
+const char *cpc_video_source_name(CpcVideoSource source) {
+    switch (source) {
+    case CPC_VIDEO_SOURCE_INTERNAL:   return "CPC";
+    case CPC_VIDEO_SOURCE_POWERGRAPH: return "V9990";
+    default:                          return "Auto";
+    }
+}
+
+void cpc_set_video_source(CPC *cpc, CpcVideoSource source) {
+    if (!cpc) return;
+    cpc->video_source = (unsigned)source < CPC_VIDEO_SOURCE_COUNT
+                      ? source : CPC_VIDEO_SOURCE_AUTO;
+}
+
+bool cpc_video_output_is_powergraph(const CPC *cpc) {
+    if (!cpc || !cpc->mx4 || !cpc->v9990.enabled ||
+            cpc->video_source == CPC_VIDEO_SOURCE_INTERNAL)
+        return false;
+    if (cpc->video_source == CPC_VIDEO_SOURCE_POWERGRAPH)
+        return true;
+    return v9990_display_active(&cpc->v9990);
+}
+
+int cpc_set_powergraph_v9990(CPC *cpc, bool enabled) {
+    if (!cpc) return -1;
+    if (cpc->v9990.enabled == enabled) return 0;
+    if (v9990_set_enabled(&cpc->v9990, enabled) != 0)
+        return -1;
+    if (enabled) {
+        v9990_begin_frame(&cpc->v9990, (unsigned)cpc->cycles_per_frame);
+    } else if (!cpc->ga_irq_asserted && !cpc->ga.interrupt_pending) {
+        cpc->cpu.pending_irq = false;
+    }
+    return 0;
+}
+
 /* Forward decl — definition lives near cpc_frame() with the rest of
  * the CRTC/bus advance code. */
 static void cpc_bus_tick(void *ctx, int cycles);
@@ -863,6 +919,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
     cpc->cpu_clk_hz = 4000000;
     /* 50 Hz PAL: 4 MHz / 50 = 80 000 cycles per frame */
     cpc->cycles_per_frame = cpc->cpu_clk_hz / 50;
+    cpc->video_source = CPC_VIDEO_SOURCE_AUTO;
 
     mem_init(&cpc->mem);
     if (cpc_model_is_plus(model)) {
@@ -888,6 +945,7 @@ int cpc_init(CPC *cpc, CpcModel model, const char *rom_os,
     disk_init(&cpc->drive[0]);
     disk_init(&cpc->drive[1]);
     fdc_init(&cpc->fdc, &cpc->drive[0], &cpc->drive[1]);
+    v9990_init(&cpc->v9990);
     rtc_init(&cpc->rtc_chip);
     ide_init(&cpc->ide_chip);
     mouse_init(&cpc->mouse);
@@ -952,6 +1010,12 @@ int cpc_build_from_config(CPC *cpc, Config *cfg) {
     cpc->mem.ram_size = cfg->memory_kb * 1024;
     cpc->snapshot_breakpoints = cfg->snapshot_breakpoints;
     cpc->mx4          = cfg->mx4;
+    cpc_set_video_source(cpc, cfg->powergraph_video_source);
+    if (cpc_set_powergraph_v9990(
+            cpc, cfg->mx4 && cfg->powergraph_v9990) != 0) {
+        fprintf(stderr, "1984: failed to initialise PowerGraph V9990\n");
+        cfg->powergraph_v9990 = false;
+    }
     cpc->net4cpc      = cfg->net4cpc;
     cpc->rtc          = cfg->rtc;
 
@@ -1067,6 +1131,8 @@ void cpc_reset(CPC *cpc) {
     m4_reset(&cpc->m4_card);
     ch376_reset(&cpc->ch376);
     ch376_reset(&cpc->ch376_b);
+    v9990_reset(&cpc->v9990);
+    v9990_begin_frame(&cpc->v9990, (unsigned)cpc->cycles_per_frame);
     cpc->mem.lower_rom_enabled = true;
     cpc->mem.upper_rom_enabled = true;
     cpc->mem.ram_bank = 0;
@@ -1076,6 +1142,7 @@ void cpc_reset(CPC *cpc) {
     cpc_monitor_reset(cpc);
     cpc->prev_hsync = false;
     cpc->prev_vsync = false;
+    cpc->ga_irq_asserted = false;
     cpc->crtc_cycle_acc = 0;
     cpc->crtc_pre_ma = cpc->crtc.ma;
     cpc->crtc_pre_ra = cpc->crtc.vlc;
@@ -1100,6 +1167,7 @@ void cpc_destroy(CPC *cpc) {
     mem_clear_snapshot_roms(&cpc->mem);
     remu_debug_clear(&cpc->remu_debug);
     cpc_breakpoints_destroy(cpc);
+    v9990_destroy(&cpc->v9990);
     display_destroy(&cpc->display);
 }
 
@@ -1342,6 +1410,20 @@ static inline int cpc_monitor_px(const CPC *cpc) {
     return (cpc->monitor_hpos / 16) + MONITOR_X_ADJUST_PIXELS;
 }
 
+static void cpc_compose_powergraph(CPC *cpc) {
+    unsigned width = cpc->v9990.render_width;
+    unsigned height = cpc->v9990.render_height;
+
+    if (!cpc->v9990.pixels || !width || !height) return;
+    for (int y = 0; y < CPC_SCREEN_H; y++) {
+        unsigned source_y = (unsigned)y * height / CPC_SCREEN_H;
+        u32 *destination = cpc->display.pixels + y * CPC_SCREEN_W;
+        const u32 *source = cpc->v9990.pixels + source_y * width;
+        for (int x = 0; x < CPC_SCREEN_W; x++)
+            destination[x] = source[(unsigned)x * width / CPC_SCREEN_W];
+    }
+}
+
 /* Advance ALL per-cycle peripheral state by `cycles` CPU T-states.
  * Covers: tape, audio sampling, CRTC/GA/render. Mirrors konCePCja's
  * z80_wait_states macro which advances CRTC + PSG + FDC + tape in
@@ -1353,6 +1435,7 @@ static inline int cpc_monitor_px(const CPC *cpc) {
  * on the CPC struct (crtc_pre_ma/ra/de) so partial calls share state. */
 static void cpc_advance_bus(CPC *cpc, int cycles) {
     if (cycles <= 0) return;
+    v9990_advance(&cpc->v9990, (unsigned)cycles);
     u8 cassette_pins = ppi_output_c(&cpc->ppi);
     /* INPUT and CPC SAVE output pause the virtual tape. CDT output keeps it
      * connected so the decoded waveform reaches both the CPC and host. */
@@ -1527,6 +1610,11 @@ static void cpc_advance_bus(CPC *cpc, int cycles) {
         if (new_crtc_line && cpc_monitor_finish_frame(cpc, new_vsync)) {
             display_finalize_frame(&cpc->display,
                                    cpc->ga.resolved_ink[16]);
+            v9990_end_frame(&cpc->v9990);
+            if (cpc_video_output_is_powergraph(cpc))
+                cpc_compose_powergraph(cpc);
+            v9990_begin_frame(&cpc->v9990,
+                              (unsigned)cpc->cycles_per_frame);
             display_upload(&cpc->display);
         }
 
@@ -1918,7 +2006,8 @@ int cpc_frame(CPC *cpc) {
         }
         /* The GA acknowledges an interrupt as the CPU accepts it, before
          * interrupt-entry cycles advance the scanline counter. */
-        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay) {
+        if (cpc->cpu.pending_irq && cpc->cpu.iff1 && !cpc->cpu.ei_delay &&
+                cpc->ga_irq_asserted) {
             if (cpc_model_is_plus(cpc->model)) {
                 if (!cpc->asic_locked)
                     cpc->cpu.irq_vector = asic_irq_vector(&cpc->asic);
@@ -1926,6 +2015,7 @@ int cpc_frame(CPC *cpc) {
             } else {
                 ga_irq_ack(&cpc->ga);
             }
+            cpc->ga_irq_asserted = false;
         }
         int t = z80_step(&cpc->cpu, &cpc->bus);
         /* Firmware text-out hook for --kbd-pty. The CPC ROM exposes
@@ -1949,13 +2039,18 @@ int cpc_frame(CPC *cpc) {
         frame_done = cpc->monitor_frame_completed;
 
         /* Deliver pending Gate Array interrupt. */
+        bool delivered_ga_irq = false;
         if (cpc->ga.interrupt_pending) {
             cpc->ga.interrupt_pending = false;
             u8 vector = 0xFF;
             if (cpc_model_is_plus(cpc->model) && !cpc->asic_locked)
                 vector = asic_irq_vector(&cpc->asic);
+            cpc->ga_irq_asserted = true;
             z80_interrupt(&cpc->cpu, vector);
+            delivered_ga_irq = true;
         }
+        if (cpc->v9990.irq && !delivered_ga_irq)
+            z80_interrupt(&cpc->cpu, 0xFF);
         if (cpc->cpu.int_accepted) {
             cpc->cpu.int_accepted = false;
             if (dbg_getenv("ONE_K_TRACE_IRQ")) {

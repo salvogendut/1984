@@ -30,6 +30,7 @@ SRCS = \
 	../src/disk.c \
 	../src/fdc.c \
 	../src/tape.c \
+	../src/v9990.c \
 	../src/asic.c \
 	../src/kbd.c \
 	../src/ide.c \
@@ -62,7 +63,7 @@ all: $(DIST_DIR)/index.html $(addprefix $(DIST_DIR)/,$(STYLE_ASSETS)) $(DIST_DIR
 	$(DIST_DIR)/m4-relay-protocol.js $(DIST_DIR)/m4-bridge.js \
 	$(DIST_DIR)/brand-1984.png $(WASM_ASSETS)
 
-test: test-gamepad test-media-url test-ml-monitor test-dap test-m4-bridge test-m4-wasm test-rom-slots-wasm
+test: test-gamepad test-media-url test-ml-monitor test-dap test-m4-bridge test-m4-wasm test-rom-slots-wasm test-powergraph-wasm
 
 test-gamepad:
 	node test_gamepad.js
@@ -88,10 +89,13 @@ test-m4-wasm: $(WASM_ASSETS)
 test-rom-slots-wasm: $(WASM_ASSETS)
 	node test_rom_slots_wasm.js
 
+test-powergraph-wasm: $(WASM_ASSETS)
+	node test_powergraph_wasm.js
+
 $(WASM_ASSETS) &: $(OBJS) | $(DIST_DIR)
 	$(EMCC) $(CFLAGS) $(OBJS) -o $(DIST_DIR)/6128.js \
 	    -sMODULARIZE -sEXPORT_NAME=create6128 \
-	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_set_m4,_poc_m4_enabled,_poc_mount_m4_sd,_poc_eject_m4_sd,_poc_m4_sd_activity,_poc_m4_net_activity,_poc_rom_slot_load,_poc_rom_slot_unload,_poc_rom_slot_present,_poc_set_memory_kb,_poc_memory_kb,_poc_load_snapshot,_poc_save_snapshot,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_disk_inserted,_poc_load_disk,_poc_eject_disk,_poc_tape_load,_poc_tape_eject,_poc_tape_play,_poc_tape_stop,_poc_tape_rewind,_poc_tape_next,_poc_tape_loaded,_poc_tape_motor,_poc_tape_playing,_poc_tape_paused,_poc_tape_ended,_poc_tape_counter,_poc_autorun,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_poc_build_version,_poc_build_commit,_poc_debug_pause,_poc_debug_continue,_poc_debug_step_in,_poc_debug_next,_poc_debug_step_back,_poc_debug_step_out,_poc_debug_is_paused,_poc_debug_stop_reason,_poc_debug_can_step_back,_poc_debug_reg,_poc_debug_breakpoint_set,_poc_debug_breakpoint_clear,_poc_debug_breakpoint_enabled,_poc_debug_breakpoint_addr,_poc_debug_breakpoint_count,_poc_debug_breakpoint_id_at,_poc_debug_breakpoint_source,_poc_set_snapshot_breakpoints,_poc_snapshot_breakpoints,_poc_debug_mem_read,_poc_debug_mem_write_byte,_poc_debug_disassemble,_poc_debug_watch_set,_poc_debug_watch_clear,_poc_debug_watch_serial,_poc_debug_watch_event_slot,_poc_debug_watch_event_addr,_poc_debug_watch_event_pc,_poc_debug_watch_event_old,_poc_debug_watch_event_new,_malloc,_free' \
+	    -sEXPORTED_FUNCTIONS='_poc_init,_poc_init_model,_poc_load_cartridge,_poc_reset,_poc_set_m4,_poc_m4_enabled,_poc_mount_m4_sd,_poc_eject_m4_sd,_poc_m4_sd_activity,_poc_m4_net_activity,_poc_set_powergraph_v9990,_poc_powergraph_v9990_enabled,_poc_set_powergraph_video_source,_poc_powergraph_video_source,_poc_powergraph_output_active,_poc_rom_slot_load,_poc_rom_slot_unload,_poc_rom_slot_present,_poc_set_memory_kb,_poc_memory_kb,_poc_load_snapshot,_poc_save_snapshot,_poc_step,_poc_pixels,_poc_key,_poc_joy,_poc_joy_matrix,_poc_set_mouse,_poc_mouse_move,_poc_mouse_button,_poc_disk_motor,_poc_disk_inserted,_poc_load_disk,_poc_eject_disk,_poc_tape_load,_poc_tape_eject,_poc_tape_play,_poc_tape_stop,_poc_tape_rewind,_poc_tape_next,_poc_tape_loaded,_poc_tape_motor,_poc_tape_playing,_poc_tape_paused,_poc_tape_ended,_poc_tape_counter,_poc_autorun,_poc_audio_reset,_poc_audio_avail,_poc_audio_read_pos,_poc_audio_buffer,_poc_audio_advance,_poc_width,_poc_height,_poc_build_version,_poc_build_commit,_poc_debug_pause,_poc_debug_continue,_poc_debug_step_in,_poc_debug_next,_poc_debug_step_back,_poc_debug_step_out,_poc_debug_is_paused,_poc_debug_stop_reason,_poc_debug_can_step_back,_poc_debug_reg,_poc_debug_breakpoint_set,_poc_debug_breakpoint_clear,_poc_debug_breakpoint_enabled,_poc_debug_breakpoint_addr,_poc_debug_breakpoint_count,_poc_debug_breakpoint_id_at,_poc_debug_breakpoint_source,_poc_set_snapshot_breakpoints,_poc_snapshot_breakpoints,_poc_debug_mem_read,_poc_debug_mem_write_byte,_poc_debug_disassemble,_poc_debug_watch_set,_poc_debug_watch_clear,_poc_debug_watch_serial,_poc_debug_watch_event_slot,_poc_debug_watch_event_addr,_poc_debug_watch_event_pc,_poc_debug_watch_event_old,_poc_debug_watch_event_new,_malloc,_free' \
 	    -sEXPORTED_RUNTIME_METHODS='HEAPU8,HEAPU32,wasmMemory,getValue,setValue,ccall,cwrap,FS' \
 	    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 \
 	    --embed-file ../roms/OS_6128.ROM@roms/OS_6128.ROM \
@@ -154,4 +158,4 @@ clean:
 	rm -rf $(BUILD_DIR) $(DIST_DIR)
 	rm -f *.o *.ppm poc.js poc.wasm 6128.js 6128.wasm
 
-.PHONY: all clean serve test test-gamepad test-media-url test-ml-monitor test-dap test-m4-bridge test-wasm test-m4-wasm test-rom-slots-wasm
+.PHONY: all clean serve test test-gamepad test-media-url test-ml-monitor test-dap test-m4-bridge test-wasm test-m4-wasm test-rom-slots-wasm test-powergraph-wasm
