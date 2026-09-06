@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot
+TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot test-m4-filesystem
 
 .PHONY: all check clean
 
@@ -92,6 +92,7 @@ test-snapshot: test_snapshot.c ../src/snapshot.c ../src/remu.c ../src/symbols.c 
 		../src/ppi.c ../src/psg.c -o $@
 
 check: $(TESTS)
+	./test-m4-filesystem
 	./test-gate-array
 	./test-crtc
 	./test-z80
@@ -113,3 +114,7 @@ check: $(TESTS)
 
 clean:
 	rm -f $(TESTS)
+
+test-m4-filesystem: test_m4_filesystem.c ../src/m4.c ../src/m4.h ../src/fat.c ../src/fat.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_m4_filesystem.c ../src/m4.c ../src/fat.c -o $@

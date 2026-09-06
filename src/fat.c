@@ -328,45 +328,69 @@ static bool dir_iter_next_slot(FatDir *d, u8 *slot,
     return true;
 }
 
-bool fat_readdir(FatDir *d, char *name, size_t name_sz, u32 *size, bool *is_dir) {
-    char lfn[256];
-    int  lfn_len = 0;
+/* One decoder for listing and lookup. Only a complete, checksum-matching LFN
+ * chain may supply a long name; malformed/deleted chains fall back to SFN. */
+static bool dir_next_info(FatDir *d, FatInfo *info, u32 *out_lba,
+                           u16 *out_off, u8 *out_slot) {
+    char lfn[256] = {0};
+    unsigned next = 0;
+    u8 checksum = 0;
     for (;;) {
         u8 slot[32];
-        if (!dir_iter_next_slot(d, slot, NULL, NULL)) return false;
+        u32 lba; u16 off;
+        if (!dir_iter_next_slot(d, slot, &lba, &off)) return false;
         if (slot[0] == 0x00) { d->at_end = true; return false; } /* end-of-dir */
-        if (slot[0] == 0xE5) { lfn_len = 0; continue; }   /* deleted */
+        if (slot[0] == 0xE5) { next = 0; lfn[0] = 0; continue; }
         u8 attr = slot[11];
         if (attr == 0x0F) {
-            /* LFN slot: 0x40 set on the last (logical first) entry. Accumulate
-             * into `lfn` from the start; ignore checksum mismatches. */
-            int seq = slot[0] & 0x1F;
-            char chunk[14];
-            int  n = decode_lfn_slot(slot, chunk, sizeof(chunk));
-            int  pos = (seq - 1) * 13;
-            if (pos + n > (int)sizeof(lfn)) { lfn_len = 0; continue; }
-            for (int i = 0; i < n; i++) lfn[pos + i] = chunk[i];
-            if (pos + n > lfn_len) lfn_len = pos + n;
+            unsigned seq = slot[0] & 0x1F;
+            if (slot[0] & 0x40) {
+                memset(lfn, 0, sizeof(lfn));
+                next = seq;
+                checksum = slot[13];
+            }
+            if (!seq || seq > 20 || seq != next || slot[13] != checksum ||
+                slot[12] || slot[26] || slot[27] || (slot[0] & 0xA0)) {
+                next = 0; lfn[0] = 0; continue;
+            }
+            char chunk[13];
+            int n = decode_lfn_slot(slot, chunk, sizeof(chunk));
+            unsigned pos = (seq - 1) * 13;
+            if (pos + n >= sizeof(lfn)) { next = 0; lfn[0] = 0; continue; }
+            memcpy(lfn + pos, chunk, n);
+            next--;
             continue;
         }
-        if (attr & 0x08) { lfn_len = 0; continue; }       /* volume label */
-
-        /* 8.3 entry */
-        char shortn[16];
-        fmt_short_name(slot, shortn, sizeof(shortn));
-        if (shortn[0] == '\0' || shortn[0] == '.') { lfn_len = 0; continue; }
-
-        /* Prefer LFN if present and fits in caller's buffer */
-        if (lfn_len > 0 && lfn_len < (int)name_sz) {
-            lfn[lfn_len] = '\0';
-            snprintf(name, name_sz, "%s", lfn);
-        } else {
-            snprintf(name, name_sz, "%s", shortn);
-        }
-        if (is_dir) *is_dir = (attr & 0x10) != 0;
-        if (size)   *size   = rd_u32(&slot[28]);
+        if (attr & 0x08 || slot[0] == '.') { next = 0; lfn[0] = 0; continue; }
+        memset(info, 0, sizeof(*info));
+        fmt_short_name(slot, info->short_name, sizeof(info->short_name));
+        if (!info->short_name[0]) { next = 0; lfn[0] = 0; continue; }
+        u8 sum = 0;
+        for (int i = 0; i < 11; i++) sum = (u8)(((sum & 1) << 7) + (sum >> 1) + slot[i]);
+        snprintf(info->long_name, sizeof(info->long_name), "%s",
+                 !next && lfn[0] && sum == checksum ? lfn : info->short_name);
+        info->attr = attr;
+        info->size = rd_u32(slot + 28);
+        info->date = rd_u16(slot + 24);
+        info->time = rd_u16(slot + 22);
+        if (out_lba) *out_lba = lba;
+        if (out_off) *out_off = off;
+        if (out_slot) memcpy(out_slot, slot, 32);
         return true;
     }
+}
+
+bool fat_readdir_info(FatDir *d, FatInfo *info) {
+    return dir_next_info(d, info, NULL, NULL, NULL);
+}
+
+bool fat_readdir(FatDir *d, char *name, size_t name_sz, u32 *size, bool *is_dir) {
+    FatInfo info;
+    if (!fat_readdir_info(d, &info)) return false;
+    snprintf(name, name_sz, "%s", strlen(info.long_name) < name_sz ? info.long_name : info.short_name);
+    if (size) *size = info.size;
+    if (is_dir) *is_dir = (info.attr & 0x10) != 0;
+    return true;
 }
 
 void fat_closedir(FatDir *d) {
@@ -380,40 +404,10 @@ static bool find_in_dir(FatVol *v, u32 cluster, const char *target,
                         u32 *slot_lba, u16 *slot_off, u8 *slot_out) {
     FatDir d;
     dir_iter_init(&d, v, cluster);
-    char  lfn[256];
-    int   lfn_len = 0;
-    for (;;) {
-        u8 slot[32];
-        u32 lba; u16 off;
-        if (!dir_iter_next_slot(&d, slot, &lba, &off)) return false;
-        if (slot[0] == 0x00) return false;
-        if (slot[0] == 0xE5) { lfn_len = 0; continue; }
-        u8 attr = slot[11];
-        if (attr == 0x0F) {
-            int seq = slot[0] & 0x1F;
-            char chunk[14];
-            int  n = decode_lfn_slot(slot, chunk, sizeof(chunk));
-            int  pos = (seq - 1) * 13;
-            if (pos + n > (int)sizeof(lfn)) { lfn_len = 0; continue; }
-            for (int i = 0; i < n; i++) lfn[pos + i] = chunk[i];
-            if (pos + n > lfn_len) lfn_len = pos + n;
-            continue;
-        }
-        if (attr & 0x08) { lfn_len = 0; continue; }
-        char shortn[16];
-        fmt_short_name(slot, shortn, sizeof(shortn));
-        if (shortn[0] == '\0' || shortn[0] == '.') { lfn_len = 0; continue; }
-        lfn[lfn_len] = '\0';
-        bool match = (name_icmp(shortn, target) == 0)
-                   || (lfn_len > 0 && name_icmp(lfn, target) == 0);
-        if (match) {
-            memcpy(slot_out, slot, 32);
-            *slot_lba = lba;
-            *slot_off = off;
-            return true;
-        }
-        lfn_len = 0;
-    }
+    FatInfo info;
+    while (dir_next_info(&d, &info, slot_lba, slot_off, slot_out))
+        if (!name_icmp(info.short_name, target) || !name_icmp(info.long_name, target)) return true;
+    return false;
 }
 
 /* Walk `path` from root and return the directory cluster it refers to (0 for
@@ -477,6 +471,24 @@ static bool split_parent(FatVol *v, const char *path, u32 *parent_cluster,
     if (pl >= sizeof(parent)) return false;
     memcpy(parent, path, pl); parent[pl] = '\0';
     return walk_to_dir(v, parent, parent_cluster);
+}
+
+bool fat_stat(FatVol *v, const char *path, FatInfo *info) {
+    char leaf[256];
+    u32 parent;
+    if (!strcmp(path, "/")) {
+        memset(info, 0, sizeof(*info));
+        info->attr = 0x10;
+        strcpy(info->short_name, "/");
+        strcpy(info->long_name, "/");
+        return true;
+    }
+    if (!split_parent(v, path, &parent, leaf, sizeof(leaf))) return false;
+    FatDir d;
+    dir_iter_init(&d, v, parent);
+    while (fat_readdir_info(&d, info))
+        if (!name_icmp(info->short_name, leaf) || !name_icmp(info->long_name, leaf)) return true;
+    return false;
 }
 
 /* Find a free 8.3 dir entry in `dir_cluster`. Returns LBA + offset; allocates

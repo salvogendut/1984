@@ -7,8 +7,8 @@
  * backed by a raw image file with no host directory companion. Supports the
  * file operations BASIC and friendly tools issue through the M4 command set:
  * directory listing, change-directory, open/read/write/seek/close, file size
- * and free-space queries. Long filenames are accepted on lookup but the
- * driver only emits short (8.3) names. */
+ * and free-space queries. ASCII long filenames and their on-disk short aliases
+ * are available through the metadata API. */
 
 typedef struct FatVol {
     FILE   *fp;
@@ -62,6 +62,14 @@ typedef struct FatFile {
     bool    modified;
 } FatFile;
 
+typedef struct FatInfo {
+    char short_name[13];
+    char long_name[256];
+    u32 size;
+    u16 date, time;              /* on-disk last-write timestamp */
+    u8 attr;
+} FatInfo;
+
 /* ---- Volume lifecycle ---- */
 
 /* Mount a FAT volume from an open binary R/W file. Detects MBR + FAT16/32.
@@ -82,6 +90,9 @@ FatDir *fat_opendir(FatVol *v, const char *path);
  * Returns false at end of directory. Skips ".", ".." and deleted/volume
  * entries. */
 bool fat_readdir(FatDir *d, char *name, size_t name_sz, u32 *size, bool *is_dir);
+bool fat_readdir_info(FatDir *d, FatInfo *info);
+/* Lookup a file/directory by its short alias or ASCII long name. */
+bool fat_stat(FatVol *v, const char *path, FatInfo *info);
 
 void fat_closedir(FatDir *d);
 
