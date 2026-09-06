@@ -8,14 +8,18 @@
  * ========================================================================= */
 
 static bool sec_read(FatVol *v, u32 lba, void *buf) {
-    if (fseek(v->fp, (long)lba * v->bytes_per_sector, SEEK_SET) != 0) return false;
-    return fread(buf, v->bytes_per_sector, 1, v->fp) == 1;
+    if (fseek(v->fp, (long)lba * v->bytes_per_sector, SEEK_SET) == 0 &&
+        fread(buf, v->bytes_per_sector, 1, v->fp) == 1) return true;
+    v->io_error = true;
+    return false;
 }
 
 static bool sec_write(FatVol *v, u32 lba, const void *buf) {
-    if (fseek(v->fp, (long)lba * v->bytes_per_sector, SEEK_SET) != 0) return false;
-    if (fwrite(buf, v->bytes_per_sector, 1, v->fp) != 1) return false;
-    fflush(v->fp);
+    if (fseek(v->fp, (long)lba * v->bytes_per_sector, SEEK_SET) != 0 ||
+        fwrite(buf, v->bytes_per_sector, 1, v->fp) != 1 || fflush(v->fp) != 0) {
+        v->io_error = true;
+        return false;
+    }
     return true;
 }
 
@@ -331,7 +335,7 @@ static bool dir_iter_next_slot(FatDir *d, u8 *slot,
 /* One decoder for listing and lookup. Only a complete, checksum-matching LFN
  * chain may supply a long name; malformed/deleted chains fall back to SFN. */
 static bool dir_next_info(FatDir *d, FatInfo *info, u32 *out_lba,
-                           u16 *out_off, u8 *out_slot) {
+                           u16 *out_off, u8 *out_slot, bool include_volume) {
     char lfn[256] = {0};
     unsigned next = 0;
     u8 checksum = 0;
@@ -361,7 +365,7 @@ static bool dir_next_info(FatDir *d, FatInfo *info, u32 *out_lba,
             next--;
             continue;
         }
-        if (attr & 0x08 || slot[0] == '.') { next = 0; lfn[0] = 0; continue; }
+        if ((!include_volume && (attr & 0x08)) || slot[0] == '.') { next = 0; lfn[0] = 0; continue; }
         memset(info, 0, sizeof(*info));
         fmt_short_name(slot, info->short_name, sizeof(info->short_name));
         if (!info->short_name[0]) { next = 0; lfn[0] = 0; continue; }
@@ -381,7 +385,7 @@ static bool dir_next_info(FatDir *d, FatInfo *info, u32 *out_lba,
 }
 
 bool fat_readdir_info(FatDir *d, FatInfo *info) {
-    return dir_next_info(d, info, NULL, NULL, NULL);
+    return dir_next_info(d, info, NULL, NULL, NULL, false);
 }
 
 bool fat_readdir(FatDir *d, char *name, size_t name_sz, u32 *size, bool *is_dir) {
@@ -405,7 +409,7 @@ static bool find_in_dir(FatVol *v, u32 cluster, const char *target,
     FatDir d;
     dir_iter_init(&d, v, cluster);
     FatInfo info;
-    while (dir_next_info(&d, &info, slot_lba, slot_off, slot_out))
+    while (dir_next_info(&d, &info, slot_lba, slot_off, slot_out, false))
         if (!name_icmp(info.short_name, target) || !name_icmp(info.long_name, target)) return true;
     return false;
 }
@@ -512,66 +516,103 @@ static bool find_free_dir_slot(FatVol *v, u32 dir_cluster,
     return false;
 }
 
-FatFile *fat_open(FatVol *v, const char *path, bool write_create) {
+FatFile *fat_open_mode(FatVol *v, const char *path, FatOpenMode mode,
+                       FatOpenStatus *status) {
+    FatOpenStatus ignored;
+    if (!status) status = &ignored;
+    *status = FAT_OPEN_BAD_NAME;
+    v->io_error = false;
+    if (!path || !*path || (mode != FAT_OPEN_READ && mode != FAT_OPEN_REPLACE &&
+                           mode != FAT_OPEN_ALWAYS)) return NULL;
+    const char *last = strrchr(path, '/');
+    const char *name = last ? last+1 : path;
+    if (!*name || !strcmp(name, ".") || !strcmp(name, "..")) {
+        *status = FAT_OPEN_DENIED;  /* root/trailing slash/directory pseudo-entry */
+        return NULL;
+    }
     char leaf[256];
-    u32  parent;
-    if (!split_parent(v, path, &parent, leaf, sizeof(leaf))) return NULL;
+    if (strlen(name) >= sizeof(leaf)) return NULL;
+    u32 parent;
+    if (!split_parent(v, path, &parent, leaf, sizeof(leaf))) {
+        *status = v->io_error ? FAT_OPEN_IO_ERROR : FAT_OPEN_NO_PATH;
+        return NULL;
+    }
 
+    /* Unlike display listings, open lookup must see non-file volume entries
+     * so they cannot be mistaken for missing files. */
     u32 lba = 0; u16 off = 0; u8 slot[32];
-    bool exists = find_in_dir(v, parent, leaf, &lba, &off, slot);
-
-    if (!write_create) {
-        if (!exists || (slot[11] & 0x18)) return NULL;
-        FatFile *f = (FatFile *)calloc(1, sizeof(FatFile));
-        if (!f) return NULL;
-        f->vol           = v;
-        f->first_cluster = ((u32)rd_u16(&slot[20]) << 16) | rd_u16(&slot[26]);
-        f->file_size     = rd_u32(&slot[28]);
-        f->dir_sector    = lba;
-        f->dir_offset    = off;
-        return f;
-    }
-
-    /* Write/create: truncate or create. */
-    u8 sec[512];
-    if (exists) {
-        /* Truncate: free the cluster chain. */
-        u32 c = ((u32)rd_u16(&slot[20]) << 16) | rd_u16(&slot[26]);
-        while (c >= 2 && !fat_is_eoc(v, c)) {
-            u32 n = fat_read_entry(v, c);
-            fat_write_entry(v, c, 0);
-            c = n;
+    FatDir d; FatInfo info; bool exists = false;
+    dir_iter_init(&d, v, parent);
+    while (dir_next_info(&d, &info, &lba, &off, slot, true)) {
+        if (!name_icmp(info.short_name, leaf) || !name_icmp(info.long_name, leaf)) {
+            exists = true;
+            break;
         }
-        if (!sec_read(v, lba, sec)) return NULL;
-        u8 *e = &sec[off];
-        e[20] = e[21] = e[26] = e[27] = 0;       /* first cluster = 0 */
-        e[28] = e[29] = e[30] = e[31] = 0;       /* size = 0 */
-        if (!sec_write(v, lba, sec)) return NULL;
-        fat_flush_cache(v);
-    } else {
-        u8 raw[11];
-        if (!pack_short_name(leaf, raw)) return NULL;
-        u32 dlba; u16 doff;
-        if (!find_free_dir_slot(v, parent, &dlba, &doff)) return NULL;
-        if (!sec_read(v, dlba, sec)) return NULL;
-        u8 *e = &sec[doff];
-        memset(e, 0, 32);
-        memcpy(e, raw, 11);
-        e[11] = 0x20; /* archive attr */
-        if (!sec_write(v, dlba, sec)) return NULL;
-        lba = dlba; off = doff;
     }
-
+    *status = FAT_OPEN_IO_ERROR;
+    if (v->io_error) return NULL; /* failed lookup is NOT permission to create */
+    if (exists && ((slot[11] & 0x18) ||
+                   (mode != FAT_OPEN_READ && (slot[11] & 1)))) {
+        *status = FAT_OPEN_DENIED;
+        return NULL;
+    }
+    if (!exists && mode == FAT_OPEN_READ) {
+        *status = FAT_OPEN_NOT_FOUND;
+        return NULL;
+    }
+    u8 raw[11];
+    if (!exists && !pack_short_name(leaf, raw)) {
+        *status = FAT_OPEN_BAD_NAME;
+        return NULL;
+    }
+    /* Reserve the handle before altering the FAT or directory entry. */
     FatFile *f = (FatFile *)calloc(1, sizeof(FatFile));
     if (!f) return NULL;
-    f->vol           = v;
-    f->first_cluster = 0;
-    f->file_size     = 0;
-    f->dir_sector    = lba;
-    f->dir_offset    = off;
-    f->write_mode    = true;
-    f->modified      = true;
+    f->vol = v;
+    f->attr = exists ? slot[11] : 0x20;
+    f->write_mode = mode != FAT_OPEN_READ;
+    if (exists && mode != FAT_OPEN_REPLACE) {
+        f->first_cluster = ((u32)rd_u16(&slot[20]) << 16) | rd_u16(&slot[26]);
+        f->file_size = rd_u32(&slot[28]);
+    } else {
+        u8 sec[512];
+        if (exists) {
+            u32 c = ((u32)rd_u16(&slot[20]) << 16) | rd_u16(&slot[26]);
+            while (c >= 2 && !fat_is_eoc(v, c)) {
+                u32 n = fat_read_entry(v, c);
+                if (v->io_error || !fat_write_entry(v, c, 0)) goto failed;
+                c = n;
+            }
+            if (!sec_read(v, lba, sec)) goto failed;
+            u8 *e = &sec[off];
+            e[20] = e[21] = e[26] = e[27] = 0;
+            e[28] = e[29] = e[30] = e[31] = 0;
+            if (!sec_write(v, lba, sec) || !fat_flush_cache(v)) goto failed;
+        } else {
+            if (!find_free_dir_slot(v, parent, &lba, &off)) {
+                *status = v->io_error ? FAT_OPEN_IO_ERROR : FAT_OPEN_DENIED;
+                goto failed;
+            }
+            if (!sec_read(v, lba, sec)) goto failed;
+            u8 *e = &sec[off];
+            memset(e, 0, 32);
+            memcpy(e, raw, 11);
+            e[11] = 0x20;
+            if (!sec_write(v, lba, sec)) goto failed;
+        }
+        f->modified = true;
+    }
+    f->dir_sector = lba;
+    f->dir_offset = off;
+    *status = FAT_OPEN_OK;
     return f;
+failed:
+    free(f); /* real I/O failures during an allowed write are not transactional */
+    return NULL;
+}
+
+FatFile *fat_open(FatVol *v, const char *path, bool write_create) {
+    return fat_open_mode(v, path, write_create ? FAT_OPEN_REPLACE : FAT_OPEN_READ, NULL);
 }
 
 /* Walk the cluster chain to the cluster containing byte offset `offset`. */
@@ -627,7 +668,7 @@ done:
 }
 
 u32 fat_write(FatFile *f, const void *buf, u32 size) {
-    if (!f || !f->write_mode) return 0;
+    if (!f || !f->write_mode || (f->attr & 0x19)) return 0;
     FatVol *v = f->vol;
     const u8 *in = (const u8 *)buf;
     u32 wrote = 0;

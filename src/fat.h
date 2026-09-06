@@ -36,6 +36,7 @@ typedef struct FatVol {
     u32     fat_cache_sector;      /* (u32)-1 = invalid */
     u8      fat_cache[512];
     bool    fat_dirty;
+    bool    io_error;            /* sticky sector failure; reset by checked open */
 } FatVol;
 
 typedef struct FatDir {
@@ -60,6 +61,7 @@ typedef struct FatFile {
     u16     dir_offset;
     bool    write_mode;
     bool    modified;
+    u8      attr;                /* opening attributes; guard legacy write promotion */
 } FatFile;
 
 typedef struct FatInfo {
@@ -101,7 +103,21 @@ bool fat_dir_exists(FatVol *v, const char *path);
 
 /* ---- File ---- */
 
-/* Open a file. `write_create=true` truncates+creates; otherwise read-only. */
+typedef enum {
+    FAT_OPEN_READ, FAT_OPEN_REPLACE, FAT_OPEN_ALWAYS
+} FatOpenMode;
+typedef enum {
+    FAT_OPEN_OK, FAT_OPEN_NOT_FOUND, FAT_OPEN_NO_PATH, FAT_OPEN_DENIED,
+    FAT_OPEN_BAD_NAME, FAT_OPEN_IO_ERROR
+} FatOpenStatus;
+
+/* Checked open: validate existing entry attributes before any truncation.
+ * OPEN_ALWAYS preserves an existing writable file, or creates a missing one.
+ * Its position starts at zero; callers seeking append must explicitly seek EOF.
+ * Denied/failed reads are never a reason to fall back to create. */
+FatFile *fat_open_mode(FatVol *v, const char *path, FatOpenMode mode,
+                       FatOpenStatus *status);
+/* Compatible wrapper: true replaces/creates; false opens for reading. */
 FatFile *fat_open(FatVol *v, const char *path, bool write_create);
 
 /* Read up to `size` bytes from the current offset. Returns bytes transferred. */

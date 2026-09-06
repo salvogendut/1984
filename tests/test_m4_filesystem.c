@@ -93,6 +93,134 @@ static void image_tests(const char *path) {
     limit=0; p=command(0x4306,&limit,1); assert(p[0]==M4_ERR_BADNAME);
     m4_set_image(&board,""); m4_reset(&board);
 }
+static const u8 *open_file(u8 mode, const char *name) {
+    u8 args[253]; size_t n=strlen(name)+1; assert(n+1<=sizeof(args));
+    args[0]=mode; memcpy(args+1,name,n); return command(0x4301,args,n+1);
+}
+static void close_file(u8 fd) { assert(!command(0x4304,&fd,1)[0]); }
+static void no_files(void) {
+    for (unsigned i=0;i<M4_MAX_FDS;i++) assert(!board.fds[i].in_use);
+}
+static u8 *image_bytes(const char *path, size_t *size) {
+    FILE *f=fopen(path,"rb");assert(f);assert(!fseek(f,0,SEEK_END));
+    long n=ftell(f);assert(n>0);*size=(size_t)n;rewind(f);
+    u8 *data=malloc(*size);assert(data);assert(fread(data,1,*size,f)==*size);fclose(f);
+    return data;
+}
+static void unchanged_image(const char *path,const u8 *before,size_t size) {
+    size_t after_size;u8 *after=image_bytes(path,&after_size);
+    assert(after_size==size && !memcmp(before,after,size));free(after);
+}
+static void file_contents(const char *name,const char *expected,unsigned count) {
+    FatFile *f=fat_open(&board.image_vol,name,false);assert(f);
+    char bytes[32];assert(count<sizeof(bytes));
+    assert(fat_file_size(f)==count && fat_read(f,bytes,sizeof(bytes))==count);
+    assert(!memcmp(bytes,expected,count));fat_close(f);
+}
+static void write_fixture(const char *path) {
+    image_fixture(path);
+    FILE *f=fopen(path,"r+b");assert(f);u8 sector[512];
+    assert(!fseek(f,512,SEEK_SET));assert(fread(sector,512,1,f)==1);
+    for(unsigned c=149;c<=151;c++) put16(sector+c*2,0xFFFF);
+    assert(!fseek(f,512,SEEK_SET));assert(fwrite(sector,512,1,f)==1);
+    assert(!fseek(f,25*512,SEEK_SET));assert(fread(sector,512,1,f)==1);
+    entry(sector+128,"LONGNA~1TXT",0x21,149,4);
+    entry(sector+224,"VOLUME     ",0x08,0,0);
+    entry(sector+256,"LIVE    BIN",0x20,150,3);
+    assert(!fseek(f,25*512,SEEK_SET));assert(fwrite(sector,512,1,f)==1);
+    memset(sector,0,512);entry(sector,".          ",0x10,2,0);
+    entry(sector+32,"..         ",0x10,0,0);entry(sector+64,"KEEP    BIN",0x20,151,4);
+    assert(!fseek(f,29*512,SEEK_SET));assert(fwrite(sector,512,1,f)==1);
+    for(unsigned c=149;c<=151;c++) {
+        memset(sector,0,512);memcpy(sector,c==150?"old":"keep",c==150?3:4);
+        assert(!fseek(f,(long)(29+c-2)*512,SEEK_SET));assert(fwrite(sector,512,1,f)==1);
+    }
+    fclose(f);
+}
+static void write_protection_tests(const char *path) {
+    write_fixture(path);m4_init(&board,"");m4_set_image(&board,path);assert(board.image_mounted);
+    size_t size;u8 *before=image_bytes(path,&size);
+    const char *denied[]={"/EIGHTCHR","/EIGHTCHR/","/","BIG.BIN","big.bin",
+                          "Long named file.txt","longna~1.txt","/VOLUME"};
+    const u8 modes[]={0x8A,0x92,0x0A,0x12}; /* replace/open-always, dynamic/fixed */
+    for(unsigned n=0;n<sizeof(denied)/sizeof(*denied);n++) {
+        for(unsigned m=0;m<sizeof(modes);m++) {
+            const u8 *p=open_file(modes[m],denied[n]);
+            assert(p[0]==0xFF && p[1]==M4_ERR_DENIED);
+            assert(board.last_error==M4_ERR_DENIED);no_files();unchanged_image(path,before,size);
+        }
+    }
+    const u8 *p=open_file(0x81,"BIG.BIN");assert(!p[1]);u8 fd=p[0];close_file(fd);
+    p=open_file(0x81,"EIGHTCHR/KEEP.BIN");assert(!p[1]);fd=p[0];close_file(fd);
+    p=open_file(0x81,"ABSENT.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_NOFILE);
+    p=open_file(0x8A,"MISSING/NEW.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_NOPATH);
+    no_files();unchanged_image(path,before,size);
+    /* The legacy FAT wrapper is guarded too, not just M4's command handler. */
+    assert(!fat_open(&board.image_vol,"BIG.BIN",true));
+    assert(!fat_open(&board.image_vol,"EIGHTCHR",true));
+    FatOpenStatus result;
+    assert(!fat_open_mode(&board.image_vol,"BIG.BIN",FAT_OPEN_ALWAYS,&result));
+    assert(result==FAT_OPEN_DENIED);
+    assert(!fat_open_mode(&board.image_vol,"ABSENT.BIN",FAT_OPEN_READ,&result));
+    assert(result==FAT_OPEN_NOT_FOUND);
+    assert(!fat_open_mode(&board.image_vol,"MISSING/NEW.BIN",FAT_OPEN_ALWAYS,&result));
+    assert(result==FAT_OPEN_NO_PATH);
+    FatFile *protected=fat_open(&board.image_vol,"Long named file.txt",false);assert(protected);
+    protected->write_mode=true; /* legacy clients may attempt this promotion */
+    assert(!fat_write(protected,"bad",3));fat_close(protected);
+    const u8 malformed[]={0x8A,'L','I','V','E','.','B','I','N'};
+    p=command(0x4301,malformed,sizeof(malformed));assert(p[0]==0xFF && p[1]==M4_ERR_BADNAME);
+    p=open_file(0x8A,"");assert(p[0]==0xFF && p[1]==M4_ERR_BADNAME);
+    /* Joining a long cwd must not silently open a truncated pathname. */
+    char saved_cwd[M4_PATH_MAX];memcpy(saved_cwd,board.cwd,sizeof(saved_cwd));
+    memset(board.cwd,'x',sizeof(board.cwd)-1);board.cwd[0]='/';board.cwd[sizeof(board.cwd)-1]=0;
+    p=open_file(0x8A,"LIVE.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_BADNAME);
+    memcpy(board.cwd,saved_cwd,sizeof(board.cwd));
+    /* Device read-only state must reject even an otherwise writable file. */
+    board.image_read_only=true;
+    p=open_file(0x8A,"LIVE.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_RDONLY);
+    p=open_file(0x92,"NEW.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_RDONLY);
+    p=open_file(0x81,"LIVE.BIN");assert(!p[1]);fd=p[0];close_file(fd);
+    board.image_read_only=false;
+    /* An unreadable lookup is not a missing file: no create fallback. */
+    FILE *actual=board.image_vol.fp,*empty=tmpfile();assert(empty);
+    board.image_vol.fp=empty;
+    p=open_file(0x92,"LIVE.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_IO);
+    assert(!fseek(empty,0,SEEK_END) && ftell(empty)==0);
+    board.image_vol.fp=actual;fclose(empty);
+    no_files();
+    unchanged_image(path,before,size);
+    /* Exhaustion must be detected before destructive open/truncate. */
+    u8 descriptors[M4_MAX_FDS-2];
+    for(unsigned i=0;i<sizeof(descriptors);i++) {
+        p=open_file(0x81,"LIVE.BIN");assert(!p[1]);descriptors[i]=p[0];
+    }
+    p=open_file(0x8A,"LIVE.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_FULL);
+    p=open_file(0x92,"NEW.BIN");assert(p[0]==0xFF && p[1]==M4_ERR_FULL);
+    unchanged_image(path,before,size);
+    for(unsigned i=0;i<sizeof(descriptors);i++) close_file(descriptors[i]);
+    no_files();unchanged_image(path,before,size);
+    /* OPEN_ALWAYS is non-destructive and leaves append positioning to SEEK. */
+    p=open_file(0x92,"LIVE.BIN");assert(!p[1]);fd=p[0];
+    p=command(0x4311,&fd,1);assert(get32(p)==3);
+    close_file(fd);unchanged_image(path,before,size);free(before);
+    p=open_file(0x92,"LIVE.BIN");assert(!p[1]);fd=p[0];
+    u8 seek[]={fd,3,0,0,0};assert(!command(0x4305,seek,sizeof(seek))[0]);
+    u8 data[]={fd,'t','a','i','l'};assert(!command(0x4303,data,sizeof(data))[0]);
+    close_file(fd);file_contents("LIVE.BIN","oldtail",7);
+    p=open_file(0x8A,"LIVE.BIN");assert(!p[1]);fd=p[0];
+    data[0]=fd;assert(!command(0x4303,data,sizeof(data))[0]);close_file(fd);
+    file_contents("LIVE.BIN","tail",4);
+    p=open_file(0x8A,"LIVE.BIN");assert(!p[1]);close_file(p[0]);file_contents("LIVE.BIN","",0);
+    p=open_file(0x92,"NEW.BIN");assert(!p[1]);fd=p[0];
+    data[0]=fd;assert(!command(0x4303,data,sizeof(data))[0]);close_file(fd);
+    file_contents("NEW.BIN","tail",4);
+    p=open_file(0x0A,"FIXED.BIN");assert(!p[1] && p[0]==2);close_file(2);
+    file_contents("FIXED.BIN","",0);
+    file_contents("EIGHTCHR/KEEP.BIN","keep",4);
+    file_contents("Long named file.txt","keep",4);
+    no_files();m4_set_image(&board,"");m4_reset(&board);
+}
 static void host_tests(const char *root) {
     char file[512], dir[512], longfile[512];
     snprintf(file,sizeof(file),"%s/BIG.BIN",root);
@@ -124,7 +252,8 @@ int main(void) {
     char root[]="/tmp/1984-m4-fs-XXXXXX"; assert(mkdtemp(root));
     char path[512]; snprintf(path,sizeof(path),"%s/card.img",root);
     image_fixture(path); image_tests(path); assert(!unlink(path));
+    write_protection_tests(path);assert(!unlink(path));
     host_tests(root); assert(!rmdir(root));
-    puts("M4 directory/FSTAT: image and host regressions passed");
+    puts("M4 directory/FSTAT and protected write-open: image and host regressions passed");
     return 0;
 }
