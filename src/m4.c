@@ -43,6 +43,7 @@ static bool g_m4_dns_pending;
 #define C_FSIZE       0x4311
 #define C_READ2       0x4312
 #define C_GETPATH     0x4313
+#define C_FSTAT       0x4316
 #define C_ROMSOFF     0x4318
 #define C_NMIOFF      0x4319
 #define C_RAMDISOFF   0x431A
@@ -247,6 +248,52 @@ static void fat_abs_path(const M4 *m, const char *cpc_path,
         else
             snprintf(out, outsz, "%s/%s", cwd, clean);
     }
+}
+
+/* Host directories have no DOS alias table. Publish an SFN only when the
+ * actual leaf fits 8.3; never invent a lossy alias for a long host name. */
+static void host_short_name(const char *name, char out[13]) {
+    out[0] = 0;
+    const char *dot = strrchr(name, '.');
+    size_t base = dot ? (size_t)(dot-name) : strlen(name);
+    size_t ext = dot ? strlen(dot+1) : 0;
+    if (!base || base > 8 || ext > 3 || (dot && !ext)) return;
+    for (size_t i = 0; name[i]; i++) {
+        unsigned char ch = (unsigned char)name[i];
+        if (dot && name+i == dot) continue;
+        if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+              (ch >= '0' && ch <= '9') || strchr("!#$%&'()-@^_`{}~", ch))) return;
+    }
+    for (size_t i = 0; i <= strlen(name); i++) out[i] = (char)toupper((unsigned char)name[i]);
+}
+
+static u8 m4_stat_path(M4 *m, const char *name, FatInfo *info) {
+    memset(info, 0, sizeof(*info));
+    if (m4_use_fat(m)) {
+        char absolute[M4_PATH_MAX];
+        fat_abs_path(m, name, absolute, sizeof(absolute));
+        return fat_stat(&m->image_vol, absolute, info) ? M4_OK : M4_ERR_NOFILE;
+    }
+    char host[PATH_MAX];
+    struct stat st;
+    if (!resolve_path(m, name, host, sizeof(host)) || stat(host, &st)) return M4_ERR_NOFILE;
+    bool directory = S_ISDIR(st.st_mode);
+    if (!directory && (!S_ISREG(st.st_mode) || st.st_size < 0 ||
+                      (unsigned long long)st.st_size > 0xFFFFFFFFULL)) return M4_ERR_IO;
+    info->size = directory ? 0 : (u32)st.st_size;
+    info->attr = directory ? 0x10 : 0x20;
+    if (!(st.st_mode & 0200)) info->attr |= 1;  /* owner write bit, not root's access() */
+    const char *leaf = strrchr(host, '/');
+    leaf = leaf ? leaf+1 : host;
+    if (leaf[0] == '.') info->attr |= 2;
+    snprintf(info->long_name, sizeof(info->long_name), "%s", leaf);
+    host_short_name(leaf, info->short_name);
+    struct tm *when = localtime(&st.st_mtime);
+    if (when && when->tm_year >= 80 && when->tm_year <= 207) {
+        info->date = (u16)(((when->tm_year-80)<<9) | ((when->tm_mon+1)<<5) | when->tm_mday);
+        info->time = (u16)((when->tm_hour<<11) | (when->tm_min<<5) | (when->tm_sec/2));
+    }
+    return M4_OK;
 }
 
 /* Open the raw disk image file if image_path is set. Also try mounting it as
@@ -749,6 +796,11 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
     }
 
     case C_READDIR: {
+        if (plen > 1 || (plen == 1 && !p[0])) {
+            err = M4_ERR_BADNAME;
+            resp_u8(m, &roff, err);
+            break;
+        }
         /* M4ROM's catalog loop checks rom_response+0 == 2 for EOF. */
         if (!m->dir_dp && !m->dir_fat) { err = 2; break; }
 
@@ -787,6 +839,24 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
                 is_dir = S_ISDIR(st.st_mode);
                 fsize  = is_dir ? 0 : (u32)st.st_size;
             }
+        }
+
+        if (plen == 1) {
+            /* M4ROM LS consumes name\0 then size-text\0. The length limits
+             * name characters, not the optional directory marker. Legacy
+             * no-argument catalog bytes below remain exactly as before. */
+            size_t len = strlen(entry_name);
+            if (len > p[0]) len = p[0];
+            if (is_dir) resp_u8(m, &roff, '>');
+            for (size_t i = 0; i < len; i++) resp_u8(m, &roff, (u8)entry_name[i]);
+            resp_u8(m, &roff, 0);
+            if (!is_dir) {
+                char size_text[16];
+                snprintf(size_text, sizeof(size_text), "%u", (unsigned)fsize);
+                resp_str(m, &roff, size_text);
+            }
+            err = M4_OK;
+            break;
         }
 
         /* Format as 8.3 for display.
@@ -834,6 +904,24 @@ bool m4_ackport_write(M4 *m, Mem *mem) {
         resp_u8(m, &roff, 0x00);                      /* terminator */
         resp_u16le(m, &roff, (u16)(fsize & 0xFFFF));  /* binary size */
         readdir_done:;
+        break;
+    }
+
+    case C_FSTAT: {
+        /* Documented pathname API, NOT an fd query. A bounded request must
+         * include its NUL; malformed input may not consult stale packet RAM. */
+        const u8 *end = plen > 0 ? memchr(p, 0, (size_t)plen) : NULL;
+        FatInfo info;
+        if (!end || end == p || (size_t)(end-p) >= M4_PATH_MAX) err = M4_ERR_BADNAME;
+        else err = m4_stat_path(m, (const char *)p, &info);
+        resp_u8(m, &roff, err);
+        if (err) break;
+        resp_u32le(m, &roff, info.size);
+        resp_u16le(m, &roff, info.date);
+        resp_u16le(m, &roff, info.time);
+        resp_u8(m, &roff, info.attr);
+        for (size_t i = 0; i < sizeof(info.short_name); i++) resp_u8(m, &roff, (u8)info.short_name[i]);
+        resp_str(m, &roff, info.long_name);
         break;
     }
 
