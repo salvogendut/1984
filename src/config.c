@@ -189,6 +189,7 @@ void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->scale     = 1;
     cfg->crtc_type = CRTC_TYPE_AUTO;
+    cfg->joystick_hidapi = false;
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->powergraph_video_source = CPC_VIDEO_SOURCE_AUTO;
     cfg->rom_board = true;   /* ROM Board fitted by default */
@@ -463,6 +464,8 @@ static void config_create_default(const char *path) {
         "crtc=auto\n"
         "# Primary host input: joystick or amx_mouse\n"
         "fallback_input=joystick\n"
+        "# SDL direct HID controller backend. Disabled uses the native OS joystick driver.\n"
+        "joystick_hidapi=false\n"
         "\n"
         "[roms]\n"
         "# Paths to ROM images. ~ is expanded to your home directory.\n"
@@ -694,6 +697,10 @@ int config_load_from(Config *cfg, const char *path_override) {
                 FallbackInput fi;
                 if (parse_fallback(val, &fi)) cfg->fallback_input = fi;
                 else { fprintf(stderr, "1984.conf:%d: fallback_input must be joystick/amx_mouse\n", lineno); rc = -1; }
+            } else if (!strcmp(key, "joystick_hidapi")) {
+                bool b;
+                if (parse_bool(val, &b)) cfg->joystick_hidapi = b;
+                else { fprintf(stderr, "1984.conf:%d: joystick_hidapi must be true/false\n", lineno); rc = -1; }
             }
         } else if (!strcmp(section, "roms")) {
             if (!strcmp(key, "os"))
@@ -1117,7 +1124,8 @@ int config_save(const Config *cfg) {
         "model=%s\n"
         "memory=%d\n"
         "crtc=%s\n"
-        "fallback_input=%s\n\n"
+        "fallback_input=%s\n"
+        "joystick_hidapi=%s\n\n"
         "[roms]\n"
         "os=%s\n"
         "basic=%s\n"
@@ -1127,6 +1135,7 @@ int config_save(const Config *cfg) {
         cfg->memory_kb,
         config_crtc_type_name(cfg->crtc_type),
         fallback_to_str(cfg->fallback_input),
+        cfg->joystick_hidapi ? "true" : "false",
         cfg->rom_os,
         cfg->rom_basic,
         cfg->rom_amsdos,

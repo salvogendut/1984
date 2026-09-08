@@ -33,6 +33,7 @@ typedef struct {
     int      memory_kb;     /* 64, 128, 256, 512, or 576 */
     CrtcType crtc_type;     /* auto or explicit Type 0..3 */
     FallbackInput fallback_input;   /* primary host input: joystick | amx_mouse */
+    bool     joystick_hidapi;       /* SDL direct HID backend; applied at startup */
 
     /* [roms] */
     char rom_os[CONFIG_PATH_MAX];
