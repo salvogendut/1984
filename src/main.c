@@ -777,6 +777,12 @@ int main(int argc, char *argv[]) {
      * the F9 overlay toggle, neither of which forces --headless. */
 
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    /* HIDAPI provides controller-specific extras, but basic CPC controls work
+     * through the native OS joystick backend. Apply this before SDL_Init: SDL
+     * chooses and probes joystick backends while initialising the subsystem. */
+    SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_HIDAPI,
+                            cfg.joystick_hidapi ? "1" : "0",
+                            SDL_HINT_NORMAL);
     if (headless) {
         /* Truly windowless: force the offscreen video and dummy audio
          * drivers with OVERRIDE priority so a session's DISPLAY /
