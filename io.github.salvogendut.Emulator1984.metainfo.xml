@@ -30,6 +30,11 @@
   <url type="bugtracker">https://github.com/salvogendut/1984/issues</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.4.20" date="2026-09-14">
+      <description>
+        <p>Adds the WebAssembly browser edition with themed controls, audio, gamepad, dual-drive, cassette, URL media, expansion, and machine-code monitor support. Snapshot debugging gains RASM supersnapshot and REMU metadata compatibility with dynamic breakpoints. This release also improves CPC Plus raster effects, Eerie Forest compatibility, M4 filesystem behavior, PowerGraph V9990 support, and startup performance after recent SDL updates.</p>
+      </description>
+    </release>
     <release version="0.4.19" date="2026-08-09">
       <description>
         <p>Adds CPC Plus and GX4000 emulation with cartridge support, ASIC DMA audio, hardware sprites, raster splits, fine scrolling, and selectable CRTC types. Disk images gain an autostart file browser with optional per-image persistence. This release also adds macOS application bundles, corrects CPC punctuation key ordering, and adds an About dialog.</p>
