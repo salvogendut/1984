@@ -1,5 +1,5 @@
 Name:           1984
-Version:        0.4.19
+Version:        0.4.20
 Release:        1%{?dist}
 Summary:        Amstrad CPC 464/6128 emulator
 
@@ -104,6 +104,14 @@ appstream-util validate-relax --nonet %{buildroot}%{_datadir}/metainfo/io.github
 %{_datadir}/%{name}/roms/GX4000.cpr
 
 %changelog
+* Mon Sep 14 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.20-1
+- Add the WebAssembly browser edition with themed controls, audio, gamepad,
+  dual-drive, cassette, URL media, expansion, and machine-code monitor support.
+- Add RASM supersnapshot and REMU debug metadata compatibility with dynamic
+  breakpoints, plus CPC Plus raster and Eerie Forest compatibility fixes.
+- Add PowerGraph V9990 support and improve M4 filesystem safety and metadata.
+- Avoid SDL HIDAPI startup stalls by default while retaining native joysticks.
+
 * Sun Aug 09 2026 Salvatore Bognanni <salvogendut@gmail.com> - 0.4.19-1
 - Add CPC Plus and GX4000 emulation with cartridge support, ASIC DMA audio,
   hardware sprites, raster splits, fine scrolling, and selectable CRTC types.
