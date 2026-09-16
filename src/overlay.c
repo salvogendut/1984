@@ -89,7 +89,7 @@ static const int sec_x[OV_SEC_COUNT] = { 8, 80, 160, 248 };
  * "External Tape" toggle, only meaningful on the 6128 since the 464 has
  * the cassette deck built in). Other sections are fixed.
  * The Advanced tab (OV_TINKER) is hidden unless cfg->tinker is enabled. */
-static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 16, 23 };
+static const int sec_row_count[OV_SEC_COUNT] = { 8, 3, 16, 24 };
 
 static int ov_section_rows(const Overlay *ov, OvSection s) {
     if (s == OV_GENERAL) {
@@ -302,7 +302,7 @@ static bool reset_tinker_item(Overlay *ov) {
         ov->cfg->crtc_type = CRTC_TYPE_AUTO;
         break;
     case 21:
-        ov->cfg->joystick_hidapi = false;
+        ov->cfg->joystick_hidapi = true;
         break;
     case -7:
         ov->cfg->snapshot_breakpoints = true;
@@ -1400,6 +1400,11 @@ static void item_text(const Overlay *ov, int row,
             snprintf(val, vsz, "%s [restart to apply]",
                      ov->cfg->joystick_hidapi ? "enabled" : "disabled");
             break;
+        case 22:
+            snprintf(lbl, lsz, "Reset to defaults");
+            snprintf(val, vsz, "[Enter to reset 1984.conf]");
+            *readonly = true;
+            break;
         case -7:
             snprintf(lbl, lsz, "Snapshot Breakpoints");
             snprintf(val, vsz, "%s",
@@ -2409,6 +2414,9 @@ static void activate_item(Overlay *ov, SDL_Keymod mods) {
             notify_post("Joystick HIDAPI %s after restart",
                         ov->cfg->joystick_hidapi ? "enabled" : "disabled");
             break;
+        case 22:
+            ov->state = OV_STATE_RESET_CONFIRM;
+            break;
         case -7:
             ov->cfg->snapshot_breakpoints =
                 !ov->cfg->snapshot_breakpoints;
@@ -2431,6 +2439,58 @@ static void try_close(Overlay *ov) {
         ov->state = OV_STATE_CONFIRM;
     else
         ov->visible = false;
+}
+
+static bool reset_config_to_defaults(Overlay *ov) {
+    /* Do not alter the live session unless the pristine configuration can
+     * first be written successfully. */
+    if (config_reset_defaults(ov->cfg) != 0) {
+        notify_post("Could not reset 1984.conf");
+        return false;
+    }
+
+    if (webgui_active())
+        webgui_stop();
+
+    if (ov->cpc) {
+        /* disk_eject flushes pending writes before dropping the media. */
+        disk_eject(&ov->cpc->drive[0]);
+        disk_eject(&ov->cpc->drive[1]);
+    }
+
+    ov->disk_autostart_drive = -1;
+    ov->disk_autostart_user = 0;
+    ov->disk_autostart_file[0] = '\0';
+    ov->disk_autostart_request = false;
+    ov->disk_file_count = 0;
+    ov->disk_file_marked_row = -1;
+    ov->disk_file_remember = false;
+
+    notify_set_mode(ov->cfg->notifications);
+    g_debug_enabled = ov->cfg->debug ? 1 : 0;
+    overlay_apply_real_tape(ov);
+    overlay_apply_crt(ov);
+    if (ov->cpc) {
+        display_set_smoothing(&ov->cpc->display,
+                              ov->cfg->fullscreen_smoothing);
+        psg_set_volume(&ov->cpc->psg, ov->cfg->audio_volume);
+        psg_set_stereo(&ov->cpc->psg, ov->cfg->audio_stereo_sep);
+        ga_set_monochrome(&ov->cpc->ga, ov->cfg->monochrome);
+        printer_set_sink(&ov->cpc->printer, PRINT_SINK_PDF);
+        cpc_set_crtc_type(ov->cpc, ov->cfg->crtc_type);
+        cpc_set_snapshot_breakpoints(ov->cpc,
+                                     ov->cfg->snapshot_breakpoints);
+    }
+
+    ov->last_m4 = ov->cfg->m4;
+    ov->last_albireo = ov->cfg->albireo;
+    ov->last_symbiface_ide = ov->cfg->symbiface_ide;
+    ov->dirty = false;
+    ov->needs_cold_boot = true;
+    ov->state = OV_STATE_MENU;
+    ov->visible = false;
+    notify_post("1984.conf reset to defaults; restart to apply HIDAPI");
+    return true;
 }
 
 /* ---- Public API ---- */
@@ -3161,7 +3221,23 @@ bool overlay_handle_event(Overlay *ov, SDL_Event *ev) {
         return true;
     }
 
-    /* ---- Confirm dialog ---- */
+    /* ---- Reset-to-defaults confirmation ---- */
+    if (ov->state == OV_STATE_RESET_CONFIRM) {
+        switch (sc) {
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+            reset_config_to_defaults(ov);
+            break;
+        case SDL_SCANCODE_ESCAPE:
+            ov->state = OV_STATE_MENU;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    /* ---- Save/discard confirmation ---- */
     if (ov->state == OV_STATE_CONFIRM) {
         switch (sc) {
         case SDL_SCANCODE_RETURN:
@@ -4074,13 +4150,19 @@ void overlay_render(const Overlay *ov, SDL_Renderer *r) {
         return;
     }
 
-    /* ---- Confirm dialog ---- */
-    if (ov->state == OV_STATE_CONFIRM) {
+    /* ---- Confirmation dialogs ---- */
+    if (ov->state == OV_STATE_CONFIRM ||
+        ov->state == OV_STATE_RESET_CONFIRM) {
         /* Dim everything behind the dialog */
         fill_rect(r, 0, 0, lw, lh, 0, 0, 0, 140);
 
-        const char *line1 = "Save changes?";
-        const char *line2 = "Enter = Save      Esc = Discard";
+        bool reset = ov->state == OV_STATE_RESET_CONFIRM;
+        const char *line1 = reset
+            ? "Reset 1984.conf to defaults?"
+            : "Save changes?";
+        const char *line2 = reset
+            ? "Enter = Reset      Esc = Cancel"
+            : "Enter = Save      Esc = Discard";
         int l1w = strlen(line1) * FONT_W;
         int l2w = strlen(line2) * FONT_W;
         int box_w = l2w + 24;
