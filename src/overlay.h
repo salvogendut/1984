@@ -19,7 +19,8 @@ typedef enum {
     OV_STATE_FILE_BROWSER = 3,
     OV_STATE_REAL_TAPE = 4,  /* Tinker-gated physical cassette controls */
     OV_STATE_ABOUT    = 5,   /* About dialog with an OK button */
-    OV_STATE_DISK_AUTOSTART = 6
+    OV_STATE_DISK_AUTOSTART = 6,
+    OV_STATE_RESET_CONFIRM = 7 /* confirm resetting 1984.conf to defaults */
 } OvState;
 
 typedef enum {

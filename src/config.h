@@ -225,6 +225,9 @@ const char *config_crtc_type_name(CrtcType type);
 /* Write current cfg back to ~/.config/1984/1984.conf. */
 int config_save(const Config *cfg);
 
+/* Replace cfg and ~/.config/1984/1984.conf with compiled-in defaults. */
+int config_reset_defaults(Config *cfg);
+
 /* Optional persistent DSK autostart mappings, keyed by image path. Setting a
  * mapping returns 1 when changed, 0 when identical, or -1 if invalid/full. */
 const ConfigDiskAutostart *config_disk_autostart_find(const Config *cfg,

@@ -189,7 +189,7 @@ void config_defaults(Config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->scale     = 1;
     cfg->crtc_type = CRTC_TYPE_AUTO;
-    cfg->joystick_hidapi = false;
+    cfg->joystick_hidapi = true;
     cfg->mx4       = true;   /* expansion bus connected by default */
     cfg->powergraph_video_source = CPC_VIDEO_SOURCE_AUTO;
     cfg->rom_board = true;   /* ROM Board fitted by default */
@@ -464,8 +464,8 @@ static void config_create_default(const char *path) {
         "crtc=auto\n"
         "# Primary host input: joystick or amx_mouse\n"
         "fallback_input=joystick\n"
-        "# SDL direct HID controller backend. Disabled uses the native OS joystick driver.\n"
-        "joystick_hidapi=false\n"
+        "# SDL direct HID controller backend. Disable to use the native OS joystick driver.\n"
+        "joystick_hidapi=true\n"
         "\n"
         "[roms]\n"
         "# Paths to ROM images. ~ is expanded to your home directory.\n"
@@ -1339,6 +1339,19 @@ int config_save(const Config *cfg) {
     );
 
     fclose(f);
+    return 0;
+}
+
+int config_reset_defaults(Config *cfg) {
+    if (!cfg)
+        return -1;
+
+    Config defaults;
+    config_defaults(&defaults);
+    if (config_save(&defaults) != 0)
+        return -1;
+
+    *cfg = defaults;
     return 0;
 }
 

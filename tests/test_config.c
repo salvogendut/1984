@@ -29,11 +29,11 @@ static void test_disk_autostart_round_trip(void) {
     Config cfg;
     config_defaults(&cfg);
     assert(cfg.snapshot_breakpoints);
-    assert(!cfg.joystick_hidapi);
+    assert(cfg.joystick_hidapi);
     assert(!cfg.powergraph_v9990);
     assert(cfg.powergraph_video_source == CPC_VIDEO_SOURCE_AUTO);
     cfg.snapshot_breakpoints = false;
-    cfg.joystick_hidapi = true;
+    cfg.joystick_hidapi = false;
     cfg.powergraph_v9990 = true;
     cfg.powergraph_video_source = CPC_VIDEO_SOURCE_POWERGRAPH;
     assert(config_disk_autostart_find(&cfg, disk_a) == NULL);
@@ -48,7 +48,7 @@ static void test_disk_autostart_round_trip(void) {
     Config loaded;
     assert(config_load(&loaded) == 0);
     assert(!loaded.snapshot_breakpoints);
-    assert(loaded.joystick_hidapi);
+    assert(!loaded.joystick_hidapi);
     assert(loaded.powergraph_v9990);
     assert(loaded.powergraph_video_source ==
            CPC_VIDEO_SOURCE_POWERGRAPH);
@@ -72,6 +72,25 @@ static void test_disk_autostart_round_trip(void) {
     assert(config_disk_autostart_find(&reloaded, disk_a) == NULL);
     entry = config_disk_autostart_find(&reloaded, disk_b);
     assert(entry && !strcmp(entry->file, "TOOLS.BIN"));
+
+    snprintf(reloaded.disk_a, sizeof(reloaded.disk_a), "%s", disk_a);
+    reloaded.tinker = true;
+    assert(config_reset_defaults(&reloaded) == 0);
+    assert(reloaded.model == MODEL_6128);
+    assert(reloaded.memory_kb == 128);
+    assert(reloaded.joystick_hidapi);
+    assert(!reloaded.tinker);
+    assert(!reloaded.disk_a[0]);
+    assert(reloaded.disk_autostart_count == 0);
+
+    Config reset;
+    assert(config_load(&reset) == 0);
+    assert(reset.model == MODEL_6128);
+    assert(reset.memory_kb == 128);
+    assert(reset.joystick_hidapi);
+    assert(!reset.tinker);
+    assert(!reset.disk_a[0]);
+    assert(reset.disk_autostart_count == 0);
     cleanup_home(home);
 }
 
