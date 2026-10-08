@@ -5,7 +5,7 @@ CPPFLAGS ?=
 SDL3_CFLAGS ?= $(shell pkg-config --cflags sdl3)
 SDL3_LIBS ?= $(shell pkg-config --libs sdl3)
 
-TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot test-v9990 test-m4-filesystem
+TESTS = test-gate-array test-crtc test-z80 test-psg test-ppi test-io-decode test-mem test-disk test-fdc test-gifcap test-tape-signal test-real-tape test-kbd test-cartridge test-asic test-model test-config test-breakpoint test-snapshot test-v9990 test-m4-filesystem
 
 .PHONY: all check clean
 
@@ -42,6 +42,10 @@ test-mem: test_mem.c ../src/mem.c ../src/mem.h ../src/cartridge.c ../src/cartrid
 test-disk: test_disk.c ../src/disk.c ../src/disk.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
 		test_disk.c ../src/disk.c -o $@
+
+test-fdc: test_fdc.c ../src/fdc.c ../src/fdc.h ../src/disk.c ../src/disk.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL3_CFLAGS) -std=c11 -Wall -Wextra -I../src \
+		test_fdc.c ../src/fdc.c ../src/disk.c -o $@
 
 test-gifcap: test_gifcap.c ../src/gifcap.c ../src/gifcap.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -I../src \
@@ -105,6 +109,7 @@ check: $(TESTS)
 	./test-io-decode
 	./test-mem
 	./test-disk
+	./test-fdc
 	./test-gifcap
 	./test-tape-signal
 	./test-real-tape

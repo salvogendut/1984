@@ -123,11 +123,14 @@ static void exec_cmd(FDC *fdc) {
             fdc->result[0] = fdc->last_st0;
             fdc->result[1] = fdc->last_pcn;
             fdc->seek_done = false;
+            fdc->result_len = 2;
         } else {
+            /* With no pending seek interrupt, the uPD765 returns only the
+             * invalid-command ST0 byte. Software may immediately start the
+             * next command after reading it. */
             fdc->result[0] = FDC_ST0_IC_INV;
-            fdc->result[1] = 0;
+            fdc->result_len = 1;
         }
-        fdc->result_len = 2;
         fdc->result_pos = 0;
         fdc->phase      = FDC_PHASE_RESULT;
         break;
