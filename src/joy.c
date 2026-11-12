@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #include "joy.h"
 #include "cpc.h"
 #include <string.h>
@@ -52,6 +57,15 @@ bool joyscript_init(JoyScript *js, const char *spec) {
 
 void joyscript_tick(JoyScript *js, Keyboard *k) {
     if (js->done) return;
+    if (js->cur >= js->nsteps) {
+        /* The frame after the last step: release everything. Doing it here
+         * rather than when the last step's timer runs out means the CPC sees
+         * that step for every one of its frames, a 1-frame step included. */
+        for (int c = JOY_UP; c <= JOY_FIRE2; c++)
+            kbd_key_up(k, JOY_ROW, c);
+        js->done = true;
+        return;
+    }
     unsigned char mask = js->step[js->cur].mask;
     for (int c = JOY_UP; c <= JOY_FIRE2; c++) {       /* set row 9 to this step */
         if (mask & (1 << c)) kbd_key_down(k, JOY_ROW, c);
@@ -59,13 +73,8 @@ void joyscript_tick(JoyScript *js, Keyboard *k) {
     }
     if (--js->timer <= 0) {                           /* advance to the next step */
         js->cur++;
-        if (js->cur >= js->nsteps) {
-            js->done = true;
-            for (int c = JOY_UP; c <= JOY_FIRE2; c++) /* release everything at the end */
-                kbd_key_up(k, JOY_ROW, c);
-        } else {
+        if (js->cur < js->nsteps)
             js->timer = js->step[js->cur].frames;
-        }
     }
 }
 

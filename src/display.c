@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #include "display.h"
 #include "leds.h"
 #include <string.h>
@@ -140,6 +145,12 @@ void display_finalize_frame(Display *d, u32 blank) {
 }
 
 void display_upload(Display *d) {
+    /* Headless: the window is never seen, and uploading and scaling the
+     * texture with the software renderer is most of the time a headless
+     * frame takes (about 3.5 times faster without it, measured). Nothing
+     * else reads the texture: screenshots, GIF/WebM capture, the web GUI and
+     * display_hash() all read d->pixels. */
+    if (d->offscreen) return;
     int ww, wh;
     SDL_GetWindowSize(d->window, &ww, &wh);
 

@@ -670,6 +670,11 @@ In step 3, `psg_ctrl == 0x01` always means the CPU is reading the keyboard throu
 Two host-driven paths inject into the same row-9 / mouse plumbing as real input, for headless tests and AI-driven debugging:
 
 - **`--joy-script=SPEC`** (`src/joy.c`) — replays a fixed `DIRS:FRAMES` timeline into row 9. `joyscript_tick()` runs once per frame next to `paste_tick()`. The deterministic, record-once analogue of `--paste`.
+- **`--key-script=SPEC`** (`src/kbd.c`) — the keyboard counterpart: replays a `KEYS:FRAMES` timeline of CPC key names (joined with `+`, `-` for none) into the matrix. `keyscript_tick()` runs right after `joyscript_tick()`. It drives only the keys the script names, so host input and `--paste` keep the others, and it releases them on the frame after the last step. Unlike `--paste` and `--autostart` it is not cancelled by `--load-sna`, so a test can start from a snapshot and press keys at exact frames.
+
+`--no-throttle` (`src/main.c`) skips the real-time sleep at the end of each frame (except while paused), so headless batch runs go as fast as the host allows; the emulated timing, and so every result, is unchanged. Live audio is cleared each frame instead of queued, because the audio device still drains in real time; `--audio-out` and the web stream take their samples before that.
+
+With `--headless`, `display_upload()` returns at once (`Display.offscreen`): uploading and scaling the texture with the software renderer was most of a headless frame's cost, and nothing reads it, since screenshots, GIF/WebM capture, the web GUI and `display_hash()` all work from `Display.pixels`. Together with `--no-throttle`, a headless run goes about 13 times faster than real time on a desktop PC.
 - **`--pilot[=ARG]`** (`src/pilot.c`) — opens a host PTY and reacts *live* to polar-coordinate commands, holding the last velocity until changed. Routes to the **mouse** (`mouse_*` + `ch376_mouse_*`, gated on `cpc.symbiface_mouse` / `cpc.albireo_mouse`) or the **CPC joystick** (row 9, 8-way + Fire1/2), switchable at runtime with `target mouse|joy`. PTY setup mirrors `usifac.c`; `pilot_tick()` runs once per frame. Full protocol in [docs/PILOT.md](docs/PILOT.md).
 
 ---
