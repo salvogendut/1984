@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #include "cpc.h"
 #include "net4cpc.h"
 #include "snapshot.h"
@@ -262,6 +267,19 @@ static void bus_mem_write(void *ctx, u16 addr, u8 val) {
         }
     } else {
         mem_write(&cpc->mem, addr, val);
+    }
+    /* Arm the fallback palette flush (see cpc_frame) only when the
+     * firmware raises the dirty flag: 0xFF written by code running in the
+     * enabled lower ROM.  Any other write to the flag disarms it, so a
+     * program that has taken over the machine and uses that RAM for its
+     * own data never has its memory or palette touched. */
+    if (addr == 0xB7F7 || addr == 0xB1FC) {
+        bool fw = val == 0xFF && cpc->mem.lower_rom_enabled &&
+                  cpc->cpu.pc < 0x4000;
+        if (addr == 0xB7F7)
+            cpc->fw_palette_armed_6128 = fw;
+        else
+            cpc->fw_palette_armed_464 = fw;
     }
     /* Master gate: when no trace env is set, skip every debug hook
      * below. ~1 cycle's worth of branch on the hot path when off. */
@@ -1149,6 +1167,8 @@ void cpc_reset(CPC *cpc) {
     cpc->crtc_pre_de = cpc->crtc.display_enable;
     cpc->bus_ticked_in_step = 0;
     cpc->cycle_debt = 0;
+    cpc->fw_palette_armed_6128 = false;
+    cpc->fw_palette_armed_464 = false;
     cpc->audio_frame_pos = 0;
     cpc->audio_sample_cycles = 0;
     real_tape_reset(&cpc->real_tape);
@@ -2091,8 +2111,11 @@ int cpc_frame(CPC *cpc) {
      * We detect this by checking 0xB7F7=0xFF AND all 17 palette buffer bytes
      * are valid hardware colour indices (0x00-0x1F).  Values outside that range
      * (e.g. 0xFF or 0x55 written by a diagnostic RAM fill) suppress the flush,
-     * preventing false triggers during memory tests. */
-    if (!cpc_model_is_plus(cpc->model) &&
+     * preventing false triggers during memory tests.  It also requires the
+     * flag to have been set by the firmware (fw_palette_armed_6128, see
+     * bus_mem_write), so programs that use this RAM for something else are
+     * left alone. */
+    if (!cpc_model_is_plus(cpc->model) && cpc->fw_palette_armed_6128 &&
             mem_read(&cpc->mem, 0xB7F7) == 0xFF) {
         bool palette_valid = true;
         for (int p = 0; p < 17; p++) {
@@ -2119,14 +2142,16 @@ int cpc_frame(CPC *cpc) {
             if (cpc_trace_palette)
                 fprintf(stderr, "[palette] flushed → B7F7 cleared\n");
             mem_write(&cpc->mem, 0xB7F7, 0x00);
+            cpc->fw_palette_armed_6128 = false;
         }
     }
 
     /* Fallback palette flush — CPC 464.
      * The 464 firmware uses 0xB1FC as dirty flag and 0xB1D9-0xB1E9 as the
      * palette buffer (17 bytes: border first, then inks 0-15).  Same validity
-     * guard as above: only flush when all bytes are in 0x00-0x1F range. */
-    if (!cpc_model_is_plus(cpc->model) &&
+     * guard as above: only flush when all bytes are in 0x00-0x1F range, and
+     * only when the firmware set the flag (fw_palette_armed_464). */
+    if (!cpc_model_is_plus(cpc->model) && cpc->fw_palette_armed_464 &&
             mem_read(&cpc->mem, 0xB1FC) == 0xFF) {
         bool palette_valid = true;
         for (int p = 0; p < 17; p++) {
@@ -2153,6 +2178,7 @@ int cpc_frame(CPC *cpc) {
             if (cpc_trace_palette)
                 fprintf(stderr, "[palette464] flushed → B1FC cleared\n");
             mem_write(&cpc->mem, 0xB1FC, 0x00);
+            cpc->fw_palette_armed_464 = false;
         }
     }
 
