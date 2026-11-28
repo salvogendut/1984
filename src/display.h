@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #pragma once
 #include "types.h"
 #include <SDL3/SDL.h>
@@ -37,6 +42,8 @@ typedef struct {
     int           crt_red;
     int           crt_green;
     int           crt_blue;
+    bool          offscreen;  /* --headless: no window to show, so
+                               * display_upload() does nothing */
 } Display;
 
 int  display_init(Display *d, const char *title, int scale);

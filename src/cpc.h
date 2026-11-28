@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #pragma once
 #include <stdbool.h>
 #include <stdlib.h>     /* dbg_getenv() wraps getenv() */
@@ -195,6 +200,12 @@ typedef struct CPC {
     int  cpu_clk_hz;      /* 4 MHz */
     int  cycles_per_frame;
     int  cycle_debt;      /* leftover cycles from previous frame */
+
+    /* Fallback palette flush: armed only while the palette dirty flag
+     * (0xB7F7 on the 6128, 0xB1FC on the 464) was last written by the
+     * firmware itself (0xFF from code in the enabled lower ROM). */
+    bool fw_palette_armed_6128;
+    bool fw_palette_armed_464;
     int  crtc_cycle_acc;  /* accumulated cycles for CRTC tick (4-cycle alignment) */
 
     /* Render beam position. The CRTC generates sync pulses, but the monitor

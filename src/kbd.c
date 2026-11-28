@@ -1,5 +1,11 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #include "kbd.h"
 #include <string.h>
+#include <stdio.h>
 
 void kbd_init(Keyboard *k) {
     memset(k->matrix, 0xFF, sizeof(k->matrix));   /* all keys up = 0xFF */
@@ -18,6 +24,134 @@ void kbd_key_up(Keyboard *k, int row, int col) {
 u8 kbd_read_row(Keyboard *k, u8 row) {
     if (row < KBD_ROWS) return k->matrix[row];
     return 0xFF;
+}
+
+/* --- Scripted key injection (--key-script), see kbd.h ---------------------- */
+
+/* CPC key names by matrix position. Row 9 bits 0-5 are joystick 0 (use
+ * --joy-script for those); bit 7 is DEL. */
+typedef struct { const char *name; int row, col; } KeyName;
+
+static const KeyName keynames[] = {
+    { "UP",        0, 0 }, { "RIGHT",     0, 1 }, { "DOWN",      0, 2 },
+    { "F9",        0, 3 }, { "F6",        0, 4 }, { "F3",        0, 5 },
+    { "ENTER",     0, 6 }, { "FDOT",      0, 7 },
+    { "LEFT",      1, 0 }, { "COPY",      1, 1 }, { "F7",        1, 2 },
+    { "F8",        1, 3 }, { "F5",        1, 4 }, { "F1",        1, 5 },
+    { "F2",        1, 6 }, { "F0",        1, 7 },
+    { "CLR",       2, 0 }, { "LBRACKET",  2, 1 }, { "RETURN",    2, 2 },
+    { "RBRACKET",  2, 3 }, { "F4",        2, 4 }, { "SHIFT",     2, 5 },
+    { "BACKSLASH", 2, 6 }, { "CTRL",      2, 7 },
+    { "CARET",     3, 0 }, { "MINUS",     3, 1 }, { "AT",        3, 2 },
+    { "P",         3, 3 }, { "SEMICOLON", 3, 4 }, { "COLON",     3, 5 },
+    { "SLASH",     3, 6 }, { "DOT",       3, 7 },
+    { "0",         4, 0 }, { "9",         4, 1 }, { "O",         4, 2 },
+    { "I",         4, 3 }, { "L",         4, 4 }, { "K",         4, 5 },
+    { "M",         4, 6 }, { "COMMA",     4, 7 },
+    { "8",         5, 0 }, { "7",         5, 1 }, { "U",         5, 2 },
+    { "Y",         5, 3 }, { "H",         5, 4 }, { "J",         5, 5 },
+    { "N",         5, 6 }, { "SPACE",     5, 7 },
+    { "6",         6, 0 }, { "5",         6, 1 }, { "R",         6, 2 },
+    { "T",         6, 3 }, { "G",         6, 4 }, { "F",         6, 5 },
+    { "B",         6, 6 }, { "V",         6, 7 },
+    { "4",         7, 0 }, { "3",         7, 1 }, { "E",         7, 2 },
+    { "W",         7, 3 }, { "S",         7, 4 }, { "D",         7, 5 },
+    { "C",         7, 6 }, { "X",         7, 7 },
+    { "1",         8, 0 }, { "2",         8, 1 }, { "ESC",       8, 2 },
+    { "Q",         8, 3 }, { "TAB",       8, 4 }, { "A",         8, 5 },
+    { "CAPSLOCK",  8, 6 }, { "Z",         8, 7 },
+    { "DEL",       9, 7 },
+};
+
+/* Find the key named by the n characters at p (case-insensitive). */
+static const KeyName *keyname_find(const char *p, int n) {
+    for (int i = 0; i < (int)(sizeof(keynames)/sizeof(keynames[0])); i++) {
+        const char *q = keynames[i].name;
+        int j = 0;
+        while (j < n && q[j]) {
+            char c = p[j];
+            if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+            if (c != q[j]) break;
+            j++;
+        }
+        if (j == n && q[j] == '\0') return &keynames[i];
+    }
+    return NULL;
+}
+
+static bool keyscript_fail(KeyScript *ks, const char *msg, const char *p,
+                           int n) {
+    fprintf(stderr, "[key-script] %s '%.*s'\n", msg, n, p);
+    memset(ks, 0, sizeof(*ks));
+    ks->done = true;
+    return false;
+}
+
+bool keyscript_init(KeyScript *ks, const char *spec) {
+    memset(ks, 0, sizeof(*ks));
+    const char *p = spec;
+    while (*p) {
+        if (ks->nsteps >= KEYSCRIPT_MAX_STEPS)
+            return keyscript_fail(ks, "too many steps at", p, (int)strlen(p));
+        u8 *down = ks->step[ks->nsteps].down;
+        /* Key names separated by '+', up to ':' or ','. */
+        for (;;) {
+            const char *name = p;
+            while (*p && *p != '+' && *p != ':' && *p != ',') p++;
+            int n = (int)(p - name);
+            if (n == 1 && name[0] == '-') {
+                /* no key (not 'n' as in --joy-script: N is a key here) */
+            } else {
+                const KeyName *kn = keyname_find(name, n);
+                if (!kn) return keyscript_fail(ks, "unknown key", name, n);
+                down[kn->row]     |= (u8)(1 << kn->col);
+                ks->used[kn->row] |= (u8)(1 << kn->col);
+            }
+            if (*p != '+') break;
+            p++;
+        }
+        int frames = 0;
+        if (*p == ':') {
+            p++;
+            while (*p >= '0' && *p <= '9') frames = frames * 10 + (*p++ - '0');
+        }
+        if (*p && *p != ',')
+            return keyscript_fail(ks, "bad step at", p, (int)strlen(p));
+        if (frames <= 0) frames = 1;
+        ks->step[ks->nsteps].frames = frames;
+        ks->nsteps++;
+        if (*p == ',') p++;
+    }
+    ks->cur   = 0;
+    ks->timer = ks->nsteps ? ks->step[0].frames : 0;
+    ks->done  = (ks->nsteps == 0);
+    return !ks->done;
+}
+
+void keyscript_tick(KeyScript *ks, Keyboard *k) {
+    if (ks->done) return;
+    if (ks->cur >= ks->nsteps) {
+        /* The frame after the last step: release everything. Doing it here
+         * rather than when the last step's timer runs out means the CPC sees
+         * that step for every one of its frames, a 1-frame step included. */
+        for (int r = 0; r < KBD_ROWS; r++)
+            for (int c = 0; c < 8; c++)
+                if (ks->used[r] & (1 << c)) kbd_key_up(k, r, c);
+        ks->done = true;
+        return;
+    }
+    const u8 *down = ks->step[ks->cur].down;
+    for (int r = 0; r < KBD_ROWS; r++)               /* set this step's keys */
+        for (int c = 0; c < 8; c++) {
+            if (!(ks->used[r] & (1 << c))) continue;
+            if (down[r] & (1 << c)) kbd_key_down(k, r, c);
+            else                    kbd_key_up  (k, r, c);
+        }
+    if (--ks->timer <= 0) {                          /* advance to the next */
+        ks->cur++;
+        if (ks->cur < ks->nsteps)
+            ks->timer = ks->step[ks->cur].frames;
+    }
 }
 
 /*

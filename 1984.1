@@ -174,6 +174,62 @@ is one or more of
 (neutral). Example:
 .B --joy-script=d:150,-:30,u:150
 \(em down 150 frames, rest 30, up 150.
+.TP
+.BI --key-script= SPEC
+Scripted CPC keys, the keyboard counterpart of
+.BR --joy-script ;
+unlike
+.B --paste
+it also works with
+.BR --load-sna .
+SPEC is a comma-separated list of
+.IB KEYS : FRAMES
+steps where
+.I KEYS
+is one or more CPC key names joined with
+.B +
+(case-insensitive:
+.BR A \(en Z ,
+.BR 0 \(en 9 ,
+.BR F0 \(en F9 ,
+.BR FDOT ,
+.BR SPACE ,
+.BR RETURN ,
+.BR ENTER ,
+.BR ESC ,
+.BR TAB ,
+.BR CAPSLOCK ,
+.BR SHIFT ,
+.BR CTRL ,
+.BR COPY ,
+.BR DEL ,
+.BR CLR ,
+.BR UP ,
+.BR DOWN ,
+.BR LEFT ,
+.BR RIGHT ,
+.BR CARET ,
+.BR MINUS ,
+.BR AT ,
+.BR LBRACKET ,
+.BR RBRACKET ,
+.BR BACKSLASH ,
+.BR SEMICOLON ,
+.BR COLON ,
+.BR COMMA ,
+.BR DOT ,
+.BR SLASH )
+or
+.B -
+(no key). Only keys named in the script are driven; they are released on
+the frame after the last step. Example:
+.B --key-script=-:100,G:3,-:50,SHIFT+2:3
+\(em nothing for 100 frames, G for 3, wait 50, Shift+2 for 3.
+.TP
+.B --no-throttle
+Run as fast as the host allows instead of pacing frames to real time, for
+headless batch runs. The emulated machine's timing is unchanged; live audio
+output is discarded (\fB--audio-out\fR still records it).
 .SS Debugging
 .TP
 .B --trace-io

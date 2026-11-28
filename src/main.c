@@ -1,3 +1,8 @@
+/* 1984 Amstrad CPC emulator
+ * Copyright (c) 2026 Salvatore Bognanni
+ * Copyright (c) 2026 Nick J. Date
+ * Licensed under the GNU General Public License, version 2 (see LICENSE).
+ */
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -401,6 +406,15 @@ static void usage(const char *prog, int code) {
         "  --joy-script=SPEC   Scripted joystick (row 9). SPEC = comma-separated DIRS:FRAMES\n"
         "                      steps; DIRS = u d l r 1 2 (Fire1/2) or - (neutral).\n"
         "                      e.g. --joy-script=d:150,-:30,u:150 (down, rest, up)\n"
+        "  --key-script=SPEC   Scripted CPC keys; works with --load-sna. SPEC =\n"
+        "                      comma-separated KEYS:FRAMES steps; KEYS = CPC key\n"
+        "                      names joined with + (A-Z 0-9 F0-F9 SPACE RETURN ESC\n"
+        "                      SHIFT CTRL COPY DEL UP DOWN LEFT RIGHT ..., see\n"
+        "                      src/kbd.h) or - (none). Only named keys are driven.\n"
+        "                      e.g. --key-script=-:100,G:3,-:50,SHIFT+2:3\n"
+        "  --no-throttle       Run as fast as the host allows instead of in real\n"
+        "                      time (for headless batch runs; the emulated timing\n"
+        "                      is unchanged, live audio is discarded)\n"
         "  --gif-out=PATH      Record a GIF from boot using the configured capture profile\n"
         "                      (finalised on exit; pairs with --exit-after)\n"
         "  --audio-out=PATH    Record emulator audio to a WAV file from boot\n"
@@ -508,6 +522,8 @@ int main(int argc, char *argv[]) {
     int         save_sna_ide_cmd = -1;
     const char *save_sna_ide_path = NULL;
     const char *joyscript_arg    = NULL;  /* --joy-script=SPEC: scripted joystick */
+    const char *keyscript_arg    = NULL;  /* --key-script=SPEC: scripted keys */
+    bool        no_throttle      = false; /* --no-throttle: run flat out */
     const char *gifout_arg       = NULL;  /* --gif-out=PATH: record a GIF from boot */
     const char *audioout_arg     = NULL;  /* --audio-out=PATH: record WAV audio from boot */
     int         exit_after       = -1;    /* --exit-after=N: quit at frame N */
@@ -682,6 +698,10 @@ int main(int argc, char *argv[]) {
             screenshot_path  = colon + 1;
         } else if (strncmp(argv[i], "--joy-script=", 13) == 0 && argv[i][13] != '\0') {
             joyscript_arg = argv[i] + 13;
+        } else if (strncmp(argv[i], "--key-script=", 13) == 0 && argv[i][13] != '\0') {
+            keyscript_arg = argv[i] + 13;
+        } else if (strcmp(argv[i], "--no-throttle") == 0) {
+            no_throttle = true;
         } else if (strncmp(argv[i], "--gif-out=", 10) == 0 && argv[i][10] != '\0') {
             gifout_arg = argv[i] + 10;
         } else if (strncmp(argv[i], "--audio-out=", 12) == 0 && argv[i][12] != '\0') {
@@ -811,6 +831,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     SD_LOG("cpc_init OK");
+    cpc.display.offscreen = headless;
     notify_init();
     notify_set_mode(cfg.notifications);
     RealTapeMode real_tape_mode =
@@ -913,6 +934,20 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "[joy-script] %d step(s) queued\n", joyscript.nsteps);
         } else {
             fprintf(stderr, "%s: invalid --joy-script spec\n", argv[0]);
+            return 1;
+        }
+    }
+
+    /* --key-script: deterministic scripted CPC keys, the keyboard analogue
+     * of --joy-script. Unlike --paste it is not cancelled by --load-sna. */
+    static KeyScript keyscript;   /* static: a few KB, keep it off the stack */
+    bool have_keyscript = false;
+    if (keyscript_arg) {
+        if (keyscript_init(&keyscript, keyscript_arg)) {
+            have_keyscript = true;
+            fprintf(stderr, "[key-script] %d step(s) queued\n", keyscript.nsteps);
+        } else {
+            fprintf(stderr, "%s: invalid --key-script spec\n", argv[0]);
             return 1;
         }
     }
@@ -1438,6 +1473,7 @@ int main(int argc, char *argv[]) {
         if (cpc_model_has_keyboard(cpc.model))
             paste_tick(&paste, &cpc.kbd);
         if (have_joyscript) joyscript_tick(&joyscript, &cpc.kbd);
+        if (have_keyscript) keyscript_tick(&keyscript, &cpc.kbd);
         pilot_tick(&pilot, &cpc, &cpc.display, &paste);
         bool was_paused   = cpc.paused;
         bool was_stepping = cpc.step_once;
@@ -1448,6 +1484,11 @@ int main(int argc, char *argv[]) {
         printer_tick(&cpc.printer);
         real_tape_pump(&cpc.real_tape);
         int emulated_cycles = cpc_frame(&cpc);
+        /* --no-throttle: the audio device still drains in real time, so drop
+         * the frame's live audio rather than let the queue grow without
+         * bound. --audio-out and the web stream have their own paths. */
+        if (no_throttle && cpc.audio_stream)
+            SDL_ClearAudioStream(cpc.audio_stream);
         if (trace_v9990 && cpc.v9990.enabled) {
             static u8 previous_regs[4];
             static unsigned previous_width;
@@ -1705,7 +1746,11 @@ int main(int argc, char *argv[]) {
          * when a game uses a CRTC frame longer than the standard 80K cycles. */
         next_frame += emulated_frame_ns;
         Uint64 now = SDL_GetTicksNS();
-        if (now < next_frame) {
+        if (no_throttle && !cpc.paused) {
+            /* --no-throttle: no sleep; keep the deadline current so that a
+             * pause (e.g. a breakpoint) is still paced in real time. */
+            next_frame = now;
+        } else if (now < next_frame) {
             SDL_DelayNS(next_frame - now);
         } else if (now > next_frame + 3 * emulated_frame_ns) {
             next_frame = now; /* reset if more than 3 frames behind */
